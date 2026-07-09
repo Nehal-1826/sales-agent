@@ -1,0 +1,208 @@
+"""FastAPI request-scoped dependencies: auth + role guards."""
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from typing import Annotated, Any
+
+import bcrypt
+from fastapi import Depends, Header, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models.api_keys import ApiKey
+from app.db.models.users import User, UserRole
+from app.db.session import get_db
+from app.services.auth_service import load_user_by_id
+from app.services.security import InvalidTokenError, decode_token
+
+_API_KEY_PREFIX = "wp_live_"
+
+
+def _extract_bearer(authorization: str | None) -> str:
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing Authorization header",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    parts = authorization.split(" ", 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer" or not parts[1]:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Authorization header",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return parts[1]
+
+
+def get_current_claims(
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, Any]:
+    """Decode the JWT and return its claims. Raises 401 on any failure."""
+    token = _extract_bearer(authorization)
+    try:
+        claims = decode_token(token)
+    except InvalidTokenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid token: {exc}",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+    if claims.get("type") != "access":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Expected access token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return claims
+
+
+async def get_current_user(
+    claims: Annotated[dict[str, Any], Depends(get_current_claims)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> User:
+    """Decode JWT and load the user from the DB. 401 if token invalid / user missing."""
+    sub = claims.get("sub")
+    if not sub:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Malformed token (no sub)",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    user = await load_user_by_id(session, sub)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User no longer exists",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    # Suspended/banned users lose access immediately, even with an unexpired
+    # token. Single chokepoint covering every authenticated route.
+    if user.is_suspended:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account suspended",
+        )
+    return user
+
+
+async def _resolve_api_key(
+    session: AsyncSession, raw: str
+) -> User | None:
+    """Match a ``wp_live_xxxx`` token against api_keys and return its owner.
+
+    Filters by the 12-char ``prefix`` first (indexed) then bcrypt-checks the
+    full key against each candidate. Updates ``last_used_at`` on a successful
+    match. Returns None on any miss.
+    """
+    if not raw.startswith(_API_KEY_PREFIX):
+        return None
+    prefix = raw[:12]
+    candidates = (
+        await session.execute(
+            select(ApiKey).where(ApiKey.prefix == prefix, ApiKey.revoked_at.is_(None))
+        )
+    ).scalars().all()
+    for key in candidates:
+        try:
+            if bcrypt.checkpw(raw.encode("utf-8"), key.key_hash.encode("utf-8")):
+                key.last_used_at = datetime.now(UTC)
+                # Pick the first client user in the workspace as the actor.
+                user = (
+                    await session.execute(
+                        select(User)
+                        .where(
+                            User.workspace_id == key.workspace_id,
+                            User.role == UserRole.client,
+                        )
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+                if user is None:
+                    return None
+                if getattr(user, "is_suspended", False):
+                    return None
+                await session.commit()
+                return user
+        except ValueError:
+            # Malformed hash in DB — skip rather than crash the request.
+            continue
+    return None
+
+
+async def get_current_user_or_api_key(
+    authorization: Annotated[str | None, Header()] = None,
+    session: AsyncSession = Depends(get_db),
+) -> User:
+    """Bearer auth that accepts a JWT access token OR a ``wp_live_xxxx`` key.
+
+    Programmatic clients on the Agency plan use the raw key directly:
+
+        Authorization: Bearer wp_live_abc123...
+
+    JWT requests fall through to the existing decode + load path.
+    """
+    token = _extract_bearer(authorization)
+    if token.startswith(_API_KEY_PREFIX):
+        user = await _resolve_api_key(session, token)
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or revoked API key",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return user
+
+    try:
+        claims = decode_token(token)
+    except InvalidTokenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid token: {exc}",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+    if claims.get("type") != "access":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Expected access token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    sub = claims.get("sub")
+    if not sub:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Malformed token (no sub)",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    user = await load_user_by_id(session, sub)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User no longer exists",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user
+
+
+def require_super_admin(
+    user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    role = user.role.value if hasattr(user.role, "value") else str(user.role)
+    if role != "super_admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="super_admin role required",
+        )
+    return user
+
+
+def require_client(
+    user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    role = user.role.value if hasattr(user.role, "value") else str(user.role)
+    if role != "client":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="client role required",
+        )
+    return user

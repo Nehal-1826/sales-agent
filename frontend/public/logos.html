@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WarmPulse Logo Designs</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: linear-gradient(135deg, #0a0a0f 0%, #1a1a26 50%, #0a0a0f 100%);
+            min-height: 100vh;
+            font-family: 'Outfit', sans-serif;
+            color: #ffffff;
+            padding: 60px 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            font-size: 3rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            background: linear-gradient(90deg, #ffffff 0%, #FF6B35 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .subtitle {
+            text-align: center;
+            font-size: 1.2rem;
+            color: #888;
+            margin-bottom: 60px;
+        }
+        .logo-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 40px;
+        }
+        .logo-card {
+            background: linear-gradient(145deg, #151520 0%, #1a1a28 100%);
+            border-radius: 24px;
+            padding: 40px;
+            border: 1px solid rgba(255, 107, 53, 0.1);
+            transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .logo-card:hover {
+            transform: translateY(-5px);
+            border-color: rgba(255, 107, 53, 0.3);
+            box-shadow: 0 20px 40px rgba(255, 107, 53, 0.1);
+        }
+        .logo-preview {
+            width: 200px;
+            height: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        .logo-preview svg {
+            width: 100%;
+            height: 100%;
+        }
+        .logo-name {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #fff;
+        }
+        .logo-desc {
+            font-size: 0.9rem;
+            color: #888;
+            text-align: center;
+        }
+        .download-btn {
+            margin-top: 20px;
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #FF6B35 0%, #FF8E53 100%);
+            border: none;
+            border-radius: 12px;
+            color: #fff;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .download-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 10px 30px rgba(255, 107, 53, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>WarmPulse Logo Designs</h1>
+        <p class="subtitle">Choose your perfect logo — Click any card to expand</p>
+
+        <div class="logo-grid">
+            <!-- Design 1: Modern Gradient -->
+            <div class="logo-card">
+                <div class="logo-preview">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+                        <defs>
+                            <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#FF6B35"/>
+                                <stop offset="100%" stop-color="#FFB347"/>
+                            </linearGradient>
+                            <linearGradient id="grad1-inner" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#FF8E53"/>
+                                <stop offset="100%" stop-color="#FFD700"/>
+                            </linearGradient>
+                            <filter id="glow1">
+                                <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                                <feMerge>
+                                    <feMergeNode in="coloredBlur"/>
+                                    <feMergeNode in="SourceGraphic"/>
+                                </feMerge>
+                            </filter>
+                        </defs>
+                        <rect width="200" height="200" rx="40" fill="url(#grad1)" opacity="0.15"/>
+                        <rect x="30" y="30" width="140" height="140" rx="28" fill="url(#grad1)" filter="url(#glow1)"/>
+                        <!-- Envelope -->
+                        <rect x="55" y="70" width="90" height="60" rx="8" fill="#fff"/>
+                        <path d="M55 70 L100 100 L145 70" stroke="url(#grad1-inner)" stroke-width="4" fill="none" stroke-linecap="round"/>
+                        <!-- Pulse -->
+                        <circle cx="145" cy="125" r="12" fill="url(#grad1)">
+                            <animate attributeName="r" values="12;18;12" dur="2s" repeatCount="indefinite"/>
+                            <animate attributeName="opacity" values="1;0.5;1" dur="2s" repeatCount="indefinite"/>
+                        </circle>
+                    </svg>
+                </div>
+                <div class="logo-name">Sunset Gradient</div>
+                <div class="logo-desc">Warm orange-to-gold gradient with soft glow</div>
+            </div>
+
+            <!-- Design 2: Minimalist -->
+            <div class="logo-card">
+                <div class="logo-preview">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+                        <defs>
+                            <linearGradient id="grad2" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#1a1a26"/>
+                                <stop offset="100%" stop-color="#2a2a36"/>
+                            </linearGradient>
+                        </defs>
+                        <rect width="200" height="200" rx="40" fill="url(#grad2)"/>
+                        <rect x="50" y="60" width="100" height="70" rx="12" fill="none" stroke="#FF6B35" stroke-width="4"/>
+                        <path d="M50 60 L100 95 L150 60" stroke="#FF6B35" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                        <circle cx="130" cy="115" r="8" fill="#FF6B35">
+                            <animate attributeName="r" values="8;12;8" dur="1.5s" repeatCount="indefinite"/>
+                            <animate attributeName="opacity" values="1;0.4;1" dur="1.5s" repeatCount="indefinite"/>
+                        </circle>
+                        <circle cx="130" cy="115" r="4" fill="#FFB347"/>
+                    </svg>
+                </div>
+                <div class="logo-name">Minimalist Dark</div>
+                <div class="logo-desc">Clean lines on dark background</div>
+            </div>
+
+            <!-- Design 3: Vibrant Pop -->
+            <div class="logo-card">
+                <div class="logo-preview">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+                        <defs>
+                            <linearGradient id="grad3" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#FF6B35"/>
+                                <stop offset="50%" stop-color="#FF8E53"/>
+                                <stop offset="100%" stop-color="#FFB347"/>
+                            </linearGradient>
+                            <linearGradient id="grad3-accent" x1="0%" y1="0%" x2="100%" y2="0%">
+                                <stop offset="0%" stop-color="#FFD700"/>
+                                <stop offset="100%" stop-color="#FF6B35"/>
+                            </linearGradient>
+                        </defs>
+                        <rect width="200" height="200" rx="40" fill="url(#grad3)"/>
+                        <rect x="45" y="65" width="110" height="75" rx="16" fill="#fff"/>
+                        <path d="M45 65 L100 102 L155 65" stroke="url(#grad3-accent)" stroke-width="5" fill="none" stroke-linecap="round"/>
+                        <circle cx="140" cy="120" r="10" fill="url(#grad3)">
+                            <animate attributeName="r" values="10;15;10" dur="1.2s" repeatCount="indefinite"/>
+                        </circle>
+                        <circle cx="140" cy="120" r="6" fill="#FFD700">
+                            <animate attributeName="opacity" values="1;0.3;1" dur="1.2s" repeatCount="indefinite"/>
+                        </circle>
+                    </svg>
+                </div>
+                <div class="logo-name">Vibrant Pop</div>
+                <div class="logo-desc">Full gradient background with white envelope</div>
+            </div>
+
+            <!-- Design 4: Modern Tech -->
+            <div class="logo-card">
+                <div class="logo-preview">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+                        <defs>
+                            <linearGradient id="grad4" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#0f0f1a"/>
+                                <stop offset="100%" stop-color="#1a1a2e"/>
+                            </linearGradient>
+                            <linearGradient id="grad4-accent" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#FF6B35"/>
+                                <stop offset="100%" stop-color="#FF8E53"/>
+                            </linearGradient>
+                            <filter id="glow4">
+                                <feDropShadow dx="0" dy="0" stdDeviation="8" flood-color="#FF6B35" flood-opacity="0.5"/>
+                            </filter>
+                        </defs>
+                        <rect width="200" height="200" rx="40" fill="url(#grad4)"/>
+                        <rect x="40" y="55" width="120" height="90" rx="20" fill="none" stroke="url(#grad4-accent)" stroke-width="3" filter="url(#glow4)"/>
+                        <path d="M40 55 L100 100 L160 55" stroke="url(#grad4-accent)" stroke-width="3" fill="none" stroke-linecap="round"/>
+                        <line x1="40" y1="145" x2="160" y2="145" stroke="url(#grad4-accent)" stroke-width="3" stroke-linecap="round"/>
+                        <circle cx="135" cy="125" r="8" fill="#FF6B35" filter="url(#glow4)">
+                            <animate attributeName="r" values="8;14;8" dur="2s" repeatCount="indefinite"/>
+                            <animate attributeName="opacity" values="1;0.4;1" dur="2s" repeatCount="indefinite"/>
+                        </circle>
+                        <circle cx="135" cy="125" r="4" fill="#FFB347"/>
+                    </svg>
+                </div>
+                <div class="logo-name">Modern Tech</div>
+                <div class="logo-desc">Glowing outline with tech aesthetic</div>
+            </div>
+
+            <!-- Design 5: Premium -->
+            <div class="logo-card">
+                <div class="logo-preview">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+                        <defs>
+                            <linearGradient id="grad5" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#1a1a26"/>
+                                <stop offset="100%" stop-color="#0a0a0f"/>
+                            </linearGradient>
+                            <linearGradient id="grad5-gold" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#FFD700"/>
+                                <stop offset="50%" stop-color="#FFA500"/>
+                                <stop offset="100%" stop-color="#FF6B35"/>
+                            </linearGradient>
+                            <filter id="glow5">
+                                <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#FFD700" flood-opacity="0.4"/>
+                            </filter>
+                        </defs>
+                        <rect width="200" height="200" rx="40" fill="url(#grad5)"/>
+                        <rect x="50" y="60" width="100" height="75" rx="16" fill="#1a1a26" stroke="url(#grad5-gold)" stroke-width="3"/>
+                        <path d="M50 60 L100 97 L150 60" stroke="url(#grad5-gold)" stroke-width="3" fill="none" stroke-linecap="round"/>
+                        <circle cx="130" cy="115" r="10" fill="url(#grad5-gold)" filter="url(#glow5)">
+                            <animate attributeName="r" values="10;16;10" dur="2.5s" repeatCount="indefinite"/>
+                            <animate attributeName="opacity" values="1;0.5;1" dur="2.5s" repeatCount="indefinite"/>
+                        </circle>
+                        <circle cx="130" cy="115" r="5" fill="#FFD700"/>
+                    </svg>
+                </div>
+                <div class="logo-name">Premium Gold</div>
+                <div class="logo-desc">Luxurious gold gradient on dark</div>
+            </div>
+
+            <!-- Design 6: Bold -->
+            <div class="logo-card">
+                <div class="logo-preview">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+                        <defs>
+                            <linearGradient id="grad6" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#FF6B35"/>
+                                <stop offset="100%" stop-color="#E63946"/>
+                            </linearGradient>
+                        </defs>
+                        <rect width="200" height="200" rx="40" fill="#fff"/>
+                        <rect x="35" y="50" width="130" height="100" rx="20" fill="url(#grad6)"/>
+                        <path d="M35 50 L100 100 L165 50" stroke="#fff" stroke-width="6" fill="none" stroke-linecap="round"/>
+                        <circle cx="150" cy="125" r="14" fill="#E63946">
+                            <animate attributeName="r" values="14;20;14" dur="1.8s" repeatCount="indefinite"/>
+                            <animate attributeName="opacity" values="1;0.4;1" dur="1.8s" repeatCount="indefinite"/>
+                        </circle>
+                        <circle cx="150" cy="125" r="8" fill="#fff"/>
+                    </svg>
+                </div>
+                <div class="logo-name">Bold Coral</div>
+                <div class="logo-desc">White background with coral gradient</div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

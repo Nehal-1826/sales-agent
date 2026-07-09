@@ -1,0 +1,970 @@
+/* =============================================================================
+   Admin shell — full-bleed dark canvas + Aurora Glass rail. Uses the shared
+   Shailog-orange glass design tokens (var(--wp-*) + var(--ag-*)).
+============================================================================= */
+
+.admin-shell {
+  min-height: 100vh;
+  position: relative;
+  background: var(--wp-bg);
+  color: var(--wp-text);
+  overflow-x: hidden;
+}
+
+/* Atmospheric layer — aurora blobs + faint grid, exactly the same
+   treatment as the onboarding dashboard for visual continuity. */
+.admin-shell__atmosphere {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+}
+.admin-shell__aurora-1,
+.admin-shell__aurora-2 {
+  position: absolute;
+  border-radius: 50%;
+  /* Was `background: <solid>; filter: blur(140px)`. A 140px blur composited on
+     every repaint is very expensive (especially on mobile); a radial-gradient
+     gives the same soft glow at ~zero GPU cost. */
+}
+.admin-shell__aurora-1 {
+  width: 760px;
+  height: 760px;
+  top: -240px;
+  left: -140px;
+  background: radial-gradient(circle, var(--wp-accent) 0%, transparent 72%);
+  opacity: 0.42;
+}
+.admin-shell__aurora-2 {
+  width: 660px;
+  height: 660px;
+  bottom: -220px;
+  right: -170px;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--wp-accent) 70%, #FF9670) 0%,
+    transparent 72%
+  );
+  opacity: 0.3;
+}
+.admin-shell__grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--wp-text-faint) 5%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--wp-text-faint) 5%, transparent) 1px, transparent 1px);
+  background-size: 60px 60px;
+  mask-image: radial-gradient(circle at 50% 30%, black 0%, transparent 70%);
+}
+
+.admin-shell__main {
+  position: relative;
+  z-index: 1;
+  /* Reserve left padding for the floating pill (76px wide + gutter). */
+  padding: 32px 28px 80px 100px;
+  max-width: 1440px;
+  margin: 0 auto;
+}
+@media (max-width: 720px) {
+  /* No bottom nav on mobile — reserve left space for the vertical rail. */
+  .admin-shell__main { padding: 24px 14px 40px 64px; }
+}
+
+/* =============================================================================
+   Floating glass-pill sidebar (S4)
+============================================================================= */
+
+.admin-pill {
+  position: fixed;
+  top: 12px;
+  bottom: 12px;
+  left: 14px;
+  /* Center vertically without using `transform` — framer-motion's `x`
+     animation on this element writes an inline `transform`, which would
+     otherwise stomp `translateY(-50%)` and let the pill overflow off-screen.
+     `margin: auto 0` between top:0 and bottom:0 gives transform-free
+     centering. */
+  margin: auto 0;
+  height: fit-content;
+  z-index: 20;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 6px;
+  /* Never grow past the viewport — on shorter screens the nav scrolls
+     internally while brand + footer stay anchored. */
+  max-height: calc(100vh - 24px);
+
+  background: color-mix(in srgb, var(--wp-surface) 70%, transparent);
+  backdrop-filter: blur(20px) saturate(170%);
+  -webkit-backdrop-filter: blur(20px) saturate(170%);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 18%, var(--wp-border));
+  border-radius: 999px;
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.32),
+    inset 0 1px 0 color-mix(in srgb, white 6%, transparent);
+}
+@media (max-width: 720px) {
+  /* Mobile: stay a vertical rail pinned to the left edge (no bottom bar).
+     Tighter side padding + larger tap targets for touch. The base column
+     layout, vertical centering, and internal nav scroll all carry over. */
+  .admin-pill {
+    left: 8px;
+    padding: 6px 5px;
+    gap: 3px;
+  }
+  .admin-pill__item {
+    width: 38px;
+    height: 38px;
+  }
+}
+
+.admin-pill__brand {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  overflow: hidden;
+  flex-shrink: 0;
+  text-decoration: none;
+  display: block;
+}
+.admin-pill__brand svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.admin-pill__divider {
+  width: 16px;
+  height: 1px;
+  background: color-mix(in srgb, var(--wp-text-faint) 20%, transparent);
+  margin: 1px 0;
+  flex-shrink: 0;
+}
+
+.admin-pill__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* Allow this region to shrink + scroll on short viewports so the brand
+     and footer stay visible. Scrollbar is hidden for a clean pill look. */
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.admin-pill__nav::-webkit-scrollbar {
+  display: none;
+}
+/* Mobile keeps the nav as a vertical column (rail) — no row override. */
+
+.admin-pill__item {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  color: var(--wp-text-faint);
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease;
+}
+.admin-pill__item:hover {
+  color: var(--wp-text);
+  background: color-mix(in srgb, var(--wp-accent) 10%, transparent);
+}
+.admin-pill__item--active {
+  background: linear-gradient(135deg, var(--wp-accent), var(--wp-accent-hover));
+  color: #fff;
+  box-shadow:
+    0 4px 14px color-mix(in srgb, var(--wp-accent) 40%, transparent),
+    inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
+}
+.admin-pill__item--active:hover {
+  color: #fff;
+  background: linear-gradient(135deg, var(--wp-accent), var(--wp-accent-hover));
+}
+
+/* Tooltips — slide-out label on the right side of the pill. Hidden by
+   default, shown on hover/focus of the parent item. */
+.admin-pill__tooltip {
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%) translateX(-4px);
+  white-space: nowrap;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--wp-surface) 95%, transparent);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--wp-border);
+  color: var(--wp-text);
+  font-size: 11.5px;
+  font-weight: 500;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 160ms ease, transform 160ms ease;
+  z-index: 30;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+}
+.admin-pill__item:hover .admin-pill__tooltip,
+.admin-pill__item:focus-visible .admin-pill__tooltip,
+.admin-pill__logout:hover .admin-pill__tooltip,
+.admin-pill__avatar:hover .admin-pill__tooltip {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+/* Mobile keeps right-side tooltips (vertical rail), same as desktop. */
+
+.admin-pill__footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+/* Mobile keeps the footer as a vertical column (rail). */
+/* Row container — holds the circular badge plus (when the rail expands) the
+   email label. Collapsed it's just the badge, centered. */
+.admin-pill__avatar {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  color: var(--wp-text-dim);
+  cursor: default;
+}
+.admin-pill__avatar-badge {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-accent) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 40%, transparent);
+  color: var(--wp-accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+.admin-pill__toggle {
+  position: relative;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  color: var(--wp-text-faint);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 160ms ease, background 160ms ease;
+}
+.admin-pill__toggle:hover {
+  color: var(--wp-accent);
+  background: color-mix(in srgb, var(--wp-accent) 12%, transparent);
+}
+.admin-pill__logout {
+  position: relative;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  color: var(--wp-text-faint);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 160ms ease, background 160ms ease;
+}
+.admin-pill__logout:hover {
+  color: var(--wp-danger);
+  background: color-mix(in srgb, var(--wp-danger) 12%, transparent);
+}
+
+/* =============================================================================
+   Hover-to-expand rail (desktop / pointer-capable only)
+
+   The collapsed icon rail widens into a labelled rail when the pointer is
+   over — or near — it, and the per-item tooltip spans flow inline as labels.
+   Touch / mobile (no hover) keep the compact rail + slide-out tooltips. The
+   `::after` strip extends the hover hit-area to the right so the rail opens
+   as the cursor approaches, before it lands on the icons.
+============================================================================= */
+@media (hover: hover) and (min-width: 721px) {
+  .admin-pill {
+    width: 56px;
+    will-change: width;
+    /* One shared easing/duration across width, radius and padding so the rail
+       opens as a single smooth motion rather than several offset tweens. */
+    transition:
+      width 300ms cubic-bezier(0.4, 0, 0.2, 1),
+      border-radius 300ms cubic-bezier(0.4, 0, 0.2, 1),
+      padding 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  /* Rows ease their padding/gap on the same curve so glyphs glide into place
+     instead of snapping when the rail opens/closes. */
+  .admin-pill__brand,
+  .admin-pill__item,
+  .admin-pill__logout,
+  .admin-pill__toggle,
+  .admin-pill__avatar {
+    transition:
+      padding 300ms cubic-bezier(0.4, 0, 0.2, 1),
+      gap 300ms cubic-bezier(0.4, 0, 0.2, 1),
+      background 160ms ease,
+      color 160ms ease;
+  }
+  .admin-pill::after {
+    content: '';
+    position: absolute;
+    inset: 0 -32px 0 0;
+    z-index: -1;
+  }
+  .admin-pill:hover,
+  .admin-pill:focus-within {
+    width: 232px;
+    border-radius: 24px;
+    padding: 10px 10px;
+    align-items: stretch;
+  }
+  .admin-pill:hover .admin-pill__nav,
+  .admin-pill:focus-within .admin-pill__nav {
+    width: 100%;
+  }
+  .admin-pill:hover .admin-pill__divider,
+  .admin-pill:focus-within .admin-pill__divider {
+    width: calc(100% - 16px);
+  }
+
+  /* Every row fills the rail and left-aligns its glyph + label on expand. */
+  .admin-pill:hover .admin-pill__brand,
+  .admin-pill:focus-within .admin-pill__brand,
+  .admin-pill:hover .admin-pill__item,
+  .admin-pill:focus-within .admin-pill__item,
+  .admin-pill:hover .admin-pill__logout,
+  .admin-pill:focus-within .admin-pill__logout,
+  .admin-pill:hover .admin-pill__toggle,
+  .admin-pill:focus-within .admin-pill__toggle,
+  .admin-pill:hover .admin-pill__avatar,
+  .admin-pill:focus-within .admin-pill__avatar {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 12px;
+    padding-left: 9px;
+    padding-right: 10px;
+    border-radius: 12px;
+  }
+  .admin-pill:hover .admin-pill__item,
+  .admin-pill:focus-within .admin-pill__item,
+  .admin-pill:hover .admin-pill__logout,
+  .admin-pill:focus-within .admin-pill__logout,
+  .admin-pill:hover .admin-pill__toggle,
+  .admin-pill:focus-within .admin-pill__toggle,
+  .admin-pill:hover .admin-pill__brand,
+  .admin-pill:focus-within .admin-pill__brand,
+  .admin-pill:hover .admin-pill__avatar,
+  .admin-pill:focus-within .admin-pill__avatar {
+    height: 38px;
+  }
+  .admin-pill:hover .admin-pill__brand,
+  .admin-pill:focus-within .admin-pill__brand {
+    display: flex;
+    align-items: center;
+  }
+  /* Glyphs/badge never shrink when a label appears beside them. */
+  .admin-pill__item > svg,
+  .admin-pill__logout > svg,
+  .admin-pill__toggle > svg,
+  .admin-pill__avatar-badge {
+    flex-shrink: 0;
+  }
+  .admin-pill:hover .admin-pill__brand > svg,
+  .admin-pill:focus-within .admin-pill__brand > svg,
+  .admin-pill:hover .admin-pill__brand > img,
+  .admin-pill:focus-within .admin-pill__brand > img {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+  }
+
+  /* Tooltips become inline labels — zero-width + invisible when collapsed,
+     fading/growing in as the rail opens. */
+  .admin-pill__tooltip {
+    position: static;
+    left: auto;
+    top: auto;
+    transform: none !important;
+    white-space: nowrap;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    color: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    opacity: 0;
+    max-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+    /* Space opens with the rail; text fades in just after, so labels don't
+       pop before there's room for them. */
+    transition:
+      max-width 300ms cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 200ms ease 80ms;
+  }
+  .admin-pill:hover .admin-pill__tooltip,
+  .admin-pill:focus-within .admin-pill__tooltip {
+    opacity: 1;
+    max-width: 160px;
+  }
+  .admin-pill__brand .admin-pill__tooltip {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--wp-text);
+  }
+  .admin-pill__avatar .admin-pill__tooltip {
+    color: var(--wp-text-dim);
+    font-size: 11.5px;
+  }
+}
+
+/* =============================================================================
+   Health Hub dashboard (D4) — page-level styling
+============================================================================= */
+
+.ah {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.ah__head {
+  margin-bottom: 4px;
+}
+.ah__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 28%, transparent);
+  color: var(--wp-accent);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  margin-bottom: 10px;
+}
+.ah__title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+.ah__sub {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--wp-text-dim);
+}
+
+/* ---------- Hero card ---------- */
+.ah__hero {
+  --ah-tone: var(--wp-success);
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  padding: 28px;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--ah-tone) 18%, transparent) 0%, transparent 50%),
+    color-mix(in srgb, var(--wp-surface) 55%, transparent);
+  backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid color-mix(in srgb, var(--ah-tone) 24%, var(--wp-border));
+  position: relative;
+  overflow: hidden;
+}
+.ah__hero--ok { --ah-tone: var(--wp-success); }
+.ah__hero--warn { --ah-tone: #f0a020; }
+.ah__hero--err { --ah-tone: var(--wp-danger); }
+.ah__hero::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--ah-tone), transparent);
+  opacity: 0.6;
+}
+
+.ah__hero-score {
+  flex-shrink: 0;
+}
+.ah__hero-ring {
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* The conic-gradient fill is set inline based on health.pct */
+}
+.ah__hero-ring-inner {
+  width: 116px;
+  height: 116px;
+  border-radius: 50%;
+  background: var(--wp-bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.ah__hero-pct {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--ah-tone);
+  letter-spacing: -0.02em;
+}
+.ah__hero-pct-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--wp-text-faint);
+}
+
+.ah__hero-body {
+  flex: 1;
+  min-width: 0;
+}
+.ah__hero-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ah-tone) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ah-tone) 30%, transparent);
+  color: var(--ah-tone);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 12px;
+}
+.ah__hero-headline {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+.ah__hero-detail {
+  margin: 0 0 18px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--wp-text-dim);
+  max-width: 540px;
+}
+.ah__hero-kpis {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.ah__kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ah__kpi-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--wp-text-faint);
+}
+.ah__kpi-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--wp-text);
+  letter-spacing: -0.015em;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ah__kpi-value .animate-spin {
+  animation: ah-spin 0.8s linear infinite;
+  color: var(--wp-text-faint);
+}
+@keyframes ah-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 760px) {
+  .ah__hero {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 22px;
+  }
+  .ah__hero-ring {
+    width: 110px;
+    height: 110px;
+  }
+  .ah__hero-ring-inner {
+    width: 90px;
+    height: 90px;
+  }
+  .ah__hero-pct { font-size: 26px; }
+}
+
+/* ---------- System cards row ---------- */
+.ah__systems {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+}
+@media (max-width: 1200px) {
+  .ah__systems { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 620px) {
+  .ah__systems { grid-template-columns: repeat(2, 1fr); }
+}
+
+.ah__system {
+  --ah-tone: var(--wp-success);
+  background: color-mix(in srgb, var(--wp-surface) 55%, transparent);
+  backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid color-mix(in srgb, var(--ah-tone) 18%, var(--wp-border));
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 160ms ease, transform 160ms ease;
+}
+.ah__system:hover {
+  border-color: color-mix(in srgb, var(--ah-tone) 35%, var(--wp-border));
+  transform: translateY(-2px);
+}
+.ah__system--ok { --ah-tone: var(--wp-success); }
+.ah__system--warn { --ah-tone: #f0a020; }
+.ah__system--err { --ah-tone: var(--wp-danger); }
+
+.ah__system-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.ah__system-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ah-tone) 16%, transparent);
+  color: var(--ah-tone);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.ah__system-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  position: relative;
+}
+.ah__system-dot--ok {
+  background: var(--wp-success);
+  box-shadow: 0 0 8px var(--wp-success);
+}
+.ah__system-dot--warn {
+  background: #f0a020;
+  box-shadow: 0 0 8px #f0a020;
+}
+.ah__system-dot--err {
+  background: var(--wp-danger);
+  box-shadow: 0 0 8px var(--wp-danger);
+  animation: ah-system-blink 1.2s ease-in-out infinite;
+}
+@keyframes ah-system-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.ah__system-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--wp-text);
+  margin-top: 2px;
+}
+.ah__system-status {
+  font-size: 11.5px;
+  color: var(--ah-tone);
+  font-weight: 500;
+}
+.ah__system-metric {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  color: var(--wp-text-faint);
+  margin-top: auto;
+}
+
+/* ---------- Split: trends + alerts ---------- */
+.ah__split {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 960px) {
+  .ah__split { grid-template-columns: 1fr; }
+}
+
+.ah__card {
+  background: color-mix(in srgb, var(--wp-surface) 55%, transparent);
+  backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 12%, var(--wp-border));
+  border-radius: 14px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.ah__card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ah__card-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--wp-accent);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.ah__card-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--wp-text);
+}
+.ah__card-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--wp-text-dim);
+  text-decoration: none;
+  padding: 5px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--wp-border);
+  transition: color 160ms ease, border-color 160ms ease;
+}
+.ah__card-link:hover {
+  color: var(--wp-text);
+  border-color: color-mix(in srgb, var(--wp-accent) 50%, var(--wp-border));
+}
+
+/* Spark chart */
+.ah__spark { display: flex; flex-direction: column; gap: 10px; }
+.ah__spark-stats {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.ah__spark-value {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--wp-text);
+  letter-spacing: -0.015em;
+}
+.ah__spark-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--wp-text-faint);
+  margin-top: 1px;
+}
+.ah__spark-delta {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+.ah__spark-delta--up {
+  color: var(--wp-success);
+  background: color-mix(in srgb, var(--wp-success) 14%, transparent);
+}
+.ah__spark-delta--down {
+  color: var(--wp-danger);
+  background: color-mix(in srgb, var(--wp-danger) 14%, transparent);
+}
+.ah__spark-svg {
+  width: 100%;
+  height: 110px;
+}
+.ah__spark-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 110px;
+  justify-content: center;
+  color: var(--wp-text-faint);
+  font-size: 12px;
+}
+.ah__spark-empty .animate-spin {
+  animation: ah-spin 0.8s linear infinite;
+}
+
+/* Alerts list */
+.ah__alerts-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ah__alert {
+  --ah-tone: var(--wp-success);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--ah-tone) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ah-tone) 22%, transparent);
+  border-radius: 10px;
+}
+.ah__alert--ok { --ah-tone: var(--wp-success); }
+.ah__alert--warn { --ah-tone: #f0a020; }
+.ah__alert--err { --ah-tone: var(--wp-danger); }
+
+.ah__alert-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ah-tone) 18%, transparent);
+  color: var(--ah-tone);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.ah__alert-body { flex: 1; min-width: 0; }
+.ah__alert-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--wp-text);
+  margin-bottom: 2px;
+}
+.ah__alert-sub {
+  font-size: 11px;
+  color: var(--wp-text-faint);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ---------- Quick actions row ---------- */
+.ah__actions {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+@media (max-width: 880px) {
+  .ah__actions { grid-template-columns: repeat(2, 1fr); }
+}
+
+.ah__quick {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  background: color-mix(in srgb, var(--wp-surface) 55%, transparent);
+  backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 10%, var(--wp-border));
+  border-radius: 12px;
+  text-decoration: none;
+  color: var(--wp-text);
+  transition: border-color 160ms ease, transform 160ms ease;
+}
+.ah__quick:hover {
+  border-color: color-mix(in srgb, var(--wp-accent) 45%, var(--wp-border));
+  transform: translateY(-2px);
+}
+.ah__quick-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--wp-accent) 14%, transparent);
+  color: var(--wp-accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.ah__quick-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ah__quick-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--wp-text);
+}
+.ah__quick-hint {
+  font-size: 11px;
+  color: var(--wp-text-faint);
+}
+.ah__quick-arrow {
+  color: var(--wp-text-faint);
+  flex-shrink: 0;
+  transition: color 160ms ease, transform 160ms ease;
+}
+.ah__quick:hover .ah__quick-arrow {
+  color: var(--wp-accent);
+  transform: translate(2px, -2px);
+}
+
+/* =============================================================================
+   Client-shell additions — share the admin atmosphere + pill sidebar but
+   keep the TopBar (workspace switcher, notifications, currency, avatar).
+============================================================================= */
+.client-shell {
+  /* No additional styling — the base .admin-shell handles canvas + atmosphere. */
+}
+/* TopBar wrapper sits at the top of the shell, full width but inset on
+   the left to clear the floating pill (76px wide + 24px gutter = 100px).
+   On mobile the pill moves to the bottom, so the inset is removed. */
+/* Client shell currently inherits all sizing from .admin-shell — no
+   client-specific overrides needed now that the TopBar is gone. */

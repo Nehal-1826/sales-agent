@@ -1,0 +1,502 @@
+/* =============================================================================
+   Client STARTER Workspace design preview.
+   Starter locks: team invites, sub-clients, API keys. So this section is
+   essentially identity + plan + an upsell story. Four directions:
+     W1 — Single Settings Card  Minimal, honest, just-the-essentials
+     W2 — Locked Showcase       Identity card + locked feature cards w/ upgrade CTA
+     W3 — Workspace Profile     Identity-led, profile-page aesthetic
+     W4 — Plan Upgrade Hub      Plan card prominent + plan comparison strip
+============================================================================= */
+
+.cdp { min-height: 100vh; background: var(--wp-bg); color: var(--wp-text); position: relative; overflow-x: hidden; }
+.cdp__atmosphere { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
+.cdp__aurora-1, .cdp__aurora-2 { position: absolute; border-radius: 50%; filter: blur(140px); opacity: 0.4; }
+.cdp__aurora-1 { width: 700px; height: 700px; top: -250px; left: -150px; background: var(--wp-accent); }
+.cdp__aurora-2 { width: 600px; height: 600px; bottom: -200px; right: -150px; background: var(--wp-accent-2, var(--wp-accent)); opacity: 0.28; }
+
+.cdp__topbar {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center; gap: 16px;
+  padding: 14px 28px;
+  background: color-mix(in srgb, var(--wp-bg) 80%, transparent);
+  backdrop-filter: blur(16px) saturate(160%); -webkit-backdrop-filter: blur(16px) saturate(160%);
+  border-bottom: 1px solid color-mix(in srgb, var(--wp-accent) 12%, var(--wp-border));
+}
+.cdp__back {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--wp-text-dim); text-decoration: none;
+  padding: 6px 11px; border-radius: 999px; border: 1px solid var(--wp-border);
+  transition: color 150ms, border-color 150ms;
+}
+.cdp__back:hover { color: var(--wp-text); border-color: color-mix(in srgb, var(--wp-accent) 40%, var(--wp-border)); }
+.cdp__brand { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.06em; color: var(--wp-text-faint); }
+
+.cdp__main { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 56px 28px 96px; }
+.cdp__hero { margin-bottom: 36px; max-width: 760px; }
+.cdp__eyebrow {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 999px;
+  font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--wp-accent);
+  background: color-mix(in srgb, var(--wp-accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 30%, transparent);
+}
+.cdp__title { margin: 14px 0 10px; font-size: 38px; line-height: 1.1; font-weight: 700; letter-spacing: -0.02em; }
+.cdp__title em {
+  font-style: normal;
+  background: linear-gradient(90deg, var(--wp-accent), var(--wp-accent-2, var(--wp-accent)));
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+.cdp__sub { font-size: 14.5px; line-height: 1.6; color: var(--wp-text-dim); }
+
+.cdp__plan-strip { display: flex; gap: 8px; margin: 18px 0 0; }
+.cdp__plan-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: 999px;
+  font-size: 11px; font-weight: 500;
+  border: 1px solid var(--wp-border);
+  background: color-mix(in srgb, var(--wp-surface) 60%, transparent);
+  color: var(--wp-text-dim);
+}
+.cdp__plan-chip--active {
+  background: color-mix(in srgb, #f472b6 18%, var(--wp-surface));
+  border-color: color-mix(in srgb, #f472b6 50%, transparent);
+  color: #fff;
+}
+.cdp__plan-chip-dot { width: 6px; height: 6px; border-radius: 999px; }
+
+.cdp__grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 22px; }
+@media (max-width: 1080px) { .cdp__grid { grid-template-columns: 1fr; } }
+
+.cdp-tile {
+  position: relative; display: flex; flex-direction: column;
+  border-radius: 18px; border: 1px solid var(--wp-border);
+  background: color-mix(in srgb, var(--wp-surface) 75%, transparent);
+  overflow: hidden; cursor: pointer; text-align: left; font: inherit;
+  transition: border-color 200ms, transform 200ms, box-shadow 200ms;
+}
+.cdp-tile:hover {
+  border-color: color-mix(in srgb, var(--wp-accent) 40%, var(--wp-border));
+  transform: translateY(-3px);
+  box-shadow: 0 18px 40px -16px color-mix(in srgb, var(--wp-accent) 28%, transparent);
+}
+.cdp-tile--selected {
+  border-color: var(--wp-accent);
+  box-shadow: 0 0 0 1px var(--wp-accent), 0 22px 50px -16px color-mix(in srgb, var(--wp-accent) 38%, transparent);
+}
+.cdp-tile__check {
+  position: absolute; top: 14px; right: 14px;
+  width: 28px; height: 28px; border-radius: 999px;
+  background: var(--wp-accent); color: #fff;
+  display: grid; place-items: center; z-index: 3;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--wp-accent) 30%, transparent);
+}
+.cdp-tile__preview {
+  position: relative; aspect-ratio: 16 / 11; padding: 14px;
+  background:
+    radial-gradient(ellipse at top right, color-mix(in srgb, var(--wp-accent) 8%, transparent), transparent 70%),
+    color-mix(in srgb, var(--wp-surface-2) 60%, var(--wp-bg));
+  border-bottom: 1px solid var(--wp-border); overflow: hidden;
+}
+.cdp-tile__body { padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 8px; }
+.cdp-tile__head { display: flex; align-items: baseline; gap: 10px; }
+.cdp-tile__code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; letter-spacing: 0.06em;
+  padding: 2px 8px; border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-accent) 14%, transparent);
+  color: var(--wp-accent);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 30%, transparent);
+}
+.cdp-tile__name { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+.cdp-tile__tag { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--wp-text-dim); }
+.cdp-tile__bullets { margin: 4px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.cdp-tile__bullets li { font-size: 11.5px; color: var(--wp-text-faint); position: relative; padding-left: 14px; }
+.cdp-tile__bullets li::before {
+  content: ''; position: absolute; left: 0; top: 7px;
+  width: 5px; height: 5px; border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-accent) 60%, transparent);
+}
+
+/* ---------- mockup primitives ---------- */
+.mk { position: absolute; inset: 14px; display: flex; flex-direction: column; gap: 6px; }
+.mk-pill { height: 6px; border-radius: 4px; background: color-mix(in srgb, var(--wp-text) 12%, transparent); }
+.mk-pill--accent { background: color-mix(in srgb, var(--wp-accent) 55%, transparent); }
+.mk-pill--success { background: color-mix(in srgb, var(--wp-success, #3ddc97) 60%, transparent); }
+
+.mk-ws-avatar {
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  background:
+    radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--wp-accent-2, var(--wp-accent)) 70%, transparent), transparent 60%),
+    linear-gradient(135deg, color-mix(in srgb, var(--wp-accent) 60%, transparent), color-mix(in srgb, var(--wp-accent-2, var(--wp-accent)) 60%, transparent));
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 45%, transparent);
+  flex: none;
+  position: relative;
+}
+.mk-ws-avatar--lg { width: 48px; height: 48px; border-radius: 12px; }
+.mk-ws-avatar--xl { width: 64px; height: 64px; border-radius: 14px; }
+
+.mk-pro-pill {
+  font-size: 7.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #facc15 18%, transparent);
+  color: #facc15;
+  border: 1px solid color-mix(in srgb, #facc15 40%, transparent);
+}
+.mk-agency-pill {
+  font-size: 7.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-accent) 18%, transparent);
+  color: var(--wp-accent);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 40%, transparent);
+}
+.mk-starter-pill {
+  font-size: 7.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #f472b6 18%, transparent);
+  color: #f472b6;
+  border: 1px solid color-mix(in srgb, #f472b6 40%, transparent);
+}
+
+/* =============================================================================
+   W1 — Single Settings Card.
+   Minimal. One card with workspace name, slug, description, owner, plan,
+   member count, action buttons. Just-the-essentials, honest about Starter.
+============================================================================= */
+.mk--minimal {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  justify-content: center;
+}
+.mk--minimal .mk-min__card {
+  border-radius: 10px;
+  background:
+    radial-gradient(ellipse at top right, color-mix(in srgb, var(--wp-accent) 12%, transparent), transparent 65%),
+    color-mix(in srgb, var(--wp-surface) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 22%, transparent);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mk--minimal .mk-min__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.mk--minimal .mk-min__head-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.mk--minimal .mk-min__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.mk--minimal .mk-min__row {
+  display: grid;
+  grid-template-columns: 60px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px dashed color-mix(in srgb, var(--wp-text) 8%, transparent);
+}
+.mk--minimal .mk-min__row:last-child { border-bottom: none; }
+.mk--minimal .mk-min__label {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--wp-text-faint);
+}
+.mk--minimal .mk-min__buttons {
+  display: flex;
+  gap: 5px;
+  margin-top: 4px;
+}
+.mk--minimal .mk-min__btn {
+  height: 16px;
+  border-radius: 999px;
+  flex: 1;
+  max-width: 30%;
+  background: color-mix(in srgb, var(--wp-surface-2) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-text) 12%, transparent);
+}
+.mk--minimal .mk-min__btn--primary {
+  background: color-mix(in srgb, var(--wp-accent) 30%, var(--wp-surface));
+  border-color: color-mix(in srgb, var(--wp-accent) 55%, transparent);
+}
+
+/* =============================================================================
+   W2 — Locked Showcase.
+   Workspace identity strip on top. Below: 4 "feature cards" — 1 unlocked
+   (Workspace settings), 3 locked (Team · Sub-clients · API) with Pro/Agency
+   badge + Upgrade CTA. Honest about constraints, drives upgrade.
+============================================================================= */
+.mk--showcase {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 6px;
+}
+.mk--showcase .mk-sh__identity {
+  border-radius: 8px;
+  background:
+    radial-gradient(ellipse at top right, color-mix(in srgb, var(--wp-accent) 14%, transparent), transparent 65%),
+    color-mix(in srgb, var(--wp-surface) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 28%, transparent);
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mk--showcase .mk-sh__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 5px;
+}
+.mk--showcase .mk-sh__card {
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--wp-surface) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-text) 8%, transparent);
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: relative;
+}
+.mk--showcase .mk-sh__card-head {
+  display: flex; align-items: center; justify-content: space-between;
+}
+.mk--showcase .mk-sh__card-icon {
+  width: 18px; height: 18px;
+  border-radius: 5px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--wp-accent) 50%, transparent), color-mix(in srgb, var(--wp-accent-2, var(--wp-accent)) 50%, transparent));
+}
+.mk--showcase .mk-sh__card--unlocked {
+  background:
+    radial-gradient(ellipse at top, color-mix(in srgb, var(--wp-success, #3ddc97) 14%, transparent), transparent 65%),
+    color-mix(in srgb, var(--wp-surface) 90%, transparent);
+  border-color: color-mix(in srgb, var(--wp-success, #3ddc97) 30%, transparent);
+}
+.mk--showcase .mk-sh__card--locked {
+  opacity: 0.6;
+}
+.mk--showcase .mk-sh__card--locked .mk-sh__card-icon {
+  filter: grayscale(0.7);
+}
+.mk--showcase .mk-sh__cta {
+  margin-top: auto;
+  height: 14px;
+  border-radius: 999px;
+}
+.mk--showcase .mk-sh__cta--manage {
+  background: color-mix(in srgb, var(--wp-accent) 22%, var(--wp-surface));
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 50%, transparent);
+}
+.mk--showcase .mk-sh__cta--upgrade {
+  background: color-mix(in srgb, #facc15 22%, var(--wp-surface));
+  border: 1px solid color-mix(in srgb, #facc15 50%, transparent);
+}
+
+/* =============================================================================
+   W3 — Workspace Profile.
+   Identity-led. Big hero with avatar, name, plan badge, member count.
+   Activity feed + stats panels below. Profile-page aesthetic.
+============================================================================= */
+.mk--profile {
+  display: grid;
+  grid-template-rows: 1.1fr 0.5fr 1fr;
+  gap: 5px;
+}
+.mk--profile .mk-pr__hero {
+  border-radius: 10px;
+  background:
+    radial-gradient(ellipse at 25% 50%, color-mix(in srgb, var(--wp-accent) 30%, transparent), transparent 60%),
+    color-mix(in srgb, var(--wp-accent) 10%, var(--wp-surface));
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 30%, transparent);
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.mk--profile .mk-pr__hero-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mk--profile .mk-pr__stat-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+}
+.mk--profile .mk-pr__stat {
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--wp-surface) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-text) 8%, transparent);
+  padding: 5px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.mk--profile .mk-pr__feed {
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--wp-surface) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-text) 8%, transparent);
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.mk--profile .mk-pr__feed-row {
+  display: flex; align-items: center; gap: 5px;
+}
+.mk--profile .mk-pr__feed-dot {
+  width: 7px; height: 7px;
+  border-radius: 999px;
+  background: var(--wp-accent);
+  flex: none;
+}
+.mk--profile .mk-pr__feed-time {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 7.5px;
+  color: var(--wp-text-faint);
+  flex: none;
+}
+
+/* =============================================================================
+   W4 — Plan Upgrade Hub.
+   Current plan card prominent on top. Below: a 3-column plan comparison
+   strip (Starter / Pro / Agency) with feature ticks/crosses. Conversion-focused.
+============================================================================= */
+.mk--plan {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 6px;
+}
+.mk--plan .mk-pl__current {
+  border-radius: 10px;
+  background:
+    radial-gradient(ellipse at 75% 50%, color-mix(in srgb, var(--wp-accent) 26%, transparent), transparent 65%),
+    color-mix(in srgb, var(--wp-accent) 10%, var(--wp-surface));
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 32%, transparent);
+  padding: 8px 10px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+.mk--plan .mk-pl__upgrade-btn {
+  width: 78px; height: 22px;
+  border-radius: 999px;
+  background: var(--wp-accent);
+  flex: none;
+}
+.mk--plan .mk-pl__compare {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+}
+.mk--plan .mk-pl__col {
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--wp-surface) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-text) 8%, transparent);
+  padding: 8px 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: relative;
+}
+.mk--plan .mk-pl__col--current {
+  background:
+    radial-gradient(ellipse at top, color-mix(in srgb, #f472b6 14%, transparent), transparent 70%),
+    color-mix(in srgb, var(--wp-surface) 90%, transparent);
+  border-color: color-mix(in srgb, #f472b6 40%, transparent);
+}
+.mk--plan .mk-pl__col--featured {
+  background:
+    radial-gradient(ellipse at top, color-mix(in srgb, var(--wp-accent) 18%, transparent), transparent 70%),
+    color-mix(in srgb, var(--wp-accent) 8%, var(--wp-surface));
+  border-color: color-mix(in srgb, var(--wp-accent) 40%, transparent);
+}
+.mk--plan .mk-pl__col-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 2px;
+}
+.mk--plan .mk-pl__price {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--wp-text);
+  line-height: 1;
+}
+.mk--plan .mk-pl__feature {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 7.5px;
+}
+.mk--plan .mk-pl__check {
+  width: 10px; height: 10px;
+  border-radius: 999px;
+  background: var(--wp-success, #3ddc97);
+  position: relative;
+  flex: none;
+}
+.mk--plan .mk-pl__check::after {
+  content: '';
+  position: absolute;
+  left: 23%; top: 40%;
+  width: 22%; height: 36%;
+  border-right: 1.2px solid white;
+  border-bottom: 1.2px solid white;
+  transform: rotate(45deg);
+}
+.mk--plan .mk-pl__cross {
+  width: 10px; height: 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-text) 18%, transparent);
+  flex: none;
+}
+.mk--plan .mk-pl__col-cta {
+  margin-top: auto;
+  height: 14px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-accent) 22%, var(--wp-surface));
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 50%, transparent);
+}
+.mk--plan .mk-pl__col--current .mk-pl__col-cta {
+  background: color-mix(in srgb, var(--wp-text) 8%, transparent);
+  border-color: color-mix(in srgb, var(--wp-text) 15%, transparent);
+}
+
+.cdp__verdict {
+  margin-top: 36px;
+  padding: 22px 26px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--wp-accent) 8%, var(--wp-surface));
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 25%, var(--wp-border));
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 18px; flex-wrap: wrap;
+}
+.cdp__verdict-text strong { color: var(--wp-accent); }
+.cdp__verdict-text p {
+  margin: 4px 0 0;
+  font-size: 13px; color: var(--wp-text-dim);
+  max-width: 580px; line-height: 1.55;
+}

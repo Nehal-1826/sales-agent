@@ -1,0 +1,44 @@
+[Unit]
+Description=WarmPulse Celery worker (queues: default, smtp)
+Documentation=https://github.com/yourorg/warmpulse
+After=network-online.target postgresql.service redis-server.service
+Wants=network-online.target
+Requires=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=warmpulse
+Group=warmpulse
+WorkingDirectory=/var/www/warmpulse/backend
+Environment=PATH=/var/www/warmpulse/backend/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+EnvironmentFile=/etc/warmpulse/warmpulse.env
+# Queues:
+#   default — DNS checks, reputation pulls, metric rollups, scheduled reports
+#   smtp    — SMTP sends, IMAP polls, peer-inbox auto actions
+ExecStart=/var/www/warmpulse/backend/.venv/bin/celery -A app.celery_app worker \
+    -Q default,smtp \
+    --concurrency=4 \
+    -l info \
+    -n warmpulse-worker@%%h
+Restart=always
+RestartSec=3
+KillSignal=SIGTERM
+# Celery needs time to finish in-flight tasks (SMTP sends can be slow).
+TimeoutStopSec=60
+
+# --- Hardening ------------------------------------------------------------
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/www/warmpulse /var/log/warmpulse
+
+# --- Logging --------------------------------------------------------------
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=warmpulse-worker
+
+[Install]
+WantedBy=multi-user.target

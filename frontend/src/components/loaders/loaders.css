@@ -1,0 +1,322 @@
+/* WarmPulse loaders — button / inline / page.
+   Shared animations and styles. Pure CSS, no JS required. */
+
+/* ============================================================================
+   BUTTON LOADER · B3 Pulse Dot
+   12×12 dot with an expanding ring. Sits inline with button text.
+============================================================================ */
+
+.wp-btn-loader {
+  position: relative;
+  width: 12px;
+  height: 12px;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.wp-btn-loader::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: currentColor;
+  animation: wp-btn-loader-core 1.2s ease-in-out infinite;
+}
+
+.wp-btn-loader::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: currentColor;
+  animation: wp-btn-loader-ring 1.2s ease-out infinite;
+}
+
+@keyframes wp-btn-loader-core {
+  0%, 100% { transform: scale(0.6); opacity: 1; }
+  50%      { transform: scale(0.9); opacity: 0.7; }
+}
+
+@keyframes wp-btn-loader-ring {
+  0%   { transform: scale(0.6); opacity: 0.7; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+/* ============================================================================
+   INLINE LOADER · I3 Diamond Mesh
+   Four dots at compass points, diamond outline tracing around them.
+============================================================================ */
+
+.wp-inline-loader {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.wp-inline-loader__svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.wp-inline-loader__svg polygon {
+  fill: none;
+  stroke: var(--wp-accent, #F26522);
+  stroke-width: 1.5;
+  stroke-dasharray: 80;
+  stroke-dashoffset: 80;
+  animation: wp-inline-loader-draw 2s linear infinite;
+}
+
+.wp-inline-loader__node {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  margin-left: -3.5px;
+  margin-top: -3.5px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--wp-accent, #F26522), #FF9670);
+  box-shadow: 0 0 4px color-mix(in srgb, var(--wp-accent, #F26522) 70%, transparent);
+  animation: wp-inline-loader-pulse 2s ease-in-out infinite;
+}
+
+.wp-inline-loader__node--n1 { left: 50%; top: 14%; }
+.wp-inline-loader__node--n2 { left: 86%; top: 50%; animation-delay: 0.5s; }
+.wp-inline-loader__node--n3 { left: 50%; top: 86%; animation-delay: 1.0s; }
+.wp-inline-loader__node--n4 { left: 14%; top: 50%; animation-delay: 1.5s; }
+
+@keyframes wp-inline-loader-pulse {
+  0%, 100% { transform: scale(0.85); }
+  50%      { transform: scale(1.15); }
+}
+
+@keyframes wp-inline-loader-draw {
+  0%   { stroke-dashoffset: 80; opacity: 0; }
+  40%  { stroke-dashoffset: 0; opacity: 1; }
+  80%  { stroke-dashoffset: -80; opacity: 1; }
+  100% { stroke-dashoffset: -80; opacity: 0; }
+}
+
+/* ============================================================================
+   PAGE LOADER · Orbital Pulse
+   A small accent core, a thin orange spinning arc, an orbital dot riding the
+   arc, and 3 concentric radar pulses expanding outward. Designed to feel
+   light and unobtrusive on top of a backdrop-blurred section.
+============================================================================ */
+
+.wp-page-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ── Compact default variant ──────────────────────────────────────────────
+   Used by every /app/* wrapper while data resolves. Just centres the
+   orbital stage in a min-height container — no backdrop, no wash, no big
+   text. The ClientLayout shell (sidebar + atmosphere) stays visible
+   around it, so loading doesn't feel like a page takeover. */
+.wp-page-loader-compact {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 40vh;
+  pointer-events: none;
+  animation: wp-page-loader-fade-in 200ms ease-out both;
+}
+
+/* ── Fullscreen variant — initial app boot splash ──────────────────────── */
+.wp-page-loader-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--wp-bg, #0a0a0f);
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.wp-page-loader-fullscreen::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      ellipse 60% 50% at 50% 40%,
+      color-mix(in srgb, var(--wp-accent, #F26522) 26%, transparent),
+      transparent 60%
+    ),
+    radial-gradient(
+      ellipse 50% 50% at 15% 85%,
+      color-mix(in srgb, var(--wp-accent, #F26522) 14%, transparent),
+      transparent 60%
+    );
+  filter: blur(80px);
+  z-index: -1;
+}
+
+/* ── Stage: the 110×110 area containing all loader rings ──────────────── */
+.wp-page-loader__stage {
+  position: relative;
+  width: 110px;
+  height: 110px;
+}
+
+/* Faint background track ring at the arc's radius */
+.wp-page-loader__track {
+  position: absolute;
+  inset: 18px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--wp-accent, #F26522) 18%, transparent);
+}
+
+/* The animated orange arc — a conic-gradient ring with a transparent tail
+   so it visually reads as a 90° sweep. Masked into a thin ring via a
+   radial-gradient mask. */
+.wp-page-loader__arc {
+  position: absolute;
+  inset: 18px;
+  border-radius: 999px;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    color-mix(in srgb, var(--wp-accent, #F26522) 30%, transparent) 30deg,
+    var(--wp-accent, #F26522) 90deg,
+    transparent 95deg,
+    transparent 360deg
+  );
+  -webkit-mask:
+    radial-gradient(closest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px), #000 100%, transparent 100%);
+          mask:
+    radial-gradient(closest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px), #000 100%, transparent 100%);
+  animation: wp-page-loader-spin 1.6s linear infinite;
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--wp-accent, #F26522) 70%, transparent));
+}
+
+/* Orbital dot riding the arc — a rotating container with a dot anchored at 12 o'clock */
+.wp-page-loader__orbit {
+  position: absolute;
+  inset: 18px;
+  animation: wp-page-loader-spin 1.6s linear infinite;
+}
+
+.wp-page-loader__orbit-dot {
+  position: absolute;
+  left: 50%;
+  top: -3px;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--wp-accent, #F26522), #FF9670);
+  box-shadow:
+    0 0 8px color-mix(in srgb, var(--wp-accent, #F26522) 80%, transparent),
+    0 0 18px color-mix(in srgb, var(--wp-accent, #F26522) 50%, transparent);
+}
+
+/* Central core — soft pulsing dot */
+.wp-page-loader__core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  margin-top: -7px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--wp-accent, #F26522), #FF8A4B);
+  box-shadow:
+    0 0 8px color-mix(in srgb, var(--wp-accent, #F26522) 80%, transparent),
+    0 0 24px color-mix(in srgb, var(--wp-accent, #F26522) 50%, transparent);
+  animation: wp-page-loader-core-pulse 1.6s ease-in-out infinite;
+}
+
+/* Three concentric radar pulses expanding outward from centre */
+.wp-page-loader__pulse {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  margin-top: -7px;
+  border-radius: 999px;
+  border: 1.5px solid var(--wp-accent, #F26522);
+  opacity: 0;
+  animation: wp-page-loader-pulse 2.4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+.wp-page-loader__pulse--p1 { animation-delay: 0s; }
+.wp-page-loader__pulse--p2 { animation-delay: 0.8s; }
+.wp-page-loader__pulse--p3 { animation-delay: 1.6s; }
+
+.wp-page-loader__caption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+}
+
+.wp-page-loader__label {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--wp-text, #f4f4f5);
+}
+
+.wp-page-loader__sub {
+  font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--wp-text-faint, #71717a);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+@keyframes wp-page-loader-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes wp-page-loader-core-pulse {
+  0%, 100% { transform: scale(0.85); opacity: 0.85; }
+  50%      { transform: scale(1.1); opacity: 1; }
+}
+
+@keyframes wp-page-loader-pulse {
+  0%   { transform: scale(0.4); opacity: 0; }
+  10%  { opacity: 0.8; }
+  100% { transform: scale(7); opacity: 0; }
+}
+
+@keyframes wp-page-loader-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wp-btn-loader::before,
+  .wp-btn-loader::after,
+  .wp-inline-loader__svg polygon,
+  .wp-inline-loader__node,
+  .wp-page-loader__arc,
+  .wp-page-loader__orbit,
+  .wp-page-loader__core,
+  .wp-page-loader__pulse,
+  .wp-page-loader-overlay {
+    animation: none !important;
+  }
+  .wp-btn-loader::after { opacity: 0; }
+  .wp-inline-loader__svg polygon { opacity: 0.6; stroke-dashoffset: 0; }
+  .wp-page-loader__pulse { opacity: 0.35; transform: scale(2); }
+}

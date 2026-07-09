@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mobile-preview",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "frontend", "run", "dev", "--", "--port", "35001", "--host"],
+      "port": 35001
+    },
+    {
+      "name": "design-preview",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--dir", "frontend", "preview:design"],
+      "port": 35001
+    },
+    {
+      "name": "frontend",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--dir", "frontend", "dev"],
+      "port": 5173
+    },
+    {
+      "name": "frontend-prod",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--dir", "frontend", "preview"],
+      "port": 5173
+    }
+  ]
+}

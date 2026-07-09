@@ -1,0 +1,80 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+.pnpm-store/
+dist/
+.vite/
+.turbo/
+
+# Env / secrets — anything containing live credentials must NEVER be committed
+.env
+.env.local
+.env.*.local
+.env.docker
+.env.production
+*.pem
+*.key
+fernet.key
+# Bulk peer-inbox CSV (contains Gmail App Passwords)
+peers.csv
+peer_inboxes.csv
+secrets.csv
+# Prospect / leads lists (PII, don't publish)
+fortumars-leads.csv
+*-leads.csv
+leads/
+test.xlsx
+test-cleaned.xlsx
+*-prospects.xlsx
+*.xlsx
+# Celery beat scratch + runtime state
+celerybeat-schedule
+celerybeat-schedule.db
+celerybeat.pid
+*.bak
+# Cloudflare Agent Lee tokens or any local API tokens
+.cfagentkey
+.api-tokens
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# DB / cache
+*.db
+*.sqlite
+*.sqlite3
+dump.rdb
+
+# Alembic
+alembic.ini.local
+
+# Local-only — never commit
+.claude/worktrees/
+scripts/deploy-on-commit.sh
+.superpowers/
+
+# Mobile app build artifact (hosted, not versioned)
+frontend/downloads/*.apk

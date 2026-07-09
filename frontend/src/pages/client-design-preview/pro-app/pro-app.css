@@ -1,0 +1,8 @@
+/* ═══════════════════════════════════════════════════════════════
+   Pro App preview — Pro-specific overrides.
+   The shell visual treatment lives in admin-shell.css (atmosphere + pill).
+   This file only carries content-area overrides if any are needed.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* No overrides needed yet — admin-shell.css handles everything.
+   Keep this file as the canonical place for future Pro-only tweaks. */

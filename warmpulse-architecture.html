@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WarmPulse — Email Warmup SaaS Architecture</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --surface2: #1a1a26;
+    --border: #2a2a3a;
+    --accent: #00e5a0;
+    --accent2: #00c4ff;
+    --accent3: #ff6b4a;
+    --accent4: #ffd54f;
+    --text: #e8e8f0;
+    --text-dim: #8888a0;
+    --glow: rgba(0, 229, 160, 0.15);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Outfit', sans-serif;
+    overflow-x: hidden;
+    min-height: 100vh;
+  }
+
+  .noise {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: 0.03;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  .container {
+    position: relative; z-index: 1;
+    max-width: 1200px; margin: 0 auto; padding: 40px 24px 80px;
+  }
+
+  /* HEADER */
+  .header {
+    text-align: center; margin-bottom: 56px;
+    animation: fadeUp 0.8s ease-out;
+  }
+  .header .badge {
+    display: inline-block;
+    padding: 6px 16px; border-radius: 100px;
+    background: rgba(0,229,160,0.08); border: 1px solid rgba(0,229,160,0.2);
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 2px;
+    color: var(--accent); text-transform: uppercase; margin-bottom: 20px;
+  }
+  .header h1 {
+    font-size: clamp(32px, 5vw, 56px); font-weight: 800;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    line-height: 1.1; margin-bottom: 12px;
+  }
+  .header p {
+    font-size: 16px; color: var(--text-dim); max-width: 600px; margin: 0 auto;
+    font-weight: 300; line-height: 1.6;
+  }
+
+  /* TAB NAV */
+  .tab-nav {
+    display: flex; gap: 4px; justify-content: center; margin-bottom: 40px;
+    flex-wrap: wrap;
+    animation: fadeUp 0.8s ease-out 0.1s both;
+  }
+  .tab-btn {
+    padding: 10px 20px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text-dim); cursor: pointer;
+    font-family: 'Outfit', sans-serif; font-size: 13px; font-weight: 600;
+    transition: all 0.25s;
+  }
+  .tab-btn:hover { border-color: var(--accent); color: var(--text); }
+  .tab-btn.active {
+    background: rgba(0,229,160,0.1); border-color: var(--accent);
+    color: var(--accent); box-shadow: 0 0 20px rgba(0,229,160,0.1);
+  }
+
+  /* SECTIONS */
+  .section { display: none; animation: fadeUp 0.5s ease-out; }
+  .section.active { display: block; }
+
+  /* ARCHITECTURE FLOW */
+  .arch-flow {
+    display: grid; grid-template-columns: 1fr; gap: 24px;
+  }
+  @media(min-width: 768px) {
+    .arch-flow { grid-template-columns: repeat(2, 1fr); }
+    .arch-flow .full-width { grid-column: 1 / -1; }
+  }
+
+  .arch-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px; padding: 28px;
+    position: relative; overflow: hidden;
+    transition: all 0.3s;
+  }
+  .arch-card:hover {
+    border-color: var(--accent);
+    box-shadow: 0 0 30px rgba(0,229,160,0.06);
+    transform: translateY(-2px);
+  }
+  .arch-card .card-icon {
+    width: 44px; height: 44px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; margin-bottom: 16px;
+  }
+  .arch-card h3 {
+    font-size: 18px; font-weight: 700; margin-bottom: 8px;
+  }
+  .arch-card p {
+    font-size: 13px; color: var(--text-dim); line-height: 1.7;
+    font-weight: 300;
+  }
+  .arch-card .tech-tags {
+    display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px;
+  }
+  .tech-tag {
+    padding: 4px 10px; border-radius: 6px; font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    background: rgba(0,196,255,0.08); color: var(--accent2);
+    border: 1px solid rgba(0,196,255,0.15);
+  }
+
+  .icon-green { background: rgba(0,229,160,0.12); color: var(--accent); }
+  .icon-blue { background: rgba(0,196,255,0.12); color: var(--accent2); }
+  .icon-orange { background: rgba(255,107,74,0.12); color: var(--accent3); }
+  .icon-yellow { background: rgba(255,213,79,0.12); color: var(--accent4); }
+
+  /* FLOW CONNECTOR */
+  .flow-connector {
+    display: flex; align-items: center; justify-content: center;
+    padding: 8px 0; color: var(--accent); font-size: 20px;
+    opacity: 0.4;
+  }
+
+  /* DATA FLOW DIAGRAM */
+  .flow-diagram {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 32px; margin-bottom: 24px;
+    overflow-x: auto;
+  }
+  .flow-steps {
+    display: flex; align-items: center; gap: 12px;
+    min-width: max-content; padding: 8px 0;
+  }
+  .flow-step {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 8px; min-width: 120px;
+  }
+  .flow-step .step-box {
+    padding: 12px 18px; border-radius: 10px; text-align: center;
+    font-size: 12px; font-weight: 600; white-space: nowrap;
+  }
+  .flow-step .step-label {
+    font-size: 10px; color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .flow-arrow { color: var(--accent); font-size: 18px; opacity: 0.5; flex-shrink: 0; }
+
+  .step-green { background: rgba(0,229,160,0.1); border: 1px solid rgba(0,229,160,0.25); color: var(--accent); }
+  .step-blue { background: rgba(0,196,255,0.1); border: 1px solid rgba(0,196,255,0.25); color: var(--accent2); }
+  .step-orange { background: rgba(255,107,74,0.1); border: 1px solid rgba(255,107,74,0.25); color: var(--accent3); }
+  .step-yellow { background: rgba(255,213,79,0.1); border: 1px solid rgba(255,213,79,0.25); color: var(--accent4); }
+
+  /* TECH STACK TABLE */
+  .stack-table {
+    width: 100%; border-collapse: separate; border-spacing: 0;
+    background: var(--surface); border-radius: 16px; overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .stack-table th {
+    padding: 14px 20px; text-align: left; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 1.5px;
+    color: var(--accent); background: var(--surface2);
+    font-family: 'JetBrains Mono', monospace;
+    border-bottom: 1px solid var(--border);
+  }
+  .stack-table td {
+    padding: 14px 20px; font-size: 13px; color: var(--text-dim);
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    line-height: 1.5;
+  }
+  .stack-table tr:last-child td { border-bottom: none; }
+  .stack-table tr:hover td { background: rgba(0,229,160,0.02); }
+  .stack-table .layer-name {
+    color: var(--text); font-weight: 600;
+    white-space: nowrap;
+  }
+
+  /* DB SCHEMA */
+  .schema-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 24px; margin-bottom: 16px;
+  }
+  .schema-card h4 {
+    font-family: 'JetBrains Mono', monospace; font-size: 14px;
+    color: var(--accent2); margin-bottom: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .schema-card h4 span { font-size: 16px; }
+  .schema-fields {
+    display: grid; gap: 4px;
+  }
+  .schema-field {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 12px; border-radius: 6px; font-size: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    background: rgba(255,255,255,0.02);
+  }
+  .schema-field .fname { color: var(--text); min-width: 160px; }
+  .schema-field .ftype { color: var(--accent); font-size: 11px; }
+  .schema-field .fkey { color: var(--accent3); font-size: 10px; margin-left: auto; }
+
+  /* PRICING */
+  .pricing-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 20px;
+  }
+  .price-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 28px; text-align: center;
+    transition: all 0.3s;
+  }
+  .price-card:hover {
+    border-color: var(--accent); transform: translateY(-3px);
+    box-shadow: 0 8px 30px rgba(0,229,160,0.08);
+  }
+  .price-card.featured {
+    border-color: var(--accent);
+    background: linear-gradient(180deg, rgba(0,229,160,0.06) 0%, var(--surface) 100%);
+  }
+  .price-card h4 { font-size: 14px; color: var(--text-dim); margin-bottom: 8px; }
+  .price-card .price {
+    font-size: 36px; font-weight: 800; margin-bottom: 4px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .price-card .period { font-size: 12px; color: var(--text-dim); margin-bottom: 16px; }
+  .price-card ul { list-style: none; text-align: left; }
+  .price-card li {
+    font-size: 12px; color: var(--text-dim); padding: 6px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .price-card li::before { content: "✓"; color: var(--accent); font-weight: 700; }
+
+  /* MVP TIMELINE */
+  .timeline {
+    position: relative; padding-left: 32px;
+  }
+  .timeline::before {
+    content: ''; position: absolute; left: 12px; top: 0; bottom: 0;
+    width: 2px; background: linear-gradient(180deg, var(--accent), var(--accent2), var(--accent3));
+    border-radius: 2px;
+  }
+  .timeline-item {
+    position: relative; margin-bottom: 28px; padding: 20px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+  .timeline-item::before {
+    content: ''; position: absolute; left: -26px; top: 24px;
+    width: 12px; height: 12px; border-radius: 50%;
+    background: var(--accent); border: 3px solid var(--bg);
+  }
+  .timeline-item h4 { font-size: 14px; color: var(--accent); margin-bottom: 4px; }
+  .timeline-item h3 { font-size: 16px; margin-bottom: 8px; }
+  .timeline-item p { font-size: 12px; color: var(--text-dim); line-height: 1.7; }
+
+  /* SECTION HEADER */
+  .section-header {
+    margin-bottom: 28px;
+  }
+  .section-header h2 {
+    font-size: 24px; font-weight: 700; margin-bottom: 6px;
+  }
+  .section-header p {
+    font-size: 13px; color: var(--text-dim); font-weight: 300;
+  }
+
+  /* KEY INSIGHT BOX */
+  .insight-box {
+    background: linear-gradient(135deg, rgba(0,229,160,0.06), rgba(0,196,255,0.04));
+    border: 1px solid rgba(0,229,160,0.15);
+    border-radius: 12px; padding: 20px; margin-top: 24px;
+  }
+  .insight-box h4 {
+    font-size: 13px; color: var(--accent); margin-bottom: 8px;
+    font-family: 'JetBrains Mono', monospace; letter-spacing: 1px;
+  }
+  .insight-box p {
+    font-size: 13px; color: var(--text-dim); line-height: 1.7;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @media(max-width: 600px) {
+    .container { padding: 24px 16px 60px; }
+    .tab-btn { padding: 8px 14px; font-size: 11px; }
+    .arch-card { padding: 20px; }
+    .stack-table th, .stack-table td { padding: 10px 12px; font-size: 11px; }
+  }
+</style>
+</head>
+<body>
+<div class="noise"></div>
+<div class="container">
+
+  <div class="header">
+    <div class="badge">System Architecture</div>
+    <h1>WarmPulse</h1>
+    <p>Email warmup engine architecture — self-hosted, FastAPI + React, peer-to-peer inbox network with intelligent reputation scoring</p>
+  </div>
+
+  <div class="tab-nav" id="tabNav">
+    <button class="tab-btn active" data-tab="overview">Overview</button>
+    <button class="tab-btn" data-tab="dataflow">Data Flow</button>
+    <button class="tab-btn" data-tab="stack">Tech Stack</button>
+    <button class="tab-btn" data-tab="schema">DB Schema</button>
+    <button class="tab-btn" data-tab="mvp">MVP Roadmap</button>
+    <button class="tab-btn" data-tab="pricing">Pricing Model</button>
+  </div>
+
+  <!-- ====== OVERVIEW ====== -->
+  <div class="section active" id="overview">
+    <div class="section-header">
+      <h2>System Architecture</h2>
+      <p>How every component connects — from user signup to inbox reputation scoring</p>
+    </div>
+
+    <div class="arch-flow">
+      <!-- User-Facing Layer -->
+      <div class="arch-card">
+        <div class="card-icon icon-green">&#9883;</div>
+        <h3>React Dashboard</h3>
+        <p>User connects email via OAuth (Google Workspace) or SMTP/IMAP creds. Dashboard shows real-time warmup progress, inbox placement score, daily volume graph, and reputation health.</p>
+        <div class="tech-tags">
+          <span class="tech-tag">React + Vite</span>
+          <span class="tech-tag">Zustand</span>
+          <span class="tech-tag">Recharts</span>
+          <span class="tech-tag">TailwindCSS</span>
+        </div>
+      </div>
+
+      <!-- API Layer -->
+      <div class="arch-card">
+        <div class="card-icon icon-blue">&#9881;</div>
+        <h3>FastAPI Backend</h3>
+        <p>REST API handles auth, mailbox CRUD, warmup config, analytics. JWT auth + API key for external integrations. Rate limiting per tenant. WebSocket for live warmup feed.</p>
+        <div class="tech-tags">
+          <span class="tech-tag">FastAPI</span>
+          <span class="tech-tag">SQLAlchemy</span>
+          <span class="tech-tag">Pydantic v2</span>
+          <span class="tech-tag">JWT</span>
+        </div>
+      </div>
+
+      <!-- Warmup Engine -->
+      <div class="arch-card">
+        <div class="card-icon icon-orange">&#9889;</div>
+        <h3>Warmup Scheduler Engine</h3>
+        <p>Core brain. Celery Beat schedules warmup tasks per mailbox. Gradual ramp algorithm: Day 1 = 5 emails, increases by 3-5/day until target (50-100/day). Distributes sends evenly across Gmail, Outlook, Yahoo network inboxes.</p>
+        <div class="tech-tags">
+          <span class="tech-tag">Celery</span>
+          <span class="tech-tag">Redis</span>
+          <span class="tech-tag">Celery Beat</span>
+          <span class="tech-tag">APScheduler</span>
+        </div>
+      </div>
+
+      <!-- SMTP/IMAP Worker -->
+      <div class="arch-card">
+        <div class="card-icon icon-yellow">&#9993;</div>
+        <h3>SMTP/IMAP Worker Pool</h3>
+        <p>Celery workers send warmup emails via user's SMTP and read responses via IMAP. Actions: send, open, reply, star, move-from-spam, mark-important. Each action mimics human timing (random 30s-5min delays).</p>
+        <div class="tech-tags">
+          <span class="tech-tag">aiosmtplib</span>
+          <span class="tech-tag">aioimaplib</span>
+          <span class="tech-tag">Celery Workers</span>
+        </div>
+      </div>
+
+      <!-- Peer Network -->
+      <div class="arch-card full-width">
+        <div class="card-icon icon-green">&#127760;</div>
+        <h3>Peer Inbox Network (The Moat)</h3>
+        <p>This is the hardest and most critical piece. A pool of 1000+ real email inboxes (Google Workspace, Office365, Yahoo) that your system controls. These inboxes receive warmup emails, open them, reply positively, star them, and rescue from spam. Quality of this network = quality of your product. Start with 200-500 inboxes, scale as revenue grows.</p>
+        <div class="tech-tags">
+          <span class="tech-tag">Google Workspace Accounts</span>
+          <span class="tech-tag">Office365 Accounts</span>
+          <span class="tech-tag">Yahoo Accounts</span>
+          <span class="tech-tag">IMAP Listeners</span>
+          <span class="tech-tag">Auto-Responder Bots</span>
+        </div>
+      </div>
+
+      <!-- Reputation Scoring -->
+      <div class="arch-card">
+        <div class="card-icon icon-blue">&#128200;</div>
+        <h3>Reputation Scoring Engine</h3>
+        <p>Pulls data from Google Postmaster Tools API, Microsoft SNDS, MXToolbox blacklist checks. Computes composite "Warmth Score" (0-100) from: inbox placement %, spam rate, bounce rate, engagement signals. Alerts on drops.</p>
+        <div class="tech-tags">
+          <span class="tech-tag">Postmaster API</span>
+          <span class="tech-tag">SNDS API</span>
+          <span class="tech-tag">Blacklist Checks</span>
+        </div>
+      </div>
+
+      <!-- Content Generator -->
+      <div class="arch-card">
+        <div class="card-icon icon-orange">&#9998;</div>
+        <h3>AI Content Generator</h3>
+        <p>Generates realistic warmup email content — business conversations, meeting follow-ups, project discussions. No marketing language. Rotates topics, signatures, greetings. Uses Claude API or local LLM to keep content unique per thread.</p>
+        <div class="tech-tags">
+          <span class="tech-tag">Claude API</span>
+          <span class="tech-tag">Template Engine</span>
+          <span class="tech-tag">Content Rotation</span>
+        </div>
+      </div>
+
+      <!-- DNS Checker -->
+      <div class="arch-card">
+        <div class="card-icon icon-yellow">&#128274;</div>
+        <h3>DNS & Auth Validator</h3>
+        <p>On mailbox connect, auto-checks SPF, DKIM, DMARC records. Flags misconfigurations before warmup starts. Continuous monitoring — alerts if DNS records break. This prevents wasted warmup on broken setups.</p>
+        <div class="tech-tags">
+          <span class="tech-tag">dnspython</span>
+          <span class="tech-tag">checkdmarc</span>
+          <span class="tech-tag">SPF/DKIM Validator</span>
+        </div>
+      </div>
+
+      <!-- Database -->
+      <div class="arch-card full-width">
+        <div class="card-icon icon-green">&#128451;</div>
+        <h3>PostgreSQL + Redis</h3>
+        <p>PostgreSQL stores users, mailboxes, warmup configs, daily metrics, peer network state. Redis handles Celery task queue, rate limiting counters, real-time warmup status cache, and WebSocket pub/sub for live dashboard updates.</p>
+        <div class="tech-tags">
+          <span class="tech-tag">PostgreSQL 16</span>
+          <span class="tech-tag">Redis 7</span>
+          <span class="tech-tag">TimescaleDB (metrics)</span>
+          <span class="tech-tag">Connection Pooling</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="insight-box">
+      <h4>&#128161; Key Insight</h4>
+      <p>The peer inbox network is your moat. Everything else (dashboard, scheduler, scoring) is commodity code any dev can build. The network of high-reputation inboxes that interact with your users' emails is what makes or breaks the product. Budget $500-1500/month for maintaining 500-1000 Google Workspace + Office365 accounts.</p>
+    </div>
+  </div>
+
+  <!-- ====== DATA FLOW ====== -->
+  <div class="section" id="dataflow">
+    <div class="section-header">
+      <h2>Data Flow</h2>
+      <p>How a single warmup cycle works end-to-end</p>
+    </div>
+
+    <div class="flow-diagram">
+      <h4 style="font-size:13px;color:var(--accent);margin-bottom:16px;font-family:'JetBrains Mono',monospace;">OUTBOUND WARMUP CYCLE</h4>
+      <div class="flow-steps">
+        <div class="flow-step"><div class="step-box step-green">Celery Beat<br>Trigger</div><div class="step-label">every 15min</div></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step"><div class="step-box step-blue">Pick Mailbox<br>+ Peer Inbox</div><div class="step-label">random pair</div></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step"><div class="step-box step-orange">Generate<br>Email Content</div><div class="step-label">AI / template</div></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step"><div class="step-box step-yellow">Send via<br>User SMTP</div><div class="step-label">aiosmtplib</div></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step"><div class="step-box step-green">Peer Inbox<br>Receives</div><div class="step-label">IMAP listen</div></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step"><div class="step-box step-blue">Auto Actions:<br>Open/Reply/Star</div><div class="step-label">30s-5min delay</div></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step"><div class="step-box step-orange">Log Metrics<br>to DB</div><div class="step-label">PostgreSQL</div></div>
+      </div>
+    </div>
+
+    <div class="flow-diagram">
+      <h4 style="font-size:13px;color:var(--accent2);margin-bottom:16px;font-family:'JetBrains Mono',monospace;">INBOUND WARMUP CYCLE (reverse — peer sends TO user)</h4>
+      <div class="flow-steps">
+        <div class="flow-step"><div class="step-box step-blue">Peer Inbox<br>Sends Email</div><div class="step-label">via peer SMTP</div></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step"><div class="step-box step-green">User Inbox<br>Receives</div><div class="step-label">IMAP poll</div></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step"><div class="step-box step-yellow">Auto-Reply<br>from User</div><div class="step-label">positive signal</div></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step"><div class="step-box step-orange">Mark Important<br>+ Star</div><div class="step-label">engagement</div></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step"><div class="step-box step-blue">If Spam →<br>Rescue to Inbox</div><div class="step-label">critical action</div></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step"><div class="step-box step-green">Update<br>Warmth Score</div><div class="step-label">real-time</div></div>
+      </div>
+    </div>
+
+    <div class="flow-diagram">
+      <h4 style="font-size:13px;color:var(--accent3);margin-bottom:16px;font-family:'JetBrains Mono',monospace;">RAMP-UP ALGORITHM</h4>
+      <div style="padding:8px;font-size:13px;color:var(--text-dim);line-height:2;font-family:'JetBrains Mono',monospace;">
+        Day 01-03: &nbsp;5 emails/day &nbsp;(build initial trust)<br>
+        Day 04-07: 10 emails/day &nbsp;(monitor bounce/spam)<br>
+        Day 08-14: 20 emails/day &nbsp;(check Postmaster data)<br>
+        Day 15-21: 35 emails/day &nbsp;(steady ramp)<br>
+        Day 22-28: 50 emails/day &nbsp;(target cruise speed)<br>
+        Day 29+: &nbsp;&nbsp;50-100/day &nbsp;&nbsp;(maintain + outreach blend)
+      </div>
+    </div>
+
+    <div class="insight-box">
+      <h4>&#128161; Critical Detail</h4>
+      <p>Both inbound AND outbound cycles matter. ESPs look at bidirectional engagement — your inbox should both send and receive real conversations. The spam-rescue action (moving email from spam to inbox) is the highest-signal positive engagement you can generate.</p>
+    </div>
+  </div>
+
+  <!-- ====== TECH STACK ====== -->
+  <div class="section" id="stack">
+    <div class="section-header">
+      <h2>Tech Stack</h2>
+      <p>Matching your existing SashaLMS stack for easy deployment on Hostinger VPS</p>
+    </div>
+
+    <table class="stack-table">
+      <thead><tr><th>Layer</th><th>Technology</th><th>Why This</th></tr></thead>
+      <tbody>
+        <tr><td class="layer-name">Frontend</td><td>React + Vite + TailwindCSS</td><td>Same as SashaLMS — shared build pipeline, familiar tooling</td></tr>
+        <tr><td class="layer-name">State</td><td>Zustand</td><td>Already in your stack, lightweight store for auth + dashboard state</td></tr>
+        <tr><td class="layer-name">Charts</td><td>Recharts</td><td>React-native charting, no D3 overhead. Warmth Score timeline, volume graphs</td></tr>
+        <tr><td class="layer-name">API</td><td>FastAPI + Pydantic v2</td><td>Your bread and butter. Extra: ignore in Settings matches your pattern</td></tr>
+        <tr><td class="layer-name">Auth</td><td>JWT + Google OAuth</td><td>Reuse your existing OAuth client ID. Add SMTP/IMAP credential vault</td></tr>
+        <tr><td class="layer-name">Task Queue</td><td>Celery + Redis</td><td>Handles async warmup sends, IMAP polling, scheduled ramp-ups</td></tr>
+        <tr><td class="layer-name">Scheduler</td><td>Celery Beat</td><td>Cron-like scheduling for daily warmup cycles, hourly reputation checks</td></tr>
+        <tr><td class="layer-name">Email Send</td><td>aiosmtplib</td><td>Async SMTP client — non-blocking sends, connection pooling</td></tr>
+        <tr><td class="layer-name">Email Read</td><td>aioimaplib</td><td>Async IMAP — poll peer inboxes for incoming warmup emails</td></tr>
+        <tr><td class="layer-name">AI Content</td><td>Claude API (Sonnet)</td><td>Generate unique warmup email threads. ~$0.003 per email content</td></tr>
+        <tr><td class="layer-name">DNS Check</td><td>dnspython + checkdmarc</td><td>Validate SPF/DKIM/DMARC on mailbox connect</td></tr>
+        <tr><td class="layer-name">Database</td><td>PostgreSQL 16</td><td>Same DB server as SashaLMS. Separate database: warmpulse_db</td></tr>
+        <tr><td class="layer-name">Cache/Queue</td><td>Redis 7</td><td>Task broker + rate limit counters + live status cache</td></tr>
+        <tr><td class="layer-name">Monitoring</td><td>Google Postmaster API + SNDS</td><td>Free APIs from Gmail/Microsoft to track domain reputation externally</td></tr>
+        <tr><td class="layer-name">Deploy</td><td>Hostinger VPS + systemd</td><td>Same as sasha-api pattern. Services: warmpulse-api, warmpulse-worker, warmpulse-beat</td></tr>
+        <tr><td class="layer-name">Encryption</td><td>Fernet (cryptography lib)</td><td>Encrypt stored SMTP/IMAP credentials at rest. Never plaintext passwords.</td></tr>
+      </tbody>
+    </table>
+
+    <div class="insight-box">
+      <h4>&#128161; Deploy Pattern</h4>
+      <p>Same VPS, separate systemd services. warmpulse-api on port 8001, sasha-api stays on 8000. Nginx reverse proxy routes /warmpulse/* to 8001. Shared PostgreSQL server, separate database. Redis shared instance with key prefix namespacing.</p>
+    </div>
+  </div>
+
+  <!-- ====== DB SCHEMA ====== -->
+  <div class="section" id="schema">
+    <div class="section-header">
+      <h2>Database Schema</h2>
+      <p>Core tables — PostgreSQL, normalized, ready for SQLAlchemy models</p>
+    </div>
+
+    <div class="schema-card">
+      <h4><span>&#128100;</span> users</h4>
+      <div class="schema-fields">
+        <div class="schema-field"><span class="fname">id</span><span class="ftype">UUID</span><span class="fkey">PK</span></div>
+        <div class="schema-field"><span class="fname">email</span><span class="ftype">VARCHAR(255)</span></div>
+        <div class="schema-field"><span class="fname">hashed_password</span><span class="ftype">VARCHAR(255)</span></div>
+        <div class="schema-field"><span class="fname">plan</span><span class="ftype">ENUM(free,starter,pro,agency)</span></div>
+        <div class="schema-field"><span class="fname">max_mailboxes</span><span class="ftype">INT</span></div>
+        <div class="schema-field"><span class="fname">created_at</span><span class="ftype">TIMESTAMPTZ</span></div>
+      </div>
+    </div>
+
+    <div class="schema-card">
+      <h4><span>&#128231;</span> mailboxes</h4>
+      <div class="schema-fields">
+        <div class="schema-field"><span class="fname">id</span><span class="ftype">UUID</span><span class="fkey">PK</span></div>
+        <div class="schema-field"><span class="fname">user_id</span><span class="ftype">UUID</span><span class="fkey">FK → users</span></div>
+        <div class="schema-field"><span class="fname">email_address</span><span class="ftype">VARCHAR(255)</span></div>
+        <div class="schema-field"><span class="fname">provider</span><span class="ftype">ENUM(gmail,outlook,yahoo,smtp)</span></div>
+        <div class="schema-field"><span class="fname">smtp_host / port / username</span><span class="ftype">VARCHAR</span></div>
+        <div class="schema-field"><span class="fname">smtp_password_encrypted</span><span class="ftype">BYTEA</span><span class="fkey">Fernet</span></div>
+        <div class="schema-field"><span class="fname">imap_host / port</span><span class="ftype">VARCHAR</span></div>
+        <div class="schema-field"><span class="fname">oauth_token_encrypted</span><span class="ftype">BYTEA</span></div>
+        <div class="schema-field"><span class="fname">spf_valid / dkim_valid / dmarc_valid</span><span class="ftype">BOOLEAN</span></div>
+        <div class="schema-field"><span class="fname">warmup_status</span><span class="ftype">ENUM(pending,active,paused,completed)</span></div>
+        <div class="schema-field"><span class="fname">daily_target</span><span class="ftype">INT</span></div>
+        <div class="schema-field"><span class="fname">current_day</span><span class="ftype">INT</span></div>
+        <div class="schema-field"><span class="fname">warmth_score</span><span class="ftype">FLOAT</span></div>
+      </div>
+    </div>
+
+    <div class="schema-card">
+      <h4><span>&#127760;</span> peer_inboxes</h4>
+      <div class="schema-fields">
+        <div class="schema-field"><span class="fname">id</span><span class="ftype">UUID</span><span class="fkey">PK</span></div>
+        <div class="schema-field"><span class="fname">email_address</span><span class="ftype">VARCHAR(255)</span></div>
+        <div class="schema-field"><span class="fname">provider</span><span class="ftype">ENUM(google_ws,office365,yahoo)</span></div>
+        <div class="schema-field"><span class="fname">smtp_creds_encrypted</span><span class="ftype">BYTEA</span></div>
+        <div class="schema-field"><span class="fname">imap_creds_encrypted</span><span class="ftype">BYTEA</span></div>
+        <div class="schema-field"><span class="fname">reputation_score</span><span class="ftype">FLOAT</span></div>
+        <div class="schema-field"><span class="fname">daily_capacity</span><span class="ftype">INT</span></div>
+        <div class="schema-field"><span class="fname">used_today</span><span class="ftype">INT</span></div>
+        <div class="schema-field"><span class="fname">is_active</span><span class="ftype">BOOLEAN</span></div>
+      </div>
+    </div>
+
+    <div class="schema-card">
+      <h4><span>&#128202;</span> warmup_logs</h4>
+      <div class="schema-fields">
+        <div class="schema-field"><span class="fname">id</span><span class="ftype">BIGSERIAL</span><span class="fkey">PK</span></div>
+        <div class="schema-field"><span class="fname">mailbox_id</span><span class="ftype">UUID</span><span class="fkey">FK → mailboxes</span></div>
+        <div class="schema-field"><span class="fname">peer_inbox_id</span><span class="ftype">UUID</span><span class="fkey">FK → peer_inboxes</span></div>
+        <div class="schema-field"><span class="fname">direction</span><span class="ftype">ENUM(outbound,inbound)</span></div>
+        <div class="schema-field"><span class="fname">action</span><span class="ftype">ENUM(sent,opened,replied,starred,spam_rescued,marked_important)</span></div>
+        <div class="schema-field"><span class="fname">message_id</span><span class="ftype">VARCHAR</span></div>
+        <div class="schema-field"><span class="fname">subject_snippet</span><span class="ftype">VARCHAR(100)</span></div>
+        <div class="schema-field"><span class="fname">created_at</span><span class="ftype">TIMESTAMPTZ</span></div>
+      </div>
+    </div>
+
+    <div class="schema-card">
+      <h4><span>&#128200;</span> daily_metrics</h4>
+      <div class="schema-fields">
+        <div class="schema-field"><span class="fname">id</span><span class="ftype">BIGSERIAL</span><span class="fkey">PK</span></div>
+        <div class="schema-field"><span class="fname">mailbox_id</span><span class="ftype">UUID</span><span class="fkey">FK → mailboxes</span></div>
+        <div class="schema-field"><span class="fname">date</span><span class="ftype">DATE</span></div>
+        <div class="schema-field"><span class="fname">emails_sent</span><span class="ftype">INT</span></div>
+        <div class="schema-field"><span class="fname">emails_received</span><span class="ftype">INT</span></div>
+        <div class="schema-field"><span class="fname">opens</span><span class="ftype">INT</span></div>
+        <div class="schema-field"><span class="fname">replies</span><span class="ftype">INT</span></div>
+        <div class="schema-field"><span class="fname">spam_rescues</span><span class="ftype">INT</span></div>
+        <div class="schema-field"><span class="fname">bounce_count</span><span class="ftype">INT</span></div>
+        <div class="schema-field"><span class="fname">inbox_placement_pct</span><span class="ftype">FLOAT</span></div>
+        <div class="schema-field"><span class="fname">warmth_score</span><span class="ftype">FLOAT</span></div>
+      </div>
+    </div>
+
+    <div class="insight-box">
+      <h4>&#128161; Index Strategy</h4>
+      <p>Composite index on warmup_logs(mailbox_id, created_at DESC) for dashboard queries. Partial index on peer_inboxes WHERE is_active=true for scheduler pairing. daily_metrics gets a UNIQUE constraint on (mailbox_id, date) for upsert patterns.</p>
+    </div>
+  </div>
+
+  <!-- ====== MVP ROADMAP ====== -->
+  <div class="section" id="mvp">
+    <div class="section-header">
+      <h2>MVP Roadmap</h2>
+      <p>8-week plan to launch a working warmup tool</p>
+    </div>
+
+    <div class="timeline">
+      <div class="timeline-item">
+        <h4>Week 1-2</h4>
+        <h3>Foundation + Peer Network Setup</h3>
+        <p>Set up PostgreSQL schema, FastAPI project structure (copy SashaLMS patterns), user auth with JWT. Most importantly: purchase 50-100 Google Workspace accounts across 10-15 domains. Set up SPF/DKIM/DMARC on all. This is your seed peer network. Cost: ~$300-600/month for Google Workspace.</p>
+      </div>
+      <div class="timeline-item">
+        <h4>Week 3-4</h4>
+        <h3>Warmup Engine Core</h3>
+        <p>Build Celery + Redis task queue. Implement SMTP send worker + IMAP listener. Build the ramp-up algorithm (day-based volume scaling). Wire peer inboxes as auto-responders (open, reply, star, spam-rescue). Test with your own email first — verify inbox placement improves.</p>
+      </div>
+      <div class="timeline-item">
+        <h4>Week 5-6</h4>
+        <h3>Dashboard + DNS Validator</h3>
+        <p>React dashboard: mailbox connect flow (SMTP/IMAP creds input + OAuth), warmup progress chart, daily metrics table. DNS checker on connect — auto-validate SPF/DKIM/DMARC and show fix instructions. Warmth Score display with color-coded health indicator.</p>
+      </div>
+      <div class="timeline-item">
+        <h4>Week 7</h4>
+        <h3>AI Content + Content Rotation</h3>
+        <p>Integrate Claude API for generating unique warmup email threads. Build 50+ template variations as fallback. Implement thread continuation (warmup emails form realistic multi-reply conversations, not isolated one-offs).</p>
+      </div>
+      <div class="timeline-item">
+        <h4>Week 8</h4>
+        <h3>Deploy + Beta Launch</h3>
+        <p>Deploy on Hostinger VPS alongside SashaLMS. systemd services: warmpulse-api, warmpulse-worker, warmpulse-beat. Nginx routing. Launch to 10-20 beta users (cold outreach agencies in India). Iterate based on actual deliverability data.</p>
+      </div>
+    </div>
+
+    <div class="insight-box">
+      <h4>&#128161; Reality Check</h4>
+      <p>Weeks 1-2 (peer network) is the make-or-break step. Don't skip it. Without real Google Workspace and Office365 inboxes in your network, the warmup signals won't be trusted by ESPs. Start with 50 inboxes, grow to 500+ as you get paying customers. Budget: ~$500/mo initially for the network infrastructure.</p>
+    </div>
+  </div>
+
+  <!-- ====== PRICING ====== -->
+  <div class="section" id="pricing">
+    <div class="section-header">
+      <h2>Pricing Model</h2>
+      <p>Competitive positioning against Warmbox ($19), Mailwarm ($69), Instantly (bundled)</p>
+    </div>
+
+    <div class="pricing-grid">
+      <div class="price-card">
+        <h4>Starter</h4>
+        <div class="price">$15</div>
+        <div class="period">per month / 1 inbox</div>
+        <ul>
+          <li>50 warmup emails/day</li>
+          <li>Basic reputation dashboard</li>
+          <li>SPF/DKIM/DMARC checker</li>
+          <li>Gmail + Outlook support</li>
+          <li>Email support</li>
+        </ul>
+      </div>
+      <div class="price-card featured">
+        <h4>Pro</h4>
+        <div class="price">$39</div>
+        <div class="period">per month / 5 inboxes</div>
+        <ul>
+          <li>100 warmup emails/day per inbox</li>
+          <li>AI-generated content threads</li>
+          <li>Warmth Score with alerts</li>
+          <li>Inbox placement testing</li>
+          <li>Blacklist monitoring</li>
+          <li>Slack/webhook notifications</li>
+          <li>Priority support</li>
+        </ul>
+      </div>
+      <div class="price-card">
+        <h4>Agency</h4>
+        <div class="price">$99</div>
+        <div class="period">per month / unlimited inboxes</div>
+        <ul>
+          <li>200 warmup emails/day per inbox</li>
+          <li>Multi-client workspace</li>
+          <li>White-label reports</li>
+          <li>API access</li>
+          <li>Custom warmup schedules</li>
+          <li>Dedicated account manager</li>
+          <li>Audit & consulting calls</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="insight-box" style="margin-top:24px;">
+      <h4>&#128176; Unit Economics</h4>
+      <p>Cost per inbox in your network: ~$6-8/month (Google Workspace). Each peer inbox can service 20-30 customer mailboxes. So 50 peer inboxes ($300-400/mo) can service ~1000 customer mailboxes. At $15-39/inbox revenue, your margins are 85-95% after hitting 100 paying mailboxes. Break-even at ~30 customers on Pro plan.</p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const tabs = document.querySelectorAll('.tab-btn');
+  const sections = document.querySelectorAll('.section');
+
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      tabs.forEach(t => t.classList.remove('active'));
+      sections.forEach(s => s.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById(tab.dataset.tab).classList.add('active');
+    });
+  });
+</script>
+</body>
+</html>

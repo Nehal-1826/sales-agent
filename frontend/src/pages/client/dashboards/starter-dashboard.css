@@ -1,0 +1,474 @@
+/* =============================================================================
+   /app/dashboard — Starter tier (S1 Focus Card).
+   One big card with the single-mailbox story:
+     • centered warmth gauge
+     • 4 corner KPI tiles
+     • 30-day warmth trend strip
+     • DNS health row
+============================================================================= */
+
+.sd {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  color: var(--wp-text, #f4f4f5);
+}
+
+.sd__heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sd__title {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+.sd__sub {
+  font-size: 13px;
+  color: var(--wp-text-dim, #a1a1aa);
+  margin: 0;
+}
+
+/* ---------- Focus card (the hero) ---------- */
+.sd-focus {
+  position: relative;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--wp-accent, #F26522) 18%, transparent), transparent 60%),
+    color-mix(in srgb, var(--wp-accent, #F26522) 8%, var(--wp-surface, #12121a));
+  border: 1px solid color-mix(in srgb, var(--wp-accent, #F26522) 28%, var(--wp-border, #2a2a3a));
+  padding: 20px 24px 24px;
+  display: grid;
+  /* Center column hugs the gauge (auto) instead of stealing 1.2fr of empty
+     space — tiles now sit visually closer to the gauge. Side columns share
+     the remaining width. */
+  grid-template-columns: 1fr auto 1fr;
+  /* Rows: meta + two KPI rows that hug their content (auto) instead of
+     stretching to fill 1fr — kills the empty bottom space in each tile. */
+  grid-template-rows: auto auto auto;
+  grid-template-areas:
+    'meta meta  meta'
+    'kpi1 gauge kpi3'
+    'kpi2 gauge kpi4';
+  gap: 14px;
+  overflow: hidden;
+}
+
+.sd-focus__top-meta {
+  grid-area: meta;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--wp-text-dim, #a1a1aa);
+  /* Leaves the row empty (no jarring background band) and aligns the
+     pills with the start of the kpi1 column below. */
+}
+.sd-focus__provider-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-accent, #F26522) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-accent, #F26522) 30%, transparent);
+  color: var(--wp-accent, #F26522);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.sd-focus__day-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #facc15 16%, transparent);
+  border: 1px solid color-mix(in srgb, #facc15 38%, transparent);
+  color: #facc15;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.sd-focus__gauge-wrap {
+  /* Span the gauge across BOTH kpi rows in the middle column so it
+     sits centered between the four KPI tiles. */
+  grid-row: 2 / 4;
+  grid-column: 2 / 3;
+  display: grid;
+  place-items: center;
+  /* Padding makes room for the scale numbers that sit just outside the ring. */
+  padding: 18px;
+}
+.sd-focus__gauge {
+  --size: 208px;
+  --thickness: 14px;
+  width: var(--size);
+  height: var(--size);
+  border-radius: 999px;
+  position: relative;
+  /* Allow tick numbers to extend past the ring's circular bounds. */
+  overflow: visible;
+  background:
+    conic-gradient(
+      var(--wp-accent, #F26522) 0deg,
+      var(--wp-accent, #F26522) calc(var(--pct, 0) * 3.6deg),
+      color-mix(in srgb, var(--wp-text, #f4f4f5) 8%, transparent) calc(var(--pct, 0) * 3.6deg),
+      color-mix(in srgb, var(--wp-text, #f4f4f5) 8%, transparent) 360deg
+    );
+  filter: drop-shadow(0 0 14px color-mix(in srgb, var(--wp-accent, #F26522) 30%, transparent));
+}
+
+/* ---- Ticks + scale numbers around the ring ---- */
+.sd-focus__gauge-ticks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.sd-focus__gauge-tick {
+  /* Centered, then rotated to the right angle. The mark + number are
+     children translated outward along the ring's radius. */
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  transform: translate(-50%, -50%) rotate(var(--a, 0deg));
+}
+.sd-focus__gauge-tick-mark {
+  position: absolute;
+  /* Sit just inside the ring's outer edge so the mark crosses the
+     filled-track band. Half of --size minus a small inset places the
+     mark on the ring; height controls how deep the mark cuts. */
+  top: calc(var(--size) / -2 + 3px);
+  left: 50%;
+  width: 2px;
+  height: 7px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--wp-text, #f4f4f5) 30%, transparent);
+  transform: translateX(-50%);
+}
+.sd-focus__gauge-tick--on .sd-focus__gauge-tick-mark {
+  /* Ticks that the progress has reached pop in the accent color. */
+  background: color-mix(in srgb, var(--wp-accent, #F26522) 85%, transparent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--wp-accent, #F26522) 60%, transparent);
+}
+.sd-focus__gauge-tick-num {
+  position: absolute;
+  /* Numbers sit a bit further out than the mark, anti-rotated so they
+     read upright regardless of their angular position. */
+  top: calc(var(--size) / -2 - 14px);
+  left: 50%;
+  transform: translateX(-50%) rotate(calc(-1 * var(--a, 0deg)));
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--wp-text-dim, #a1a1aa);
+  white-space: nowrap;
+}
+.sd-focus__gauge-tick--on .sd-focus__gauge-tick-num {
+  color: var(--wp-text, #f4f4f5);
+}
+/* "100" cap at the top of the gauge, sat inside the ring just under the
+   top tick. Lets users read the upper bound without colliding with the
+   "0" label that sits outside the ring at the same angular position. */
+.sd-focus__gauge-max {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--wp-text-faint, #71717a);
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-surface, #12121a) 80%, transparent);
+}
+.sd-focus__gauge::before {
+  content: '';
+  position: absolute;
+  inset: var(--thickness);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--wp-accent, #F26522) 16%, transparent), transparent 70%),
+    color-mix(in srgb, var(--wp-surface, #12121a) 95%, transparent);
+}
+.sd-focus__gauge-center {
+  /* Absolute-fill the gauge so the WARMTH / score / delta stack is
+     PERFECTLY centred inside the ring. With the previous
+     `position: relative` the stack sat at the top of the gauge and the
+     WARMTH label crowded the top-of-ring tick numbers. Filling the gauge
+     plus `justify-content: center` parks the score in the visual
+     middle and pushes the label above it without colliding. */
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  /* More breathing room between label and number so the number's glow
+     doesn't bleed onto the label letters. */
+  gap: 10px;
+  text-align: center;
+  /* Keep the centred stack INSIDE the ring proper — padding equal to
+     the ring thickness reserves a buffer so the WARMTH label never sits
+     under a tick mark at the edge. */
+  padding: calc(var(--thickness) + 6px);
+  pointer-events: none;
+}
+.sd-focus__gauge-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 56px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--wp-text, #f4f4f5);
+  /* Reduced from 24px → 12px so the purple aura stops tinting the
+     WARMTH label above. */
+  text-shadow: 0 0 12px color-mix(in srgb, var(--wp-accent, #F26522) 45%, transparent);
+}
+.sd-focus__gauge-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--wp-text-dim, #a1a1aa);
+}
+.sd-focus__gauge-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+}
+.sd-focus__gauge-delta--up {
+  background: color-mix(in srgb, var(--wp-success, #3ddc97) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-success, #3ddc97) 40%, transparent);
+  color: var(--wp-success, #3ddc97);
+}
+.sd-focus__gauge-delta--down {
+  background: color-mix(in srgb, var(--wp-danger, #ff5c7a) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-danger, #ff5c7a) 40%, transparent);
+  color: var(--wp-danger, #ff5c7a);
+}
+.sd-focus__gauge-delta--flat {
+  background: color-mix(in srgb, var(--wp-text, #f4f4f5) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-text, #f4f4f5) 16%, transparent);
+  color: var(--wp-text-dim, #a1a1aa);
+}
+
+/* KPI tiles */
+.sd-focus__kpi {
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--wp-surface, #12121a) 85%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-text, #f4f4f5) 8%, transparent);
+  /* Vertical centering + min-height keeps each tile balanced against the
+     180px gauge without big empty bottoms. */
+  padding: 14px 16px;
+  min-height: 96px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  transition: border-color 200ms;
+}
+.sd-focus__kpi:hover {
+  border-color: color-mix(in srgb, var(--wp-accent, #F26522) 35%, var(--wp-border, #2a2a3a));
+}
+.sd-focus__kpi--1 { grid-area: kpi1; }
+.sd-focus__kpi--2 { grid-area: kpi2; }
+.sd-focus__kpi--3 { grid-area: kpi3; }
+.sd-focus__kpi--4 { grid-area: kpi4; }
+
+.sd-focus__kpi-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--wp-text-dim, #a1a1aa);
+}
+.sd-focus__kpi-head svg {
+  flex: none;
+  opacity: 0.85;
+}
+.sd-focus__kpi-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  color: var(--wp-text, #f4f4f5);
+}
+.sd-focus__kpi-foot {
+  font-size: 11px;
+  color: var(--wp-text-dim, #a1a1aa);
+}
+
+/* ---------- 30d trend strip ---------- */
+.sd-trend {
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--wp-surface, #12121a) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-text, #f4f4f5) 8%, transparent);
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sd-trend__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.sd-trend__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--wp-text-dim, #a1a1aa);
+}
+.sd-trend__title svg {
+  color: var(--wp-accent, #F26522);
+}
+.sd-trend__range {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--wp-text-faint, #71717a);
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--wp-border, #2a2a3a);
+  background: color-mix(in srgb, var(--wp-surface-2, #1a1a26) 80%, transparent);
+}
+.sd-trend__chart {
+  width: 100%;
+  /* Was 120px — bumped so the chart can fit the new value labels (above
+     each data point), the y-axis legend (0/50/100), and the day-1 /
+     day-N / today x-axis hints without crowding the trend line. */
+  height: 168px;
+  position: relative;
+}
+.sd-trend__chart svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.sd-trend__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 12px;
+  color: var(--wp-text-faint, #71717a);
+}
+
+/* ---------- DNS health row ---------- */
+.sd-dns {
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--wp-surface, #12121a) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-text, #f4f4f5) 8%, transparent);
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.sd-dns__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--wp-text-dim, #a1a1aa);
+}
+.sd-dns__title svg {
+  color: var(--wp-accent, #F26522);
+}
+.sd-dns__records {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.sd-dns__rec {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--wp-border, #2a2a3a);
+  background: color-mix(in srgb, var(--wp-surface-2, #1a1a26) 80%, transparent);
+}
+.sd-dns__rec--ok {
+  border-color: color-mix(in srgb, var(--wp-success, #3ddc97) 45%, transparent);
+  color: var(--wp-success, #3ddc97);
+  background: color-mix(in srgb, var(--wp-success, #3ddc97) 12%, var(--wp-surface, #12121a));
+}
+.sd-dns__rec--warn {
+  border-color: color-mix(in srgb, var(--wp-warning, #ffb454) 45%, transparent);
+  color: var(--wp-warning, #ffb454);
+  background: color-mix(in srgb, var(--wp-warning, #ffb454) 12%, var(--wp-surface, #12121a));
+}
+.sd-dns__rec--err {
+  border-color: color-mix(in srgb, var(--wp-danger, #ff5c7a) 50%, transparent);
+  color: var(--wp-danger, #ff5c7a);
+  background: color-mix(in srgb, var(--wp-danger, #ff5c7a) 12%, var(--wp-surface, #12121a));
+}
+.sd-dns__rec-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 18%, transparent);
+}
+.sd-dns__cta {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--wp-accent, #F26522);
+  font-weight: 600;
+  text-decoration: none;
+}
+.sd-dns__cta:hover { text-decoration: underline; }
+
+@media (max-width: 720px) {
+  .sd-focus {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto auto auto;
+    grid-template-areas:
+      'meta  meta'
+      'gauge gauge'
+      'kpi1  kpi3'
+      'kpi2  kpi4';
+  }
+  .sd-focus__gauge-wrap {
+    grid-row: auto;
+    grid-column: auto;
+    grid-area: gauge;
+  }
+  .sd-focus__gauge { --size: 140px; }
+  .sd-focus__gauge-num { font-size: 42px; }
+}

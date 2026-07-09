@@ -1,0 +1,441 @@
+/* =============================================================================
+   /admin/llm-usage — Cap Manager layout (live)
+============================================================================= */
+
+.cap {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.cap__topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.55);
+}
+.cap__crumb { font-weight: 600; letter-spacing: 0.04em; }
+.cap__time {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.cap__time svg { color: var(--wp-accent); }
+
+.cap__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.cap__title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+.cap__sub {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.55);
+  max-width: 640px;
+  line-height: 1.5;
+}
+
+.cap__actions { display: flex; gap: 8px; align-items: center; }
+.cap__btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cap__btn--ghost {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.85);
+}
+.cap__btn--ghost:hover { border-color: rgba(255, 255, 255, 0.25); }
+
+.cap__dd { position: relative; }
+.cap__dd-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 180px;
+  padding: 4px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--wp-surface) 96%, transparent);
+  border: 1px solid var(--wp-border);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.4);
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+}
+.cap__dd-item {
+  appearance: none;
+  display: block;
+  padding: 7px 10px;
+  border: 0;
+  background: transparent;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: left;
+}
+.cap__dd-item:hover { background: color-mix(in srgb, var(--wp-accent) 14%, transparent); }
+.cap__dd-item--active {
+  background: color-mix(in srgb, var(--wp-accent) 22%, transparent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.cap__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.65);
+  font-weight: 700;
+}
+.cap__eyebrow svg { color: var(--wp-accent); }
+.cap__count {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  font-family: 'JetBrains Mono', monospace;
+  margin-top: 4px;
+}
+
+/* Summary strip ----------------------------------------------------- */
+
+.cap-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.cap-strip__stat {
+  background: color-mix(in srgb, var(--wp-surface) 70%, transparent);
+  border: 1px solid var(--wp-border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  backdrop-filter: blur(12px);
+}
+.cap-strip__label {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 700;
+}
+.cap-strip__num {
+  font-size: 22px;
+  font-weight: 800;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+}
+
+/* Plan gauges ------------------------------------------------------- */
+
+.cap-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+@media (max-width: 1100px) { .cap-grid { grid-template-columns: repeat(2, 1fr); } }
+
+.cap-plan {
+  background: color-mix(in srgb, var(--wp-surface) 70%, transparent);
+  border: 1px solid var(--wp-border);
+  border-radius: 14px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(12px);
+}
+.cap-plan::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--plan-tone);
+  opacity: 0.85;
+}
+.cap-plan__h {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.cap-plan__name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.cap-plan__pct {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 20px;
+  font-weight: 800;
+}
+.cap-plan__pct--ok { color: #86efac; }
+.cap-plan__pct--warn { color: #fde68a; }
+.cap-plan__pct--err { color: #fca5a5; }
+
+.cap-plan__gauge {
+  position: relative;
+  height: 90px;
+}
+.cap-plan__gauge svg {
+  width: 100%;
+  height: 100%;
+}
+.cap-plan__center {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.cap-plan__num {
+  font-size: 18px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.cap-plan__sub {
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 600;
+}
+
+.cap-plan__foot {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.1);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+}
+.cap-plan__foot > div { display: flex; flex-direction: column; gap: 2px; }
+.cap-plan__foot-label {
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 600;
+}
+.cap-plan__foot strong {
+  color: #fff;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+}
+
+.cap-plan__alert {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.cap-plan__alert--warn { background: rgba(251, 191, 36, 0.16); color: #fde68a; }
+.cap-plan__alert--err { background: rgba(239, 68, 68, 0.16); color: #fca5a5; }
+
+.cap-plan__adjust {
+  appearance: none;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cap-plan__adjust:hover {
+  border-color: var(--plan-tone);
+  background: color-mix(in srgb, var(--plan-tone) 14%, transparent);
+}
+
+/* Empty state ------------------------------------------------------- */
+
+.cap__empty {
+  grid-column: 1 / -1;
+  background: color-mix(in srgb, var(--wp-surface) 70%, transparent);
+  border: 1px dashed var(--wp-border);
+  border-radius: 12px;
+  padding: 28px;
+  text-align: center;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.cap__empty--lg { padding: 36px; }
+
+/* Workspace usage table -------------------------------------------- */
+
+.cap-card {
+  background: color-mix(in srgb, var(--wp-surface) 70%, transparent);
+  border: 1px solid var(--wp-border);
+  border-radius: 14px;
+  padding: 16px 18px;
+  backdrop-filter: blur(12px);
+}
+.cap-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.cap__srch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  width: 240px;
+}
+.cap__srch svg { color: rgba(255, 255, 255, 0.45); }
+.cap__srch-input {
+  background: transparent;
+  border: 0;
+  outline: 0;
+  color: #fff;
+  font-size: 12.5px;
+  flex: 1;
+  min-width: 0;
+}
+.cap__srch-input::placeholder { color: rgba(255, 255, 255, 0.35); }
+
+.cap-list {
+  display: flex;
+  flex-direction: column;
+}
+.cap-list__row {
+  display: grid;
+  grid-template-columns: 80px 1.8fr 110px 110px 100px;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 12px;
+}
+.cap-list__row:last-child { border-bottom: none; }
+.cap-list__row--head {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+  font-weight: 700;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.cap-list__row:not(.cap-list__row--head):hover {
+  background: rgba(242, 101, 34, 0.05);
+}
+.cap-list__num {
+  text-align: right;
+  font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+.cap-list__pct {
+  display: inline-flex;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.cap-list__pct--ok { background: rgba(74, 222, 128, 0.18); color: #86efac; }
+.cap-list__pct--warn { background: rgba(251, 191, 36, 0.18); color: #fde68a; }
+.cap-list__pct--err { background: rgba(239, 68, 68, 0.18); color: #fca5a5; }
+.cap-list__ws {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.cap-list__id { display: flex; flex-direction: column; min-width: 0; }
+.cap-list__name {
+  color: #fff;
+  font-weight: 600;
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cap-list__email {
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.5);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cap-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+
+.u-plan {
+  display: inline-flex;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.7);
+}
+.u-plan--scale { background: rgba(242, 101, 34, 0.22); color: #FFB890; }
+.u-plan--growth { background: rgba(255, 138, 75, 0.22); color: #FFB890; }
+.u-plan--starter { background: rgba(244, 114, 182, 0.18); color: #f9a8d4; }
+.u-plan--trial { background: rgba(251, 191, 36, 0.18); color: #fde68a; }

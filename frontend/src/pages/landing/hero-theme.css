@@ -1,0 +1,198 @@
+/* WarmPulse new-hero theme tokens — scoped via :root[data-theme]. */
+
+/* ─── Base :root baseline ──────────────────────────────────────────────────
+   These tokens MUST resolve even before the ThemeProvider sets data-theme on
+   the documentElement (which happens after first paint). Without this base,
+   the initial render sees `var(--wp-accent)` as undefined and inline-style
+   gradients fall back to the user-agent default — which on some browsers
+   leaks an old cached value. Defining the baseline here guarantees orange
+   from t=0 regardless of theme. The data-theme-scoped blocks below override
+   when applicable. */
+:root {
+  --wp-accent: #F26522;
+  --wp-accent-hover: #FF7B38;
+  --wp-accent-2: #FF9670;
+}
+
+:root[data-theme='dark'] {
+  --wp-bg: #000000;
+  --wp-surface: #0a0a0a;
+  --wp-surface-2: #121212;
+  --wp-border: #1f1f1f;
+  --wp-border-strong: #2a2a2a;
+  --wp-text: #f4f4f5;
+  --wp-text-dim: #a1a1aa;
+  --wp-text-faint: #71717a;
+  --wp-accent: #F26522;
+  --wp-accent-hover: #FF7B38;
+  --wp-accent-2: #FF9670;
+  --wp-success: #3ddc97;
+  --wp-warning: #ffb454;
+  --wp-danger: #ff5c7a;
+  --wp-glass-bg: rgba(10, 10, 10, 0.55);
+  --wp-glass-border: rgba(255, 255, 255, 0.08);
+  --wp-glass-highlight: rgba(255, 255, 255, 0.12);
+  --wp-glass-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  --wp-aurora-1-alpha: 0.20;
+  --wp-aurora-2-alpha: 0.08;
+  --wp-grain-alpha: 0.03;
+}
+
+:root[data-theme='light'] {
+  --wp-bg: #ebe1d4;            /* warm tan canvas — darker than the cards so
+                                  white/translucent surfaces stand out */
+  --wp-surface: #ffffff;
+  --wp-surface-2: #faf3ea;     /* still lighter than the canvas, so it pops */
+  --wp-surface-3: #f4e7d8;
+  --wp-border: #d8c0a3;        /* clearly visible warm hairline */
+  --wp-border-strong: #c69c6d;
+  --wp-text: #1a0d05;
+  --wp-text-dim: #4a3324;       /* dark secondary text, ~9:1 on white */
+  --wp-text-faint: #6a4f3a;     /* darkened from #a38770 (was ~2:1, unreadable)
+                                   to a genuinely dark tone (~6:1) so eyebrows,
+                                   KPI labels, axis ticks and nav labels read as
+                                   dark text on the light background */
+  --wp-accent: #E5571A;
+  --wp-accent-hover: #C8470E;
+  --wp-accent-2: #FF8A4B;
+  --wp-success: #0e9d6a;
+  --wp-warning: #c97706;
+  --wp-danger: #dc2645;
+  --wp-glass-bg: rgba(255, 255, 255, 0.78);
+  --wp-glass-border: rgba(229, 87, 26, 0.16);
+  --wp-glass-highlight: rgba(255, 255, 255, 0.95);
+  --wp-glass-shadow: 0 32px 64px rgba(229, 87, 26, 0.16), 0 8px 24px rgba(229, 87, 26, 0.08), 0 1px 2px rgba(26, 13, 5, 0.04);
+  --wp-aurora-1-alpha: 0.26;
+  --wp-aurora-2-alpha: 0.18;
+  --wp-grain-alpha: 0.012;
+}
+
+/* Light-theme page wash — warm orange gradients painted across the whole page. */
+:root[data-theme='light'] .wp-hero {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% 0%, rgba(229, 87, 26, 0.10), transparent 70%),
+    radial-gradient(ellipse 70% 60% at 90% 30%, rgba(255, 138, 75, 0.08), transparent 60%),
+    radial-gradient(ellipse 60% 50% at 10% 70%, rgba(229, 87, 26, 0.08), transparent 60%),
+    var(--wp-bg) !important;
+}
+
+/* Smooth cross-fade when toggling. */
+:root[data-theme] {
+  transition:
+    background-color 250ms ease,
+    color 250ms ease;
+}
+
+/* Smooth scroll for hash anchor navigation. */
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+.wp-hero,
+.wp-hero * {
+  transition:
+    background-color 250ms ease,
+    border-color 250ms ease,
+    box-shadow 250ms ease,
+    color 250ms ease;
+}
+
+/* Glass utility — must visibly show what's behind. */
+.wp-glass {
+  background: var(--wp-glass-bg);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid var(--wp-glass-border);
+  position: relative;
+  box-shadow: var(--wp-glass-shadow);
+}
+
+.wp-glass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(180deg, var(--wp-glass-highlight), transparent 12%);
+}
+
+/* Dotted grid backdrop. */
+.wp-grid-dots {
+  background-image: radial-gradient(circle, var(--wp-border) 1px, transparent 1px);
+  background-size: 32px 32px;
+  -webkit-mask-image: radial-gradient(
+    ellipse at center,
+    black 40%,
+    transparent 75%
+  );
+  mask-image: radial-gradient(ellipse at center, black 40%, transparent 75%);
+  opacity: 0.45;
+}
+
+/* Film-grain via SVG noise. */
+.wp-grain {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.8 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  opacity: var(--wp-grain-alpha);
+  mix-blend-mode: overlay;
+}
+
+/* Gradient text shimmer for the headline accent line. */
+.wp-headline-grad {
+  background: linear-gradient(
+    90deg,
+    var(--wp-accent) 0%,
+    var(--wp-accent-2) 50%,
+    var(--wp-accent) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: wp-shimmer 6s ease-in-out infinite;
+}
+
+@keyframes wp-shimmer {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* Scan-line sweep. */
+@keyframes wp-scan {
+  0% { transform: translateY(-10vh); opacity: 0; }
+  10% { opacity: 0.35; }
+  90% { opacity: 0.35; }
+  100% { transform: translateY(110vh); opacity: 0; }
+}
+.wp-scan {
+  animation: wp-scan 8s linear infinite;
+}
+
+/* Constellation dash flow. */
+@keyframes wp-dashflow {
+  to { stroke-dashoffset: -64; }
+}
+.wp-dashflow {
+  animation: wp-dashflow 6s linear infinite;
+}
+
+/* Primary CTA glow pulse. */
+@keyframes wp-cta-pulse {
+  0%, 100% { box-shadow: 0 0 24px 0 rgba(242, 101, 34, 0.28); }
+  50% { box-shadow: 0 0 36px 4px rgba(242, 101, 34, 0.42); }
+}
+.wp-cta-pulse {
+  animation: wp-cta-pulse 4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wp-scan, .wp-dashflow, .wp-cta-pulse, .wp-headline-grad {
+    animation: none !important;
+  }
+}

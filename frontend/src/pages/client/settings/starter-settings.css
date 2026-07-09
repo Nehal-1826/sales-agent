@@ -1,0 +1,409 @@
+/* ============================================================================
+   Starter Settings — SE1 Card Hub.
+   se- prefix (starter settings).
+============================================================================ */
+
+.se {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  color: var(--wp-text, #e8e8f0);
+}
+
+/* ---------- Head ---------- */
+.se__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.se__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgb(255, 150, 112);
+}
+.se__title {
+  margin: 4px 0 0;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+.se__sub {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--wp-text-dim, #a1a1aa);
+  max-width: 64ch;
+}
+.se__owner {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--wp-text-dim, #a1a1aa);
+  background: color-mix(in srgb, var(--wp-surface, #12121a) 70%, transparent);
+  border: 1px solid var(--wp-border, #2a2a3a);
+}
+
+/* ============================================================================
+   6-card hub (3×2 grid)
+============================================================================ */
+.se-hub {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+@media (max-width: 900px) {
+  .se-hub {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 540px) {
+  .se-hub {
+    grid-template-columns: 1fr;
+  }
+}
+
+.se-card {
+  appearance: none;
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 18px;
+  border-radius: 16px;
+  border: 1px solid var(--wp-border, #2a2a3a);
+  background: color-mix(in srgb, var(--wp-surface, #12121a) 82%, transparent);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform 200ms ease, border-color 200ms ease;
+  min-height: 92px;
+}
+.se-card:hover:not(.se-card--locked) {
+  transform: translateY(-2px);
+}
+.se-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+}
+.se-card--violet::before {
+  background: radial-gradient(circle at 100% 0%, color-mix(in srgb, rgb(255, 150, 112) 16%, transparent), transparent 60%);
+}
+.se-card--cyan::before {
+  background: radial-gradient(circle at 100% 0%, color-mix(in srgb, rgb(255, 138, 75) 14%, transparent), transparent 60%);
+}
+.se-card--green::before {
+  background: radial-gradient(circle at 100% 0%, color-mix(in srgb, rgb(242, 101, 34) 14%, transparent), transparent 60%);
+}
+.se-card--yellow::before {
+  background: radial-gradient(circle at 100% 0%, color-mix(in srgb, rgb(255, 213, 79) 14%, transparent), transparent 60%);
+}
+.se-card--red::before {
+  background: radial-gradient(circle at 100% 0%, color-mix(in srgb, rgb(255, 107, 74) 12%, transparent), transparent 60%);
+}
+
+.se-card--featured {
+  border-color: color-mix(in srgb, rgb(242, 101, 34) 40%, var(--wp-border, #2a2a3a));
+  box-shadow: 0 0 0 1px color-mix(in srgb, rgb(242, 101, 34) 24%, transparent) inset;
+}
+.se-card--locked {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.se-card--locked .se-card__title {
+  color: var(--wp-text-dim, #a1a1aa);
+}
+
+.se-card__icon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  flex-shrink: 0;
+}
+.se-card__icon--violet { background: color-mix(in srgb, rgb(255, 150, 112) 20%, transparent); color: rgb(255, 150, 112); }
+.se-card__icon--cyan { background: color-mix(in srgb, rgb(255, 138, 75) 20%, transparent); color: rgb(255, 138, 75); }
+.se-card__icon--green { background: color-mix(in srgb, rgb(242, 101, 34) 20%, transparent); color: rgb(242, 101, 34); }
+.se-card__icon--yellow { background: color-mix(in srgb, rgb(255, 213, 79) 20%, transparent); color: rgb(255, 213, 79); }
+.se-card__icon--red { background: color-mix(in srgb, rgb(255, 107, 74) 18%, transparent); color: rgb(255, 107, 74); }
+
+.se-card__body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.se-card__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--wp-text, #e8e8f0);
+  letter-spacing: -0.01em;
+}
+.se-card__pro-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, rgb(255, 150, 112) 20%, transparent);
+  color: rgb(255, 150, 112);
+}
+.se-card__desc {
+  font-size: 11.5px;
+  color: var(--wp-text-dim, #a1a1aa);
+  line-height: 1.4;
+}
+.se-card__arrow {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  border: 1px solid var(--wp-border, #2a2a3a);
+  background: color-mix(in srgb, var(--wp-surface, #12121a) 60%, transparent);
+  color: var(--wp-text-dim, #a1a1aa);
+  transition: color 160ms ease, background 160ms ease, border-color 160ms ease;
+}
+.se-card:hover:not(.se-card--locked) .se-card__arrow {
+  color: var(--wp-text, #e8e8f0);
+  border-color: color-mix(in srgb, rgb(242, 101, 34) 45%, var(--wp-border, #2a2a3a));
+  background: color-mix(in srgb, rgb(242, 101, 34) 14%, transparent);
+}
+.se-card__arrow--locked {
+  background: color-mix(in srgb, var(--wp-border, #2a2a3a) 70%, transparent);
+}
+
+/* ============================================================================
+   Section panels
+============================================================================ */
+.se-panel {
+  scroll-margin-top: 24px;
+  transition: box-shadow 600ms ease;
+}
+.se-panel--flash {
+  box-shadow: 0 0 0 2px color-mix(in srgb, rgb(242, 101, 34) 45%, transparent);
+  border-radius: 18px;
+}
+
+/* ---------- Panel card shell ---------- */
+.se-panel-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px 22px 18px;
+  border-radius: 18px;
+  border: 1px solid var(--wp-border, #2a2a3a);
+  background: color-mix(in srgb, var(--wp-surface, #12121a) 84%, transparent);
+  overflow: hidden;
+}
+.se-panel-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.4;
+}
+.se-panel-card--violet::before {
+  background: radial-gradient(circle at 0% 0%, color-mix(in srgb, rgb(255, 150, 112) 16%, transparent), transparent 55%);
+}
+.se-panel-card--cyan::before {
+  background: radial-gradient(circle at 0% 0%, color-mix(in srgb, rgb(255, 138, 75) 14%, transparent), transparent 55%);
+}
+.se-panel-card--green::before {
+  background: radial-gradient(circle at 0% 0%, color-mix(in srgb, rgb(242, 101, 34) 14%, transparent), transparent 55%);
+}
+.se-panel-card--yellow::before {
+  background: radial-gradient(circle at 0% 0%, color-mix(in srgb, rgb(255, 213, 79) 14%, transparent), transparent 55%);
+}
+
+.se-panel-card__head {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 14px;
+}
+.se-panel-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+.se-panel-card__icon--violet { background: color-mix(in srgb, rgb(255, 150, 112) 22%, transparent); color: rgb(255, 150, 112); }
+.se-panel-card__icon--cyan { background: color-mix(in srgb, rgb(255, 138, 75) 22%, transparent); color: rgb(255, 138, 75); }
+.se-panel-card__icon--green { background: color-mix(in srgb, rgb(242, 101, 34) 22%, transparent); color: rgb(242, 101, 34); }
+.se-panel-card__icon--yellow { background: color-mix(in srgb, rgb(255, 213, 79) 22%, transparent); color: rgb(255, 213, 79); }
+.se-panel-card__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--wp-text, #e8e8f0);
+}
+.se-panel-card__sub {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--wp-text-dim, #a1a1aa);
+  line-height: 1.5;
+}
+.se-panel-card__chev {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  border: 1px solid var(--wp-border, #2a2a3a);
+  color: var(--wp-text-dim, #a1a1aa);
+  background: color-mix(in srgb, var(--wp-surface, #12121a) 60%, transparent);
+}
+.se-panel-card__body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ============================================================================
+   Forms inside panels
+============================================================================ */
+.se-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.se-form__row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.se-form__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 640px) {
+  .se-form__grid {
+    grid-template-columns: 1fr;
+  }
+}
+.se-form__label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--wp-text-dim, #a1a1aa);
+}
+.se-form__hint {
+  font-size: 11px;
+  color: var(--wp-text-dim, #a1a1aa);
+}
+.se-form__hint--err {
+  color: rgb(255, 107, 74);
+}
+.se-form__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+/* ---------- Toggle row ---------- */
+.se-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--wp-border, #2a2a3a) 70%, transparent);
+  background: color-mix(in srgb, var(--wp-surface, #12121a) 60%, transparent);
+}
+.se-toggle__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.se-toggle__title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--wp-text, #e8e8f0);
+}
+.se-toggle__desc {
+  font-size: 11px;
+  color: var(--wp-text-dim, #a1a1aa);
+  line-height: 1.4;
+}
+
+/* ---------- Tour panel ---------- */
+.se-tour {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, rgb(255, 213, 79) 25%, var(--wp-border, #2a2a3a));
+  background: color-mix(in srgb, rgb(255, 213, 79) 6%, transparent);
+}
+.se-tour__status {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.se-tour__label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--wp-text-dim, #a1a1aa);
+}
+.se-tour__pill {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  width: max-content;
+}
+.se-tour__pill--done {
+  background: color-mix(in srgb, rgb(242, 101, 34) 18%, transparent);
+  color: rgb(242, 101, 34);
+}
+.se-tour__pill--pending {
+  background: color-mix(in srgb, var(--wp-border, #2a2a3a) 50%, transparent);
+  color: var(--wp-text-dim, #a1a1aa);
+}

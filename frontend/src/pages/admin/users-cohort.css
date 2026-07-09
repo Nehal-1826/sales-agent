@@ -1,0 +1,524 @@
+/* =============================================================================
+   /admin/users — Cohort Analytics layout
+============================================================================= */
+
+.uc {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.uc__topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.55);
+}
+.uc__crumb {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.uc__time {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.uc__time svg { color: var(--wp-accent); }
+
+.uc__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 14px;
+}
+.uc__title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+.uc__sub {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.uc__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.uc__dd {
+  position: relative;
+}
+.uc__dd-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 160px;
+  padding: 4px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--wp-surface) 96%, transparent);
+  border: 1px solid var(--wp-border);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+  z-index: 10;
+}
+.uc__dd-item {
+  appearance: none;
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.uc__dd-item:hover {
+  background: color-mix(in srgb, var(--wp-accent) 14%, transparent);
+}
+.uc__dd-item--active {
+  background: color-mix(in srgb, var(--wp-accent) 22%, transparent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.uc__btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+.uc__btn--ghost {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.85);
+}
+.uc__btn--ghost:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.uc__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.65);
+  font-weight: 700;
+}
+.uc__eyebrow svg { color: var(--wp-accent); }
+.uc__pill {
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.uc__pill--ok { background: rgba(74, 222, 128, 0.18); color: #86efac; }
+.uc__count {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  font-family: 'JetBrains Mono', monospace;
+  margin-top: 4px;
+}
+.uc__note {
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.4);
+  font-style: italic;
+}
+
+/* Segment cards ---------------------------------------------------------- */
+
+.uc__segs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+@media (max-width: 900px) {
+  .uc__segs { grid-template-columns: repeat(2, 1fr); }
+}
+.uc-seg {
+  appearance: none;
+  text-align: left;
+  background: color-mix(in srgb, var(--wp-surface) 70%, transparent);
+  border: 1px solid var(--wp-border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: pointer;
+  transition: border-color 160ms ease, transform 160ms ease;
+  backdrop-filter: blur(12px);
+}
+.uc-seg:hover {
+  border-color: color-mix(in srgb, var(--wp-accent) 35%, var(--wp-border));
+  transform: translateY(-1px);
+}
+.uc-seg--active {
+  border-color: var(--wp-accent);
+  box-shadow:
+    0 0 0 1px var(--wp-accent),
+    0 10px 28px color-mix(in srgb, var(--wp-accent) 22%, transparent);
+}
+.uc-seg__label {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 700;
+}
+.uc-seg__num {
+  font-size: 26px;
+  font-weight: 800;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.025em;
+}
+.uc-seg__delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.uc-seg__delta--ok { color: #86efac; }
+.uc-seg__delta--down { color: #fca5a5; }
+.uc-seg__delta--warn { color: #fde68a; }
+.uc-seg__delta--all { color: var(--wp-accent); }
+
+/* Charts row -------------------------------------------------------- */
+
+.uc__charts {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 1000px) {
+  .uc__charts { grid-template-columns: 1fr; }
+}
+
+.uc-card {
+  background: color-mix(in srgb, var(--wp-surface) 70%, transparent);
+  border: 1px solid var(--wp-border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  backdrop-filter: blur(12px);
+}
+.uc-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.uc__chart {
+  width: 100%;
+  height: 130px;
+}
+.uc__empty {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  padding: 12px 0;
+}
+.uc__empty--lg {
+  padding: 24px 0;
+  justify-content: center;
+}
+
+/* Plan mix ----------------------------------------------------------- */
+
+.uc__planmix {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.uc__planmix-row {
+  display: grid;
+  grid-template-columns: 80px 1fr 40px;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+.uc__planmix-label {
+  color: rgba(255, 255, 255, 0.72);
+  font-weight: 600;
+  text-transform: capitalize;
+}
+.uc__planmix-bar {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+}
+.uc__planmix-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: 4px;
+}
+.uc__planmix-pct {
+  font-family: 'JetBrains Mono', monospace;
+  color: #fff;
+  font-weight: 700;
+  text-align: right;
+}
+
+/* Retention heatmap -------------------------------------------------- */
+
+.uc-card--retain { padding: 16px; }
+.uc__retain {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+.uc__retain-row {
+  display: grid;
+  grid-template-columns: 110px repeat(5, 1fr);
+  gap: 6px;
+  font-size: 12px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.uc__retain-row--head {
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+}
+.uc__retain-row--head span {
+  padding: 4px 0;
+  text-align: center;
+}
+.uc__retain-row--head span:first-child { text-align: left; }
+.uc__retain-cohort {
+  display: flex;
+  align-items: center;
+  color: rgba(255, 255, 255, 0.72);
+  font-weight: 600;
+}
+.uc__retain-cell {
+  padding: 8px 0;
+  text-align: center;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+/* Filterable table -------------------------------------------------- */
+
+.uc-card--table { padding: 14px 16px 8px; }
+.uc__row-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.uc__srch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  width: 240px;
+}
+.uc__srch svg { color: rgba(255, 255, 255, 0.45); }
+.uc__srch-input {
+  background: transparent;
+  border: 0;
+  outline: 0;
+  color: #fff;
+  font-size: 12.5px;
+  flex: 1;
+  min-width: 0;
+}
+.uc__srch-input::placeholder { color: rgba(255, 255, 255, 0.35); }
+
+.uc-tbl {
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+}
+.uc-tbl__row {
+  display: grid;
+  grid-template-columns: 1.8fr 0.7fr 0.7fr 90px 100px 40px;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 12.5px;
+}
+.uc-tbl__row:last-child { border-bottom: none; }
+.uc-tbl__row--head {
+  background: transparent;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+  font-weight: 700;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.uc-tbl__row:not(.uc-tbl__row--head):hover {
+  background: rgba(242, 101, 34, 0.04);
+}
+.uc-tbl__cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.85);
+  min-width: 0;
+}
+.uc-tbl__cell--btn {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+  color: inherit;
+}
+.uc-tbl__cell--btn:hover .uc-tbl__name { color: var(--wp-accent); }
+.uc-tbl__cell--num {
+  justify-content: flex-end;
+  font-variant-numeric: tabular-nums;
+}
+.uc-tbl__cell--act { justify-content: flex-end; }
+.uc-tbl__avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+.uc-tbl__id { min-width: 0; display: flex; flex-direction: column; }
+.uc-tbl__name {
+  color: #fff;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 160ms ease;
+}
+.uc-tbl__email {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.uc-tbl__plan {
+  display: inline-flex;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  background: rgba(242, 101, 34, 0.18);
+  color: #FFB890;
+}
+.uc-tbl__plan--free, .uc-tbl__plan--— {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.6);
+}
+.uc-tbl__plan--starter { background: rgba(244, 114, 182, 0.18); color: #f9a8d4; }
+.uc-tbl__plan--growth { background: rgba(255, 138, 75, 0.22); color: #FFB890; }
+.uc-tbl__plan--scale { background: rgba(242, 101, 34, 0.22); color: #FFB890; }
+
+.uc-tbl__pill {
+  display: inline-flex;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+.uc-tbl__pill--active { background: rgba(74, 222, 128, 0.18); color: #86efac; }
+.uc-tbl__pill--pending { background: rgba(251, 191, 36, 0.18); color: #fde68a; }
+.uc-tbl__pill--suspended { background: rgba(239, 68, 68, 0.18); color: #fca5a5; }
+
+/* Row menu ----------------------------------------------------------- */
+
+.uc-menu { position: relative; }
+.uc-menu__trigger {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+}
+.uc-menu__trigger:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.06);
+}
+.uc-menu__panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 150px;
+  padding: 4px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--wp-surface) 96%, transparent);
+  border: 1px solid var(--wp-border);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+}
+.uc-menu__item {
+  appearance: none;
+  display: block;
+  padding: 7px 10px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 12px;
+  cursor: pointer;
+}
+.uc-menu__item:hover {
+  background: color-mix(in srgb, var(--wp-accent) 14%, transparent);
+}
+.uc-menu__item--danger { color: #fca5a5; }
+.uc-menu__item--danger:hover {
+  background: rgba(239, 68, 68, 0.16);
+}

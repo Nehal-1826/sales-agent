@@ -1,0 +1,885 @@
+/* =============================================================================
+   Popup design preview — picker page showing 4 popup design systems
+   demonstrated across 5 popup TYPES that exist in the admin UI.
+   Uses the shared var(--wp-*) tokens so light + dark themes both render.
+============================================================================= */
+
+.pd {
+  min-height: 100vh;
+  background: var(--wp-bg);
+  color: var(--wp-text);
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* ---------- Atmosphere ---------- */
+.pd__atmosphere {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+}
+.pd__aurora-1,
+.pd__aurora-2 {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(140px);
+  opacity: 0.4;
+}
+.pd__aurora-1 {
+  width: 700px;
+  height: 700px;
+  top: -250px;
+  left: -150px;
+  background: var(--wp-accent);
+}
+.pd__aurora-2 {
+  width: 600px;
+  height: 600px;
+  bottom: -200px;
+  right: -150px;
+  background: var(--wp-accent-2, var(--wp-accent));
+  opacity: 0.28;
+}
+
+/* ---------- Top bar ---------- */
+.pd__topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 28px;
+  background: color-mix(in srgb, var(--wp-bg) 80%, transparent);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  border-bottom: 1px solid color-mix(in srgb, var(--wp-accent) 12%, var(--wp-border));
+}
+.pd__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--wp-text-dim);
+  text-decoration: none;
+  padding: 6px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--wp-border);
+  transition: color 150ms, border-color 150ms;
+}
+.pd__back:hover {
+  color: var(--wp-text);
+  border-color: color-mix(in srgb, var(--wp-accent) 40%, var(--wp-border));
+}
+.pd__brand {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--wp-text-faint);
+}
+
+/* ---------- Hero ---------- */
+.pd__main {
+  position: relative;
+  z-index: 1;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 56px 28px 96px;
+}
+.pd__hero {
+  margin-bottom: 56px;
+  max-width: 720px;
+}
+.pd__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--wp-accent);
+  background: color-mix(in srgb, var(--wp-accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 30%, transparent);
+}
+.pd__title {
+  margin: 14px 0 10px;
+  font-size: 38px;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.pd__title em {
+  font-style: normal;
+  background: linear-gradient(90deg, var(--wp-accent), var(--wp-accent-2, var(--wp-accent)));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.pd__sub {
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--wp-text-dim);
+}
+
+/* ---------- Design system swatches ---------- */
+.pd__systems {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 64px;
+}
+@media (max-width: 920px) {
+  .pd__systems {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+.pd__sys {
+  position: relative;
+  padding: 18px 18px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--wp-border);
+  background: color-mix(in srgb, var(--wp-surface) 80%, transparent);
+  transition: border-color 200ms, transform 200ms;
+}
+.pd__sys:hover {
+  border-color: color-mix(in srgb, var(--wp-accent) 40%, var(--wp-border));
+  transform: translateY(-2px);
+}
+.pd__sys-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.pd__sys-code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-accent) 14%, transparent);
+  color: var(--wp-accent);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 30%, transparent);
+}
+.pd__sys-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+.pd__sys-tag {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--wp-text-dim);
+  margin: 0 0 12px;
+}
+.pd__sys-swatch {
+  height: 64px;
+  border-radius: 10px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Per-system swatch styles (the chip preview at top of each system tile) */
+.pd__sys-swatch--A {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--wp-accent) 65%, transparent), color-mix(in srgb, var(--wp-accent) 25%, transparent)) 0 0/100% 35% no-repeat,
+    var(--wp-surface-2);
+  border: 1px solid var(--wp-border);
+}
+.pd__sys-swatch--B {
+  display: grid;
+  grid-template-columns: 35% 1fr;
+  background: var(--wp-surface-2);
+  border: 1px solid var(--wp-border);
+}
+.pd__sys-swatch--B::before {
+  content: '';
+  background:
+    radial-gradient(ellipse at 30% 30%, color-mix(in srgb, var(--wp-accent) 35%, transparent), transparent 65%),
+    color-mix(in srgb, var(--wp-accent) 18%, var(--wp-surface));
+  border-right: 1px solid var(--wp-border);
+}
+.pd__sys-swatch--B::after {
+  content: '';
+  background: repeating-linear-gradient(
+    180deg,
+    var(--wp-surface) 0 6px,
+    transparent 6px 12px
+  );
+}
+.pd__sys-swatch--C {
+  background: var(--wp-surface-2);
+  border: 1px solid var(--wp-border);
+  position: relative;
+}
+.pd__sys-swatch--C::before {
+  content: '';
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  width: 36px;
+  height: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-accent) 80%, transparent);
+  transform: translateX(-50%);
+}
+.pd__sys-swatch--C::after {
+  content: '';
+  position: absolute;
+  inset: 18px 12px 12px;
+  background: repeating-linear-gradient(180deg, var(--wp-surface) 0 5px, transparent 5px 10px);
+  border-radius: 6px;
+}
+.pd__sys-swatch--D {
+  background:
+    radial-gradient(circle at 20% 20%, color-mix(in srgb, var(--wp-accent) 30%, transparent), transparent 60%),
+    radial-gradient(circle at 80% 80%, color-mix(in srgb, var(--wp-accent-2, var(--wp-accent)) 28%, transparent), transparent 65%),
+    color-mix(in srgb, var(--wp-surface) 70%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 25%, var(--wp-border));
+}
+
+/* ---------- Sections ---------- */
+.pd__section {
+  margin-bottom: 64px;
+}
+.pd__section-head {
+  margin-bottom: 22px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.pd__section-title {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pd__section-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  background: color-mix(in srgb, var(--wp-accent) 16%, transparent);
+  color: var(--wp-accent);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 35%, transparent);
+}
+.pd__section-sub {
+  font-size: 13px;
+  color: var(--wp-text-dim);
+  max-width: 540px;
+}
+.pd__row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px;
+}
+@media (max-width: 1180px) {
+  .pd__row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 620px) {
+  .pd__row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* =============================================================================
+   Popup mockups — base shell (shared across all variants).
+============================================================================= */
+.pop {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--wp-surface);
+  border: 1px solid var(--wp-border);
+  font-size: 11.5px;
+  color: var(--wp-text);
+  min-height: 280px;
+  display: flex;
+  flex-direction: column;
+}
+.pop__code {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.07em;
+  color: var(--wp-text-faint);
+  background: color-mix(in srgb, var(--wp-bg) 60%, transparent);
+  border: 1px solid var(--wp-border);
+  padding: 2px 6px;
+  border-radius: 999px;
+  z-index: 4;
+}
+.pop__close {
+  position: absolute;
+  top: 10px;
+  right: 38px;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-surface-2) 80%, transparent);
+  border: 1px solid var(--wp-border);
+  color: var(--wp-text-dim);
+  z-index: 4;
+}
+.pop__close::before,
+.pop__close::after {
+  content: '';
+  width: 8px;
+  height: 1.5px;
+  background: currentColor;
+  position: absolute;
+}
+.pop__close::before { transform: rotate(45deg); }
+.pop__close::after  { transform: rotate(-45deg); }
+
+/* Title + description shared */
+.pop__title {
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.pop__title::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--wp-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--wp-accent) 22%, transparent);
+}
+.pop__desc {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--wp-text-dim);
+  margin-top: 4px;
+}
+
+/* Form rows shared */
+.pop__field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.pop__label {
+  font-size: 10px;
+  color: var(--wp-text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.pop__input {
+  height: 26px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--wp-surface-2) 70%, transparent);
+  border: 1px solid var(--wp-border);
+  display: flex;
+  align-items: center;
+  padding: 0 9px;
+  font-size: 11px;
+  color: var(--wp-text-dim);
+}
+.pop__input--filled {
+  color: var(--wp-text);
+}
+.pop__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+/* Footer shared */
+.pop__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding-top: 10px;
+  margin-top: auto;
+  border-top: 1px solid var(--wp-border);
+}
+.pop__btn {
+  font-size: 10.5px;
+  padding: 5px 11px;
+  border-radius: 7px;
+  border: 1px solid var(--wp-border);
+  background: var(--wp-surface-2);
+  color: var(--wp-text);
+}
+.pop__btn--ghost {
+  background: transparent;
+  color: var(--wp-text-dim);
+}
+.pop__btn--primary {
+  background: var(--wp-accent);
+  border-color: var(--wp-accent);
+  color: white;
+  box-shadow: 0 6px 18px -6px color-mix(in srgb, var(--wp-accent) 70%, transparent);
+}
+.pop__btn--danger {
+  background: var(--wp-danger);
+  border-color: var(--wp-danger);
+  color: white;
+}
+
+/* =============================================================================
+   DESIGN A — Hero Banner.
+   Coloured gradient banner band on top (~64px), big icon on the left of the
+   banner, body in a clean lower panel.
+============================================================================= */
+.pop--A {
+  padding: 0;
+}
+.pop--A .pop__banner {
+  height: 70px;
+  padding: 14px 16px 12px 56px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  color: white;
+  background:
+    radial-gradient(ellipse at top right, color-mix(in srgb, var(--wp-accent-2, var(--wp-accent)) 75%, transparent), transparent 60%),
+    linear-gradient(110deg, var(--wp-accent), color-mix(in srgb, var(--wp-accent) 70%, var(--wp-accent-2, var(--wp-accent))));
+}
+.pop--A .pop__banner-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  display: grid;
+  place-items: center;
+}
+.pop--A .pop__title {
+  color: white;
+  font-size: 13.5px;
+}
+.pop--A .pop__title::before {
+  background: white;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.25);
+}
+.pop--A .pop__desc {
+  color: rgba(255, 255, 255, 0.85);
+  margin-top: 2px;
+}
+.pop--A .pop__body {
+  padding: 14px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+}
+.pop--A .pop__close {
+  background: rgba(0, 0, 0, 0.25);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: white;
+}
+.pop--A .pop__footer {
+  padding: 10px 16px 14px;
+  margin-top: 0;
+  border-top: 1px solid var(--wp-border);
+}
+
+/* =============================================================================
+   DESIGN B — Split Rail.
+   Left rail (~36%) is a vertical accent panel with brand + icon + tagline.
+   Right rail is the form.
+============================================================================= */
+.pop--B {
+  padding: 0;
+  display: grid;
+  grid-template-columns: 36% 1fr;
+  min-height: 300px;
+}
+.pop--B .pop__rail {
+  position: relative;
+  padding: 16px 14px;
+  background:
+    radial-gradient(ellipse at top left, color-mix(in srgb, var(--wp-accent) 45%, transparent), transparent 60%),
+    linear-gradient(180deg, color-mix(in srgb, var(--wp-accent) 22%, var(--wp-surface-2)), color-mix(in srgb, var(--wp-accent) 8%, var(--wp-surface-2)));
+  border-right: 1px solid var(--wp-border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pop--B .pop__rail-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--wp-accent) 30%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 55%, transparent);
+  display: grid;
+  place-items: center;
+  color: var(--wp-accent);
+}
+.pop--B .pop__rail-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 4px;
+}
+.pop--B .pop__rail-sub {
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: var(--wp-text-dim);
+}
+.pop--B .pop__rail-meta {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 9.5px;
+  color: var(--wp-text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.pop--B .pop__rail-meta span::before {
+  content: '◆ ';
+  color: var(--wp-accent);
+}
+.pop--B .pop__body {
+  padding: 18px 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pop--B .pop__footer {
+  padding: 0 16px 14px;
+  border-top: none;
+  margin-top: auto;
+}
+.pop--B .pop__close {
+  top: 10px;
+  right: 10px;
+}
+
+/* =============================================================================
+   DESIGN C — Stepper Sheet.
+   Sheet-style with prominent top handle, progress stepper row showing
+   1•2•3, slide-up feel.
+============================================================================= */
+.pop--C {
+  padding: 28px 16px 14px;
+  border-radius: 18px;
+}
+.pop--C::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 42px;
+  height: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-accent) 75%, transparent);
+  z-index: 2;
+}
+.pop--C .pop__stepper {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 12px;
+  font-size: 9.5px;
+  color: var(--wp-text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+.pop--C .pop__step {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.pop--C .pop__step-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1.5px solid var(--wp-border);
+  display: grid;
+  place-items: center;
+  font-size: 8px;
+  color: var(--wp-text-dim);
+}
+.pop--C .pop__step--active .pop__step-dot {
+  border-color: var(--wp-accent);
+  background: var(--wp-accent);
+  color: white;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--wp-accent) 25%, transparent);
+}
+.pop--C .pop__step--done .pop__step-dot {
+  border-color: var(--wp-accent);
+  color: var(--wp-accent);
+}
+.pop--C .pop__step-tail {
+  width: 14px;
+  height: 1.5px;
+  background: var(--wp-border);
+}
+.pop--C .pop__step--done + .pop__step-tail,
+.pop--C .pop__step--active + .pop__step-tail {
+  background: color-mix(in srgb, var(--wp-accent) 50%, var(--wp-border));
+}
+.pop--C .pop__header {
+  margin-bottom: 12px;
+}
+.pop--C .pop__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pop--C .pop__footer {
+  margin-top: 14px;
+}
+
+/* =============================================================================
+   DESIGN D — Glass Floating.
+   Heavy frosted glass effect with multiple layered blurs, raised feel with
+   strong accent halo + corner decorations.
+============================================================================= */
+.pop--D {
+  padding: 16px;
+  border-radius: 16px;
+  background:
+    radial-gradient(ellipse at top, color-mix(in srgb, var(--wp-accent) 12%, transparent), transparent 60%),
+    color-mix(in srgb, var(--wp-surface) 72%, transparent);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 22%, var(--wp-border));
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.08) inset,
+    0 24px 60px -16px color-mix(in srgb, var(--wp-accent) 38%, transparent),
+    0 6px 16px -6px rgba(0, 0, 0, 0.45);
+}
+.pop--D::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 80px;
+  height: 80px;
+  background: radial-gradient(circle at top left, color-mix(in srgb, var(--wp-accent) 40%, transparent), transparent 70%);
+  pointer-events: none;
+}
+.pop--D::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 80px;
+  height: 80px;
+  background: radial-gradient(circle at bottom right, color-mix(in srgb, var(--wp-accent-2, var(--wp-accent)) 30%, transparent), transparent 70%);
+  pointer-events: none;
+}
+.pop--D .pop__body {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 12px;
+  position: relative;
+}
+.pop--D .pop__footer {
+  position: relative;
+  z-index: 2;
+}
+
+/* =============================================================================
+   Type-specific tints + iconography.
+============================================================================= */
+.pop--destructive .pop__title::before {
+  background: var(--wp-danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--wp-danger) 22%, transparent);
+}
+.pop--A.pop--destructive .pop__banner {
+  background:
+    radial-gradient(ellipse at top right, color-mix(in srgb, var(--wp-danger) 50%, transparent), transparent 60%),
+    linear-gradient(110deg, var(--wp-danger), color-mix(in srgb, var(--wp-danger) 65%, var(--wp-accent)));
+}
+.pop--A.pop--destructive .pop__title::before { background: white; box-shadow: 0 0 0 3px rgba(255,255,255,0.25); }
+
+.pop--B.pop--destructive .pop__rail {
+  background:
+    radial-gradient(ellipse at top left, color-mix(in srgb, var(--wp-danger) 40%, transparent), transparent 60%),
+    linear-gradient(180deg, color-mix(in srgb, var(--wp-danger) 20%, var(--wp-surface-2)), color-mix(in srgb, var(--wp-danger) 6%, var(--wp-surface-2)));
+}
+.pop--B.pop--destructive .pop__rail-icon {
+  background: color-mix(in srgb, var(--wp-danger) 30%, transparent);
+  border-color: color-mix(in srgb, var(--wp-danger) 55%, transparent);
+  color: var(--wp-danger);
+}
+
+.pop--C.pop--destructive::before { background: var(--wp-danger); }
+
+.pop--D.pop--destructive {
+  background:
+    radial-gradient(ellipse at top, color-mix(in srgb, var(--wp-danger) 14%, transparent), transparent 60%),
+    color-mix(in srgb, var(--wp-surface) 72%, transparent);
+  border-color: color-mix(in srgb, var(--wp-danger) 30%, var(--wp-border));
+}
+
+/* CSV preview block used in bulk-import mockup */
+.pop__csv {
+  margin-top: 4px;
+  border-radius: 8px;
+  border: 1px dashed color-mix(in srgb, var(--wp-accent) 35%, var(--wp-border));
+  background: color-mix(in srgb, var(--wp-accent) 6%, var(--wp-surface-2));
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pop__csv-row {
+  display: grid;
+  grid-template-columns: 1fr 0.8fr 0.5fr;
+  gap: 6px;
+  font-size: 9.5px;
+  color: var(--wp-text-dim);
+}
+.pop__csv-row--head {
+  color: var(--wp-text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 8.5px;
+}
+.pop__csv-pill {
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-success) 18%, transparent);
+  color: var(--wp-success);
+  width: fit-content;
+  border: 1px solid color-mix(in srgb, var(--wp-success) 35%, transparent);
+}
+
+/* Confirm-style centered impact block */
+.pop__impact {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  padding: 8px 4px;
+}
+.pop__impact-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--wp-accent) 20%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 45%, transparent);
+  color: var(--wp-accent);
+  display: grid;
+  place-items: center;
+}
+.pop--destructive .pop__impact-icon {
+  background: color-mix(in srgb, var(--wp-danger) 20%, transparent);
+  border-color: color-mix(in srgb, var(--wp-danger) 45%, transparent);
+  color: var(--wp-danger);
+}
+.pop__impact-target {
+  font-size: 12px;
+  font-weight: 600;
+  font-family: 'JetBrains Mono', monospace;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--wp-surface-2) 80%, transparent);
+  border: 1px solid var(--wp-border);
+}
+
+/* Destructive type-to-confirm input row */
+.pop__type-confirm {
+  margin-top: 6px;
+  font-size: 10.5px;
+  color: var(--wp-text-dim);
+}
+.pop__type-confirm code {
+  background: color-mix(in srgb, var(--wp-danger) 12%, transparent);
+  color: var(--wp-danger);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  border: 1px solid color-mix(in srgb, var(--wp-danger) 30%, transparent);
+}
+
+/* Detail-row label/value rows used by detail-view type */
+.pop__row-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10.5px;
+  padding: 5px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--wp-border) 60%, transparent);
+}
+.pop__row-meta:last-child { border-bottom: none; }
+.pop__row-meta strong { color: var(--wp-text); font-weight: 600; }
+.pop__row-meta span { color: var(--wp-text-dim); }
+
+/* ---------- Pick / verdict ---------- */
+.pd__verdict {
+  margin-top: 8px;
+  padding: 22px 24px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--wp-accent) 8%, var(--wp-surface));
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 25%, var(--wp-border));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.pd__verdict-text strong {
+  color: var(--wp-accent);
+}
+.pd__verdict-text p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--wp-text-dim);
+  max-width: 540px;
+  line-height: 1.55;
+}
+.pd__pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.pd__pick-btn {
+  border: 1px solid var(--wp-border);
+  background: var(--wp-surface-2);
+  color: var(--wp-text);
+  padding: 8px 14px;
+  font-size: 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 0.05em;
+  transition: all 150ms;
+}
+.pd__pick-btn:hover {
+  border-color: var(--wp-accent);
+  color: var(--wp-accent);
+}
+.pd__pick-btn--active {
+  background: var(--wp-accent);
+  border-color: var(--wp-accent);
+  color: white;
+  box-shadow: 0 10px 24px -10px color-mix(in srgb, var(--wp-accent) 70%, transparent);
+}

@@ -1,0 +1,1945 @@
+/* Onboarding dashboard (O1 · Checklist Dashboard). */
+
+.onb-shell {
+  position: relative;
+  min-height: 100vh;
+  background: var(--wp-bg, #0a0a0a);
+  color: var(--wp-text, #f4f4f5);
+  overflow: hidden;
+}
+
+/* ---------- Atmosphere ---------- */
+.onb-shell__atmosphere {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+.onb-shell__aurora-1 {
+  position: absolute;
+  top: -240px;
+  left: -200px;
+  width: 900px;
+  height: 900px;
+  border-radius: 999px;
+  /* The radial-gradient already fades to transparent, so the extra
+     filter: blur(120px) was redundant cost — dropped; falloff widened a touch
+     to keep the same softness. */
+  background: radial-gradient(circle, color-mix(in srgb, var(--wp-accent) 40%, transparent) 0%, transparent 70%);
+}
+.onb-shell__aurora-2 {
+  position: absolute;
+  bottom: -240px;
+  right: -240px;
+  width: 760px;
+  height: 760px;
+  border-radius: 999px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--wp-accent-2) 28%, transparent) 0%, transparent 70%);
+}
+.onb-shell__grid {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, var(--wp-border) 1px, transparent 1px);
+  background-size: 28px 28px;
+  opacity: 0.4;
+  -webkit-mask-image: radial-gradient(ellipse at center, black 20%, transparent 75%);
+  mask-image: radial-gradient(ellipse at center, black 20%, transparent 75%);
+}
+
+/* ---------- Top bar ---------- */
+.onb-topbar {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  padding: 14px 28px;
+  border-bottom: 1px solid var(--wp-border);
+  background: color-mix(in srgb, var(--wp-surface) 60%, transparent);
+  backdrop-filter: blur(16px) saturate(160%);
+}
+.onb-topbar__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: inherit;
+}
+.onb-topbar__logo {
+  width: 26px;
+  height: 26px;
+}
+.onb-topbar__logo svg { width: 100%; height: 100%; display: block; }
+.onb-topbar__brand-word {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+.onb-topbar__crumb {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--wp-text-faint);
+}
+.onb-topbar__user {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--wp-text-dim);
+}
+.onb-topbar__logout {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--wp-text-dim);
+  background: color-mix(in srgb, var(--wp-surface-2) 60%, transparent);
+  border: 1px solid var(--wp-border);
+  padding: 6px 12px;
+  margin-left: 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 150ms, background 150ms, border-color 150ms;
+}
+.onb-topbar__logout:hover {
+  color: var(--wp-danger);
+  background: color-mix(in srgb, var(--wp-danger) 10%, var(--wp-surface-2));
+  border-color: color-mix(in srgb, var(--wp-danger) 30%, var(--wp-border));
+}
+
+.onb-topbar__avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--wp-accent), var(--wp-accent-2));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--wp-accent) 40%, transparent);
+}
+
+/* ---------- Body ---------- */
+.onb-body {
+  position: relative;
+  z-index: 1;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 48px 32px 80px;
+}
+
+.onb-welcome {
+  margin-bottom: 32px;
+}
+.onb-welcome__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--wp-accent);
+  background: color-mix(in srgb, var(--wp-accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 26%, transparent);
+  padding: 4px 10px;
+  border-radius: 999px;
+  margin-bottom: 14px;
+}
+.onb-welcome__h {
+  margin: 0;
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+.onb-welcome__sub {
+  margin: 10px 0 22px;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--wp-text-dim);
+  max-width: 540px;
+}
+
+.onb-progress {
+  max-width: 540px;
+}
+.onb-progress__bar {
+  height: 6px;
+  background: color-mix(in srgb, var(--wp-surface-2) 80%, transparent);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.onb-progress__fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--wp-accent), var(--wp-accent-2));
+  border-radius: 999px;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--wp-accent) 55%, transparent);
+}
+.onb-progress__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--wp-text-faint);
+}
+.onb-progress__meta strong {
+  color: var(--wp-accent);
+  font-weight: 700;
+}
+
+/* ---------- Task grid ---------- */
+.onb-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+@media (max-width: 880px) {
+  .onb-grid { grid-template-columns: 1fr; }
+  /* Surface the active step panel ABOVE the checklist on narrow screens, so
+     the user lands on what they need to do next instead of scrolling past
+     all eight tasks to reach it. */
+  .onb-side { order: -1; }
+}
+
+/* ---------- Phone (<=640px) ---------- */
+@media (max-width: 640px) {
+  .onb-topbar { padding: 11px 14px; }
+  .onb-topbar__crumb { display: none; }
+  .onb-topbar__email { display: none; }            /* long email crowds the bar */
+  .onb-topbar__logout { margin-left: 8px; padding: 6px 9px; }
+  .onb-topbar__logout span { display: none; }       /* icon-only logout */
+
+  .onb-body { padding: 24px 16px 56px; }
+  .onb-welcome { margin-bottom: 22px; }
+  .onb-welcome__h { font-size: 25px; }
+  .onb-welcome__sub { font-size: 14px; margin: 10px 0 18px; }
+
+  .onb-grid { gap: 14px; }
+  .onb-task { padding: 13px 14px; }
+}
+
+.onb-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.onb-task {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  background: color-mix(in srgb, var(--wp-surface) 55%, transparent);
+  backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid var(--wp-border);
+  border-radius: 12px;
+  position: relative;
+}
+.onb-task--done {
+  background: color-mix(in srgb, var(--wp-success) 6%, color-mix(in srgb, var(--wp-surface) 55%, transparent));
+  border-color: color-mix(in srgb, var(--wp-success) 22%, var(--wp-border));
+}
+.onb-task--active {
+  background: color-mix(in srgb, var(--wp-accent) 9%, color-mix(in srgb, var(--wp-surface) 55%, transparent));
+  border-color: color-mix(in srgb, var(--wp-accent) 38%, var(--wp-border));
+  box-shadow:
+    0 16px 32px color-mix(in srgb, var(--wp-accent) 14%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--wp-accent) 16%, transparent);
+}
+.onb-task--active::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--wp-accent), transparent);
+  opacity: 0.55;
+  pointer-events: none;
+}
+.onb-task--locked { opacity: 0.55; }
+
+.onb-task__bullet {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.onb-task__bullet--done {
+  background: var(--wp-success);
+  color: #050507;
+}
+.onb-task__bullet--active {
+  background: var(--wp-accent);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--wp-accent) 22%, transparent);
+  animation: onb-pulse 1.4s ease-in-out infinite;
+}
+.onb-task__bullet--locked {
+  border: 1.5px solid var(--wp-border-strong);
+  background: transparent;
+}
+@keyframes onb-pulse {
+  0%, 100% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--wp-accent) 22%, transparent); }
+  50%      { box-shadow: 0 0 0 8px color-mix(in srgb, var(--wp-accent) 38%, transparent); }
+}
+
+.onb-task__body { flex: 1; min-width: 0; }
+.onb-task__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--wp-text);
+}
+.onb-task__hint {
+  font-size: 12px;
+  color: var(--wp-text-dim);
+  margin-top: 2px;
+}
+
+.onb-task__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(180deg, var(--wp-accent), var(--wp-accent-hover));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 8px 20px color-mix(in srgb, var(--wp-accent) 35%, transparent);
+  text-decoration: none;
+  transition: transform 150ms;
+}
+.onb-task__cta:hover {
+  transform: translateY(-1px);
+}
+
+.onb-task__change {
+  appearance: none;
+  background: color-mix(in srgb, var(--wp-surface-2) 70%, transparent);
+  border: 1px solid var(--wp-border);
+  color: var(--wp-text-dim);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 150ms, background 150ms, border-color 150ms;
+}
+.onb-task__change:hover {
+  color: var(--wp-accent);
+  border-color: color-mix(in srgb, var(--wp-accent) 40%, var(--wp-border));
+  background: color-mix(in srgb, var(--wp-accent) 8%, var(--wp-surface-2));
+}
+
+/* ---------- Side panel ---------- */
+.onb-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.onb-side__card {
+  background: color-mix(in srgb, var(--wp-surface) 55%, transparent);
+  backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 16%, var(--wp-border));
+  border-radius: 12px;
+  padding: 16px;
+  position: relative;
+}
+.onb-side__card::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--wp-accent), transparent);
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.onb-side__title {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--wp-text);
+}
+
+.onb-side__stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.onb-side__stat {
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--wp-surface-2) 60%, transparent);
+  border: 1px solid var(--wp-border);
+  border-radius: 8px;
+}
+.onb-side__stat-v {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--wp-text);
+}
+.onb-side__stat-l {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--wp-text-faint);
+  margin-top: 2px;
+}
+
+.onb-side__help-body {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--wp-text-dim);
+}
+
+.onb-side__link {
+  color: var(--wp-accent);
+  text-decoration: none;
+}
+.onb-side__link:hover { text-decoration: underline; }
+
+/* ---------- Plan panel ---------- */
+
+.onb-side__panel-head {
+  margin-bottom: 14px;
+}
+/* Variant used by credentials sub-panels — left side is the eyebrow + title
+   (in a wrapping div), right side is a "Switch provider" link that bounces
+   the user back to the provider picker without leaving the credentials view. */
+.onb-side__panel-head--with-switch {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.onb-side__switch {
+  appearance: none;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--wp-text-faint) 35%, transparent);
+  color: var(--wp-text-dim);
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-top: 2px;
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+.onb-side__switch:hover {
+  color: var(--wp-text);
+  border-color: color-mix(in srgb, var(--wp-accent) 55%, transparent);
+  background: color-mix(in srgb, var(--wp-accent) 6%, transparent);
+}
+.onb-side__panel-eyebrow {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--wp-accent);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.onb-plans {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.onb-plan {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background: color-mix(in srgb, var(--wp-surface-2) 60%, transparent);
+  border: 1px solid var(--wp-border);
+  border-radius: 12px;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  transition: transform 150ms, border-color 150ms, background 150ms;
+  appearance: none;
+  font: inherit;
+}
+
+.onb-plan:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--wp-accent) 40%, var(--wp-border));
+  background: color-mix(in srgb, var(--wp-accent) 6%, var(--wp-surface-2));
+}
+
+.onb-plan--highlight {
+  border-color: color-mix(in srgb, var(--wp-accent) 45%, transparent);
+  background: color-mix(in srgb, var(--wp-accent) 8%, var(--wp-surface-2));
+  box-shadow:
+    0 12px 24px color-mix(in srgb, var(--wp-accent) 14%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--wp-accent) 16%, transparent);
+}
+
+.onb-plan__badge {
+  position: absolute;
+  top: -8px;
+  right: 14px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #fff;
+  background: linear-gradient(180deg, var(--wp-accent), var(--wp-accent-hover));
+  padding: 3px 8px;
+  border-radius: 999px;
+  box-shadow: 0 6px 14px color-mix(in srgb, var(--wp-accent) 36%, transparent);
+}
+
+.onb-plan__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.onb-plan__name {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+.onb-plan__price {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--wp-accent);
+}
+
+.onb-plan__per {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--wp-text-faint);
+  font-weight: 500;
+  margin-left: 1px;
+}
+
+.onb-plan__blurb {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--wp-text-dim);
+  line-height: 1.45;
+}
+
+.onb-plan__features {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.onb-plan__features li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--wp-text-dim);
+}
+
+.onb-plan__features li svg {
+  color: var(--wp-success);
+  flex-shrink: 0;
+}
+
+.onb-plan__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--wp-accent);
+}
+
+/* ---------- Provider panel ---------- */
+
+.onb-providers {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.onb-provider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--wp-surface-2) 60%, transparent);
+  border: 1px solid var(--wp-border);
+  border-radius: 10px;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 150ms, border-color 150ms;
+}
+.onb-provider:hover {
+  transform: translateX(2px);
+  border-color: color-mix(in srgb, var(--wp-accent) 40%, var(--wp-border));
+}
+
+.onb-provider__icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.onb-provider__body { flex: 1; min-width: 0; }
+.onb-provider__name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--wp-text);
+}
+.onb-provider__sub {
+  font-size: 10px;
+  color: var(--wp-text-faint);
+  font-family: 'JetBrains Mono', monospace;
+  margin-top: 1px;
+}
+
+/* ---------- Checkout panel ---------- */
+
+.onb-checkout__notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--wp-warning) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-warning) 30%, transparent);
+  color: var(--wp-warning);
+  border-radius: 8px;
+  font-size: 11px;
+  margin-bottom: 12px;
+}
+
+.onb-checkout__tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: color-mix(in srgb, var(--wp-surface-2) 70%, transparent);
+  border: 1px solid var(--wp-border);
+  border-radius: 999px;
+  margin-bottom: 12px;
+}
+
+.onb-checkout__tab {
+  flex: 1;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--wp-text-dim);
+  padding: 8px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: background 150ms, color 150ms;
+}
+.onb-checkout__tab.is-active {
+  background: color-mix(in srgb, var(--wp-accent) 18%, transparent);
+  color: var(--wp-accent);
+}
+
+.onb-checkout__form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.onb-checkout__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.onb-checkout__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.onb-checkout__label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--wp-text-dim);
+}
+.onb-checkout__field input {
+  height: 34px;
+  background: color-mix(in srgb, var(--wp-surface-2) 60%, transparent);
+  border: 1px solid var(--wp-border);
+  border-radius: 8px;
+  padding: 0 10px;
+  font: inherit;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--wp-text);
+}
+.onb-checkout__field input::placeholder { color: var(--wp-text-faint); }
+.onb-checkout__hint {
+  font-size: 11px;
+  color: var(--wp-text-faint);
+  margin: 0;
+}
+
+/* ---------- Volume panel ---------- */
+
+.onb-volume__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.onb-volume__opt {
+  appearance: none;
+  background: color-mix(in srgb, var(--wp-surface-2) 60%, transparent);
+  border: 1px solid var(--wp-border);
+  border-radius: 10px;
+  padding: 12px;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: transform 150ms, border-color 150ms, background 150ms;
+}
+.onb-volume__opt:hover:not(.onb-volume__opt--custom) {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--wp-accent) 40%, var(--wp-border));
+  background: color-mix(in srgb, var(--wp-accent) 6%, var(--wp-surface-2));
+}
+.onb-volume__opt--rec {
+  border-color: color-mix(in srgb, var(--wp-accent) 30%, transparent);
+}
+
+.onb-volume__v {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--wp-accent);
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+.onb-volume__v span {
+  font-size: 10px;
+  color: var(--wp-text-faint);
+  font-weight: 500;
+}
+.onb-volume__name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--wp-text);
+}
+.onb-volume__desc {
+  font-size: 10.5px;
+  color: var(--wp-text-dim);
+  line-height: 1.4;
+}
+
+.onb-volume__opt--custom {
+  background: color-mix(in srgb, var(--wp-accent) 6%, var(--wp-surface-2));
+  cursor: default;
+}
+.onb-volume__input {
+  appearance: none;
+  height: 30px;
+  padding: 0 8px;
+  background: color-mix(in srgb, var(--wp-bg) 80%, transparent);
+  border: 1px solid var(--wp-border);
+  border-radius: 6px;
+  font: inherit;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--wp-text);
+  width: 100%;
+}
+.onb-volume__custom-cta {
+  appearance: none;
+  background: linear-gradient(180deg, var(--wp-accent), var(--wp-accent-hover));
+  color: #fff;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  align-self: flex-start;
+}
+.onb-volume__custom-cta:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ---------- Provider chip extras ---------- */
+.onb-provider {
+  appearance: none;
+  font: inherit;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+.onb-provider__rec {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--wp-success);
+  margin-left: 6px;
+  padding: 2px 6px;
+  background: color-mix(in srgb, var(--wp-success) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-success) 30%, transparent);
+  border-radius: 4px;
+}
+.onb-provider__tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--wp-accent);
+}
+
+/* ---------- OAuth connect card ---------- */
+
+.onb-oauth {
+  margin: 4px 0 12px;
+}
+.onb-oauth__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  background: color-mix(in srgb, var(--wp-surface-2) 60%, transparent);
+  border: 1px solid var(--wp-border);
+  border-radius: 12px;
+}
+.onb-oauth__icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--wp-accent) 14%, transparent);
+  color: var(--wp-accent);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 30%, transparent);
+}
+.onb-oauth__body { flex: 1; min-width: 0; }
+.onb-oauth__title { font-size: 13px; font-weight: 600; color: var(--wp-text); }
+.onb-oauth__sub { font-size: 11px; color: var(--wp-text-faint); margin-top: 2px; font-family: 'JetBrains Mono', monospace; }
+.onb-oauth__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--wp-text-dim);
+}
+.onb-oauth__status--ok { color: var(--wp-success); }
+.onb-oauth__status .animate-spin { animation: onb-spin 0.8s linear infinite; }
+@keyframes onb-spin { to { transform: rotate(360deg); } }
+
+/* Fallback button visible inside the OAuth panel — softer than the primary
+   CTA so it doesn't compete visually, but always clickable so a stuck user
+   can escape to the SMTP/IMAP path. */
+.onb-oauth__fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px dashed color-mix(in srgb, var(--wp-text-faint) 50%, transparent);
+  background: transparent;
+  color: var(--wp-text-dim);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+.onb-oauth__fallback:hover {
+  color: var(--wp-text);
+  border-color: color-mix(in srgb, var(--wp-accent) 60%, transparent);
+  background: color-mix(in srgb, var(--wp-accent) 5%, transparent);
+}
+
+/* ---------- SMTP credentials form ---------- */
+
+.onb-credentials__form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.onb-credentials__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  /* Critical for flex children inside .onb-credentials__row — without this,
+     the intrinsic min-content of the <input> (driven by its placeholder
+     length) prevents the field from shrinking to fit a narrow column,
+     causing the row to overflow and placeholder text to clip. */
+  min-width: 0;
+}
+.onb-credentials__label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--wp-text-dim);
+}
+.onb-credentials__field input {
+  height: 34px;
+  width: 100%;
+  /* Same reason as the parent field — without this the input's intrinsic
+     size pushes the flex row wider than its container. */
+  min-width: 0;
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--wp-surface-2) 60%, transparent);
+  border: 1px solid var(--wp-border);
+  border-radius: 8px;
+  padding: 0 10px;
+  font: inherit;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--wp-text);
+  transition: border-color 150ms, box-shadow 150ms;
+  /* Truncate any text that doesn't fit (e.g. long IMAP placeholder on a
+     narrow column) rather than letting it bleed past the input edge. */
+  text-overflow: ellipsis;
+}
+.onb-credentials__field input:focus {
+  outline: none;
+  border-color: var(--wp-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--wp-accent) 18%, transparent);
+}
+.onb-credentials__field input::placeholder {
+  color: var(--wp-text-faint);
+}
+
+.onb-credentials__row {
+  display: flex;
+  gap: 8px;
+  /* Allow the row itself to shrink past its content's intrinsic width. */
+  min-width: 0;
+}
+
+.onb-credentials__pwd {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  position: relative;
+}
+.onb-credentials__pwd input {
+  flex: 1;
+  padding-right: 34px;
+}
+.onb-credentials__pwd-toggle {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: 0;
+  color: var(--wp-text-faint);
+  padding: 4px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+.onb-credentials__pwd-toggle:hover { color: var(--wp-accent); }
+
+.onb-credentials__fieldset {
+  border: 1px solid var(--wp-border);
+  border-radius: 10px;
+  padding: 12px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: color-mix(in srgb, var(--wp-surface) 40%, transparent);
+}
+.onb-credentials__fieldset legend {
+  padding: 0 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--wp-text-faint);
+}
+
+.onb-credentials__hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--wp-text-faint);
+}
+.onb-credentials__hint code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  background: color-mix(in srgb, var(--wp-accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 25%, transparent);
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: var(--wp-accent);
+}
+
+.onb-credentials__help {
+  background: color-mix(in srgb, var(--wp-accent) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 22%, transparent);
+  border-radius: 10px;
+  padding: 4px;
+}
+.onb-credentials__help-toggle {
+  width: 100%;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--wp-text);
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+}
+.onb-credentials__help-toggle > svg {
+  color: var(--wp-accent);
+  flex-shrink: 0;
+}
+.onb-credentials__help-toggle > span:nth-of-type(1) {
+  flex: 1;
+  min-width: 0;
+}
+.onb-credentials__help-state {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--wp-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  flex-shrink: 0;
+}
+.onb-credentials__help-body {
+  padding: 8px 12px 10px;
+  font-size: 11.5px;
+  color: var(--wp-text-dim);
+  line-height: 1.55;
+  border-top: 1px solid color-mix(in srgb, var(--wp-accent) 18%, transparent);
+}
+.onb-credentials__help-body p { margin: 0 0 6px; }
+.onb-credentials__help-list {
+  margin: 0;
+  padding-left: 18px;
+  list-style: decimal;
+  color: var(--wp-text);
+}
+.onb-credentials__help-list li {
+  margin-bottom: 6px;
+  line-height: 1.55;
+}
+.onb-credentials__help-list li > span {
+  color: var(--wp-text-dim);
+}
+.onb-credentials__help-list li::marker {
+  color: var(--wp-text-faint);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+}
+.onb-credentials__help-footer {
+  margin: 10px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--wp-text-faint) 18%, transparent);
+  font-size: 11px;
+  color: var(--wp-text-faint);
+  line-height: 1.5;
+}
+.onb-credentials__help-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--wp-accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+.onb-credentials__help-link:hover { text-decoration: underline; }
+
+/* App-password card extras: checkbox + error-with-retry */
+.onb-credentials__checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--wp-surface-2) 50%, transparent);
+  border: 1px solid var(--wp-border);
+  border-radius: 10px;
+  font-size: 11.5px;
+  color: var(--wp-text-dim);
+  cursor: pointer;
+  line-height: 1.45;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+.onb-credentials__checkbox:hover {
+  border-color: color-mix(in srgb, var(--wp-accent) 35%, var(--wp-border));
+  background: color-mix(in srgb, var(--wp-accent) 4%, var(--wp-surface-2));
+}
+.onb-credentials__checkbox input[type='checkbox'] {
+  margin-top: 2px;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  accent-color: var(--wp-accent);
+  cursor: pointer;
+}
+.onb-credentials__checkbox > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.onb-credentials__checkbox-title {
+  font-weight: 600;
+  color: var(--wp-text);
+}
+.onb-credentials__checkbox-sub {
+  color: var(--wp-text-faint);
+  font-size: 11px;
+}
+
+.onb-credentials__error-card {
+  margin: 0;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--wp-danger) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-danger) 30%, transparent);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.onb-credentials__error-card p {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--wp-danger);
+  word-break: break-word;
+}
+.onb-credentials__retry {
+  align-self: flex-start;
+  appearance: none;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--wp-danger) 40%, transparent);
+  color: var(--wp-danger);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+.onb-credentials__retry:hover {
+  background: color-mix(in srgb, var(--wp-danger) 12%, transparent);
+}
+
+.onb-credentials__assurance {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--wp-text-dim);
+  margin: 0;
+}
+.onb-credentials__assurance svg { color: var(--wp-success); }
+
+.onb-credentials__error {
+  margin: 0;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--wp-danger) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-danger) 30%, transparent);
+  border-radius: 8px;
+  color: var(--wp-danger);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.onb-credentials__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 4px;
+}
+.onb-credentials__test {
+  appearance: none;
+  background: color-mix(in srgb, var(--wp-surface-2) 70%, transparent);
+  border: 1px solid var(--wp-border);
+  color: var(--wp-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: border-color 150ms, background 150ms;
+}
+.onb-credentials__test:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--wp-accent) 40%, var(--wp-border));
+  background: color-mix(in srgb, var(--wp-accent) 8%, var(--wp-surface-2));
+}
+.onb-credentials__test:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.onb-credentials__test .animate-spin {
+  animation: onb-spin 0.8s linear infinite;
+}
+
+/* ---------- Final summary panel ---------- */
+.onb-summary__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 14px 0 4px;
+  padding: 0;
+}
+.onb-summary__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--wp-surface-2) 55%, transparent);
+  border: 1px solid var(--wp-border);
+  border-radius: 10px;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+.onb-summary__row:hover {
+  border-color: color-mix(in srgb, var(--wp-accent) 32%, var(--wp-border));
+}
+.onb-summary__icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-accent) 14%, transparent);
+  color: var(--wp-accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.onb-summary__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+}
+.onb-summary__label {
+  margin: 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--wp-text-faint);
+}
+.onb-summary__value {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--wp-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.onb-summary__value--ok { color: var(--wp-success); }
+.onb-summary__value--warn { color: #f0a020; }
+.onb-summary__edit {
+  appearance: none;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--wp-text-faint) 35%, transparent);
+  color: var(--wp-text-dim);
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+.onb-summary__edit:hover {
+  color: var(--wp-text);
+  border-color: color-mix(in srgb, var(--wp-accent) 55%, transparent);
+  background: color-mix(in srgb, var(--wp-accent) 6%, transparent);
+}
+
+/* ---------- Inline CTA ---------- */
+
+.onb-side__inline-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--wp-accent), var(--wp-accent-hover));
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 8px 20px color-mix(in srgb, var(--wp-accent) 30%, transparent);
+}
+
+/* ============================================================================
+   DNS panel — SPF / DKIM / DMARC inline check with fix-it cards.
+============================================================================ */
+
+.onb-dns__domain {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  color: var(--wp-accent);
+  font-weight: 600;
+}
+
+/* Scanning indicator — thin gradient bar that sweeps across the panel while
+   the DNS check is in flight, plus a "Scanning <domain>…" label. Gives the
+   user a clear sense of activity over the 1.5s reveal window. */
+.onb-dns__scan {
+  position: relative;
+  height: 28px;
+  margin-top: 6px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--wp-accent) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 18%, transparent);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+}
+.onb-dns__scan-bar {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--wp-accent) 28%, transparent) 50%,
+    transparent 100%
+  );
+  animation: onb-dns-sweep 0.9s ease-in-out infinite;
+}
+.onb-dns__scan-label {
+  position: relative;
+  z-index: 1;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  color: var(--wp-accent);
+}
+@keyframes onb-dns-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.onb-dns__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.onb-dns__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--wp-surface-2) 55%, transparent);
+  border: 1px solid var(--wp-border);
+  border-radius: 10px;
+  transition: border-color 300ms ease, background 300ms ease;
+}
+/* While a row is still scanning, give the border a soft violet pulse so
+   the eye is drawn to it. */
+.onb-dns__row--scanning {
+  border-color: color-mix(in srgb, var(--wp-accent) 35%, var(--wp-border));
+  animation: onb-dns-row-pulse 0.8s ease-in-out infinite;
+}
+@keyframes onb-dns-row-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--wp-accent) 18%, transparent); }
+  50%      { box-shadow: 0 0 0 4px color-mix(in srgb, var(--wp-accent) 0%, transparent); }
+}
+
+.onb-dns__dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-surface) 80%, transparent);
+  color: var(--wp-text-faint);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+  transition: background 300ms ease, color 300ms ease;
+}
+/* Scanning state — animated concentric ring that ripples out from the
+   spinner, signalling "actively probing this record". */
+.onb-dns__dot--scanning {
+  background: color-mix(in srgb, var(--wp-accent) 14%, transparent);
+  color: var(--wp-accent);
+}
+.onb-dns__dot--scanning::before,
+.onb-dns__dot--scanning::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  border: 1.5px solid color-mix(in srgb, var(--wp-accent) 55%, transparent);
+  animation: onb-dns-ring 0.9s ease-out infinite;
+  pointer-events: none;
+}
+.onb-dns__dot--scanning::after {
+  animation-delay: 0.45s;
+}
+@keyframes onb-dns-ring {
+  0%   { transform: scale(1); opacity: 0.8; }
+  100% { transform: scale(1.7); opacity: 0; }
+}
+.onb-dns__dot--ok {
+  background: color-mix(in srgb, var(--wp-success) 20%, transparent);
+  color: var(--wp-success);
+}
+.onb-dns__dot--err {
+  background: color-mix(in srgb, var(--wp-danger) 20%, transparent);
+  color: var(--wp-danger);
+}
+.onb-dns__dot-pending {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--wp-text-faint);
+}
+.onb-dns__dot .animate-spin { animation: onb-spin 0.8s linear infinite; }
+
+.onb-dns__row-body { flex: 1; min-width: 0; }
+.onb-dns__row-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--wp-text);
+}
+.onb-dns__row-hint {
+  font-size: 11px;
+  color: var(--wp-text-faint);
+  margin-top: 1px;
+}
+
+.onb-dns__notice {
+  display: flex;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 10px;
+  margin-top: 12px;
+  align-items: flex-start;
+}
+.onb-dns__notice--ok {
+  background: color-mix(in srgb, var(--wp-success) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-success) 30%, transparent);
+  color: var(--wp-success);
+}
+.onb-dns__notice--warn {
+  background: color-mix(in srgb, #f0a020 10%, transparent);
+  border: 1px solid color-mix(in srgb, #f0a020 30%, transparent);
+  color: #f0a020;
+}
+.onb-dns__notice > svg { margin-top: 1px; flex-shrink: 0; }
+.onb-dns__notice-title {
+  margin: 0 0 3px;
+  font-weight: 600;
+  font-size: 12px;
+}
+.onb-dns__notice-body {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: color-mix(in srgb, currentColor 78%, var(--wp-text));
+}
+.onb-dns__mono {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+}
+
+.onb-dns__fixes {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--wp-danger) 5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-danger) 22%, transparent);
+  border-radius: 12px;
+}
+.onb-dns__fixes-intro {
+  margin: 0 0 2px;
+  font-size: 11.5px;
+  color: var(--wp-text-dim);
+  line-height: 1.5;
+}
+.onb-dns__fixes-intro strong { color: var(--wp-text); }
+
+.onb-dns__fix {
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--wp-surface-2) 65%, transparent);
+  border: 1px solid var(--wp-border);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.onb-dns__fix-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.onb-dns__fix-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--wp-text);
+}
+.onb-dns__fix-type {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--wp-text-faint);
+  padding: 2px 8px;
+  background: color-mix(in srgb, var(--wp-surface) 80%, transparent);
+  border-radius: 999px;
+}
+.onb-dns__fix-row {
+  display: grid;
+  grid-template-columns: 50px 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+.onb-dns__fix-key {
+  font-size: 10.5px;
+  color: var(--wp-text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.onb-dns__fix-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--wp-text);
+  word-break: break-all;
+  background: transparent;
+}
+.onb-dns__fix-copy {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--wp-border);
+  border-radius: 6px;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--wp-text-faint);
+  cursor: pointer;
+  transition: color 150ms, border-color 150ms;
+}
+.onb-dns__fix-copy:hover {
+  color: var(--wp-accent);
+  border-color: color-mix(in srgb, var(--wp-accent) 50%, var(--wp-border));
+}
+.onb-dns__fix-note {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--wp-text-faint);
+  line-height: 1.45;
+}
+
+.onb-dns__raw {
+  margin-top: 4px;
+  border: 1px dashed color-mix(in srgb, var(--wp-text-faint) 35%, transparent);
+  border-radius: 8px;
+}
+.onb-dns__raw summary {
+  cursor: pointer;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--wp-text-dim);
+  user-select: none;
+}
+.onb-dns__raw-body {
+  padding: 6px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.onb-dns__raw-row strong {
+  display: block;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--wp-accent);
+  margin-bottom: 3px;
+}
+.onb-dns__raw-row pre {
+  margin: 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  color: var(--wp-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.onb-dns__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 14px;
+}
+.onb-dns .onb-credentials__test {
+  /* Match the action row baseline so Re-check sits flush with Open
+     workspace. The inline-cta has margin-top:12px so we strip its sibling
+     margins here. */
+  margin: 0;
+}
+.onb-dns__actions .onb-side__inline-cta {
+  margin-top: 0;
+}
+
+/* --- Failed-DNS locked CTA ---------------------------------------------
+   Replaces the live Continue button while DNS is in a hard-fail state.
+   Disabled-styled, red glow, with a help-line underneath. Re-check sits
+   to its left in the same actions row. */
+.onb-dns__locked-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+.onb-dns__locked-cta {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: not-allowed;
+  color: color-mix(in srgb, var(--wp-danger) 90%, var(--wp-text));
+  background: color-mix(in srgb, var(--wp-danger) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-danger) 45%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--wp-danger) 18%, transparent),
+              0 4px 18px -8px color-mix(in srgb, var(--wp-danger) 60%, transparent);
+}
+.onb-dns__locked-cta:disabled { opacity: 1; }
+.onb-dns__locked-hint {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--wp-text-faint);
+  text-align: right;
+  max-width: 240px;
+}
+
+/* --- Failed-DNS walkthrough -------------------------------------------- */
+.onb-dns__walkthrough {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--wp-danger) 5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-danger) 28%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: relative;
+}
+.onb-dns__walkthrough::before {
+  /* subtle gradient border accent on the top edge */
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  padding: 1px;
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--wp-danger) 55%, transparent),
+    transparent 60%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  pointer-events: none;
+}
+.onb-dns__walkthrough-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.onb-dns__walkthrough-badge {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--wp-danger);
+  background: color-mix(in srgb, var(--wp-danger) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-danger) 35%, transparent);
+}
+.onb-dns__walkthrough-title {
+  margin: 0 0 4px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--wp-text);
+  line-height: 1.35;
+}
+.onb-dns__walkthrough-sub {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--wp-text-dim);
+}
+.onb-dns__walkthrough-sub strong { color: var(--wp-text); }
+.onb-dns__walkthrough-hint {
+  margin: 0;
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--wp-text-faint);
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--wp-surface-2) 55%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--wp-text-faint) 30%, transparent);
+}
+.onb-dns__walkthrough-hint > svg { margin-top: 2px; flex-shrink: 0; }
+
+.onb-dns__steps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.onb-dns__step {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: 12px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--wp-surface-2) 65%, transparent);
+  border: 1px solid var(--wp-border);
+  border-radius: 12px;
+  position: relative;
+  overflow: hidden;
+}
+.onb-dns__step-left {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.onb-dns__step-num {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-danger) 18%, transparent);
+  color: color-mix(in srgb, var(--wp-danger) 92%, var(--wp-text));
+  border: 1px solid color-mix(in srgb, var(--wp-danger) 50%, transparent);
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.onb-dns__step-diagram {
+  color: var(--wp-accent);
+  opacity: 0.95;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.onb-dns__step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.onb-dns__step-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.onb-dns__step-label {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--wp-text);
+  letter-spacing: 0.02em;
+}
+.onb-dns__step-type {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--wp-text-faint);
+  padding: 2px 8px;
+  background: color-mix(in srgb, var(--wp-surface) 80%, transparent);
+  border-radius: 999px;
+}
+.onb-dns__step-explanation {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--wp-text-dim);
+}
+.onb-dns__step-record {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--wp-surface) 75%, transparent);
+  border: 1px solid var(--wp-border);
+}
+.onb-dns__step-where {
+  margin-top: 2px;
+}
+.onb-dns__step-where-title {
+  margin: 0 0 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--wp-text-faint);
+}
+.onb-dns__step-where-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--wp-text-dim);
+}
+.onb-dns__step-where-list strong { color: var(--wp-text); }
+.onb-dns__step-provider-hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--wp-text-faint);
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--wp-accent) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 25%, transparent);
+}
+
+/* --- Summary-stage fail banner (belt-and-suspenders gate) -------------- */
+.onb-dns__fail-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin: 10px 0 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--wp-danger) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-danger) 35%, transparent);
+  color: var(--wp-danger);
+}
+.onb-dns__fail-banner > svg { flex-shrink: 0; }
+.onb-dns__fail-banner-body { flex: 1; min-width: 0; }
+.onb-dns__fail-banner-title {
+  margin: 0 0 2px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--wp-text);
+}
+.onb-dns__fail-banner-sub {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--wp-text-dim);
+}
+.onb-dns__fail-banner-cta {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--wp-bg);
+  background: var(--wp-danger);
+  border: 1px solid var(--wp-danger);
+  transition: filter 150ms;
+  flex-shrink: 0;
+}
+.onb-dns__fail-banner-cta:hover { filter: brightness(1.1); }

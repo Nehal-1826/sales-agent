@@ -1,0 +1,9 @@
+export { Hero } from './Hero';
+export { HowItWorks } from './HowItWorks';
+export { FeatureBlocks } from './FeatureBlocks';
+export { Pricing } from './Pricing';
+export { FAQ } from './FAQ';
+export { CTABand } from './CTABand';
+export { Footer } from './Footer';
+export { NoiseOverlay } from './NoiseOverlay';
+export { AnimatedGradient } from './AnimatedGradient';

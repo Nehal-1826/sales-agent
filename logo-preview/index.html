@@ -1,0 +1,1102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WarmPulse · Onboarding Dashboard Designs</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #050507;
+        --surface: #131318;
+        --surface-2: #1a1a22;
+        --border: #25252e;
+        --text: #f4f4f5;
+        --text-dim: #a1a1aa;
+        --text-faint: #71717a;
+        --accent: #7c5cff;
+        --accent-2: #a78bfa;
+        --accent-3: #4d8eff;
+        --success: #3ddc97;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body {
+        background:
+          radial-gradient(ellipse 80% 40% at 50% 0%, rgba(124, 92, 255, 0.18), transparent 70%),
+          radial-gradient(ellipse 60% 50% at 90% 70%, rgba(77, 142, 255, 0.10), transparent 60%),
+          var(--bg);
+        color: var(--text);
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        min-height: 100vh;
+        padding: 56px 24px 96px;
+        background-attachment: fixed;
+      }
+      .container { max-width: 1280px; margin: 0 auto; }
+      header { text-align: center; margin-bottom: 40px; }
+      .badge {
+        display: inline-block;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 10px; font-weight: 600;
+        text-transform: uppercase; letter-spacing: 0.18em;
+        color: var(--accent);
+        background: rgba(124, 92, 255, 0.14);
+        border: 1px solid rgba(124, 92, 255, 0.3);
+        border-radius: 999px; padding: 4px 10px;
+        margin-bottom: 16px;
+      }
+      h1 { font-size: 40px; font-weight: 700; letter-spacing: -0.03em; margin: 0 0 12px; }
+      .grad {
+        background: linear-gradient(90deg, var(--accent), var(--accent-3), var(--accent));
+        background-size: 200% 100%;
+        -webkit-background-clip: text; background-clip: text;
+        color: transparent;
+        animation: shimmer 6s ease-in-out infinite;
+      }
+      @keyframes shimmer { 0%,100%{background-position:0% 50%;} 50%{background-position:100% 50%;} }
+      header p { color: var(--text-dim); max-width: 640px; margin: 0 auto; line-height: 1.55; }
+
+      .design-grid { display: flex; flex-direction: column; gap: 28px; }
+      .design-card {
+        background: rgba(19, 19, 24, 0.55);
+        backdrop-filter: blur(20px) saturate(160%);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 20px;
+        padding: 8px;
+        box-shadow: 0 24px 60px rgba(0,0,0,0.4);
+      }
+      .design-meta {
+        display: flex; align-items: baseline; gap: 12px;
+        padding: 14px 18px 8px;
+      }
+      .design-num {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 10px; font-weight: 700;
+        color: var(--accent); padding: 3px 8px;
+        background: rgba(124, 92, 255, 0.16);
+        border: 1px solid rgba(124, 92, 255, 0.3);
+        border-radius: 999px;
+        letter-spacing: 0.14em; text-transform: uppercase;
+      }
+      .design-title { font-size: 16px; font-weight: 600; }
+      .design-desc { font-size: 12.5px; color: var(--text-dim); margin-left: auto; max-width: 62%; text-align: right; }
+
+      .browser {
+        position: relative;
+        border-radius: 14px;
+        overflow: hidden;
+        background: #050507;
+        border: 1px solid #1f1f1f;
+        aspect-ratio: 16 / 9.5;
+      }
+      .browser-chrome {
+        position: absolute; top: 0; left: 0; right: 0;
+        height: 32px;
+        display: flex; align-items: center; gap: 6px;
+        padding: 0 12px;
+        background: #0a0a0c;
+        border-bottom: 1px solid #1f1f1f;
+        z-index: 30;
+      }
+      .browser-chrome .dot { width: 9px; height: 9px; border-radius: 999px; }
+      .browser-chrome .dot.r { background: #ff5f57; }
+      .browser-chrome .dot.y { background: #febc2e; }
+      .browser-chrome .dot.g { background: #28c840; }
+      .browser-chrome .url {
+        margin-left: 8px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 10px; color: var(--text-faint);
+        background: #050507;
+        border: 1px solid #1f1f1f;
+        border-radius: 6px;
+        padding: 3px 10px;
+        flex: 1; max-width: 280px;
+      }
+      .browser-stage {
+        position: absolute; top: 32px; left: 0; right: 0; bottom: 0;
+        overflow: hidden;
+      }
+      .atm::before {
+        content: '';
+        position: absolute; inset: 0;
+        background:
+          radial-gradient(ellipse 70% 50% at 20% 30%, rgba(124, 92, 255, 0.22), transparent 60%),
+          radial-gradient(ellipse 60% 60% at 80% 80%, rgba(77, 142, 255, 0.16), transparent 60%);
+        pointer-events: none;
+      }
+      .atm::after {
+        content: '';
+        position: absolute; inset: 0;
+        background-image: radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px);
+        background-size: 22px 22px;
+        opacity: 0.5;
+        -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+        mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+        pointer-events: none;
+      }
+
+      /* Reusable header bar */
+      .topbar {
+        position: relative; z-index: 5;
+        display: flex; align-items: center; gap: 10px;
+        padding: 12px 24px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        background: rgba(10, 10, 12, 0.6);
+        backdrop-filter: blur(20px);
+      }
+      .topbar .logo {
+        width: 22px; height: 22px; border-radius: 6px;
+        background: linear-gradient(135deg, var(--accent), var(--accent-3));
+        display: flex; align-items: center; justify-content: center;
+        box-shadow: 0 0 8px rgba(124, 92, 255, 0.5);
+      }
+      .topbar .logo svg { width: 60%; height: 60%; }
+      .topbar .brand { font-size: 13px; font-weight: 700; letter-spacing: -0.025em; }
+      .topbar .user {
+        margin-left: auto;
+        display: flex; align-items: center; gap: 8px;
+        font-size: 11px; color: var(--text-dim);
+      }
+      .topbar .avatar {
+        width: 24px; height: 24px; border-radius: 999px;
+        background: linear-gradient(135deg, var(--accent), var(--accent-3));
+        display: flex; align-items: center; justify-content: center;
+        font-size: 9px; font-weight: 700; color: white;
+      }
+
+      /* Common task list */
+      .glass-card {
+        background: rgba(19, 19, 24, 0.55);
+        backdrop-filter: blur(20px) saturate(160%);
+        border: 1px solid rgba(124, 92, 255, 0.2);
+        border-radius: 14px;
+        box-shadow: 0 16px 32px rgba(0, 0, 0, 0.3);
+        position: relative;
+      }
+      .glass-card::before {
+        content: ''; position: absolute; inset-inline: 0; top: 0; height: 1px;
+        background: linear-gradient(90deg, transparent, var(--accent), transparent);
+        opacity: 0.5; pointer-events: none;
+      }
+
+      .check-tick {
+        width: 16px; height: 16px;
+        border-radius: 999px;
+        background: var(--success);
+        display: inline-flex; align-items: center; justify-content: center;
+        color: #050507;
+        font-size: 9px; font-weight: 900;
+        flex-shrink: 0;
+      }
+      .check-tick::before { content: '✓'; }
+      .check-empty {
+        width: 16px; height: 16px;
+        border-radius: 999px;
+        border: 1.5px solid rgba(255,255,255,0.15);
+        flex-shrink: 0;
+      }
+      .check-current {
+        width: 16px; height: 16px;
+        border-radius: 999px;
+        background: var(--accent);
+        box-shadow: 0 0 0 4px rgba(124, 92, 255, 0.25);
+        flex-shrink: 0;
+        animation: pulse 1.4s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%, 100% { box-shadow: 0 0 0 4px rgba(124, 92, 255, 0.25); }
+        50%      { box-shadow: 0 0 0 6px rgba(124, 92, 255, 0.4); }
+      }
+
+      footer {
+        margin-top: 56px; padding-top: 24px;
+        border-top: 1px solid var(--border);
+        text-align: center;
+        color: var(--text-faint); font-size: 12px;
+        font-family: 'JetBrains Mono', monospace;
+      }
+
+      /* ============ O1: Checklist Dashboard ============ */
+      .o1 .body {
+        position: absolute; inset: 50px 0 0;
+        padding: 24px 32px;
+        display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+      }
+      .o1 .welcome { padding-bottom: 6px; }
+      .o1 .welcome .h {
+        font-size: 22px; font-weight: 700; letter-spacing: -0.025em;
+        margin: 0 0 4px;
+      }
+      .o1 .welcome .h .pop {
+        background: linear-gradient(90deg, var(--accent), var(--accent-3));
+        -webkit-background-clip: text; background-clip: text; color: transparent;
+      }
+      .o1 .welcome .sub { font-size: 11px; color: var(--text-dim); margin: 0; }
+      .o1 .progress-wrap {
+        margin-top: 10px;
+        background: rgba(255,255,255,0.04);
+        height: 6px; border-radius: 999px;
+        overflow: hidden;
+      }
+      .o1 .progress-fill {
+        width: 33%; height: 100%;
+        background: linear-gradient(90deg, var(--accent), var(--accent-3));
+        border-radius: 999px;
+      }
+      .o1 .progress-label {
+        display: flex; align-items: center; justify-content: space-between;
+        margin-top: 8px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 9px; color: var(--text-faint);
+        text-transform: uppercase; letter-spacing: 0.14em;
+      }
+      .o1 .progress-label strong { color: var(--accent); font-weight: 700; }
+      .o1 .left-pane, .o1 .right-pane { display: flex; flex-direction: column; gap: 10px; }
+      .o1 .task {
+        display: flex; align-items: center; gap: 12px;
+        padding: 12px 14px;
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.06);
+        border-radius: 10px;
+      }
+      .o1 .task.done { background: rgba(61, 220, 151, 0.04); border-color: rgba(61, 220, 151, 0.15); }
+      .o1 .task.active { background: rgba(124, 92, 255, 0.08); border-color: rgba(124, 92, 255, 0.35); }
+      .o1 .task .title { font-size: 12px; font-weight: 600; }
+      .o1 .task .sub { font-size: 10px; color: var(--text-faint); margin-top: 2px; }
+      .o1 .task .body-c { flex: 1; min-width: 0; }
+      .o1 .task .cta {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 9px; font-weight: 600;
+        text-transform: uppercase; letter-spacing: 0.14em;
+        color: var(--accent);
+      }
+      .o1 .right-pane .glass-card { padding: 14px; }
+      .o1 .right-pane h4 { font-size: 12px; font-weight: 600; margin: 0 0 8px; }
+      .o1 .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+      .o1 .stat-cell {
+        padding: 8px 10px;
+        background: rgba(255,255,255,0.02);
+        border: 1px solid rgba(255,255,255,0.05);
+        border-radius: 8px;
+      }
+      .o1 .stat-cell .v {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 16px; font-weight: 700; color: var(--accent);
+      }
+      .o1 .stat-cell .l {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 8px; color: var(--text-faint);
+        text-transform: uppercase; letter-spacing: 0.14em; margin-top: 2px;
+      }
+
+      /* ============ O2: Stepper Wizard ============ */
+      .o2 .body {
+        position: absolute; inset: 50px 0 0;
+        display: flex; flex-direction: column; align-items: center;
+        padding: 24px;
+        gap: 14px;
+      }
+      .o2 .step-rail {
+        display: flex; align-items: center; gap: 6px;
+        margin-bottom: 4px;
+      }
+      .o2 .step-dot {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 9px; font-weight: 700;
+        width: 22px; height: 22px; border-radius: 999px;
+        display: flex; align-items: center; justify-content: center;
+        border: 1px solid rgba(255,255,255,0.1);
+        color: var(--text-faint);
+        background: rgba(255,255,255,0.02);
+      }
+      .o2 .step-dot.done { background: var(--success); color: #050507; border: 0; }
+      .o2 .step-dot.active {
+        background: var(--accent); color: white; border: 0;
+        box-shadow: 0 0 0 4px rgba(124, 92, 255, 0.25);
+      }
+      .o2 .step-line {
+        width: 30px; height: 1px;
+        background: rgba(255, 255, 255, 0.1);
+      }
+      .o2 .step-line.done { background: var(--success); }
+      .o2 .card {
+        position: relative; width: 100%; max-width: 460px;
+        padding: 24px;
+        background: rgba(19, 19, 24, 0.55);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(124, 92, 255, 0.2);
+        border-radius: 14px;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+      }
+      .o2 .card .eyebrow {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 10px; font-weight: 600;
+        text-transform: uppercase; letter-spacing: 0.18em;
+        color: var(--accent);
+        margin-bottom: 4px;
+      }
+      .o2 .card h3 { font-size: 17px; font-weight: 700; margin: 0 0 6px; }
+      .o2 .card .sub { font-size: 11px; color: var(--text-dim); margin: 0 0 14px; }
+      .o2 .provider-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      .o2 .provider {
+        padding: 10px;
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.06);
+        border-radius: 8px;
+        font-size: 11px; font-weight: 600;
+        display: flex; align-items: center; gap: 6px;
+      }
+      .o2 .provider.selected { border-color: rgba(124, 92, 255, 0.4); background: rgba(124, 92, 255, 0.08); }
+      .o2 .provider .badge-dot { width: 6px; height: 6px; border-radius: 999px; }
+      .o2 .actions { display: flex; justify-content: space-between; margin-top: 14px; }
+      .o2 .actions .back { font-size: 11px; color: var(--text-dim); align-self: center; }
+      .o2 .actions .next {
+        background: linear-gradient(180deg, var(--accent), #6748f0);
+        color: white;
+        font-size: 11px; font-weight: 600;
+        padding: 8px 16px; border-radius: 999px;
+        box-shadow: 0 8px 20px rgba(124, 92, 255, 0.3);
+      }
+
+      /* ============ O3: Mission Control Cards ============ */
+      .o3 .body {
+        position: absolute; inset: 50px 0 0;
+        padding: 20px 24px; display: flex; flex-direction: column; gap: 14px;
+      }
+      .o3 .hero-row {
+        display: grid; grid-template-columns: 1fr auto; align-items: end;
+        gap: 14px;
+      }
+      .o3 .hero-row h2 {
+        font-size: 22px; font-weight: 700; letter-spacing: -0.025em;
+        margin: 0;
+      }
+      .o3 .hero-row h2 .pop {
+        background: linear-gradient(90deg, var(--accent), var(--accent-3));
+        -webkit-background-clip: text; background-clip: text; color: transparent;
+      }
+      .o3 .progress-ring-wrap { display: flex; align-items: center; gap: 12px; }
+      .o3 .progress-ring {
+        position: relative;
+        width: 56px; height: 56px;
+      }
+      .o3 .progress-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+      .o3 .progress-ring .pct {
+        position: absolute; inset: 0;
+        display: flex; align-items: center; justify-content: center;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px; font-weight: 700; color: var(--accent);
+      }
+      .o3 .progress-info .v {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 11px; color: var(--text); font-weight: 600;
+      }
+      .o3 .progress-info .l {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 9px; color: var(--text-faint);
+        text-transform: uppercase; letter-spacing: 0.14em;
+      }
+      .o3 .grid {
+        display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+      }
+      .o3 .mission-card {
+        padding: 14px;
+        background: rgba(19, 19, 24, 0.55);
+        backdrop-filter: blur(14px);
+        border: 1px solid rgba(255,255,255,0.06);
+        border-radius: 12px;
+        position: relative;
+      }
+      .o3 .mission-card.done { border-color: rgba(61, 220, 151, 0.25); background: rgba(61, 220, 151, 0.05); }
+      .o3 .mission-card.active { border-color: rgba(124, 92, 255, 0.45); background: rgba(124, 92, 255, 0.07); }
+      .o3 .mission-card .head {
+        display: flex; align-items: center; gap: 8px;
+        margin-bottom: 6px;
+      }
+      .o3 .mission-card .icon {
+        width: 26px; height: 26px;
+        border-radius: 8px;
+        background: rgba(124, 92, 255, 0.14);
+        border: 1px solid rgba(124, 92, 255, 0.3);
+        color: var(--accent);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 13px;
+      }
+      .o3 .mission-card .step-num {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 9px; font-weight: 700;
+        color: var(--text-faint);
+        text-transform: uppercase; letter-spacing: 0.14em;
+        margin-left: auto;
+      }
+      .o3 .mission-card .title { font-size: 12px; font-weight: 600; margin: 0 0 3px; }
+      .o3 .mission-card .desc { font-size: 10px; color: var(--text-dim); line-height: 1.4; margin: 0 0 10px; }
+      .o3 .mission-card .footer {
+        display: flex; align-items: center; gap: 6px;
+        padding-top: 10px;
+        border-top: 1px solid rgba(255, 255, 255, 0.05);
+      }
+      .o3 .mission-card .status {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 9px;
+        text-transform: uppercase; letter-spacing: 0.14em;
+      }
+
+      /* ============ O4: Sidebar Stepper ============ */
+      .o4 .body {
+        position: absolute; inset: 50px 0 0;
+        display: grid; grid-template-columns: 240px 1fr;
+      }
+      .o4 .side {
+        padding: 24px 20px;
+        border-right: 1px solid rgba(255,255,255,0.06);
+        background: rgba(10, 10, 12, 0.4);
+      }
+      .o4 .side h4 {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 9px; font-weight: 700;
+        text-transform: uppercase; letter-spacing: 0.18em;
+        color: var(--text-faint);
+        margin: 0 0 16px;
+      }
+      .o4 .step {
+        display: flex; align-items: flex-start; gap: 10px;
+        padding: 10px 8px;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      .o4 .step.active { background: rgba(124, 92, 255, 0.1); }
+      .o4 .step .num {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 10px; font-weight: 700;
+        width: 22px; height: 22px;
+        border-radius: 999px;
+        display: flex; align-items: center; justify-content: center;
+        border: 1px solid rgba(255,255,255,0.1);
+        color: var(--text-faint);
+        flex-shrink: 0;
+      }
+      .o4 .step.done .num { background: var(--success); color: #050507; border: 0; }
+      .o4 .step.active .num { background: var(--accent); color: white; border: 0; }
+      .o4 .step .label { font-size: 12px; font-weight: 500; }
+      .o4 .step.active .label { color: var(--accent); font-weight: 600; }
+      .o4 .step .meta { font-size: 9px; color: var(--text-faint); margin-top: 2px; }
+      .o4 .main {
+        padding: 24px 32px;
+        display: flex; flex-direction: column; gap: 14px;
+        overflow: hidden;
+      }
+      .o4 .main .crumb {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 9px;
+        color: var(--text-faint);
+        text-transform: uppercase; letter-spacing: 0.16em;
+      }
+      .o4 .main h3 { font-size: 22px; font-weight: 700; margin: 0; letter-spacing: -0.025em; }
+      .o4 .main .sub { font-size: 12px; color: var(--text-dim); margin: 0; max-width: 480px; }
+      .o4 .main .provider-grid {
+        display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;
+        max-width: 460px;
+      }
+      .o4 .main .provider {
+        padding: 12px;
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.06);
+        border-radius: 10px;
+      }
+      .o4 .main .provider.selected { border-color: rgba(124, 92, 255, 0.45); background: rgba(124, 92, 255, 0.08); }
+      .o4 .main .provider .name { font-size: 12px; font-weight: 600; }
+      .o4 .main .provider .sub-p { font-size: 10px; color: var(--text-faint); margin-top: 2px; }
+
+      /* ============ O5: Single Big Card ============ */
+      .o5 .body {
+        position: absolute; inset: 50px 0 0;
+        display: flex; align-items: center; justify-content: center;
+        padding: 32px;
+      }
+      .o5 .big {
+        width: 100%; max-width: 720px;
+        background: rgba(19, 19, 24, 0.55);
+        backdrop-filter: blur(20px) saturate(160%);
+        border: 1px solid rgba(124, 92, 255, 0.2);
+        border-radius: 16px;
+        padding: 24px 28px;
+        box-shadow: 0 24px 60px rgba(124, 92, 255, 0.15), 0 8px 24px rgba(0,0,0,0.4);
+        position: relative;
+      }
+      .o5 .big::before {
+        content: ''; position: absolute; inset-inline: 0; top: 0; height: 1px;
+        background: linear-gradient(90deg, transparent, var(--accent), transparent);
+        opacity: 0.5;
+      }
+      .o5 .big .head {
+        display: flex; align-items: center; justify-content: space-between;
+        margin-bottom: 14px;
+      }
+      .o5 .big .head h3 { font-size: 18px; font-weight: 700; margin: 0; }
+      .o5 .big .head .progress {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 10px;
+        color: var(--accent);
+        background: rgba(124, 92, 255, 0.14);
+        border: 1px solid rgba(124, 92, 255, 0.3);
+        padding: 4px 10px; border-radius: 999px;
+        letter-spacing: 0.14em; text-transform: uppercase;
+      }
+      .o5 .steps-bar {
+        display: flex; gap: 4px; margin-bottom: 18px;
+      }
+      .o5 .step-bar {
+        flex: 1; height: 4px; border-radius: 999px;
+        background: rgba(255, 255, 255, 0.06);
+      }
+      .o5 .step-bar.done { background: var(--success); }
+      .o5 .step-bar.active { background: linear-gradient(90deg, var(--accent), var(--accent-3)); }
+      .o5 .step-content {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+      }
+      .o5 .left h4 { font-size: 14px; font-weight: 600; margin: 0 0 6px; }
+      .o5 .left p { font-size: 11px; color: var(--text-dim); line-height: 1.55; margin: 0 0 12px; }
+      .o5 .left ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+      .o5 .left ul li { display: flex; align-items: start; gap: 6px; font-size: 11px; color: var(--text-dim); }
+      .o5 .left ul li::before { content: '✓'; color: var(--success); font-weight: 700; }
+      .o5 .right {
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 10px;
+        padding: 14px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 11px;
+      }
+      .o5 .right .mock-row {
+        padding: 8px 10px;
+        background: rgba(124, 92, 255, 0.06);
+        border: 1px solid rgba(124, 92, 255, 0.2);
+        border-radius: 6px;
+        margin-bottom: 6px;
+        color: var(--accent);
+      }
+      .o5 .actions {
+        display: flex; justify-content: space-between; align-items: center;
+        margin-top: 14px;
+        padding-top: 14px;
+        border-top: 1px solid rgba(255, 255, 255, 0.06);
+      }
+      .o5 .skip { font-size: 11px; color: var(--text-dim); }
+      .o5 .next {
+        background: linear-gradient(180deg, var(--accent), #6748f0);
+        color: white;
+        font-size: 11px; font-weight: 600;
+        padding: 8px 18px; border-radius: 999px;
+        box-shadow: 0 8px 20px rgba(124, 92, 255, 0.3);
+      }
+
+      /* ============ O6: Stacked Accordion ============ */
+      .o6 .body {
+        position: absolute; inset: 50px 0 0;
+        padding: 24px;
+        display: flex; flex-direction: column;
+      }
+      .o6 .container-mini {
+        width: 100%; max-width: 560px; margin: 0 auto;
+        display: flex; flex-direction: column; gap: 8px;
+      }
+      .o6 h2 { font-size: 20px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.025em; }
+      .o6 h2 .pop {
+        background: linear-gradient(90deg, var(--accent), var(--accent-3));
+        -webkit-background-clip: text; background-clip: text; color: transparent;
+      }
+      .o6 .sub { font-size: 11px; color: var(--text-dim); margin: 0 0 10px; }
+      .o6 .accordion {
+        background: rgba(19, 19, 24, 0.55);
+        backdrop-filter: blur(14px);
+        border: 1px solid rgba(255,255,255,0.06);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      .o6 .accordion.done { border-color: rgba(61, 220, 151, 0.25); }
+      .o6 .accordion.expanded { border-color: rgba(124, 92, 255, 0.4); }
+      .o6 .ac-head {
+        display: flex; align-items: center; gap: 10px;
+        padding: 10px 14px;
+      }
+      .o6 .ac-head .num {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 10px; font-weight: 700;
+        width: 22px; height: 22px;
+        border-radius: 999px;
+        display: flex; align-items: center; justify-content: center;
+        border: 1px solid rgba(255,255,255,0.1);
+        color: var(--text-faint);
+      }
+      .o6 .accordion.done .num { background: var(--success); color: #050507; border: 0; }
+      .o6 .accordion.expanded .num { background: var(--accent); color: white; border: 0; }
+      .o6 .ac-head .title { flex: 1; font-size: 12px; font-weight: 600; }
+      .o6 .ac-head .ext { font-size: 10px; color: var(--text-faint); }
+      .o6 .ac-body {
+        padding: 12px 16px 16px 50px;
+        border-top: 1px solid rgba(255,255,255,0.04);
+        background: rgba(0, 0, 0, 0.2);
+      }
+      .o6 .ac-body p { font-size: 11px; color: var(--text-dim); margin: 0 0 10px; }
+      .o6 .ac-body .options { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+      .o6 .ac-body .opt {
+        padding: 8px 10px;
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.05);
+        border-radius: 6px;
+        font-size: 11px; font-weight: 600;
+      }
+      .o6 .ac-body .opt.selected {
+        border-color: rgba(124, 92, 255, 0.4);
+        background: rgba(124, 92, 255, 0.08);
+      }
+      .o6 .ac-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+      .o6 .ac-actions .next {
+        background: linear-gradient(180deg, var(--accent), #6748f0);
+        color: white;
+        font-size: 10px; font-weight: 600;
+        padding: 6px 14px; border-radius: 999px;
+      }
+
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <div class="badge">post-signup · onboarding dashboard</div>
+        <h1>Six <span class="grad">onboarding layouts.</span></h1>
+        <p>
+          The first screen new users see right after signup. Walks them through plan → mailbox →
+          DNS → first warmup. Pick a layout and I'll wire it as the new <code>/onboarding</code>
+          dashboard.
+        </p>
+      </header>
+
+      <section class="design-grid">
+
+        <!-- O1: Checklist Dashboard -->
+        <div class="design-card o1">
+          <div class="design-meta">
+            <span class="design-num">O1</span>
+            <span class="design-title">Checklist Dashboard</span>
+            <span class="design-desc">All steps visible at once with a progress bar. Productivity-app feel (Notion, Linear).</span>
+          </div>
+          <div class="browser">
+            <div class="browser-chrome"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">app.warmpulse.com/onboarding</span></div>
+            <div class="browser-stage atm">
+              <div class="topbar">
+                <span class="logo">
+                  <svg viewBox="0 0 80 80" fill="none">
+                    <path d="M16 30 L40 48 L64 30" stroke="white" stroke-width="6" fill="none" stroke-linejoin="round" stroke-linecap="round" />
+                    <path d="M16 30 L16 56 Q16 58 18 58 L62 58 Q64 58 64 56 L64 30" stroke="white" stroke-width="6" fill="none" stroke-linejoin="round" stroke-linecap="round" />
+                  </svg>
+                </span>
+                <span class="brand">WarmPulse</span>
+                <span class="user">
+                  <span class="avatar">AC</span>
+                  alex@lumen-labs.com
+                </span>
+              </div>
+              <div class="body">
+                <div style="grid-column: span 2;">
+                  <div class="welcome">
+                    <h3 class="h">Welcome, Alex. <span class="pop">Let's set up your workspace.</span></h3>
+                    <p class="sub">Complete 5 quick steps to start warming your first mailbox.</p>
+                    <div class="progress-wrap"><div class="progress-fill"></div></div>
+                    <div class="progress-label"><span>Setup progress</span><strong>2 of 5 complete</strong></div>
+                  </div>
+                </div>
+                <div class="left-pane">
+                  <div class="task done">
+                    <span class="check-tick"></span>
+                    <div class="body-c"><div class="title">Create account</div><div class="sub">alex@lumen-labs.com verified</div></div>
+                  </div>
+                  <div class="task done">
+                    <span class="check-tick"></span>
+                    <div class="body-c"><div class="title">Pick a plan</div><div class="sub">Pro · ₹6,600 / month</div></div>
+                  </div>
+                  <div class="task active">
+                    <span class="check-current"></span>
+                    <div class="body-c"><div class="title">Connect first mailbox</div><div class="sub">Gmail, Outlook, or SMTP</div></div>
+                    <span class="cta">Start →</span>
+                  </div>
+                  <div class="task">
+                    <span class="check-empty"></span>
+                    <div class="body-c"><div class="title">Verify DNS</div><div class="sub">SPF, DKIM, DMARC</div></div>
+                  </div>
+                  <div class="task">
+                    <span class="check-empty"></span>
+                    <div class="body-c"><div class="title">Start first warmup</div><div class="sub">Day 1 cap: 5 emails</div></div>
+                  </div>
+                </div>
+                <div class="right-pane">
+                  <div class="glass-card" style="padding:14px">
+                    <h4>While you set up</h4>
+                    <div class="stat-grid">
+                      <div class="stat-cell"><div class="v">2,841</div><div class="l">Peers online</div></div>
+                      <div class="stat-cell"><div class="v">94.2%</div><div class="l">Avg inbox</div></div>
+                      <div class="stat-cell"><div class="v">~30s</div><div class="l">To finish</div></div>
+                      <div class="stat-cell"><div class="v">Day 1</div><div class="l">Warmup ramp</div></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- O2: Stepper Wizard -->
+        <div class="design-card o2">
+          <div class="design-meta">
+            <span class="design-num">O2</span>
+            <span class="design-title">Stepper Wizard</span>
+            <span class="design-desc">Classic one-step-at-a-time flow with a top progress rail. Forced linear progression.</span>
+          </div>
+          <div class="browser">
+            <div class="browser-chrome"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">app.warmpulse.com/onboarding/connect</span></div>
+            <div class="browser-stage atm">
+              <div class="topbar">
+                <span class="logo">
+                  <svg viewBox="0 0 80 80" fill="none">
+                    <path d="M16 30 L40 48 L64 30" stroke="white" stroke-width="6" fill="none" stroke-linejoin="round" stroke-linecap="round" />
+                    <path d="M16 30 L16 56 Q16 58 18 58 L62 58 Q64 58 64 56 L64 30" stroke="white" stroke-width="6" fill="none" stroke-linejoin="round" stroke-linecap="round" />
+                  </svg>
+                </span>
+                <span class="brand">WarmPulse</span>
+                <span class="user"><span class="avatar">AC</span>alex@lumen-labs.com</span>
+              </div>
+              <div class="body">
+                <div class="step-rail">
+                  <span class="step-dot done">✓</span>
+                  <span class="step-line done"></span>
+                  <span class="step-dot done">✓</span>
+                  <span class="step-line done"></span>
+                  <span class="step-dot active">3</span>
+                  <span class="step-line"></span>
+                  <span class="step-dot">4</span>
+                  <span class="step-line"></span>
+                  <span class="step-dot">5</span>
+                </div>
+                <div class="card">
+                  <div class="eyebrow">Step 3 of 5 · Connect mailbox</div>
+                  <h3>Pick a provider</h3>
+                  <p class="sub">We'll start warming as soon as you connect.</p>
+                  <div class="provider-grid">
+                    <div class="provider selected"><span class="badge-dot" style="background:#ea4335"></span>Gmail</div>
+                    <div class="provider"><span class="badge-dot" style="background:#0078d4"></span>Outlook</div>
+                    <div class="provider"><span class="badge-dot" style="background:#6001d2"></span>Yahoo</div>
+                    <div class="provider"><span class="badge-dot" style="background:var(--text-faint)"></span>SMTP / IMAP</div>
+                  </div>
+                  <div class="actions">
+                    <span class="back">← Back</span>
+                    <span class="next">Continue →</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- O3: Mission Control -->
+        <div class="design-card o3">
+          <div class="design-meta">
+            <span class="design-num">O3</span>
+            <span class="design-title">Mission Control Cards</span>
+            <span class="design-desc">Tasks as a card grid with a circular progress ring. Looks like a real dashboard.</span>
+          </div>
+          <div class="browser">
+            <div class="browser-chrome"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">app.warmpulse.com/onboarding</span></div>
+            <div class="browser-stage atm">
+              <div class="topbar">
+                <span class="logo">
+                  <svg viewBox="0 0 80 80" fill="none">
+                    <path d="M16 30 L40 48 L64 30" stroke="white" stroke-width="6" fill="none" stroke-linejoin="round" stroke-linecap="round" />
+                    <path d="M16 30 L16 56 Q16 58 18 58 L62 58 Q64 58 64 56 L64 30" stroke="white" stroke-width="6" fill="none" stroke-linejoin="round" stroke-linecap="round" />
+                  </svg>
+                </span>
+                <span class="brand">WarmPulse</span>
+                <span class="user"><span class="avatar">AC</span>alex@lumen-labs.com</span>
+              </div>
+              <div class="body">
+                <div class="hero-row">
+                  <h2>Welcome, Alex. <span class="pop">Let's get you inboxing.</span></h2>
+                  <div class="progress-ring-wrap">
+                    <div class="progress-ring">
+                      <svg viewBox="0 0 100 100">
+                        <circle cx="50" cy="50" r="42" stroke="rgba(255,255,255,0.08)" stroke-width="8" fill="none" />
+                        <circle cx="50" cy="50" r="42" stroke="url(#ring-g)" stroke-width="8" fill="none" stroke-linecap="round" stroke-dasharray="264" stroke-dashoffset="158" />
+                        <defs><linearGradient id="ring-g"><stop offset="0" stop-color="#7c5cff" /><stop offset="1" stop-color="#4d8eff" /></linearGradient></defs>
+                      </svg>
+                      <span class="pct">40%</span>
+                    </div>
+                    <div class="progress-info">
+                      <div class="v">2 of 5 done</div>
+                      <div class="l">Setup progress</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="grid">
+                  <div class="mission-card done">
+                    <div class="head"><span class="icon">👤</span><span class="step-num">01</span></div>
+                    <h4 class="title">Create account</h4>
+                    <p class="desc">Email verified, workspace created.</p>
+                    <div class="footer"><span class="check-tick"></span><span class="status" style="color:var(--success)">Done</span></div>
+                  </div>
+                  <div class="mission-card done">
+                    <div class="head"><span class="icon">💎</span><span class="step-num">02</span></div>
+                    <h4 class="title">Pick a plan</h4>
+                    <p class="desc">Pro · ₹6,600 / month</p>
+                    <div class="footer"><span class="check-tick"></span><span class="status" style="color:var(--success)">Done</span></div>
+                  </div>
+                  <div class="mission-card active">
+                    <div class="head"><span class="icon">📬</span><span class="step-num">03</span></div>
+                    <h4 class="title">Connect mailbox</h4>
+                    <p class="desc">OAuth or SMTP. Takes 30 seconds.</p>
+                    <div class="footer"><span class="check-current"></span><span class="status" style="color:var(--accent)">In progress</span></div>
+                  </div>
+                  <div class="mission-card">
+                    <div class="head"><span class="icon">🛡️</span><span class="step-num">04</span></div>
+                    <h4 class="title">Verify DNS</h4>
+                    <p class="desc">SPF, DKIM, DMARC alignment.</p>
+                    <div class="footer"><span class="check-empty"></span><span class="status" style="color:var(--text-faint)">Locked</span></div>
+                  </div>
+                  <div class="mission-card">
+                    <div class="head"><span class="icon">⚡</span><span class="step-num">05</span></div>
+                    <h4 class="title">Start warming</h4>
+                    <p class="desc">Day 1 ramp: 5 emails. Goes live in 60s.</p>
+                    <div class="footer"><span class="check-empty"></span><span class="status" style="color:var(--text-faint)">Locked</span></div>
+                  </div>
+                  <div class="mission-card" style="opacity:0.6">
+                    <div class="head"><span class="icon">👥</span><span class="step-num">+1</span></div>
+                    <h4 class="title">Invite team</h4>
+                    <p class="desc">Optional · skip for now</p>
+                    <div class="footer"><span class="status" style="color:var(--text-faint)">Optional</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- O4: Sidebar Stepper -->
+        <div class="design-card o4">
+          <div class="design-meta">
+            <span class="design-num">O4</span>
+            <span class="design-title">Sidebar Stepper</span>
+            <span class="design-desc">Left rail shows all steps + status, right side is the active step. Full nav awareness.</span>
+          </div>
+          <div class="browser">
+            <div class="browser-chrome"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">app.warmpulse.com/onboarding/connect</span></div>
+            <div class="browser-stage atm">
+              <div class="topbar">
+                <span class="logo">
+                  <svg viewBox="0 0 80 80" fill="none">
+                    <path d="M16 30 L40 48 L64 30" stroke="white" stroke-width="6" fill="none" stroke-linejoin="round" stroke-linecap="round" />
+                    <path d="M16 30 L16 56 Q16 58 18 58 L62 58 Q64 58 64 56 L64 30" stroke="white" stroke-width="6" fill="none" stroke-linejoin="round" stroke-linecap="round" />
+                  </svg>
+                </span>
+                <span class="brand">WarmPulse</span>
+                <span class="user"><span class="avatar">AC</span>alex@lumen-labs.com</span>
+              </div>
+              <div class="body">
+                <div class="side">
+                  <h4>Setup · 2 of 5 done</h4>
+                  <div class="step done">
+                    <span class="num">✓</span>
+                    <div><div class="label">Create account</div><div class="meta">verified · 2 min ago</div></div>
+                  </div>
+                  <div class="step done">
+                    <span class="num">✓</span>
+                    <div><div class="label">Pick a plan</div><div class="meta">Pro selected</div></div>
+                  </div>
+                  <div class="step active">
+                    <span class="num">3</span>
+                    <div><div class="label">Connect mailbox</div><div class="meta">in progress</div></div>
+                  </div>
+                  <div class="step">
+                    <span class="num">4</span>
+                    <div><div class="label">Verify DNS</div><div class="meta">locked</div></div>
+                  </div>
+                  <div class="step">
+                    <span class="num">5</span>
+                    <div><div class="label">Start warming</div><div class="meta">locked</div></div>
+                  </div>
+                </div>
+                <div class="main">
+                  <div class="crumb">Onboarding · Step 3</div>
+                  <h3>Connect your first mailbox</h3>
+                  <p class="sub">One-click OAuth for Gmail, Outlook, and Yahoo. SMTP/IMAP for everything else.</p>
+                  <div class="provider-grid">
+                    <div class="provider selected">
+                      <div class="name">Gmail</div>
+                      <div class="sub-p">OAuth · most common</div>
+                    </div>
+                    <div class="provider">
+                      <div class="name">Outlook</div>
+                      <div class="sub-p">Microsoft OAuth</div>
+                    </div>
+                    <div class="provider">
+                      <div class="name">Yahoo</div>
+                      <div class="sub-p">OAuth</div>
+                    </div>
+                    <div class="provider">
+                      <div class="name">Other</div>
+                      <div class="sub-p">SMTP / IMAP</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- O5: Single big card with side preview -->
+        <div class="design-card o5">
+          <div class="design-meta">
+            <span class="design-num">O5</span>
+            <span class="design-title">Big Card · Step + Preview</span>
+            <span class="design-desc">One large card: form on left, live preview on right (peer-network animation, DNS check, etc).</span>
+          </div>
+          <div class="browser">
+            <div class="browser-chrome"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">app.warmpulse.com/onboarding/connect</span></div>
+            <div class="browser-stage atm">
+              <div class="topbar">
+                <span class="logo">
+                  <svg viewBox="0 0 80 80" fill="none">
+                    <path d="M16 30 L40 48 L64 30" stroke="white" stroke-width="6" fill="none" stroke-linejoin="round" stroke-linecap="round" />
+                    <path d="M16 30 L16 56 Q16 58 18 58 L62 58 Q64 58 64 56 L64 30" stroke="white" stroke-width="6" fill="none" stroke-linejoin="round" stroke-linecap="round" />
+                  </svg>
+                </span>
+                <span class="brand">WarmPulse</span>
+                <span class="user"><span class="avatar">AC</span>alex@lumen-labs.com</span>
+              </div>
+              <div class="body">
+                <div class="big">
+                  <div class="head">
+                    <h3>Connect your first mailbox</h3>
+                    <span class="progress">Step 3 / 5</span>
+                  </div>
+                  <div class="steps-bar">
+                    <div class="step-bar done"></div>
+                    <div class="step-bar done"></div>
+                    <div class="step-bar active"></div>
+                    <div class="step-bar"></div>
+                    <div class="step-bar"></div>
+                  </div>
+                  <div class="step-content">
+                    <div class="left">
+                      <h4>Pick a provider</h4>
+                      <p>We'll start warming as soon as it connects. OAuth never sees your password.</p>
+                      <ul>
+                        <li>Read + Send scopes only</li>
+                        <li>Token encrypted at rest</li>
+                        <li>Disconnect anytime</li>
+                      </ul>
+                    </div>
+                    <div class="right">
+                      <div style="font-size:9px;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.14em;margin-bottom:6px">Live preview</div>
+                      <div class="mock-row">→ alex@lumen-labs.com → peer-2841</div>
+                      <div class="mock-row">→ alex@lumen-labs.com → peer-1003</div>
+                      <div class="mock-row" style="opacity:0.5">→ Waiting for first send…</div>
+                    </div>
+                  </div>
+                  <div class="actions">
+                    <span class="skip">← Back</span>
+                    <span class="next">Connect Gmail →</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- O6: Stacked Accordion -->
+        <div class="design-card o6">
+          <div class="design-meta">
+            <span class="design-num">O6</span>
+            <span class="design-title">Stacked Accordion</span>
+            <span class="design-desc">All steps as collapsible rows. Done rows collapsed, active expanded, future locked. Concertina UI.</span>
+          </div>
+          <div class="browser">
+            <div class="browser-chrome"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">app.warmpulse.com/onboarding</span></div>
+            <div class="browser-stage atm">
+              <div class="topbar">
+                <span class="logo">
+                  <svg viewBox="0 0 80 80" fill="none">
+                    <path d="M16 30 L40 48 L64 30" stroke="white" stroke-width="6" fill="none" stroke-linejoin="round" stroke-linecap="round" />
+                    <path d="M16 30 L16 56 Q16 58 18 58 L62 58 Q64 58 64 56 L64 30" stroke="white" stroke-width="6" fill="none" stroke-linejoin="round" stroke-linecap="round" />
+                  </svg>
+                </span>
+                <span class="brand">WarmPulse</span>
+                <span class="user"><span class="avatar">AC</span>alex@lumen-labs.com</span>
+              </div>
+              <div class="body">
+                <div class="container-mini">
+                  <h2>Welcome, Alex. <span class="pop">Five steps to inbox.</span></h2>
+                  <p class="sub">Take 2 minutes — we'll have your first mailbox warming in 5.</p>
+
+                  <div class="accordion done">
+                    <div class="ac-head">
+                      <span class="num">✓</span>
+                      <span class="title">Create account</span>
+                      <span class="ext">2 min ago</span>
+                    </div>
+                  </div>
+                  <div class="accordion done">
+                    <div class="ac-head">
+                      <span class="num">✓</span>
+                      <span class="title">Pick a plan</span>
+                      <span class="ext">Pro · ₹6,600/mo</span>
+                    </div>
+                  </div>
+                  <div class="accordion expanded">
+                    <div class="ac-head">
+                      <span class="num">3</span>
+                      <span class="title">Connect your first mailbox</span>
+                      <span class="ext">~30 sec</span>
+                    </div>
+                    <div class="ac-body">
+                      <p>One-click OAuth for Gmail / Outlook / Yahoo. Or SMTP for the rest.</p>
+                      <div class="options">
+                        <div class="opt selected">Gmail</div>
+                        <div class="opt">Outlook</div>
+                        <div class="opt">Yahoo</div>
+                        <div class="opt">SMTP / IMAP</div>
+                      </div>
+                      <div class="ac-actions"><span class="next">Continue with Gmail →</span></div>
+                    </div>
+                  </div>
+                  <div class="accordion" style="opacity:0.55">
+                    <div class="ac-head">
+                      <span class="num">4</span>
+                      <span class="title">Verify DNS records</span>
+                      <span class="ext">locked</span>
+                    </div>
+                  </div>
+                  <div class="accordion" style="opacity:0.55">
+                    <div class="ac-head">
+                      <span class="num">5</span>
+                      <span class="title">Start your first warmup</span>
+                      <span class="ext">locked</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <footer>
+        Pick one: O1 / O2 / O3 / O4 / O5 / O6 · I'll wire it as the new /onboarding dashboard
+      </footer>
+    </div>
+  </body>
+</html>

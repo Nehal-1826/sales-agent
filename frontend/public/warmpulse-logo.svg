@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Primary gradient - warm orange to coral -->
+    <linearGradient id="warm-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF6B35"/>
+      <stop offset="50%" stop-color="#FF8E53"/>
+      <stop offset="100%" stop-color="#FFB347"/>
+    </linearGradient>
+
+    <!-- Secondary gradient - accent glow -->
+    <linearGradient id="glow-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF6B35" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#FFB347" stop-opacity="0.1"/>
+    </linearGradient>
+
+    <!-- Background gradient -->
+    <radialGradient id="bg-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#1a1a26"/>
+      <stop offset="100%" stop-color="#0a0a0f"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background with subtle glow -->
+  <rect width="512" height="512" rx="80" fill="url(#bg-glow)"/>
+
+  <!-- Subtle inner glow -->
+  <rect x="56" y="56" width="400" height="400" rx="60" fill="url(#glow-grad)"/>
+
+  <!-- Main mail envelope - modern rounded design -->
+  <g transform="translate(128, 128)">
+    <!-- Envelope back -->
+    <rect x="20" y="40" width="216" height="144" rx="16"
+          fill="none" stroke="url(#warm-grad)" stroke-width="8"/>
+
+    <!-- Envelope top flap -->
+    <path d="M20 40 L128 120 L236 40"
+          fill="none" stroke="url(#warm-grad)" stroke-width="8"
+          stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- Envelope body -->
+    <rect x="20" y="100" width="216" height="84" rx="12"
+          fill="url(#warm-grad)" fill-opacity="0.1"/>
+
+    <!-- Envelope horizontal line -->
+    <line x1="20" y1="100" x2="236" y2="100"
+          stroke="url(#warm-grad)" stroke-width="8" stroke-linecap="round"/>
+
+    <!-- Warm pulse waves - rising heat effect -->
+    <g opacity="0.8">
+      <path d="M56 180 Q80 160 104 180"
+            stroke="url(#warm-grad)" stroke-width="4" fill="none"
+            stroke-linecap="round"/>
+      <path d="M72 200 Q100 175 128 200"
+            stroke="url(#warm-grad)" stroke-width="3" fill="none"
+            stroke-linecap="round"/>
+      <path d="M88 220 Q120 190 152 220"
+            stroke="url(#warm-grad)" stroke-width="2" fill="none"
+            stroke-linecap="round"/>
+    </g>
+
+    <!-- Heat particles - floating upward -->
+    <g fill="url(#warm-grad)">
+      <circle cx="200" cy="60" r="6" opacity="0.8"/>
+      <circle cx="180" cy="45" r="4" opacity="0.6"/>
+      <circle cx="215" cy="50" r="3" opacity="0.7"/>
+      <circle cx="190" cy="30" r="5" opacity="0.5"/>
+    </g>
+  </g>
+
+  <!-- WP monogram overlay - subtle -->
+  <g transform="translate(256, 384)" opacity="0.15">
+    <text x="0" y="0" text-anchor="middle"
+          font-family="Arial, sans-serif" font-size="48"
+          font-weight="bold" fill="url(#warm-grad)">WP</text>
+  </g>
+
+  <!-- Bottom accent bar -->
+  <rect x="176" y="420" width="160" height="8" rx="4"
+        fill="url(#warm-grad)" opacity="0.6"/>
+</svg>

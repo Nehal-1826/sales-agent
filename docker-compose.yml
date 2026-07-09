@@ -1,0 +1,96 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: warmpulse-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: warmpulse
+      POSTGRES_PASSWORD: warmpulse
+      POSTGRES_DB: warmpulse_db
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - warmpulse_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U warmpulse -d warmpulse_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: warmpulse-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6380:6379"
+    volumes:
+      - warmpulse_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+      network: host
+    container_name: warmpulse-api
+    restart: unless-stopped
+    env_file: ./backend/.env.docker
+    network_mode: host
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./backend
+      network: host
+    container_name: warmpulse-worker
+    restart: unless-stopped
+    env_file: ./backend/.env.docker
+    network_mode: host
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.celery_app.celery_app worker --loglevel=info -Q default,smtp -c 4 --hostname=warmpulse-worker@%n
+
+  beat:
+    build:
+      context: ./backend
+      network: host
+    container_name: warmpulse-beat
+    restart: unless-stopped
+    env_file: ./backend/.env.docker
+    network_mode: host
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.celery_app.celery_app beat --loglevel=info -s /tmp/celerybeat-schedule
+
+  frontend:
+    build:
+      context: ./frontend
+      network: host
+    container_name: warmpulse-frontend
+    restart: unless-stopped
+    network_mode: host
+    # Mobile APK served at /downloads/warmpulse.apk. Bind-mounted so the
+    # artifact can be refreshed without rebuilding the frontend image, and
+    # the ~60MB binary stays out of git / the Docker build context.
+    volumes:
+      - ./frontend/downloads:/usr/share/nginx/html/downloads:ro
+      - ./frontend/nginx-frontend.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+
+volumes:
+  warmpulse_pg_data:
+  warmpulse_redis_data:

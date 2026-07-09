@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WarmPulse Mobile - Starter Plan Architecture</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0a0a0a; color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height:1.6; font-size: 16px; }
+        .hero { background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 60px 40px; border-radius: 20px; margin: 0 40px 40px; box-shadow: 0 20px 40px rgba(0,0,0,0.3); }
+        .hero h1 { margin: 0 0 20px; font-size: 3em; font-weight: 600; letter-spacing: -1px; }
+        .hero p { margin:         0 0 30px 40px 40px; opacity: 0.9; font-size: 1.2em; }
+        .badge { display: inline-block; background: #00c851; color: white; padding: 8px 16px; border-radius: 20px; font-weight: 500; margin-top: 15px; }
+        .plan-price { font-size: 1.5em; font-weight: 600; color: #FFD700; }
+        .container { display: grid; gap: 20px; padding: 0 40px 40px 40px; }
+        .card { background: #1a1a1a; padding: 30px; border-radius: 16px; border: 1px solid #333; box-shadow: 0 4px 10px rgba(255, 255, 255, 0.1); transition: all 0.3s; }
+        .section-title { color: #667eea; font-size: 1.5em; font-weight: 600; margin: 0 0 30px; }
+        .section-list { list-style: none; padding: 0; }
+        .section-list li { padding: 12px 0; padding-left: 24px; border-bottom: 1px solid #333; }
+        .section-list li:last-child { border-bottom: none; }
+        .feature-list { list-style: none; padding: 0; }
+        .feature-list li { padding: 8px 0; padding-left: 28px; position: relative; }
+        .feature-list li:before { content: "✓"; position: absolute; left: 0; color: #00c851; font-weight: bold; font-size: 1.2em; }
+        .hidden { color: #888; }
+        .visible { color: #00c851; }
+        .tier-pill { display: inline-block; padding: 4px 12px; border-radius: 12px; margin: 4px; font-size: 0.85em; }
+        .starter { background: rgba(34, 197, 94, 0.15); border-color: rgba(34, 197, 94, 0.3); }
+        .pro { background: rgba(34, 197, 94, 0.25); border-color: rgba(34, 197, 94, 0.4); }
+        .pro-plus { background: rgba(34, 197, 94, 0.35); border-color: rgba(34, 197, 94, 0.5); }
+        .agency { background: rgba(34, 197, 94, 0.45); border-color: rgba(34, 197, 94, 0.6); }
+        .back-btn { position: fixed; top: 20px; left: 20px; background: rgba(0,0,0,0.7); color: white; padding: 10px 20px; border-radius: 8px; cursor: pointer; z-index: 999; }
+    </style>
+</head>
+<body>
+    <div class="hero">
+        <h1>WarmPulse Mobile</h1>
+        <p>Starter Plan Architecture (₹1,500/month)</p>
+        <div class="badge">v1.0.12 — Complete Feature Parity</div>
+    </div>
+
+    <div class="container">
+        <div class="card">
+            <h2 class="section-title">Starter Tier Screens (8)</h2>
+            <ul class="section-list">
+                <li><strong>Dashboard</strong> — Warmth gauge, KPI cards, sparkline trend</li>
+                <li><strong>Mailboxes</strong> — Connected mailboxes, DNS health, warmup controls</li>
+                <li><strong>Activity</strong> — Engagement feed (sent, opened, replied, starred, rescued)</li>
+                <li><strong>Stats</strong> — 7/30/90-day trends, placement % graph</li>
+                <li><strong>Tools</strong> — 5 diagnostic tools (Placement, Spam, DNS, Template, Preview)</li>
+                <li><strong>Reports</strong> — In-app downloads, invoice history</li>
+                <li><strong>Notifications</strong> — Inbox notifications, mark-read, filtering</li>
+                <li><strong>Billing</strong> — Plan info, auto-pay, invoices, upgrade UI</li>
+                <li><strong>Settings</strong> — Profile, security, notifications, appearance</li>
+            </ul>
+        </div>
+
+        <div class="card">
+            <h2 class="section-title">Plan Upgrade Path</h2>
+            <div style="margin: 20px 0;">
+                <span class="tier-pill starter">Starter</span>
+                <span style="margin-left: 8px;">→</span>
+                <span class="tier-pill pro">Pro (₹3,000/mo)</span>
+                <span style="margin-left: 8px;">→</span>
+                <span class="tier-pill pro-plus">Pro Plus (₹6,000/mo)</span>
+                <span style="margin-left: 8px;">→</span>
+                <span class="tier-pill agency">Agency (Custom)</span>
+            </div>
+            <p>Leads/CRM feature requires Pro Plus or Agency tier.</p>
+        </div>
+
+        <div class="card">
+            <h2 class="section-title">Navigation Flow</h2>
+            <div style="display: grid; grid-template-columns: 1fr auto; gap: 30px;">
+                <div>
+                    <h3 style="color: #764ba2; margin-top: 0;">Login → Signup → Onboarding</h3>
+                    <p style="color: #e0e0e0; margin-top: 8px;">User creates account → onboarding flow → lands in App Shell</p>
+                </div>
+                <div>
+                    <h3 style="color: #764ba2; margin-top: 0;">In-App Navigation</h3>
+                    <p style="color: #e0e0e0; margin-top: 8px;">Hamburger drawer → 8 sections (icons with badges), Logout at bottom</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2 class="section-title">Tool Detail Screens (5)</h2>
+            <ul class="feature-list">
+                <li><strong>Placement Tester</strong> — Mailbox picker, test button, results display</li>
+                <li><strong>Spam Scanner</strong> — Content input, scan button, score display</li>
+                <li><strong>DNS Validator</strong> — Domain input, SPF/DKIM/DMARC results</li>
+                <li><strong>Template Designer</strong> — Subject/body inputs, save template</li>
+                <li><strong>Warmup Preview</strong> — Generate sample emails</li>
+            </ul>
+        </div>
+
+        <div class="card">
+            <h2 class="section-title">Data Flow Architecture</h2>
+            <div style="display:grid; grid-template-columns: 1fr auto; gap: 20px;">
+                <div>
+                    <h3 style="color: #764ba2;">Auth & Data</h3>
+                    <p style="color: #e0e0e0; margin-top: 8px;">JWT auth (bearer tokens), TanStack Query for data, authFetch for API calls</p>
+                </div>
+                <div>
+                    <h3 style="color: #764ba2;">State Management</h3>
+                    <p style="color: #e0e0e0; margin-top: 8px;">useState, useQuery hooks, context providers (Auth, Plan, Locale)</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2 class="section-title">Key Features by Section</h2>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                <div><strong>Dashboard:</strong> Gauge (74% warmth), KPI cards, 14-day trend</div>
+                <div><strong>Mailboxes:</strong> 1 mailbox management, DNS health, warmup controls</div>
+                <div><strong>Activity:</strong> 6 engagement types, filters, real-time feed</div>
+                <div><strong>Stats:</strong> 7/30/90-day toggles, placement % graph</div>
+                <div><strong>Tools:</strong> 5 tools with full backend wiring</div>
+                <div><strong>Reports:</strong> In-app CSV/PDF generation, invoice download</div>
+                <div><strong>Notifications:</strong> Polling inbox, mark-read, OS bridge</div>
+                <div><strong>Billing:</strong> Auto-pay, invoices, plan cards</div>
+                <div><strong>Settings:</strong> Profile, 2FA (tier-gated), notifications</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2 class="section-title">Mobile vs Web Parity</h2>
+            <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+                <thead>
+                    <tr>
+                        <th style="color: #667eea;">Feature</th>
+                        <th style="color: #764ba2;">Mobile</th>
+                        <th style="color: #764ba2;">Web</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Navigation</td>
+                        <td>8 sections + drawer + logout</td>
+                        <td>8 sections + sidebar</td>
+                    </tr>
+                    <tr>
+                        <td>Tools</td>
+                        <td>5 detail screens with back navigation</td>
+                        <td>Multi-tab layout with detail screens</td>
+                    </tr>
+                    <tr>
+                        <td>Reports</td>
+                        <td>In-app CSV/PDF + invoice download</td>
+                        <td>Web + export options</td>
+                    </tr>
+                    <tr>
+                        <td>Notifications</td>
+                        <td>OS notification bridge + polling inbox</td>
+                        <td>Web + OS notification bridge</td>
+                    </tr>
+                    <tr>
+                        <td>Billing</td>
+                        <td>Selection cards, auto-pay, invoices</td>
+                        <td>Single upgrade flow, web options</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card">
+            <h2 class="section-title">API Endpoints Used</h2>
+            <ul class="feature-list">
+                <li><code>GET /api/workspace/notifications-inbox</code> — Polling inbox (45s)</li>
+                <li><code>POST /api/workspace/notifications-inbox/{id}/read</code> — Mark read</li>
+                <li><code>POST /api/workspace/notifications-inbox/read-all</code> — Mark all read</li>
+                <li><code>POST /api/workspace/tools/placement</code> — Placement test</li>
+                <li><code>POST /api/workspace/tools/spam-scan</code> — Spam scan</li>
+                <li><code>POST /api/workspace/mailboxes/{id}/dns-check</code> — DNS check</li>
+                <li><code>POST /api/workspace/reports/generate</code> — Generate report</li>
+                <li><code>POST /api/workspace/payments/auto-pay</code> — Toggle auto-pay</li>
+                <li><code>GET /api/workspace/billing/status</code> — Billing status</li>
+                <li><code>GET /api/workspace/payments</code> — Invoice list</li>
+            </ul>
+        </div>
+
+        <div style="margin-top: 30px; text-align: center;">
+            <p style="color: #e0e0e0;">Current version: v1.0.12 | Commits: 7 | Status: ✅ Production Ready</p>
+        </div>
+
+        <div class="footer">
+            <p>WarmPulse Mobile | Starter Plan (₹1,500/month) | Updated June 2026</p>
+        </div>
+</body>
+</html>

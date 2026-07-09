@@ -1,0 +1,445 @@
+/* =============================================================================
+   Client STARTER Tools design preview — round 2.
+   Data-first variants. Each surfaces tool *results* (not just launchers).
+     T5 — Run History Stream    CI/CD-style log of past runs with status
+     T6 — Insights Dashboard    Each tool's key metric on the dashboard
+     T7 — Comparison Table      Table: tool · last run · trend sparkline · action
+     T8 — Status Board          Big board showing every check's latest result
+============================================================================= */
+
+.cdp { min-height: 100vh; background: var(--wp-bg); color: var(--wp-text); position: relative; overflow-x: hidden; }
+.cdp__atmosphere { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
+.cdp__aurora-1, .cdp__aurora-2 { position: absolute; border-radius: 50%; filter: blur(140px); opacity: 0.4; }
+.cdp__aurora-1 { width: 700px; height: 700px; top: -250px; left: -150px; background: var(--wp-accent); }
+.cdp__aurora-2 { width: 600px; height: 600px; bottom: -200px; right: -150px; background: var(--wp-accent-2, var(--wp-accent)); opacity: 0.28; }
+
+.cdp__topbar {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center; gap: 16px;
+  padding: 14px 28px;
+  background: color-mix(in srgb, var(--wp-bg) 80%, transparent);
+  backdrop-filter: blur(16px) saturate(160%); -webkit-backdrop-filter: blur(16px) saturate(160%);
+  border-bottom: 1px solid color-mix(in srgb, var(--wp-accent) 12%, var(--wp-border));
+}
+.cdp__back {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--wp-text-dim); text-decoration: none;
+  padding: 6px 11px; border-radius: 999px; border: 1px solid var(--wp-border);
+  transition: color 150ms, border-color 150ms;
+}
+.cdp__back:hover { color: var(--wp-text); border-color: color-mix(in srgb, var(--wp-accent) 40%, var(--wp-border)); }
+.cdp__brand { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.06em; color: var(--wp-text-faint); }
+
+.cdp__main { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 56px 28px 96px; }
+.cdp__hero { margin-bottom: 36px; max-width: 760px; }
+.cdp__eyebrow {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 999px;
+  font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--wp-accent);
+  background: color-mix(in srgb, var(--wp-accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 30%, transparent);
+}
+.cdp__round-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 999px;
+  font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+  background: color-mix(in srgb, #facc15 14%, transparent);
+  color: #facc15;
+  border: 1px solid color-mix(in srgb, #facc15 35%, transparent);
+  margin-left: 6px;
+}
+.cdp__title { margin: 14px 0 10px; font-size: 38px; line-height: 1.1; font-weight: 700; letter-spacing: -0.02em; }
+.cdp__title em {
+  font-style: normal;
+  background: linear-gradient(90deg, var(--wp-accent), var(--wp-accent-2, var(--wp-accent)));
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+.cdp__sub { font-size: 14.5px; line-height: 1.6; color: var(--wp-text-dim); }
+
+.cdp__plan-strip { display: flex; gap: 8px; margin: 18px 0 0; }
+.cdp__plan-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: 999px;
+  font-size: 11px; font-weight: 500;
+  border: 1px solid var(--wp-border);
+  background: color-mix(in srgb, var(--wp-surface) 60%, transparent);
+  color: var(--wp-text-dim);
+}
+.cdp__plan-chip--active {
+  background: color-mix(in srgb, #f472b6 18%, var(--wp-surface));
+  border-color: color-mix(in srgb, #f472b6 50%, transparent);
+  color: #fff;
+}
+.cdp__plan-chip-dot { width: 6px; height: 6px; border-radius: 999px; }
+
+.cdp__grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 22px; }
+@media (max-width: 1080px) { .cdp__grid { grid-template-columns: 1fr; } }
+
+.cdp-tile {
+  position: relative; display: flex; flex-direction: column;
+  border-radius: 18px; border: 1px solid var(--wp-border);
+  background: color-mix(in srgb, var(--wp-surface) 75%, transparent);
+  overflow: hidden; cursor: pointer; text-align: left; font: inherit;
+  transition: border-color 200ms, transform 200ms, box-shadow 200ms;
+}
+.cdp-tile:hover {
+  border-color: color-mix(in srgb, var(--wp-accent) 40%, var(--wp-border));
+  transform: translateY(-3px);
+  box-shadow: 0 18px 40px -16px color-mix(in srgb, var(--wp-accent) 28%, transparent);
+}
+.cdp-tile--selected {
+  border-color: var(--wp-accent);
+  box-shadow: 0 0 0 1px var(--wp-accent), 0 22px 50px -16px color-mix(in srgb, var(--wp-accent) 38%, transparent);
+}
+.cdp-tile__check {
+  position: absolute; top: 14px; right: 14px;
+  width: 28px; height: 28px; border-radius: 999px;
+  background: var(--wp-accent); color: #fff;
+  display: grid; place-items: center; z-index: 3;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--wp-accent) 30%, transparent);
+}
+.cdp-tile__preview {
+  position: relative; aspect-ratio: 16 / 11; padding: 14px;
+  background:
+    radial-gradient(ellipse at top right, color-mix(in srgb, var(--wp-accent) 8%, transparent), transparent 70%),
+    color-mix(in srgb, var(--wp-surface-2) 60%, var(--wp-bg));
+  border-bottom: 1px solid var(--wp-border); overflow: hidden;
+}
+.cdp-tile__body { padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 8px; }
+.cdp-tile__head { display: flex; align-items: baseline; gap: 10px; }
+.cdp-tile__code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; letter-spacing: 0.06em;
+  padding: 2px 8px; border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-accent) 14%, transparent);
+  color: var(--wp-accent);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 30%, transparent);
+}
+.cdp-tile__name { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+.cdp-tile__tag { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--wp-text-dim); }
+.cdp-tile__bullets { margin: 4px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.cdp-tile__bullets li { font-size: 11.5px; color: var(--wp-text-faint); position: relative; padding-left: 14px; }
+.cdp-tile__bullets li::before {
+  content: ''; position: absolute; left: 0; top: 7px;
+  width: 5px; height: 5px; border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-accent) 60%, transparent);
+}
+
+/* ---------- mockup primitives ---------- */
+.mk { position: absolute; inset: 14px; display: flex; flex-direction: column; gap: 6px; }
+.mk-pill { height: 6px; border-radius: 4px; background: color-mix(in srgb, var(--wp-text) 12%, transparent); }
+.mk-pill--accent { background: color-mix(in srgb, var(--wp-accent) 55%, transparent); }
+.mk-pill--success { background: color-mix(in srgb, var(--wp-success, #3ddc97) 60%, transparent); }
+.mk-pill--warn { background: color-mix(in srgb, var(--wp-warning, #ffb454) 60%, transparent); }
+.mk-pill--danger { background: color-mix(in srgb, var(--wp-danger, #ff5c7a) 60%, transparent); }
+
+.mk-spark {
+  height: 16px;
+  position: relative;
+  background-image: linear-gradient(180deg, color-mix(in srgb, var(--wp-accent) 25%, transparent), transparent);
+  border-bottom: 1.5px solid var(--wp-accent);
+}
+.mk-spark--success {
+  background-image: linear-gradient(180deg, color-mix(in srgb, var(--wp-success, #3ddc97) 25%, transparent), transparent);
+  border-bottom-color: var(--wp-success, #3ddc97);
+}
+.mk-spark--warn {
+  background-image: linear-gradient(180deg, color-mix(in srgb, var(--wp-warning, #ffb454) 25%, transparent), transparent);
+  border-bottom-color: var(--wp-warning, #ffb454);
+}
+.mk-bars-mini {
+  display: flex; align-items: end; gap: 1.5px; height: 16px;
+}
+.mk-bars-mini > span {
+  flex: 1; min-width: 3px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--wp-accent) 55%, transparent);
+}
+
+/* Status pill, monochrome family */
+.mk-stat {
+  font-size: 8px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 2px 6px; border-radius: 4px;
+  flex: none;
+}
+.mk-stat--ok {
+  background: color-mix(in srgb, var(--wp-success, #3ddc97) 18%, transparent);
+  color: var(--wp-success, #3ddc97);
+  border: 1px solid color-mix(in srgb, var(--wp-success, #3ddc97) 40%, transparent);
+}
+.mk-stat--warn {
+  background: color-mix(in srgb, var(--wp-warning, #ffb454) 18%, transparent);
+  color: var(--wp-warning, #ffb454);
+  border: 1px solid color-mix(in srgb, var(--wp-warning, #ffb454) 40%, transparent);
+}
+.mk-stat--err {
+  background: color-mix(in srgb, var(--wp-danger, #ff5c7a) 18%, transparent);
+  color: var(--wp-danger, #ff5c7a);
+  border: 1px solid color-mix(in srgb, var(--wp-danger, #ff5c7a) 40%, transparent);
+}
+.mk-stat--info {
+  background: color-mix(in srgb, var(--wp-accent) 18%, transparent);
+  color: var(--wp-accent);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 40%, transparent);
+}
+
+.mk-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  color: var(--wp-text);
+  line-height: 1;
+}
+
+/* =============================================================================
+   T5 — Run History Stream.
+   CI/CD-style log of every tool run, newest first. Each row: time · tool ·
+   status · key result. Like GitHub Actions runs view.
+============================================================================= */
+.mk--stream {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 5px;
+}
+.mk--stream .mk-stream__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 6px;
+}
+.mk--stream .mk-stream__title {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 9px; font-weight: 700;
+  letter-spacing: 0.08em; text-transform: uppercase;
+}
+.mk--stream .mk-stream__rolling {
+  display: inline-flex; gap: 4px; align-items: center;
+  padding: 2px 7px; border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-accent) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 40%, transparent);
+  font-size: 8px; color: var(--wp-accent);
+  font-family: 'JetBrains Mono', monospace;
+}
+.mk--stream .mk-stream__list {
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--wp-surface) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-text) 8%, transparent);
+  padding: 4px 8px;
+  display: flex; flex-direction: column;
+}
+.mk--stream .mk-stream__row {
+  display: grid;
+  grid-template-columns: 38px auto 1fr 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px dashed color-mix(in srgb, var(--wp-text) 8%, transparent);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+}
+.mk--stream .mk-stream__row:last-child { border-bottom: none; }
+.mk--stream .mk-stream__time { color: var(--wp-text-faint); }
+.mk--stream .mk-stream__tool-name {
+  font-weight: 600; color: var(--wp-text);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* =============================================================================
+   T6 — Insights Dashboard.
+   Each tool surfaces its KEY METRIC on the dashboard — not just a launcher.
+   Big numbers + sparklines + short context.
+============================================================================= */
+.mk--insights {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 6px;
+}
+.mk--insights .mk-ins__head {
+  display: flex; align-items: center;
+  gap: 6px;
+}
+.mk--insights .mk-ins__head > span:first-child {
+  flex: 1;
+}
+.mk--insights .mk-ins__grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 5px;
+}
+.mk--insights .mk-ins__card {
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--wp-surface) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-text) 8%, transparent);
+  padding: 6px 8px;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.mk--insights .mk-ins__card--hero {
+  grid-row: 1 / 3;
+  grid-column: 1 / 2;
+  background:
+    radial-gradient(ellipse at top right, color-mix(in srgb, var(--wp-accent) 14%, transparent), transparent 65%),
+    color-mix(in srgb, var(--wp-accent) 10%, var(--wp-surface));
+  border-color: color-mix(in srgb, var(--wp-accent) 30%, transparent);
+}
+.mk--insights .mk-ins__row {
+  display: flex; align-items: center; justify-content: space-between;
+}
+.mk--insights .mk-ins__num-big {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 28px; font-weight: 800;
+  line-height: 1;
+  color: var(--wp-accent);
+}
+.mk--insights .mk-ins__num-mid {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 16px; font-weight: 700;
+  color: var(--wp-text);
+}
+
+/* =============================================================================
+   T7 — Comparison Table.
+   Data table with rows per tool — name · last run · result · 7d trend ·
+   action. Glance-friendly, spreadsheet-like.
+============================================================================= */
+.mk--table {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 5px;
+}
+.mk--table .mk-tb__head {
+  display: grid;
+  grid-template-columns: 1.5fr 0.9fr 0.7fr 1.1fr 0.7fr;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 7.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--wp-text-faint);
+  border-bottom: 1px solid color-mix(in srgb, var(--wp-text) 12%, transparent);
+}
+.mk--table .mk-tb__body {
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--wp-surface) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-text) 8%, transparent);
+  padding: 4px 8px;
+  display: flex; flex-direction: column;
+}
+.mk--table .mk-tb__row {
+  display: grid;
+  grid-template-columns: 1.5fr 0.9fr 0.7fr 1.1fr 0.7fr;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--wp-text) 6%, transparent);
+}
+.mk--table .mk-tb__row:last-child { border-bottom: none; }
+.mk--table .mk-tb__row-name {
+  display: flex; align-items: center; gap: 5px;
+}
+.mk--table .mk-tb__icon {
+  width: 14px; height: 14px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--wp-accent) 50%, transparent), color-mix(in srgb, var(--wp-accent-2, var(--wp-accent)) 50%, transparent));
+  flex: none;
+}
+.mk--table .mk-tb__last {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  color: var(--wp-text-dim);
+}
+.mk--table .mk-tb__action {
+  height: 14px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-accent) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 50%, transparent);
+}
+
+/* =============================================================================
+   T8 — Status Board.
+   Big board view. Each tool's latest result rendered as a "card-tile" with
+   the result up front (number / pass/fail / score). Sysadmin status display.
+============================================================================= */
+.mk--board {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 6px;
+}
+.mk--board .mk-bd__head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 4px;
+}
+.mk--board .mk-bd__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: 1fr 1fr;
+  gap: 5px;
+}
+.mk--board .mk-bd__cell {
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--wp-surface) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-text) 8%, transparent);
+  padding: 7px;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 4px;
+  position: relative;
+  overflow: hidden;
+}
+.mk--board .mk-bd__cell::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--wp-success, #3ddc97);
+}
+.mk--board .mk-bd__cell--warn::before { background: var(--wp-warning, #ffb454); }
+.mk--board .mk-bd__cell--err::before { background: var(--wp-danger, #ff5c7a); }
+.mk--board .mk-bd__cell--accent::before { background: var(--wp-accent); }
+.mk--board .mk-bd__cell-head {
+  display: flex; align-items: center;
+  justify-content: space-between;
+}
+.mk--board .mk-bd__name {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.mk--board .mk-bd__value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--wp-text);
+  line-height: 1;
+}
+.mk--board .mk-bd__value-suffix {
+  font-size: 9px;
+  color: var(--wp-text-dim);
+  margin-left: 2px;
+  font-weight: 600;
+}
+.mk--board .mk-bd__detail {
+  display: flex; align-items: center;
+  gap: 4px;
+  font-size: 7.5px;
+  color: var(--wp-text-faint);
+}
+
+.cdp__verdict {
+  margin-top: 36px;
+  padding: 22px 26px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--wp-accent) 8%, var(--wp-surface));
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 25%, var(--wp-border));
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 18px; flex-wrap: wrap;
+}
+.cdp__verdict-text strong { color: var(--wp-accent); }
+.cdp__verdict-text p {
+  margin: 4px 0 0;
+  font-size: 13px; color: var(--wp-text-dim);
+  max-width: 580px; line-height: 1.55;
+}

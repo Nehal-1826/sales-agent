@@ -1,0 +1,42 @@
+[Unit]
+Description=WarmPulse Celery worker (queue: zai — Z.ai / LLM calls, isolated)
+Documentation=https://github.com/yourorg/warmpulse
+After=network-online.target postgresql.service redis-server.service
+Wants=network-online.target
+Requires=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=warmpulse
+Group=warmpulse
+WorkingDirectory=/var/www/warmpulse/backend
+Environment=PATH=/var/www/warmpulse/backend/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+EnvironmentFile=/etc/warmpulse/warmpulse.env
+# Dedicated worker for Z.ai calls so LLM latency never blocks SMTP/IMAP
+# workers (see spec §11: queue responsibilities).
+ExecStart=/var/www/warmpulse/backend/.venv/bin/celery -A app.celery_app worker \
+    -Q zai \
+    --concurrency=2 \
+    -l info \
+    -n warmpulse-zai@%%h
+Restart=always
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=60
+
+# --- Hardening ------------------------------------------------------------
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/www/warmpulse /var/log/warmpulse
+
+# --- Logging --------------------------------------------------------------
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=warmpulse-zai-worker
+
+[Install]
+WantedBy=multi-user.target

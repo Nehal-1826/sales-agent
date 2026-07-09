@@ -304,7 +304,7 @@ export function LoginPage() {
   const pending = isSubmitting || login.isPending;
 
   return (
-    <>
+    <div className="min-h-screen pb-16">
       <AuthCard
         variant="login"
         heading={t('auth.login.heading')}
@@ -433,6 +433,16 @@ export function LoginPage() {
           />
         )}
       />
-    </>
+
+      <footer className="fixed bottom-0 left-0 right-0 border-t border-white/[0.06] py-3 bg-bg/90 backdrop-blur-xl z-20">
+        <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 text-xs text-text-dim">
+          <span>© {new Date().getFullYear()} WarmPulse. All rights reserved.</span>
+          <div className="flex items-center gap-4">
+            <Link to="/privacy" className="hover:text-text">Privacy</Link>
+            <Link to="/terms" className="hover:text-text">Terms</Link>
+          </div>
+        </div>
+      </footer>
+    </div>
   );
 }

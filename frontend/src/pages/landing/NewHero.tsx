@@ -3514,24 +3514,12 @@ export function NewHero() {
       <FinalCTA />
 
       {/* ---------- Footer with legal links ---------- */}
-      <footer
-        className="relative z-10 mx-auto mt-20 max-w-6xl border-t px-6 py-10 text-center"
-        style={{ borderColor: 'var(--wp-border)' }}
-      >
-        <div className="flex flex-col items-center gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-2">
-            <Sparkles size={14} strokeWidth={2} style={{ color: 'var(--wp-accent)' }} />
-            <span className="text-sm" style={{ color: 'var(--wp-text-dim)' }}>
-              © {new Date().getFullYear()} WarmPulse. All rights reserved.
-            </span>
-          </div>
-          <div className="flex items-center gap-6 text-sm">
-            <Link to="/privacy" style={{ color: 'var(--wp-text-dim)' }} className="hover:opacity-100 transition-opacity">
-              Privacy Policy
-            </Link>
-            <Link to="/terms" style={{ color: 'var(--wp-text-dim)' }} className="hover:opacity-100 transition-opacity">
-              Terms of Service
-            </Link>
+      <footer className="fixed bottom-0 left-0 right-0 border-t border-white/[0.06] py-3 bg-bg/90 backdrop-blur-xl z-20">
+        <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 text-xs text-text-dim">
+          <span>© {new Date().getFullYear()} WarmPulse. All rights reserved.</span>
+          <div className="flex items-center gap-4">
+            <Link to="/privacy" className="hover:text-text">Privacy</Link>
+            <Link to="/terms" className="hover:text-text">Terms</Link>
           </div>
         </div>
       </footer>

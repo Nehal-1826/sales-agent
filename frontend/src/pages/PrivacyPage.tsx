@@ -8,8 +8,9 @@
  */
 export function PrivacyPage() {
   return (
-    <div className="mx-auto max-w-3xl px-6 py-16">
-      <h1 className="text-3xl font-semibold">Privacy Policy</h1>
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+      <div className="mx-auto max-w-3xl px-6 py-16">
+        <h1 className="text-3xl font-semibold">Privacy Policy</h1>
       <p className="mt-2 text-sm text-text-dim">Last updated: 2026-04-26</p>
 
       <Section title="What we collect">
@@ -30,6 +31,25 @@ export function PrivacyPage() {
         forward, store, or transmit your real correspondence anywhere.
       </Section>
 
+      <Section title="Limited Use of Google user data">
+        WarmPulse's use and transfer to any other app of information received
+        from Google APIs will adhere to the{' '}
+        <a
+          className="text-accent underline"
+          href="https://developers.google.com/terms/api-services-user-data-policy"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Google API Services User Data Policy
+        </a>
+        , including the Limited Use requirements. We use Gmail data solely to
+        provide the user-facing warmup features described above; we do not
+        transfer it to others except as needed to provide or improve those
+        features, comply with law, or as part of a merger; we do not use it for
+        advertising; and no humans read it except with your explicit consent,
+        for security, or as required by law.
+      </Section>
+
       <Section title="How we share data">
         We don't sell or rent personal data. We share data only with
         sub-processors strictly required to operate the service: our cloud
@@ -44,7 +64,7 @@ export function PrivacyPage() {
         when you disconnect a mailbox or delete your account. Activity
         logs older than 13 months are purged on a rolling basis. Email{' '}
         <a className="text-accent underline" href="mailto:privacy@warmpulse.tech">
-          privacy@warmpulse.app
+          privacy@warmpulse.tech
         </a>{' '}
         for an export or full-account deletion request — we respond within
         7 days.
@@ -58,6 +78,7 @@ export function PrivacyPage() {
         Material changes will appear on this page with an updated
         timestamp. Continued use after a change constitutes acceptance.
       </Section>
+    </div>
     </div>
   );
 }

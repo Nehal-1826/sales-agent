@@ -74,7 +74,7 @@ const INSTRUCTIONS: Record<AppPasswordProvider, ProviderInstructions> = {
       { text: 'Copy the generated password and paste it above.' },
     ],
     footer:
-      'Work / school Microsoft 365 tenants may have legacy SMTP AUTH disabled — if the probe fails, ask your admin to enable "Authenticated SMTP" or use the OAuth tile instead.',
+      'Work / school Microsoft 365 tenants may have legacy SMTP AUTH disabled — if the probe fails, ask your admin to enable "Authenticated SMTP" for the mailbox.',
   },
   zoho: {
     label: 'Zoho Mail',

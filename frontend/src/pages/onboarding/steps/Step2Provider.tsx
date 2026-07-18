@@ -31,13 +31,6 @@ const PROVIDERS: ProviderOption[] = [
     accent: 'text-accent',
   },
   {
-    id: 'outlook_oauth',
-    name: 'Outlook (Microsoft OAuth — beta)',
-    subtitleKey: 'onb.prov.sub.outlookOauth',
-    auth: 'oauth',
-    accent: 'text-accent',
-  },
-  {
     id: 'yahoo',
     name: 'Yahoo',
     subtitleKey: 'onb.prov.sub.yahoo',

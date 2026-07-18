@@ -39,10 +39,20 @@ const PROVIDERS: Array<{
   oauth: boolean;
 }> = [
   { value: 'gmail', label: 'Gmail / Workspace', sub: 'OAuth — recommended', oauth: true },
-  { value: 'outlook', label: 'Outlook / Microsoft 365', sub: 'OAuth', oauth: true },
+  { value: 'outlook', label: 'Outlook / Microsoft 365', sub: 'App password via SMTP', oauth: false },
   { value: 'yahoo', label: 'Yahoo Mail', sub: 'App password via SMTP', oauth: false },
   { value: 'smtp', label: 'Generic SMTP / IMAP', sub: 'Any provider', oauth: false },
 ];
+
+// SMTP/IMAP host defaults per app-password provider — prefilled so the user
+// doesn't have to hunt for the right hostnames. Mirrors the onboarding
+// wizard's Step3Credentials defaults.
+const SMTP_DEFAULTS: Partial<
+  Record<MailboxProvider, { smtp_host: string; smtp_port: number; imap_host: string; imap_port: number }>
+> = {
+  outlook: { smtp_host: 'smtp.office365.com', smtp_port: 587, imap_host: 'outlook.office365.com', imap_port: 993 },
+  yahoo: { smtp_host: 'smtp.mail.yahoo.com', smtp_port: 587, imap_host: 'imap.mail.yahoo.com', imap_port: 993 },
+};
 
 const smtpSchema = z.object({
   email: z.string().email('Enter a valid email address'),
@@ -102,10 +112,28 @@ export function AddMailboxDialog({ open, onOpenChange }: AddMailboxDialogProps) 
   const emailValue = form.watch('email');
 
   useEffect(() => {
-    if (provider === 'smtp' && emailValue && !form.getValues('smtp_username')) {
+    // SMTP username defaults to the email address for every app-password
+    // provider (generic SMTP, Yahoo, Outlook).
+    if (
+      (provider === 'smtp' || provider === 'yahoo' || provider === 'outlook') &&
+      emailValue &&
+      !form.getValues('smtp_username')
+    ) {
       form.setValue('smtp_username', emailValue, { shouldValidate: false });
     }
   }, [emailValue, provider, form]);
+
+  // Prefill SMTP/IMAP hosts when the user picks a known app-password provider
+  // (Outlook / Yahoo). Runs only on provider change, so it never clobbers
+  // values the user has started editing within the same provider.
+  useEffect(() => {
+    const d = SMTP_DEFAULTS[provider];
+    if (!d) return;
+    form.setValue('smtp_host', d.smtp_host, { shouldValidate: false });
+    form.setValue('smtp_port', d.smtp_port, { shouldValidate: false });
+    form.setValue('imap_host', d.imap_host, { shouldValidate: false });
+    form.setValue('imap_port', d.imap_port, { shouldValidate: false });
+  }, [provider, form]);
 
   const reset = () => {
     setStep(0);
@@ -242,7 +270,7 @@ export function AddMailboxDialog({ open, onOpenChange }: AddMailboxDialogProps) 
                     disabled={create.isPending}
                     leftIcon={create.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined}
                   >
-                    {provider === 'gmail' ? 'Connect Google' : 'Connect Microsoft'}
+                    Connect Google
                   </Button>
                   {oauthError ? (
                     <p className="mt-2 text-xs text-accent3">{oauthError}</p>
@@ -334,7 +362,9 @@ export function AddMailboxDialog({ open, onOpenChange }: AddMailboxDialogProps) 
                       </div>
                       <div className="mt-2">
                         <AppPasswordHelp
-                          provider={(provider === 'yahoo' || provider === 'smtp'
+                          provider={(provider === 'yahoo' ||
+                          provider === 'outlook' ||
+                          provider === 'smtp'
                             ? provider
                             : 'smtp') as AppPasswordProvider}
                         />

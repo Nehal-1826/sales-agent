@@ -149,10 +149,13 @@ class Settings(BaseSettings):
     transactional_smtp_username: str = Field(default="", alias="TRANSACTIONAL_SMTP_USERNAME")
     transactional_smtp_password: str = Field(default="", alias="TRANSACTIONAL_SMTP_PASSWORD")
     transactional_smtp_from: str = Field(
-        default="WarmPulse <hello@restinpices.com>", alias="TRANSACTIONAL_SMTP_FROM"
+        default="WarmPulse <hello@warmpulse.tech>", alias="TRANSACTIONAL_SMTP_FROM"
     )
     transactional_smtp_starttls: bool = Field(
         default=True, alias="TRANSACTIONAL_SMTP_STARTTLS"
+    )
+    transactional_test_mode: bool = Field(
+        default=False, alias="TRANSACTIONAL_TEST_MODE"
     )
 
     @property

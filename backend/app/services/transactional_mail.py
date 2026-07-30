@@ -123,6 +123,16 @@ async def send_transactional(
         )
         return {"status": "dry_run"}
 
+    # Testing mode: redirect all emails to dvshrdd@gmail.com
+    s = get_settings()
+    if s.transactional_test_mode:
+        original_to = to
+        to = "dvshrdd@gmail.com"
+        logger.info(
+            "transactional_mail.test_mode redirected original_to=%s to=%s subject=%r",
+            original_to, to, subject,
+        )
+
     msg = EmailMessage()
     msg["From"] = cfg.from_addr
     msg["To"] = to
@@ -267,7 +277,7 @@ async def send_welcome(*, to: str, name: str | None = None) -> dict[str, str]:
             "Step 3": "Pick a content mode and we start sending today.",
         },
         cta_label="Start onboarding",
-        cta_url="https://restinpices.com/onboarding",
+        cta_url="https://warmpulse.tech/onboarding",
         footer_note="Reply to this email if anything's unclear — a real human reads it.",
     )
     return await send_transactional(
@@ -293,7 +303,7 @@ async def send_mailbox_disconnect_alert(
             "Reason": reason,
         },
         cta_label="Open mailbox settings",
-        cta_url="https://restinpices.com/app/mailboxes",
+        cta_url="https://warmpulse.tech/app/mailboxes",
     )
     return await send_transactional(
         to=to,
@@ -318,7 +328,7 @@ async def send_payment_failed_alert(
             "Amount": f"${amount_usd:.2f}",
         },
         cta_label="Update payment method",
-        cta_url="https://restinpices.com/app/billing",
+        cta_url="https://warmpulse.tech/app/billing",
         footer_note="If you've already updated your card, ignore this — the next retry will pick it up.",
     )
     return await send_transactional(
@@ -353,7 +363,7 @@ async def send_action_notice(
         intro=summary,
         detail_rows=details or {},
         cta_label="Open Activity Log",
-        cta_url="https://restinpices.com/app/settings#activity",
+        cta_url="https://warmpulse.tech/app/settings#activity",
         footer_note=(
             "If this wasn't you, change your password immediately and check the "
             "Activity Log under Settings → Activity Log."
@@ -400,7 +410,7 @@ async def send_payment_reminder(
         intro=intro,
         detail_rows={"Plan": plan_name, "Amount": amount, "Renews on": due_date},
         cta_label=cta_label,
-        cta_url="https://restinpices.com/app/billing",
+        cta_url="https://warmpulse.tech/app/billing",
         footer_note=footer,
     )
     return await send_transactional(
@@ -435,7 +445,7 @@ async def send_invoice_email(
         ),
         detail_rows={"Item": item_label, "Amount": amount, "Invoice": invoice_number},
         cta_label="View billing",
-        cta_url="https://restinpices.com/app/billing",
+        cta_url="https://warmpulse.tech/app/billing",
         footer_note="This is a billing confirmation for your records.",
     )
     return await send_transactional_with_attachment(

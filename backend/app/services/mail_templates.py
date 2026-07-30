@@ -42,8 +42,8 @@ TEXT_DIM = "#8888a0"
 ACCENT = "#00e5a0"
 ACCENT_2 = "#00c4ff"
 
-LANDING = "https://restinpices.com"
-APP = "https://restinpices.com/app"
+LANDING = "https://warmpulse.tech"
+APP = "https://warmpulse.tech/app"
 
 # Card width — narrow enough to read on a phone in portrait, wide enough
 # to render two-column detail rows without wrapping.
@@ -108,7 +108,7 @@ def _render_plain(
     parts.append(f"Sent {_now_utc()}")
     if footer_note:
         parts += ["", footer_note]
-    parts += ["", "— The WarmPulse team · https://restinpices.com"]
+    parts += ["", "— The WarmPulse team · https://warmpulse.tech"]
     return "\n".join(parts)
 
 
@@ -297,11 +297,11 @@ def _render_html(
           <tr>
             <td style="padding:24px 4px 36px 4px;color:{TEXT_DIM};
                        font-size:12px;line-height:1.6;text-align:center;">
-              <a href="{LANDING}" style="color:{TEXT_DIM};text-decoration:none;">restinpices.com</a>
+              <a href="{LANDING}" style="color:{TEXT_DIM};text-decoration:none;">warmpulse.tech</a>
               &nbsp;·&nbsp;
               <a href="{APP}" style="color:{TEXT_DIM};text-decoration:none;">Open the app</a>
               &nbsp;·&nbsp;
-              <a href="mailto:support@restinpices.com" style="color:{TEXT_DIM};text-decoration:none;">support@restinpices.com</a>
+              <a href="mailto:support@warmpulse.tech" style="color:{TEXT_DIM};text-decoration:none;">support@warmpulse.tech</a>
               <div style="margin-top:10px;color:{TEXT_DIM}99;">
                 You're receiving this because of activity on your WarmPulse account.
               </div>

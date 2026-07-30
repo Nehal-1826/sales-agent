@@ -37,9 +37,12 @@ export function useDnsGate(): DnsGateResult {
       return { gateActive: false, mailbox: null, isLoading: query.isLoading };
     }
 
-    const items = query.data?.items ?? [];
+    // DNS (SPF/DKIM/DMARC) only applies to SMTP app-password mailboxes. OAuth
+    // mailboxes (Gmail / Outlook OAuth) authenticate through the provider's own
+    // infrastructure, so they never gate the app — exclude them here.
+    const items = (query.data?.items ?? []).filter((m) => !m.is_oauth);
     if (items.length === 0) {
-      // No mailboxes at all → onboarding will route them elsewhere.
+      // No DNS-relevant (non-OAuth) mailboxes → nothing to gate on.
       return { gateActive: false, mailbox: null, isLoading: query.isLoading };
     }
 

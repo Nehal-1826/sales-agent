@@ -154,6 +154,11 @@ const PROVIDER_OPTIONS = [
   { id: 'smtp', name: 'Generic SMTP / IMAP', sub: 'Fastmail, self-hosted, …', tag: 'SMTP', color: 'var(--wp-text-dim)' },
 ];
 
+// Provider tiles that connect via OAuth (no app-password). Mailboxes connected
+// this way skip the DNS-verification onboarding stage — the provider handles
+// SPF/DKIM/DMARC authentication on its own infrastructure.
+const OAUTH_PROVIDER_IDS = ['gmail', 'outlook_oauth'];
+
 /* ----- Summary row used by the final 'start' panel ----- */
 function SummaryRow({
   icon,
@@ -262,6 +267,15 @@ export function OnboardingDashboard() {
   const mailboxesQuery = useMailboxes();
   const existingMailboxCount = mailboxesQuery.data?.items?.length ?? 0;
   const hasExistingMailbox = existingMailboxCount > 0;
+
+  // OAuth-connected mailboxes (Gmail / Outlook OAuth) authenticate through the
+  // provider's own infrastructure, so the client-facing SPF/DKIM/DMARC step
+  // doesn't apply — skip the DNS-verification stage for them entirely. We treat
+  // the connection as OAuth when either the provider the user just picked is an
+  // OAuth tile, or any connected mailbox reports is_oauth.
+  const connectedViaOauth =
+    (pendingProvider != null && OAUTH_PROVIDER_IDS.includes(pendingProvider)) ||
+    (mailboxesQuery.data?.items?.some((m) => m.is_oauth) ?? false);
 
   // Fetch plans so we can map our local slugs (starter/pro/agency) to DB UUIDs.
   const plansQuery = useQuery<PlanRow[]>({
@@ -386,7 +400,9 @@ export function OnboardingDashboard() {
         (user?.onboarding_status === 'mailbox_pending' ||
           user?.onboarding_status === 'active'));
     if (!mailboxCreated) return 'credentials';
-    if (!dnsAcknowledged) return 'dns';
+    // OAuth mailboxes skip DNS verification — provider handles auth. For all
+    // other (SMTP app-password) connections the DNS step still applies.
+    if (!dnsAcknowledged && !connectedViaOauth) return 'dns';
     if (!tutorialAcknowledged) return 'tutorial';
     // Checkout deferred to the end so the user can connect + DNS-verify
     // their mailbox before paying. Trial allowance on the backend lets the
@@ -639,15 +655,22 @@ export function OnboardingDashboard() {
       state: stateFor('provider'),
       href: '#',
     },
-    {
-      id: 'dns',
-      title: 'Verify domain records (DNS)',
-      hint: 'SPF · DKIM · DMARC alignment',
-      state: stateFor('dns'),
-      // '#' suppresses the "Start →" link on the task row — the DNS panel
-      // already renders inline on the right side when this task is active.
-      href: '#',
-    },
+    // DNS verification only applies to SMTP app-password mailboxes. OAuth
+    // (Gmail / Outlook) connections authenticate through the provider, so the
+    // row is omitted entirely for them.
+    ...(connectedViaOauth
+      ? []
+      : [
+          {
+            id: 'dns',
+            title: 'Verify domain records (DNS)',
+            hint: 'SPF · DKIM · DMARC alignment',
+            state: stateFor('dns'),
+            // '#' suppresses the "Start →" link on the task row — the DNS panel
+            // already renders inline on the right side when this task is active.
+            href: '#',
+          } as Task,
+        ]),
     {
       id: 'checkout',
       title: 'Complete checkout',

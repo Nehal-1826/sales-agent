@@ -51,6 +51,7 @@ from app.schemas.mailboxes import (
 from app.schemas.mailboxes import (
     ContentMode as SchemaContentMode,
 )
+from app.services import notification_inbox_service
 from app.services.crypto import get_fernet_service
 
 logger = logging.getLogger(__name__)
@@ -140,6 +141,7 @@ def mailbox_to_out(
             else str(mbx.content_mode)
         ),
         is_paused=mbx.is_paused,
+        is_oauth=bool(mbx.oauth_token_encrypted),
         spf_valid=mbx.spf_valid,
         dkim_valid=mbx.dkim_valid,
         dmarc_valid=mbx.dmarc_valid,
@@ -538,6 +540,20 @@ async def create_mailbox(
 
     await session.commit()
     await session.refresh(mbx)
+
+    # Notify user that mailbox is connected and warmup has started
+    try:
+        await notification_inbox_service.notify_user(
+            session,
+            user_id=user.id,
+            kind="mailbox_connected",
+            title="Mailbox connected",
+            body=f"{mbx.email_address} is now connected. Warmup has started — you'll begin building sender reputation within 15 minutes.",
+            payload={"mailbox_id": str(mbx.id), "email_address": mbx.email_address},
+            commit=False,  # already committed above
+        )
+    except Exception:
+        logger.warning("Failed to send mailbox_connected notification", exc_info=True)
 
     # Auto-route the workspace to the peer pool matching the owner's plan so
     # warmup begins immediately. Best-effort: a routing failure must never

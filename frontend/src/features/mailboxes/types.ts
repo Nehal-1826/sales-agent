@@ -32,6 +32,10 @@ export interface Mailbox {
   warmth_score: number;
   content_mode: ContentMode;
   is_paused: boolean;
+  /** True when connected via provider OAuth (no app-password). OAuth mailboxes
+   *  send through the provider's authenticated infra, so the SPF/DKIM/DMARC
+   *  DNS-verification step doesn't apply. */
+  is_oauth?: boolean;
   spf_valid: boolean | null;
   dkim_valid: boolean | null;
   dmarc_valid: boolean | null;

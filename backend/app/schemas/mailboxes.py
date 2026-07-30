@@ -200,6 +200,11 @@ class MailboxOut(BaseModel):
     warmth_score: float
     content_mode: ContentMode
     is_paused: bool
+    # True when connected via provider OAuth (refresh token stored) rather than
+    # SMTP app-password. OAuth mailboxes send through the provider's own
+    # authenticated infrastructure, so the client-facing DNS (SPF/DKIM/DMARC)
+    # verification step doesn't apply to them.
+    is_oauth: bool = False
     spf_valid: bool | None = None
     dkim_valid: bool | None = None
     dmarc_valid: bool | None = None

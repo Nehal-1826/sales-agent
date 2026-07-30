@@ -277,6 +277,10 @@ export function OnboardingDashboard() {
     (pendingProvider != null && OAUTH_PROVIDER_IDS.includes(pendingProvider)) ||
     (mailboxesQuery.data?.items?.some((m) => m.is_oauth) ?? false);
 
+  // Automated (Sent-folder import) CRM is a Pro Plus / Agency capability. On
+  // lower plans the toggle is manual-only and the backend rejects enabling it.
+  const planSupportsAutoCrm = pendingPlan === 'pro_plus' || pendingPlan === 'agency';
+
   // Fetch plans so we can map our local slugs (starter/pro/agency) to DB UUIDs.
   const plansQuery = useQuery<PlanRow[]>({
     queryKey: ['plans'],
@@ -433,7 +437,11 @@ export function OnboardingDashboard() {
     setFinishing(true);
     try {
       await updateProfile.mutateAsync({
-        auto_crm_enabled: autoCrmEnabled,
+        // Automated CRM is a Pro Plus / Agency capability. Sending
+        // auto_crm_enabled:true on a lower plan is rejected by the backend
+        // (403) and would block onboarding completion — so only enable it when
+        // the selected plan actually supports it.
+        auto_crm_enabled: autoCrmEnabled && planSupportsAutoCrm,
       });
       handleClearPlan(); // clear session breadcrumbs
       navigate('/app/dashboard');
@@ -1334,7 +1342,7 @@ export function OnboardingDashboard() {
                   <SummaryRow
                     icon={<Zap size={12} strokeWidth={2.2} />}
                     label="Lead Automation"
-                    value={autoCrmEnabled ? 'Automatic' : 'Manual'}
+                    value={autoCrmEnabled && planSupportsAutoCrm ? 'Automatic' : 'Manual'}
                     onEdit={() => setTutorialAcknowledged(false)}
                     editLabel="Change"
                   />

@@ -258,6 +258,25 @@ async def record_dummy_payment(
     await session.commit()
     await session.refresh(payment)
     await session.refresh(user)
+
+    # Notify user about plan activation. Local import (matches stripe_service /
+    # mailbox_service) keeps the module out of the top-level import graph and
+    # avoids any circular-import risk.
+    from app.services import notification_inbox_service
+
+    try:
+        await notification_inbox_service.notify_user(
+            session,
+            user_id=user.id,
+            kind="plan_activated",
+            title=f"{plan.name} plan activated",
+            body=f"Your {plan.name} plan is now active. You can connect mailboxes and start building sender reputation.",
+            payload={"plan_id": str(plan.id), "plan_name": plan.name},
+            commit=False,
+        )
+    except Exception:
+        logger.warning("Failed to send plan_activated notification", exc_info=True)
+
     await _email_invoice_safe(
         session, user=user, payment_id=payment.id, item_label=f"{plan.name} plan"
     )

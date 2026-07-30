@@ -144,7 +144,7 @@ export const en: Record<string, string> = {
   'footer.link.faq': 'FAQ',
   'footer.link.contact': 'Contact',
   'footer.link.terms': 'Terms',
-  'footer.link.privacy': 'Privacy',
+  'footer.link.privacy': 'Privacy Policy',
   'footer.copyright': '© 2026 WarmPulse. Built on the SashaLMS stack.',
   'footer.version': 'v0.1 · beta',
 };
@@ -294,7 +294,7 @@ export const hi: Record<string, string> = {
   'footer.link.faq': 'सामान्य प्रश्न',
   'footer.link.contact': 'संपर्क',
   'footer.link.terms': 'नियम',
-  'footer.link.privacy': 'गोपनीयता',
+  'footer.link.privacy': 'गोपनीयता नीति',
   'footer.copyright': '© 2026 WarmPulse. SashaLMS स्टैक पर बना।',
   'footer.version': 'v0.1 · बीटा',
 };

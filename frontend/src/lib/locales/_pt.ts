@@ -493,7 +493,7 @@ export const pt: Record<string, string> = {
   'footer.link.faq': "FAQ",
   'footer.link.contact': "Contato",
   'footer.link.terms': "Termos",
-  'footer.link.privacy': "Privacidade",
+  'footer.link.privacy': "Política de Privacidade",
   'footer.copyright': "© 2026 WarmPulse. Construído sobre a stack SashaLMS.",
   'footer.version': "v0.1 · beta",
 };

@@ -493,7 +493,7 @@ export const ja: Record<string, string> = {
   'footer.link.faq': "よくある質問",
   'footer.link.contact': "お問い合わせ",
   'footer.link.terms': "利用規約",
-  'footer.link.privacy': "プライバシー",
+  'footer.link.privacy': "プライバシーポリシー",
   'footer.copyright': "© 2026 WarmPulse. SashaLMS スタック上に構築。",
   'footer.version': "v0.1 · ベータ",
 };

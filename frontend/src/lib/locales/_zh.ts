@@ -493,7 +493,7 @@ export const zh: Record<string, string> = {
   'footer.link.faq': "常见问题",
   'footer.link.contact': "联系我们",
   'footer.link.terms': "条款",
-  'footer.link.privacy': "隐私",
+  'footer.link.privacy': "隐私政策",
   'footer.copyright': "© 2026 WarmPulse。构建于 SashaLMS 技术栈之上。",
   'footer.version': "v0.1 · 测试版",
 };

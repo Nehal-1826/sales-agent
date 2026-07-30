@@ -14,7 +14,7 @@ const COLUMNS: { titleKey: string; links: { labelKey: string; to: string; extern
   {
     titleKey: 'footer.col.company',
     links: [
-      { labelKey: 'footer.link.contact', to: 'mailto:hello@warmpulse.dev', external: true },
+      { labelKey: 'footer.link.contact', to: 'mailto:hello@warmpulse.tech', external: true },
     ],
   },
   {

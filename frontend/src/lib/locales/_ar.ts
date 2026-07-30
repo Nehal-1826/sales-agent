@@ -493,7 +493,7 @@ export const ar: Record<string, string> = {
   'footer.link.faq': "الأسئلة الشائعة",
   'footer.link.contact': "اتصل بنا",
   'footer.link.terms': "الشروط",
-  'footer.link.privacy': "الخصوصية",
+  'footer.link.privacy': "سياسة الخصوصية",
   'footer.copyright': "© 2026 WarmPulse. مبني على حزمة SashaLMS.",
   'footer.version': "الإصدار 0.1 · تجريبي",
 };

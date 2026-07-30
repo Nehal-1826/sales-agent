@@ -1,0 +1,135 @@
+========================================================================
+GOOGLE OAUTH VERIFICATION — REPLY EMAIL (ready to send)
+========================================================================
+
+BEFORE SENDING:
+  1. Cloud Console -> APIs & Services -> OAuth consent screen -> Data Access:
+     set the scopes to EXACTLY these and Save:
+        openid
+        email
+        profile
+        https://www.googleapis.com/auth/gmail.send
+        https://www.googleapis.com/auth/gmail.modify
+        https://www.googleapis.com/auth/gmail.labels
+  2. Fill in the test-account email/password in section 7.
+  3. Reply FROM dvshrdd@gmail.com (the Cloud project owner account Google emails).
+
+------------------------------------------------------------------------
+Subject: Re: API OAuth Dev Verification - updated privacy policy, scopes & justification
+------------------------------------------------------------------------
+
+Hello,
+
+Thank you for the detailed feedback. We have addressed every item and updated
+our Cloud Console configuration, codebase, and privacy policy. Point-by-point
+below.
+
+1. SCOPE DISCREPANCY (RESOLVED)
+
+Our OAuth consent screen and our application now request exactly the same Gmail
+scopes, and each is backed by a real, in-product feature (no unused scopes):
+
+  - https://www.googleapis.com/auth/gmail.send
+  - https://www.googleapis.com/auth/gmail.modify
+  - https://www.googleapis.com/auth/gmail.labels
+
+(plus openid, email, profile for sign-in)
+
+2. JUSTIFICATION - gmail.send
+
+WarmPulse is an email-deliverability ("mailbox warm-up") tool. On a schedule the
+user configures, it sends a small, ramping number of warm-up messages from the
+user's own connected mailbox to WarmPulse's own network of consenting warm-up
+inboxes. This gradually builds the sending domain's reputation so the user's
+legitimate business email lands in the inbox instead of spam. Sending on the
+user's behalf is the core feature, so gmail.send (via users.messages.send) is
+the narrowest scope that implements it. We do not use SMTP for Gmail and
+therefore do not request the full https://mail.google.com/ scope.
+
+3. JUSTIFICATION - gmail.modify
+
+Warm-up is bidirectional: our peer network also sends warm-up mail TO the user's
+mailbox, and the engagement it receives there is the strongest reputation
+signal. gmail.modify lets us act on that specific warm-up mail. The maximum
+user-facing extent is:
+
+  1. Rescue from Spam - move a warm-up message Google filed as Spam back to the
+     Inbox (remove SPAM, add INBOX). This is the core reputation-repair action
+     and the primary reason we need modify.
+  2. Mark as read - remove the UNREAD label on engaged warm-up mail.
+  3. Star a portion of warm-up mail (add STARRED).
+  4. Apply our "WarmPulse" label so the user can see warm-up activity.
+
+No narrower scope exists for this - gmail.send cannot change labels, and there
+is no "spam-only" or "labels-only-on-messages" Gmail scope. We use gmail.modify
+ONLY on mail we identify as coming from our own peer network (we search for our
+peer sender addresses and read only the From header and label IDs of the
+matches - never message bodies), and we never read, forward, store, or transmit
+the user's real correspondence.
+
+4. JUSTIFICATION - gmail.labels
+
+Before we can apply the "WarmPulse" label, it must exist. gmail.labels is used
+solely to look up the user's label list and create the single "WarmPulse" label
+if it isn't there yet (users.labels.list / users.labels.create). We create
+exactly one label and never read or modify the user's other labels.
+
+5. PROHIBITED USE CASE ("Gmail app distribute spam")
+
+WarmPulse is a sender-reputation tool, not a bulk-sending or outreach tool, and
+it is architecturally incapable of sending unsolicited mail to third parties:
+
+  - Closed recipient set - warm-up mail flows only between the user's own
+    mailbox and WarmPulse's own network of warm-up inboxes, which exist solely
+    to receive and engage with this traffic and consent to it. There is no
+    feature to enter arbitrary third-party recipients.
+  - Consensual on both ends - every warm-up message goes to an inbox we operate
+    that is expecting it. No non-consenting person receives warm-up mail.
+  - Low, ramping volume - sending starts at ~5 messages/day and ramps slowly
+    (5 -> 10 -> 20 -> 35 -> 50 over ~4 weeks), the opposite of bulk distribution.
+  - Reputation, not outreach - the product improves deliverability of the user's
+    own legitimate mail; we provide no feature to send campaigns to end
+    recipients using Gmail data.
+
+Because warm-up traffic never reaches non-consenting third parties, WarmPulse
+does not fall under the "distribute spam" prohibited use case.
+
+6. PRIVACY POLICY - DATA PROTECTION & DISCLOSURES
+
+Our privacy policy at https://warmpulse.tech/privacy now includes a dedicated
+"How we protect your data" section: all data is encrypted in transit with TLS
+(HTTPS); sensitive data (Gmail OAuth refresh tokens, mailbox passwords, 2FA
+secrets) is encrypted at rest with Fernet (AES-128-CBC + HMAC-SHA256);
+encryption keys are held only in server-side configuration; plaintext
+credentials exist only transiently in memory and are scrubbed immediately after
+use; production access is restricted; per-workspace data is isolated; and
+administrative actions are recorded in an append-only audit log. The policy also
+states our data retention and deletion practices and discloses each Gmail scope
+(send / modify / labels) and its purpose. The policy is linked from our homepage
+footer and hosted on our verified domain, warmpulse.tech.
+
+7. TEST CREDENTIALS & STEP-BY-STEP
+
+Test account (no phone, payment, or 2FA blockers):
+  - Sign-in URL: https://warmpulse.tech/login
+  - Email:    ______________________
+  - Password: ______________________
+
+To demonstrate all three scopes:
+  1. Sign in at the URL above with the credentials.
+  2. Go to Mailboxes -> Connect mailbox -> Gmail and complete the Google consent
+     screen (it requests Send, plus read/modify and manage-labels).
+  3. gmail.send: on the next warm-up cycle, a message is sent from the mailbox
+     and appears as an outbound "sent" event in the Activity log.
+  4. gmail.modify + gmail.labels: as our peer network sends warm-up mail back to
+     the mailbox, WarmPulse creates a "WarmPulse" label, applies it to that
+     mail, rescues any of it from Spam into the Inbox, and marks/stars it -
+     visible both as the label inside the test Gmail account and as inbound
+     engagement events in the WarmPulse Activity log.
+
+We're happy to provide a screen-recorded demonstration if that would help.
+Thank you for your time.
+
+Best regards,
+[Your name]
+WarmPulse - warmpulse.tech

@@ -23,7 +23,7 @@ export function PrivacyPage() {
 
         <header className="mt-6 border-b border-white/10 pb-6">
           <h1 className="text-3xl font-semibold text-white">Privacy Policy</h1>
-          <p className="mt-2 text-sm text-gray-400">Last updated: 2026-04-26</p>
+          <p className="mt-2 text-sm text-gray-400">Last updated: 2026-07-30</p>
         </header>
 
         <Section title="What we collect">
@@ -36,12 +36,19 @@ export function PrivacyPage() {
           + HMAC-SHA256) before they touch the database.
         </Section>
 
-        <Section title="Why we use Gmail / Outlook scopes">
-          We only request scopes needed for warmup: SMTP send, IMAP read,
-          and label / important / spam-folder modification on your own
-          mailbox. We never read messages outside the warmup threads we
-          ourselves create (subject prefix <code>[wp]</code>), and we never
-          forward, store, or transmit your real correspondence anywhere.
+        <Section title="Why we use the Gmail scope (gmail.send)">
+          When you connect a Gmail mailbox, WarmPulse requests a single,
+          narrow Gmail scope:{' '}
+          <code>https://www.googleapis.com/auth/gmail.send</code>. This lets
+          us — and only ever this — send the automated warmup messages that
+          build your sender reputation, delivered from your address to
+          WarmPulse&apos;s own network of consenting warmup inboxes. We do{' '}
+          <strong>not</strong> request read, modify, or delete access to your
+          mailbox. We cannot open, read, label, move, or delete any message in
+          your inbox, and we never read, forward, store, or transmit your real
+          correspondence anywhere. Inbox-engagement steps (opens, replies,
+          spam-rescues) happen entirely on WarmPulse&apos;s own warmup inboxes,
+          not on yours.
         </Section>
 
         <Section title="Limited Use of Google user data">
@@ -63,12 +70,31 @@ export function PrivacyPage() {
           consent, for security, or as required by law.
         </Section>
 
+        <Section title="How we protect your data">
+          Security procedures are in place to protect the confidentiality of
+          your data. All traffic between your browser, our servers, and Google
+          is encrypted in transit using TLS (HTTPS). Sensitive data —
+          your Gmail OAuth refresh tokens, SMTP / IMAP passwords, and 2FA
+          secrets — is encrypted at rest using Fernet (AES-128-CBC with
+          HMAC-SHA256 authentication) before it is written to the database;
+          the encryption keys are held only in server-side environment
+          configuration, never in the database alongside the ciphertext.
+          Plaintext credentials exist only transiently in server memory for
+          the duration of a single send and are explicitly overwritten and
+          discarded immediately afterward. Access to production systems is
+          restricted to authorized personnel, every workspace&apos;s data is
+          isolated from every other, and administrative and destructive
+          actions are recorded in an append-only audit log.
+        </Section>
+
         <Section title="How we share data">
           We don't sell or rent personal data. We share data only with
           sub-processors strictly required to operate the service: our cloud
           host (Hostinger), our database (PostgreSQL on the same VPS), and
-          the LLM providers we call to generate warmup content (Gemini or
-          Google Gemini, depending on configuration). Aggregate, anonymized
+          the LLM provider we call to generate warmup message content (Google
+          Gemini or Anthropic Claude, depending on configuration). We never
+          send your Gmail data to these providers — only prompts that generate
+          generic warmup copy. Aggregate, anonymized
           analytics may be shared in marketing material — never tied to you.
         </Section>
 

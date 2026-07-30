@@ -34,13 +34,19 @@ _GOOGLE_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 _GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 _GOOGLE_USERINFO_ENDPOINT = "https://www.googleapis.com/oauth2/v3/userinfo"
 _LOGIN_SCOPES = "openid email profile"
+# Least-privilege: the warmup engine only ever *sends* mail from a connected
+# Gmail mailbox (via the Gmail REST ``messages/send`` endpoint — see
+# ``services/warmup/oauth_token.gmail_api_send``). Inbox engagement (open /
+# reply / star / spam-rescue) runs on our own peer inboxes over IMAP, never on
+# the client's mailbox — so ``gmail.modify`` / ``gmail.labels`` were requested
+# but never called. They are dropped here to satisfy Google's minimum-scope
+# requirement and to keep the codebase in exact string-match with the OAuth
+# consent screen (send-only).
 _MAILBOX_SCOPES = " ".join([
     "openid",
     "email",
     "profile",
     "https://www.googleapis.com/auth/gmail.send",
-    "https://www.googleapis.com/auth/gmail.modify",
-    "https://www.googleapis.com/auth/gmail.labels",
 ])
 
 
@@ -175,9 +181,10 @@ async def google_callback(
 
 
 # --------------------------------------------------------------------------- #
-# Mailbox-connect OAuth (popup flow). Asks for Gmail send/modify scopes with
-# offline access, then returns an HTML page that postMessages the refresh
-# token back to window.opener and closes itself.
+# Mailbox-connect OAuth (popup flow). Asks for the ``gmail.send`` scope only
+# (least privilege — see _MAILBOX_SCOPES) with offline access, then returns an
+# HTML page that postMessages the refresh token back to window.opener and
+# closes itself.
 # --------------------------------------------------------------------------- #
 
 

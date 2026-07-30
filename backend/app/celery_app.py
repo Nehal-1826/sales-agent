@@ -32,6 +32,7 @@ def create_celery_app() -> Celery:
             # Warmup engine modules.
             "app.tasks.warmup_send",
             "app.tasks.warmup_receive",
+            "app.tasks.client_engagement",
             "app.tasks.peer_actions",
             "app.tasks.ramp_advance",
             "app.tasks.peer_counter_reset",

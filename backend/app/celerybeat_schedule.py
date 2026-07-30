@@ -23,6 +23,14 @@ beat_schedule: dict = {
         "task": "app.tasks.warmup_receive.schedule_inbound_cycle",
         "schedule": 3 * 60,
     },
+    # Engage on the client's own connected Gmail mailbox via the Gmail API:
+    # rescue peer warmup mail from Spam, mark read, star, apply WarmPulse label.
+    # Counterpart to the IMAP-based peer engagement above (uses gmail.modify /
+    # gmail.labels). See tasks/client_engagement.
+    "client-gmail-engagement-every-10min": {
+        "task": "app.tasks.client_engagement.schedule_client_engagement_cycle",
+        "schedule": 10 * 60,
+    },
     # Replaced by ``peer-health-hourly`` below (Pro Honesty Pass D1).
     # The new task uses the explicit signal/(signal+bounce) ratio and the
     # ``peer_inboxes.reputation_score_updated_at`` sentinel rather than the

@@ -36,19 +36,33 @@ export function PrivacyPage() {
           + HMAC-SHA256) before they touch the database.
         </Section>
 
-        <Section title="Why we use the Gmail scope (gmail.send)">
-          When you connect a Gmail mailbox, WarmPulse requests a single,
-          narrow Gmail scope:{' '}
-          <code>https://www.googleapis.com/auth/gmail.send</code>. This lets
-          us — and only ever this — send the automated warmup messages that
-          build your sender reputation, delivered from your address to
-          WarmPulse&apos;s own network of consenting warmup inboxes. We do{' '}
-          <strong>not</strong> request read, modify, or delete access to your
-          mailbox. We cannot open, read, label, move, or delete any message in
-          your inbox, and we never read, forward, store, or transmit your real
-          correspondence anywhere. Inbox-engagement steps (opens, replies,
-          spam-rescues) happen entirely on WarmPulse&apos;s own warmup inboxes,
-          not on yours.
+        <Section title="Why we use Gmail scopes">
+          When you connect a Gmail mailbox, WarmPulse requests three Gmail
+          scopes, each used only for the warmup feature:
+          <ul className="mt-3 list-disc space-y-2 pl-5">
+            <li>
+              <code>gmail.send</code> — to send the automated warmup messages
+              that build your sender reputation, delivered from your address to
+              WarmPulse&apos;s own network of consenting warmup inboxes.
+            </li>
+            <li>
+              <code>gmail.modify</code> — to act on the warmup mail our peer
+              network sends <em>to</em> you: rescue it from the Spam folder back
+              into your inbox, mark it read, star it, and apply a label. This is
+              what generates the positive engagement signal on your account. We
+              use this access <strong>only</strong> on warmup mail we can
+              identify as coming from our own peer network — we locate it by
+              searching for our peer senders and read only the sender and
+              folder/label of those messages. We never read the body of your
+              real correspondence, and we never forward, store, or transmit it
+              anywhere.
+            </li>
+            <li>
+              <code>gmail.labels</code> — to create and apply a single
+              &ldquo;WarmPulse&rdquo; label so warmup activity is visible and
+              organized in your mailbox.
+            </li>
+          </ul>
         </Section>
 
         <Section title="Limited Use of Google user data">

@@ -56,3 +56,16 @@ def test_cdn_proxied_reported():
 
 def test_direct_ip_passes_cdn_check():
     assert mp.check_not_cdn_proxied(["209.182.233.86"]).status == "pass"
+
+
+@pytest.mark.asyncio
+async def test_wildcard_probe_skipped_for_two_label_host(monkeypatch):
+    """edgyy.in has no parent domain below a public suffix — probing <uuid>.in
+    would be a query against a public-suffix nameserver, not a useful check."""
+    async def boom(host):
+        raise AssertionError("resolve_public_ips must not be called")
+
+    monkeypatch.setattr(mp, "resolve_public_ips", boom)
+    check = await mp.check_not_wildcard("edgyy.in", ["1.2.3.4"])
+    assert check.status == "skipped"
+    assert check.id == "dns_wildcard_skipped"

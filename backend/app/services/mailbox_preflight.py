@@ -122,9 +122,11 @@ async def check_dns(host: str) -> tuple[PreflightCheck, list[str]]:
 async def check_not_wildcard(host: str, resolved: list[str]) -> PreflightCheck:
     """Rung 4 — did this hostname only resolve because of a ``*`` record?"""
     parts = host.strip().rstrip(".").split(".")
-    if len(parts) < 2:
+    if len(parts) < 3:
         return PreflightCheck(
-            id="dns_wildcard_skipped", status="skipped", detail="Host has no parent domain."
+            id="dns_wildcard_skipped",
+            status="skipped",
+            detail="Host has no parent domain below a public suffix.",
         )
     parent = ".".join(parts[1:])
     probe = f"{uuid.uuid4().hex}.{parent}"

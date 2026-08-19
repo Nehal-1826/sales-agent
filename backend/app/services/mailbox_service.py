@@ -53,6 +53,7 @@ from app.schemas.mailboxes import (
 )
 from app.services import notification_inbox_service
 from app.services.crypto import get_fernet_service
+from app.services.mailbox_preflight import PreflightRequest, run_preflight
 
 logger = logging.getLogger(__name__)
 
@@ -839,8 +840,8 @@ async def _probe_smtp(
 
         await asyncio.wait_for(_go(), timeout=_TIMEOUT_SECONDS)
         return True, None
-    except Exception as exc:  # noqa: BLE001 — sanitized on the way out
-        return False, _sanitize_exception(exc)
+    except Exception as exc:  # noqa: BLE001 — class name only, never the message
+        return False, f"probe_unknown: {type(exc).__name__}"
 
 
 async def _probe_imap(
@@ -877,8 +878,8 @@ async def _probe_imap(
 
         await asyncio.wait_for(_go(), timeout=_TIMEOUT_SECONDS)
         return True, None
-    except Exception as exc:  # noqa: BLE001
-        return False, _sanitize_exception(exc)
+    except Exception as exc:  # noqa: BLE001 — class name only, never the message
+        return False, f"probe_unknown: {type(exc).__name__}"
 
 
 async def test_connection(
@@ -909,31 +910,29 @@ async def test_connection(
         )
 
     fernet = get_fernet_service()
-    # Plaintext lifetime: decrypt → hand to probes → wipe.
-    password_bytes = fernet.decrypt(mbx.smtp_password_encrypted)
-    password = password_bytes.decode("utf-8")
+    # Plaintext lifetime: decrypt → hand to the ladder → wipe.
+    password = fernet.decrypt(mbx.smtp_password_encrypted).decode("utf-8")
     try:
-        smtp_ok, smtp_err = await _probe_smtp(
-            mbx.smtp_host, mbx.smtp_port, mbx.smtp_username, password
-        )
-        imap_ok, imap_err = (True, None)
-        if mbx.imap_host and mbx.imap_port:
-            imap_ok, imap_err = await _probe_imap(
-                mbx.imap_host, mbx.imap_port, mbx.smtp_username, password
+        result = await run_preflight(
+            PreflightRequest(
+                smtp_host=mbx.smtp_host,
+                smtp_port=mbx.smtp_port,
+                username=mbx.smtp_username,
+                password=password,
+                imap_host=mbx.imap_host,
+                imap_port=mbx.imap_port,
             )
-        else:
-            imap_ok, imap_err = False, "ConfigError: missing_imap_config"
+        )
     finally:
-        # Blank the local plaintext — defensive; bytes are immutable but the
-        # reference should not linger on the stack.
         password = ""
-        password_bytes = b""
-        del password
-        del password_bytes
 
+    blocking = result.blocking
+    smtp_failed = blocking is not None and not blocking.id.startswith("imap_")
+    imap_failed = blocking is not None and blocking.id.startswith("imap_")
     return TestConnectionResponse(
-        smtp_ok=smtp_ok,
-        imap_ok=imap_ok,
-        smtp_error=smtp_err,
-        imap_error=imap_err,
+        smtp_ok=not smtp_failed,
+        imap_ok=None if not (mbx.imap_host and mbx.imap_port) else not imap_failed,
+        smtp_error=f"{blocking.id}: {blocking.detail}" if smtp_failed else None,
+        imap_error=f"{blocking.id}: {blocking.detail}" if imap_failed else None,
+        note=blocking.remedy if blocking else None,
     )

@@ -651,8 +651,16 @@ async def test_test_connection_oauth_returns_note(
 async def test_test_connection_smtp_success_via_mocks(
     app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
 ) -> None:
-    """SMTP/IMAP paths use mocked probes — we never hit a real network."""
+    """SMTP/IMAP paths run through the preflight ladder — we never hit a
+    real network in tests, so the ladder entry point is mocked directly.
+
+    (Task 9 re-implements ``test_connection`` on top of
+    ``mailbox_preflight.run_preflight`` instead of calling
+    ``_probe_smtp``/``_probe_imap`` directly — those two functions now back
+    only the live warmup-send path, so this test mocks the new boundary.)
+    """
     from app.services import mailbox_service
+    from app.services.mailbox_preflight import PreflightResult
 
     app, maker, _ = app_and_maker
     plan_id = await _seed_plan(maker, max_mailboxes=3)
@@ -667,13 +675,10 @@ async def test_test_connection_smtp_success_via_mocks(
         )
         mbx_id = create.json()["id"]
 
-        with (
-            patch.object(
-                mailbox_service, "_probe_smtp", AsyncMock(return_value=(True, None))
-            ),
-            patch.object(
-                mailbox_service, "_probe_imap", AsyncMock(return_value=(True, None))
-            ),
+        with patch.object(
+            mailbox_service,
+            "run_preflight",
+            AsyncMock(return_value=PreflightResult(ok=True, checks=[], blocking=None)),
         ):
             resp = await c.post(
                 f"/api/workspace/mailboxes/{mbx_id}/test-connection",
@@ -688,12 +693,18 @@ async def test_test_connection_smtp_success_via_mocks(
 
 
 @pytest.mark.asyncio
-async def test_test_connection_error_strings_are_sanitized(
+async def test_test_connection_smtp_error_strings_are_sanitized(
     app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
 ) -> None:
-    """Error strings must be ``<ClassName>: <short hint>`` — never the
-    raw SMTP server response (which can echo the username)."""
+    """When the ladder blocks on an SMTP-side rung, the response error is
+    ``<check id>: <detail>`` — never a raw exception message or credential.
+
+    (Rewritten for Task 9: the ladder stops at the first blocking failure,
+    so a single mocked run can no longer produce both an smtp_error and an
+    imap_error at once — see the companion imap test below for that case.)
+    """
     from app.services import mailbox_service
+    from app.services.mailbox_preflight import PreflightCheck, PreflightResult
 
     app, maker, _ = app_and_maker
     plan_id = await _seed_plan(maker, max_mailboxes=3)
@@ -711,25 +722,18 @@ async def test_test_connection_error_strings_are_sanitized(
         )
         mbx_id = create.json()["id"]
 
-        # Sanitize on the way out — use the real helper to build the error
-        # string, just as the production code path would.
-        smtp_error_str = mailbox_service._sanitize_exception(
-            RuntimeError("535 5.7.8 Authentication failed: err-mbx@example.com")
-        )
-        imap_error_str = mailbox_service._sanitize_exception(
-            TimeoutError("deadline exceeded for imap.example.com:993")
+        blocking = PreflightCheck(
+            id="auth_failed",
+            status="fail",
+            detail="The server rejected these credentials.",
+            remedy="Use the mailbox's own password.",
         )
 
-        with (
-            patch.object(
-                mailbox_service,
-                "_probe_smtp",
-                new=AsyncMock(return_value=(False, smtp_error_str)),
-            ),
-            patch.object(
-                mailbox_service,
-                "_probe_imap",
-                new=AsyncMock(return_value=(False, imap_error_str)),
+        with patch.object(
+            mailbox_service,
+            "run_preflight",
+            AsyncMock(
+                return_value=PreflightResult(ok=False, checks=[blocking], blocking=blocking)
             ),
         ):
             resp = await c.post(
@@ -739,14 +743,66 @@ async def test_test_connection_error_strings_are_sanitized(
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["smtp_ok"] is False
+    assert body["smtp_error"] == "auth_failed: The server rejected these credentials."
+    assert body["imap_error"] is None
+    # Never the raw username, host, or password.
+    for err in (body["smtp_error"], body["note"]):
+        assert "err-mbx@example.com" not in (err or "")
+        assert "very-secret-p@ss" not in (err or "")
+        assert "imap.example.com" not in (err or "")
+
+
+@pytest.mark.asyncio
+async def test_test_connection_imap_error_strings_are_sanitized(
+    app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+) -> None:
+    """Mirrors the SMTP case above for an IMAP-side blocking rung."""
+    from app.services import mailbox_service
+    from app.services.mailbox_preflight import PreflightCheck, PreflightResult
+
+    app, maker, _ = app_and_maker
+    plan_id = await _seed_plan(maker, max_mailboxes=3)
+    user = await _make_user(maker, email="err2@example.com", plan_id=plan_id)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        create = await c.post(
+            "/api/workspace/mailboxes",
+            json=_smtp_body(
+                email="err2-mbx@example.com",
+                password="very-secret-p@ss",
+            ),
+            headers=_auth_header_for(user),
+        )
+        mbx_id = create.json()["id"]
+
+        blocking = PreflightCheck(
+            id="imap_failed",
+            status="fail",
+            detail="Could not sign in to IMAP on port 993.",
+            remedy="Check the mailbox's password.",
+        )
+
+        with patch.object(
+            mailbox_service,
+            "run_preflight",
+            AsyncMock(
+                return_value=PreflightResult(ok=False, checks=[blocking], blocking=blocking)
+            ),
+        ):
+            resp = await c.post(
+                f"/api/workspace/mailboxes/{mbx_id}/test-connection",
+                headers=_auth_header_for(user),
+            )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
     assert body["imap_ok"] is False
-    assert body["smtp_error"] is not None
-    assert body["imap_error"] is not None
-    # Sanitized: no username, host, password, or SMTP numeric codes.
-    for err in (body["smtp_error"], body["imap_error"]):
-        assert "err-mbx@example.com" not in err
-        assert "very-secret-p@ss" not in err
-        assert "imap.example.com" not in err
+    assert body["imap_error"] == "imap_failed: Could not sign in to IMAP on port 993."
+    assert body["smtp_error"] is None
+    for err in (body["imap_error"], body["note"]):
+        assert "err2-mbx@example.com" not in (err or "")
+        assert "very-secret-p@ss" not in (err or "")
+        assert "imap.example.com" not in (err or "")
         assert "535" not in err
 
 

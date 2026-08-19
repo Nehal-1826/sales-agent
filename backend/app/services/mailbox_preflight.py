@@ -7,6 +7,8 @@ See docs/superpowers/specs/2026-08-19-self-hosted-mailbox-preflight-design.md
 """
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import re
 import uuid
 from typing import Literal
@@ -14,7 +16,10 @@ from typing import Literal
 from pydantic import BaseModel
 
 from app.services.cdn_ranges import is_cdn_ip
-from app.services.net_guard import BlockedAddressError, resolve_public_ips
+from app.services.net_guard import BlockedAddressError, is_port_allowed, resolve_public_ips
+
+_CONNECT_TIMEOUT_S = 3.0
+_RUNG_TIMEOUT_S = 10.0
 
 CheckStatus = Literal["pass", "fail", "warn", "skipped"]
 
@@ -169,4 +174,135 @@ def check_not_cdn_proxied(resolved: list[str]) -> PreflightCheck:
             )
     return PreflightCheck(
         id="direct_to_origin", status="pass", detail="Hostname points directly at a server."
+    )
+
+
+async def check_tcp(ip: str, port: int) -> PreflightCheck:
+    """Rung 6 — can we open a TCP connection, and if not, why not?"""
+    if not is_port_allowed(port):
+        return PreflightCheck(
+            id="port_not_allowed",
+            status="fail",
+            detail=f"Port {port} is not a mail port.",
+            remedy="Use 587 (submission), 465 (implicit TLS) or 993 (IMAPS).",
+            docs_anchor="self-hosted#ports",
+        )
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(ip, port), timeout=_CONNECT_TIMEOUT_S
+        )
+    except (TimeoutError, asyncio.TimeoutError):
+        return PreflightCheck(
+            id="port_filtered",
+            status="fail",
+            detail=f"Port {port} on {ip} timed out.",
+            remedy=(
+                f"The packets are being dropped, which means a firewall is "
+                f"blocking port {port}. Allow it on the server "
+                f"(ufw allow {port}/tcp) and in your hosting provider's "
+                f"firewall or security group."
+            ),
+            docs_anchor="self-hosted#firewall",
+        )
+    except (ConnectionRefusedError, OSError):
+        return PreflightCheck(
+            id="port_closed",
+            status="fail",
+            detail=f"Port {port} on {ip} refused the connection.",
+            remedy=(
+                f"Nothing is listening on port {port}. If your mail server "
+                f"runs in Docker, publish the port "
+                f"(ports: - \"{port}:{port}\") and restart the container."
+            ),
+            docs_anchor="self-hosted#ports",
+        )
+    writer.close()
+    with contextlib.suppress(Exception):
+        await writer.wait_closed()
+    return PreflightCheck(
+        id="port_open", status="pass", detail=f"Port {port} on {ip} accepted a connection."
+    )
+
+
+async def read_ehlo(ip: str, port: int, hostname: str) -> tuple[PreflightCheck, set[str]]:
+    """Open a plain session, read the banner, send EHLO, collect capabilities.
+
+    Deliberately raw rather than via aiosmtplib: that library negotiates
+    STARTTLS on its own, which would mask the very condition rung 7 detects.
+    """
+    caps: set[str] = set()
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(ip, port), timeout=_CONNECT_TIMEOUT_S
+        )
+    except Exception:
+        return PreflightCheck(
+            id="ehlo_unreachable", status="fail", detail="Could not open an SMTP session.",
+            remedy="Re-run the check once the port is reachable.",
+        ), caps
+
+    async def _session() -> None:
+        await reader.readline()  # 220 banner
+        writer.write(f"EHLO {hostname}\r\n".encode())
+        await writer.drain()
+        while True:
+            line = await reader.readline()
+            if not line:
+                break
+            text = line.decode("utf-8", "replace").strip()
+            if len(text) >= 4:
+                caps.add(text[4:].upper())
+            if len(text) >= 4 and text[3] == " ":
+                break
+
+    try:
+        await asyncio.wait_for(_session(), timeout=_RUNG_TIMEOUT_S)
+    except Exception:
+        return PreflightCheck(
+            id="ehlo_failed", status="fail", detail="The server did not complete an EHLO.",
+            remedy="Confirm the port is an SMTP port and the service is healthy.",
+        ), caps
+    finally:
+        writer.close()
+        with contextlib.suppress(Exception):
+            await writer.wait_closed()
+
+    return PreflightCheck(
+        id="ehlo_ok", status="pass", detail=f"Server advertised {len(caps)} capabilities."
+    ), caps
+
+
+def check_starttls(caps: set[str]) -> PreflightCheck:
+    """Rung 7 — will the server encrypt the session?"""
+    if any(c.startswith("STARTTLS") for c in caps):
+        return PreflightCheck(id="starttls_ok", status="pass", detail="STARTTLS advertised.")
+    return PreflightCheck(
+        id="no_starttls",
+        status="fail",
+        detail="The server does not advertise STARTTLS.",
+        remedy=(
+            "Your mail server has no TLS configured, so credentials would "
+            "cross the internet in clear text. Configure a certificate for "
+            "this hostname — on docker-mailserver set SSL_TYPE=letsencrypt and "
+            "mount /etc/letsencrypt into the container."
+        ),
+        docs_anchor="self-hosted#tls",
+    )
+
+
+def check_auth_advertised(caps: set[str]) -> PreflightCheck:
+    """Rung 8 — is there a submission service to authenticate against at all?"""
+    if any(c.startswith("AUTH") for c in caps):
+        return PreflightCheck(id="auth_ok", status="pass", detail="AUTH advertised.")
+    return PreflightCheck(
+        id="no_auth",
+        status="fail",
+        detail="The server does not advertise AUTH, so no login is possible.",
+        remedy=(
+            "This port accepts mail but offers no authenticated submission. "
+            "Enable the submission service — in Postfix, uncomment the "
+            "'submission' entry in master.cf with smtpd_sasl_auth_enable=yes "
+            "— then re-run this check."
+        ),
+        docs_anchor="self-hosted#submission",
     )

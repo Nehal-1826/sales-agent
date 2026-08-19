@@ -436,3 +436,103 @@ async def check_imap(
     return PreflightCheck(
         id="imap_ok", status="pass", detail="IMAP authentication succeeded."
     )
+
+
+class PreflightRequest(BaseModel):
+    smtp_host: str
+    smtp_port: int
+    username: str
+    password: str | None = None
+    imap_host: str | None = None
+    imap_port: int | None = None
+
+
+class PreflightResult(BaseModel):
+    ok: bool
+    checks: list[PreflightCheck]
+    blocking: PreflightCheck | None = None
+
+
+async def run_preflight(req: PreflightRequest) -> PreflightResult:
+    """Run rungs 1-11 in order, stopping at the first blocking failure."""
+    checks: list[PreflightCheck] = []
+    host = req.smtp_host.strip()
+    password = req.password or ""
+
+    def _stop(check: PreflightCheck) -> PreflightResult:
+        checks.append(check)
+        return PreflightResult(ok=False, checks=checks, blocking=check)
+
+    # Container check runs FIRST, before the generic shape check. A bare label
+    # like "mail" fails both — it has no dot, so the hostname regex rejects it
+    # too — and in a stop-at-first-failure ladder whichever runs first is the
+    # only message the user ever sees. "That's a Docker service name" is the
+    # useful one; "that's not a hostname" is not. Ordering is the whole fix.
+    container_check = check_not_container_name(host)
+    if container_check.status == "fail":
+        return _stop(container_check)
+    checks.append(container_check)
+
+    shape_check = check_host_shape(host)
+    if shape_check.status == "fail":
+        return _stop(shape_check)
+    checks.append(shape_check)
+
+    dns_check, ips = await check_dns(host)
+    if dns_check.status == "fail":
+        return _stop(dns_check)
+    checks.append(dns_check)
+
+    # Evaluated one at a time on purpose. Building a tuple of awaited calls
+    # would run every probe before the loop inspected any of them, so a host
+    # that fails the wildcard check would still be port-scanned.
+    wildcard_check = await check_not_wildcard(host, ips)
+    if wildcard_check.status == "fail":
+        return _stop(wildcard_check)
+    checks.append(wildcard_check)
+
+    cdn_check = check_not_cdn_proxied(ips)
+    if cdn_check.status == "fail":
+        return _stop(cdn_check)
+    checks.append(cdn_check)
+
+    tcp_check = await check_tcp(ips[0], req.smtp_port)
+    if tcp_check.status == "fail":
+        return _stop(tcp_check)
+    checks.append(tcp_check)
+
+    ehlo_check, caps = await read_ehlo(ips[0], req.smtp_port, host)
+    if ehlo_check.status == "fail":
+        return _stop(ehlo_check)
+    checks.append(ehlo_check)
+
+    for check in (check_starttls(caps), check_auth_advertised(caps)):
+        if check.status == "fail":
+            return _stop(check)
+        checks.append(check)
+
+    tls_check = await check_tls(ips[0], req.smtp_port, host)
+    if tls_check.status == "fail":
+        return _stop(tls_check)
+    checks.append(tls_check)
+
+    auth_check = await check_smtp_auth(ips[0], req.smtp_port, host, req.username, password)
+    if auth_check.status == "fail":
+        return _stop(auth_check)
+    checks.append(auth_check)
+
+    if req.imap_host and req.imap_port:
+        imap_ips = ips if req.imap_host.strip() == host else None
+        if imap_ips is None:
+            imap_dns, imap_ips = await check_dns(req.imap_host.strip())
+            if imap_dns.status == "fail":
+                return _stop(imap_dns)
+            checks.append(imap_dns)
+        imap_check = await check_imap(
+            imap_ips[0], req.imap_port, req.imap_host.strip(), req.username, password
+        )
+        if imap_check.status == "fail":
+            return _stop(imap_check)
+        checks.append(imap_check)
+
+    return PreflightResult(ok=True, checks=checks, blocking=None)

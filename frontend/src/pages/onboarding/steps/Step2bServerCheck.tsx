@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { AxiosError } from 'axios';
 import { Check, Copy, RefreshCw, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';

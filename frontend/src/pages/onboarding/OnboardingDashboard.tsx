@@ -34,6 +34,7 @@ import { useCreateMailbox, useDnsCheck, type DnsCheckResponse } from '@/features
 import { useProbeCredentials, useMailboxes, useDetectProvider } from '@/features/mailboxes/api';
 import { useUpdateWorkspaceProfile } from '@/features/settings/api';
 import { TutorialPanel } from './TutorialPanels';
+import { Step2bServerCheck } from './steps/Step2bServerCheck';
 import '@/pages/landing/hero-theme.css';
 import './onboarding-dashboard.css';
 
@@ -134,8 +135,22 @@ const PENDING_AUTO_CRM_KEY = 'warmpulse.pendingAutoCrm';
  *  the credentials form instead of skipping past it to DNS. Cleared on
  *  successful mailbox-create. */
 const PENDING_NEW_MAILBOX_KEY = 'warmpulse.pendingNewMailbox';
+/** Set once the self-hosted server-reachability preflight passes (or once
+ *  the preflight endpoint itself is unavailable — see Step2bServerCheck's
+ *  degrade path). Only consulted when the chosen provider is 'self_hosted';
+ *  every other provider skips this stage entirely. */
+const PENDING_SERVER_CHECK_KEY = 'warmpulse.pendingServerCheck';
 
-type Stage = 'plan' | 'checkout' | 'volume' | 'provider' | 'credentials' | 'dns' | 'tutorial' | 'start';
+type Stage =
+  | 'plan'
+  | 'checkout'
+  | 'volume'
+  | 'provider'
+  | 'server_check'
+  | 'credentials'
+  | 'dns'
+  | 'tutorial'
+  | 'start';
 
 const VOLUME_OPTIONS = [
   { value: 5, name: 'Just starting', desc: 'Brand new domain, no warmup history' },
@@ -152,7 +167,30 @@ const PROVIDER_OPTIONS = [
   { id: 'yahoo', name: 'Yahoo Mail', sub: 'SMTP / IMAP w/ app password', tag: 'SMTP', color: '#F26522' },
   { id: 'zoho', name: 'Zoho Mail', sub: 'SMTP / IMAP w/ app password', tag: 'SMTP', color: '#fab43e' },
   { id: 'smtp', name: 'Generic SMTP / IMAP', sub: 'Fastmail, self-hosted, …', tag: 'SMTP', color: 'var(--wp-text-dim)' },
+  {
+    id: 'self_hosted',
+    name: 'Self-hosted mail server',
+    sub: 'Postfix, docker-mailserver, Mailcow, Mail-in-a-Box',
+    tag: 'SMTP',
+    color: 'var(--wp-text-dim)',
+  },
 ];
+
+/** A host with no dot, or one of these bare labels, only resolves inside the
+ *  user's own network (a Docker Compose service name, a loopback alias). No
+ *  network round trip needed to catch it — this is the same taxonomy as the
+ *  backend's `host_docker_internal` preflight rung
+ *  (app.services.mailbox_preflight.check_not_container_name), kept in sync
+ *  by hand since this form validates client-side before any request fires.
+ *  Copy matches `onb.pf.host_docker_internal` in lib/locales/onboarding.ts. */
+const CONTAINER_HOST_NAMES = new Set(['mail', 'mailserver', 'smtp', 'localhost']);
+const HOST_DOCKER_INTERNAL_MESSAGE = "That's an internal name";
+
+function isContainerLikeHost(host: string): boolean {
+  const h = host.trim().toLowerCase();
+  if (!h) return false;
+  return !h.includes('.') || CONTAINER_HOST_NAMES.has(h);
+}
 
 // Provider tiles that connect via OAuth (no app-password). Mailboxes connected
 // this way skip the DNS-verification onboarding stage — the provider handles
@@ -224,6 +262,21 @@ export function OnboardingDashboard() {
   const [pendingProvider, setPendingProvider] = useState<string | null>(() =>
     typeof window === 'undefined' ? null : window.sessionStorage.getItem(PENDING_PROVIDER_KEY),
   );
+  // Self-hosted only: has the server-reachability preflight passed? Gates the
+  // 'server_check' stage inserted between 'provider' and 'credentials'.
+  const [serverCheckPassed, setServerCheckPassed] = useState<boolean>(() =>
+    typeof window === 'undefined' ? false : window.sessionStorage.getItem(PENDING_SERVER_CHECK_KEY) === '1',
+  );
+  // Live validity of the in-progress preflight (Step2bServerCheck's
+  // onValidityChange) — gates the 'Continue' button on the server-check
+  // panel. Reset implicitly each time the panel remounts (new provider pick).
+  const [serverCheckValid, setServerCheckValid] = useState(false);
+  // Host/port/email captured on the self-hosted server-check panel, carried
+  // forward to pre-fill the credentials form so the user isn't asked to
+  // retype what they already entered and had verified.
+  const [selfHostedEmail, setSelfHostedEmail] = useState('');
+  const [selfHostedHost, setSelfHostedHost] = useState('');
+  const [selfHostedPort, setSelfHostedPort] = useState(587);
   const [dnsAcknowledged, setDnsAcknowledged] = useState<boolean>(() =>
     typeof window === 'undefined' ? false : window.sessionStorage.getItem(PENDING_DNS_ACK_KEY) === '1',
   );
@@ -387,6 +440,12 @@ export function OnboardingDashboard() {
     if (!pendingPlan) return 'plan';
     if (!pendingVolume) return 'volume';
     if (!pendingProvider) return 'provider';
+    // Self-hosted mail servers get a reachability preflight (host + port
+    // only, no password) before we ever ask for credentials — the incident
+    // this exists for was a user typing their Docker service name into the
+    // host field and being told their password was wrong. Every other
+    // provider skips straight past this stage.
+    if (pendingProvider === 'self_hosted' && !serverCheckPassed) return 'server_check';
     // `newMailboxFlow` overrides the backend's onboarding_status. Set when
     // the user picks a new provider after already having a mailbox — without
     // it, they'd skip past 'credentials' straight to 'dns' (since the
@@ -466,6 +525,7 @@ export function OnboardingDashboard() {
       PENDING_TUTORIAL_ACK_KEY,
       PENDING_AUTO_CRM_KEY,
       PENDING_NEW_MAILBOX_KEY,
+      PENDING_SERVER_CHECK_KEY,
     ].forEach((k) => window.sessionStorage.removeItem(k));
     setPendingPlan(null);
     setPendingPayment(false);
@@ -475,6 +535,11 @@ export function OnboardingDashboard() {
     setTutorialAcknowledged(false);
     setAutoCrmEnabled(true);
     setNewMailboxFlow(false);
+    setServerCheckPassed(false);
+    setServerCheckValid(false);
+    setSelfHostedEmail('');
+    setSelfHostedHost('');
+    setSelfHostedPort(587);
   };
   const handleCompletePayment = async () => {
     // eslint-disable-next-line no-console
@@ -578,6 +643,12 @@ export function OnboardingDashboard() {
     // Reset DNS ack so the new mailbox starts with a fresh verification step.
     window.sessionStorage.removeItem(PENDING_DNS_ACK_KEY);
     setDnsAcknowledged(false);
+    // Reset the self-hosted server-check gate too — switching providers (or
+    // switching back to self_hosted after leaving it) must re-run the
+    // preflight rather than trusting a pass from a different host.
+    window.sessionStorage.removeItem(PENDING_SERVER_CHECK_KEY);
+    setServerCheckPassed(false);
+    setServerCheckValid(false);
     // If the backend already considers them done (active / mailbox_pending),
     // we need this flag so activeStage stays on 'credentials' instead of
     // skipping ahead to 'dns'. Cleared on successful mailbox-create below.
@@ -589,11 +660,21 @@ export function OnboardingDashboard() {
     setPendingProvider(null);
     window.sessionStorage.removeItem(PENDING_DNS_ACK_KEY);
     setDnsAcknowledged(false);
+    window.sessionStorage.removeItem(PENDING_SERVER_CHECK_KEY);
+    setServerCheckPassed(false);
+    setServerCheckValid(false);
     // Same reason as in handlePickProvider — once the user starts changing
     // their provider, we must override the backend's "already-active"
     // status until they pick + connect again.
     window.sessionStorage.setItem(PENDING_NEW_MAILBOX_KEY, '1');
     setNewMailboxFlow(true);
+  };
+  /** Advances past the self-hosted server-check stage once Step2bServerCheck
+   *  reports the server reachable (or reports the preflight endpoint itself
+   *  unavailable — the degrade path). Not called on failure. */
+  const handleServerCheckPassed = () => {
+    window.sessionStorage.setItem(PENDING_SERVER_CHECK_KEY, '1');
+    setServerCheckPassed(true);
   };
   /** Used by the "Re-check" button on the Verify DNS task row, and called
    *  from `finish()` in CredentialsPanel after a fresh mailbox is created
@@ -618,6 +699,7 @@ export function OnboardingDashboard() {
       'plan',
       'volume',
       'provider',
+      'server_check',
       'credentials',
       'dns',
       'checkout',
@@ -1222,10 +1304,93 @@ export function OnboardingDashboard() {
               </motion.div>
             )}
 
+            {activeStage === 'server_check' && (
+              <motion.div
+                key="server_check"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.45 }}
+                className="onb-side__card onb-credentials"
+              >
+                <div className="onb-side__panel-head onb-side__panel-head--with-switch">
+                  <div>
+                    <span className="onb-side__panel-eyebrow">Step 4b · Server check</span>
+                    <h4 className="onb-side__title">Confirm your server is reachable</h4>
+                  </div>
+                  <button type="button" onClick={handleClearProvider} className="onb-side__switch">
+                    Switch provider
+                  </button>
+                </div>
+
+                <div className="onb-credentials__form">
+                  <label className="onb-credentials__field">
+                    <span className="onb-credentials__label">Email address *</span>
+                    <input
+                      type="email"
+                      placeholder="you@yourdomain.com"
+                      value={selfHostedEmail}
+                      onChange={(e) => setSelfHostedEmail(e.target.value)}
+                    />
+                  </label>
+
+                  <div className="onb-credentials__row">
+                    <label className="onb-credentials__field" style={{ flex: 2, minWidth: 0 }}>
+                      <span className="onb-credentials__label">SMTP host *</span>
+                      <input
+                        placeholder="mail.yourdomain.com"
+                        value={selfHostedHost}
+                        onChange={(e) => setSelfHostedHost(e.target.value)}
+                      />
+                    </label>
+                    <label className="onb-credentials__field" style={{ flex: 1, minWidth: 0 }}>
+                      <span className="onb-credentials__label">Port *</span>
+                      <input
+                        type="number"
+                        value={selfHostedPort}
+                        onChange={(e) => setSelfHostedPort(Number(e.target.value))}
+                      />
+                    </label>
+                  </div>
+
+                  {isContainerLikeHost(selfHostedHost) ? (
+                    <p className="onb-credentials__error">{HOST_DOCKER_INTERNAL_MESSAGE}</p>
+                  ) : (
+                    <Step2bServerCheck
+                      key={`${selfHostedHost}:${selfHostedPort}`}
+                      smtpHost={selfHostedHost || null}
+                      smtpPort={selfHostedPort || null}
+                      username={selfHostedEmail || null}
+                      onValidityChange={setServerCheckValid}
+                    />
+                  )}
+
+                  <div className="onb-credentials__actions">
+                    <button
+                      type="button"
+                      onClick={handleServerCheckPassed}
+                      disabled={!serverCheckValid || isContainerLikeHost(selfHostedHost)}
+                      className="onb-side__inline-cta"
+                      style={
+                        !serverCheckValid || isContainerLikeHost(selfHostedHost)
+                          ? { opacity: 0.5, pointerEvents: 'none' }
+                          : undefined
+                      }
+                    >
+                      Continue
+                      <ArrowRight size={13} strokeWidth={2.2} />
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
             {activeStage === 'credentials' && (
               <CredentialsPanel
                 provider={pendingProvider}
                 dailyVolume={pendingVolume ?? 50}
+                initialEmail={pendingProvider === 'self_hosted' ? selfHostedEmail : undefined}
+                initialSmtpHost={pendingProvider === 'self_hosted' ? selfHostedHost : undefined}
+                initialSmtpPort={pendingProvider === 'self_hosted' ? selfHostedPort : undefined}
                 onSwitchToSmtp={() => {
                   window.sessionStorage.setItem(PENDING_PROVIDER_KEY, 'smtp');
                   setPendingProvider('smtp');
@@ -1546,12 +1711,21 @@ function ProviderHelpDisclosure({ provider }: { provider: string }) {
 function CredentialsPanel({
   provider,
   dailyVolume,
+  initialEmail,
+  initialSmtpHost,
+  initialSmtpPort,
   onSwitchToSmtp,
   onMailboxCreated,
   onChangeProvider,
 }: {
   provider: string | null;
   dailyVolume: number;
+  /** Self-hosted only: carries the email/host/port the user already entered
+   *  and had preflight-verified on the server-check stage, so SmtpConnectForm
+   *  doesn't ask them to retype it. Undefined for every other provider. */
+  initialEmail?: string;
+  initialSmtpHost?: string;
+  initialSmtpPort?: number;
   onSwitchToSmtp: () => void;
   /** Called after a successful mailbox-create. The parent uses this to
    *  reset the DNS ack flag so a stale ack from a previous flow doesn't
@@ -1686,6 +1860,9 @@ function CredentialsPanel({
     <SmtpConnectForm
       provider={provider}
       dailyVolume={dailyVolume}
+      initialEmail={initialEmail}
+      initialSmtpHost={initialSmtpHost}
+      initialSmtpPort={initialSmtpPort}
       probe={probe}
       onFinish={finish}
       onChangeProvider={onChangeProvider}
@@ -2021,20 +2198,26 @@ function OauthConnectCard({
 function SmtpConnectForm({
   provider,
   dailyVolume,
+  initialEmail,
+  initialSmtpHost,
+  initialSmtpPort,
   probe,
   onFinish,
   onChangeProvider,
 }: {
   provider: string | null;
   dailyVolume: number;
+  initialEmail?: string;
+  initialSmtpHost?: string;
+  initialSmtpPort?: number;
   probe: ReturnType<typeof useProbeCredentials>;
   onFinish: (payload: Parameters<ReturnType<typeof useCreateMailbox>['mutateAsync']>[0]) => Promise<void>;
   onChangeProvider: () => void;
 }) {
   const hosts = defaultHosts(provider);
-  const [email, setEmail] = useState('');
-  const [smtpHost, setSmtpHost] = useState(hosts.smtp_host);
-  const [smtpPort, setSmtpPort] = useState(hosts.smtp_port);
+  const [email, setEmail] = useState(initialEmail ?? '');
+  const [smtpHost, setSmtpHost] = useState(initialSmtpHost || hosts.smtp_host);
+  const [smtpPort, setSmtpPort] = useState(initialSmtpPort ?? hosts.smtp_port);
   const [smtpUser, setSmtpUser] = useState('');
   const [smtpPwd, setSmtpPwd] = useState('');
   const [showPwd, setShowPwd] = useState(false);
@@ -2076,7 +2259,14 @@ function SmtpConnectForm({
     setVerified(false);
   }, [email, smtpHost, smtpPort, smtpUser, smtpPwd, imapHost, imapPort]);
 
-  const canTest = !!email && !!smtpHost && !!smtpPort && !!smtpUser && !!smtpPwd;
+  // Self-hosted only: catches a Docker service name / loopback alias typed
+  // into the host field with no network round trip — same taxonomy as the
+  // backend's host_docker_internal preflight rung. Other providers are
+  // untouched (their default hosts are always real FQDNs).
+  const hostError =
+    provider === 'self_hosted' && isContainerLikeHost(smtpHost) ? HOST_DOCKER_INTERNAL_MESSAGE : null;
+
+  const canTest = !!email && !!smtpHost && !!smtpPort && !!smtpUser && !!smtpPwd && !hostError;
 
   const handleTest = async () => {
     setProbeError(null);
@@ -2166,6 +2356,7 @@ function SmtpConnectForm({
               />
             </label>
           </div>
+          {hostError && <p className="onb-credentials__error">{hostError}</p>}
           <label className="onb-credentials__field">
             <span className="onb-credentials__label">Username *</span>
             <input

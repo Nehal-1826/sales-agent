@@ -371,6 +371,8 @@ async def check_smtp_auth(
         kwargs["use_tls"] = True
     else:
         kwargs["start_tls"] = True
+    import aiosmtplib
+
     client = _smtp_client(**kwargs)
     try:
         await client.connect()
@@ -379,7 +381,7 @@ async def check_smtp_auth(
         finally:
             with contextlib.suppress(Exception):
                 await client.quit()
-    except Exception:
+    except aiosmtplib.SMTPAuthenticationError:
         return PreflightCheck(
             id="auth_failed",
             status="fail",
@@ -389,6 +391,18 @@ async def check_smtp_auth(
                 "genuinely a username or password problem. Use the mailbox's "
                 "own password — a control-panel or admin login usually cannot "
                 "authenticate for SMTP."
+            ),
+            docs_anchor="self-hosted#credentials",
+        )
+    except Exception:
+        return PreflightCheck(
+            id="auth_probe_failed",
+            status="fail",
+            detail="The server could not be reached to attempt authentication.",
+            remedy=(
+                "The connection dropped before credentials were tested — this "
+                "is not a login problem. Re-run this check once the server is "
+                "reachable."
             ),
             docs_anchor="self-hosted#credentials",
         )

@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import re
+import ssl as _ssl
 import uuid
 from typing import Literal
 
@@ -305,4 +306,133 @@ def check_auth_advertised(caps: set[str]) -> PreflightCheck:
             "— then re-run this check."
         ),
         docs_anchor="self-hosted#submission",
+    )
+
+
+def _smtp_client(**kwargs):
+    """Indirection so tests can substitute a fake client."""
+    import aiosmtplib
+
+    return aiosmtplib.SMTP(**kwargs)
+
+
+async def check_tls(ip: str, port: int, hostname: str) -> PreflightCheck:
+    """Rung 9 — is the certificate valid and does it cover this hostname?"""
+    ctx = _ssl.create_default_context()
+    ctx.check_hostname = True
+    ctx.verify_mode = _ssl.CERT_REQUIRED
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(ip, port, ssl=ctx, server_hostname=hostname),
+            timeout=_CONNECT_TIMEOUT_S,
+        )
+    except _ssl.SSLCertVerificationError:
+        return PreflightCheck(
+            id="tls_invalid",
+            status="fail",
+            detail=f"The certificate presented on port {port} is not valid for {hostname}.",
+            remedy=(
+                f"Issue a certificate that covers {hostname} — for example "
+                f"certbot certonly --nginx -d {hostname} — and point your mail "
+                f"server at it. A CDN proxy must be off for the issuance to "
+                f"succeed."
+            ),
+            docs_anchor="self-hosted#tls",
+        )
+    except Exception:
+        return PreflightCheck(
+            id="tls_handshake_failed",
+            status="fail",
+            detail=f"TLS handshake failed on port {port}.",
+            remedy="Confirm the port serves implicit TLS, or use 587 with STARTTLS.",
+            docs_anchor="self-hosted#tls",
+        )
+    writer.close()
+    with contextlib.suppress(Exception):
+        await writer.wait_closed()
+    return PreflightCheck(
+        id="tls_ok", status="pass", detail=f"Valid certificate for {hostname}."
+    )
+
+
+async def check_smtp_auth(
+    ip: str, port: int, hostname: str, username: str, password: str
+) -> PreflightCheck:
+    """Rung 10 — the ONLY rung permitted to return auth_failed."""
+    if not password:
+        return PreflightCheck(
+            id="auth_skipped", status="skipped", detail="No password supplied."
+        )
+    ctx = _ssl.create_default_context()
+    kwargs = dict(hostname=ip, port=port, timeout=_RUNG_TIMEOUT_S, tls_context=ctx)
+    if port == 465:
+        kwargs["use_tls"] = True
+    else:
+        kwargs["start_tls"] = True
+    client = _smtp_client(**kwargs)
+    try:
+        await client.connect()
+        try:
+            await client.login(username, password)
+        finally:
+            with contextlib.suppress(Exception):
+                await client.quit()
+    except Exception:
+        return PreflightCheck(
+            id="auth_failed",
+            status="fail",
+            detail="The server rejected these credentials.",
+            remedy=(
+                "The server is reachable and offers authentication, so this is "
+                "genuinely a username or password problem. Use the mailbox's "
+                "own password — a control-panel or admin login usually cannot "
+                "authenticate for SMTP."
+            ),
+            docs_anchor="self-hosted#credentials",
+        )
+    return PreflightCheck(
+        id="auth_ok_verified", status="pass", detail="SMTP authentication succeeded."
+    )
+
+
+async def check_imap(
+    ip: str, port: int, hostname: str, username: str, password: str
+) -> PreflightCheck:
+    """Rung 11 — same story on the IMAP side."""
+    if not password:
+        return PreflightCheck(
+            id="imap_skipped", status="skipped", detail="No password supplied."
+        )
+    import aioimaplib
+
+    try:
+        client = aioimaplib.IMAP4_SSL(
+            host=ip, port=port, timeout=_RUNG_TIMEOUT_S,
+            ssl_context=_ssl.create_default_context(),
+        )
+
+        async def _go() -> None:
+            await client.wait_hello_from_server()
+            resp = await client.login(username, password)
+            result = getattr(resp, "result", None)
+            if result is not None and str(result).upper() != "OK":
+                raise RuntimeError("imap login rejected")
+            with contextlib.suppress(Exception):
+                await client.logout()
+
+        await asyncio.wait_for(_go(), timeout=_RUNG_TIMEOUT_S)
+    except Exception:
+        return PreflightCheck(
+            id="imap_failed",
+            status="fail",
+            detail=f"Could not sign in to IMAP on port {port}.",
+            remedy=(
+                "Check that IMAP is published on 993 with TLS and that this "
+                "mailbox's password is correct. Port 143 is plain-text IMAP "
+                "and should stay internal to your network."
+            ),
+            docs_anchor="self-hosted#imap",
+        )
+    return PreflightCheck(
+        id="imap_ok", status="pass", detail="IMAP authentication succeeded."
     )

@@ -245,7 +245,17 @@ async def read_ehlo(ip: str, port: int, hostname: str) -> tuple[PreflightCheck, 
         ), caps
 
     async def _session() -> None:
-        await reader.readline()  # 220 banner
+        # RFC 5321 permits a multi-line greeting (220-.../220 ...). Drain
+        # every banner line until the final one, identified by a space (not
+        # a hyphen) in the 4th column, before sending EHLO — otherwise a
+        # leftover continuation line gets misread as the first EHLO reply.
+        while True:
+            banner = await reader.readline()
+            if not banner:
+                break
+            banner_text = banner.decode("utf-8", "replace").strip()
+            if len(banner_text) >= 4 and banner_text[3] == " ":
+                break
         writer.write(f"EHLO {hostname}\r\n".encode())
         await writer.drain()
         while True:

@@ -1304,10 +1304,20 @@ async def run_preflight(req: PreflightRequest) -> PreflightResult:
         checks.append(check)
         return PreflightResult(ok=False, checks=checks, blocking=check)
 
-    for check in (check_host_shape(host), check_not_container_name(host)):
-        if check.status == "fail":
-            return _stop(check)
-        checks.append(check)
+    # Container check runs FIRST, before the generic shape check. A bare label
+    # like "mail" fails both — it has no dot, so the hostname regex rejects it
+    # too — and in a stop-at-first-failure ladder whichever runs first is the
+    # only message the user ever sees. "That's a Docker service name" is the
+    # useful one; "that's not a hostname" is not. Ordering is the whole fix.
+    container_check = check_not_container_name(host)
+    if container_check.status == "fail":
+        return _stop(container_check)
+    checks.append(container_check)
+
+    shape_check = check_host_shape(host)
+    if shape_check.status == "fail":
+        return _stop(shape_check)
+    checks.append(shape_check)
 
     dns_check, ips = await check_dns(host)
     if dns_check.status == "fail":

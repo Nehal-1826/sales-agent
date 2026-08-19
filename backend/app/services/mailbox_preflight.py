@@ -535,4 +535,27 @@ async def run_preflight(req: PreflightRequest) -> PreflightResult:
             return _stop(imap_check)
         checks.append(imap_check)
 
+    domain = req.username.split("@")[-1] if "@" in req.username else host
+    checks.append(build_spf_advice(domain, ips[0]))
+
     return PreflightResult(ok=True, checks=checks, blocking=None)
+
+
+def build_spf_advice(domain: str, sending_ip: str) -> PreflightCheck:
+    """Rung 12 (advisory) — the SPF record only we can compute.
+
+    Never blocking: a misaligned SPF record does not stop a mailbox from
+    connecting, and the standalone DNS step owns the pass/fail gate. Softfail
+    (~all) rather than hardfail (-all): a self-hoster who later adds a second
+    sender should not silently lose mail.
+    """
+    return PreflightCheck(
+        id="spf_advice",
+        status="warn",
+        detail=(
+            f"Mail for {domain} will be sent from {sending_ip}. Confirm your "
+            f"SPF record authorises that address."
+        ),
+        remedy=f"v=spf1 ip4:{sending_ip} ~all",
+        docs_anchor="dns#spf",
+    )

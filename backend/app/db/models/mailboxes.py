@@ -27,6 +27,7 @@ class MailboxProvider(str, enum.Enum):
     outlook = "outlook"
     yahoo = "yahoo"
     smtp = "smtp"
+    self_hosted = "self_hosted"
 
 
 class WarmupStatus(str, enum.Enum):

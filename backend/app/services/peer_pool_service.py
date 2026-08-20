@@ -609,7 +609,7 @@ async def auto_route_workspace_by_plan(
     session: AsyncSession,
     *,
     workspace_id: uuid.UUID,
-    plan_name: str,
+    plan_name: str | None,
     actor: User,
 ) -> uuid.UUID | None:
     """Route ``workspace_id`` to the peer pool whose name matches its plan.
@@ -617,14 +617,15 @@ async def auto_route_workspace_by_plan(
     Called when a client creates their first mailbox so warmup can begin
     immediately instead of waiting for an admin assignment. Respects existing
     routing: if the workspace already has a ``ClientPoolAssignment`` we return
-    ``None`` and change nothing (manual/admin assignment wins). If no pool's
-    name case-insensitively matches ``plan_name`` we also return ``None``.
-    Otherwise we upsert the assignment (which activates pending mailboxes) and
-    return the matched pool id.
-    """
-    if not plan_name or not plan_name.strip():
-        return None
+    ``None`` and change nothing (manual/admin assignment wins).
 
+    Every workspace ends up on SOME pool. If the caller has no plan, or no
+    pool's name matches the plan, we fall back to the default pool rather than
+    leaving the workspace unassigned. Previously those cases returned early and
+    the workspace got no assignment row at all — pairing still limped along via
+    its own default-pool fallback at send time, but the workspace showed no
+    routing in the admin UI and depended on that fallback staying in place.
+    """
     existing = (
         await session.execute(
             select(ClientPoolAssignment.id).where(
@@ -635,12 +636,25 @@ async def auto_route_workspace_by_plan(
     if existing is not None:
         return None
 
-    target = plan_name.strip().lower()
-    pool = (
-        await session.execute(
-            select(PeerPool).where(func.lower(PeerPool.name) == target).limit(1)
-        )
-    ).scalar_one_or_none()
+    pool: PeerPool | None = None
+    if plan_name and plan_name.strip():
+        target = plan_name.strip().lower()
+        pool = (
+            await session.execute(
+                select(PeerPool).where(func.lower(PeerPool.name) == target).limit(1)
+            )
+        ).scalar_one_or_none()
+
+    if pool is None:
+        # No plan, or no pool named after it — fall back to the default pool so
+        # the workspace is always explicitly routed. Looked up directly rather
+        # than via _default_pool(), which raises a 500 when none is configured;
+        # this path is best-effort and must never break mailbox creation.
+        pool = (
+            await session.execute(
+                select(PeerPool).where(PeerPool.is_default.is_(True)).limit(1)
+            )
+        ).scalar_one_or_none()
     if pool is None:
         return None
 

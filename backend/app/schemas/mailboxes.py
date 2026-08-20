@@ -238,3 +238,19 @@ class TestConnectionResponse(BaseModel):
     smtp_error: str | None = None
     imap_error: str | None = None
     note: str | None = None
+
+
+class RunWarmupNowResponse(BaseModel):
+    """Result of an on-demand warmup trigger.
+
+    ``send_queued`` is True when an outbound warmup send was enqueued;
+    ``engage_queued`` is True when a Gmail engagement pass (spam-rescue /
+    read / star / label) was also enqueued — that pass only exists for
+    OAuth-connected Gmail mailboxes.
+    """
+
+    send_queued: bool
+    engage_queued: bool
+    sent_today: int
+    quota_today: int
+    note: str | None = None

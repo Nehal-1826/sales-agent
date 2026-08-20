@@ -33,6 +33,7 @@ from app.schemas.mailboxes import (
     MailboxOut,
     MailboxProbeRequest,
     MailboxUpdate,
+    RunWarmupNowResponse,
     TestConnectionResponse,
 )
 from app.services import mailbox_service
@@ -286,6 +287,23 @@ async def test_connection(
     user: Annotated[User, Depends(get_current_user)],
 ) -> TestConnectionResponse:
     return await mailbox_service.test_connection(
+        session, user=user, mailbox_id=mailbox_id
+    )
+
+
+# --------------------------------------------------------------------------- #
+# RUN WARMUP NOW                                                              #
+# --------------------------------------------------------------------------- #
+
+
+@router.post("/{mailbox_id}/run-now", response_model=RunWarmupNowResponse)
+async def run_warmup_now(
+    mailbox_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> RunWarmupNowResponse:
+    """Trigger one warmup send now instead of waiting for the 15-min cycle."""
+    return await mailbox_service.run_warmup_now(
         session, user=user, mailbox_id=mailbox_id
     )
 

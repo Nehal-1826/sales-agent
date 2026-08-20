@@ -53,8 +53,12 @@ async def test_oauth_url_includes_postmaster_scope():
 
     url = await postmaster_client.get_oauth_url("ws:domain:nonce")
     assert "scope=" in url
-    # URL-encoded scope param
-    assert "postmaster.readonly" in url
+    # URL-encoded scope param. Must be the traffic-only scope: it is the
+    # narrowest one covering our single call (domains/*/trafficStats/*), and
+    # the bare "postmaster" / "postmaster.domain" scopes would additionally
+    # grant domain and domain-user management we never use.
+    assert "postmaster.traffic.readonly" in url
+    assert "postmaster.domain" not in url
     assert "state=ws%3Adomain%3Anonce" in url
     assert "access_type=offline" in url
 

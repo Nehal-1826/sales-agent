@@ -162,6 +162,7 @@ def create_app() -> FastAPI:
     app.include_router(firebase_auth_routes.router)
     app.include_router(mailboxes.router)
     app.include_router(crm.router)
+    app.include_router(crm.public_router)
     app.include_router(dns.router)
     app.include_router(admin.router)
     app.include_router(admin_system_health.router)

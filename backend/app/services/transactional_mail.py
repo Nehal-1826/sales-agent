@@ -18,6 +18,7 @@ the headline / intro / detail rows / CTA, never raw HTML.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from email.message import EmailMessage
@@ -29,6 +30,53 @@ from app.config import get_settings
 from app.services.mail_templates import render
 
 logger = logging.getLogger(__name__)
+
+# Retry policy for transient SMTP failures.
+#
+# The platform mail server can answer 4xx — most often
+# "451 4.3.5 Recipient address rejected: Server configuration problem".
+# Postfix emits that for EVERY recipient whenever a policy service listed in
+# smtpd_recipient_restrictions is unreachable; on 2026-08-03 the iredapd
+# daemon died and every outbound mail was rejected for a day. A 4xx is by
+# definition RETRYABLE: a normal mail server would queue and try again.
+#
+# We previously treated every exception as fatal and returned
+# {"status": "failed"}, so a few seconds of database unavailability
+# permanently dropped a user's signup, login or 2FA email with no second
+# attempt. These retries close that gap without touching the mail server.
+#
+# Permanent 5xx failures (unknown mailbox, blocked sender) are NOT retried
+# — retrying those just delays the inevitable and looks like spam.
+_MAX_SEND_ATTEMPTS = 4
+_RETRY_BACKOFF_SECONDS = (2.0, 8.0, 20.0)
+
+
+def _is_transient_smtp_error(exc: BaseException) -> bool:
+    """True when ``exc`` looks worth retrying.
+
+    Transient means either an SMTP 4xx response, or a connection-level
+    failure (DNS blip, refused socket, timeout) where we never got a verdict
+    from the server at all.
+    """
+    # Per-recipient refusals: aiosmtplib reports these as a dict of
+    # {recipient: SMTPResponse}. Retry only if EVERY refusal was a 4xx.
+    recipients = getattr(exc, "recipients", None)
+    if recipients:
+        codes = [
+            getattr(r, "code", None)
+            for r in (
+                recipients.values() if isinstance(recipients, dict) else recipients
+            )
+        ]
+        known = [c for c in codes if isinstance(c, int)]
+        return bool(known) and all(400 <= c < 500 for c in known)
+
+    code = getattr(exc, "code", None)
+    if isinstance(code, int):
+        return 400 <= code < 500
+
+    # No SMTP code at all — connection/timeout territory. Worth another go.
+    return isinstance(exc, (asyncio.TimeoutError, ConnectionError, OSError))
 
 
 @dataclass
@@ -142,15 +190,30 @@ async def send_transactional(
         msg.add_alternative(body_html, subtype="html")
 
     try:
-        await aiosmtplib.send(
-            msg,
-            hostname=cfg.host,
-            port=cfg.port,
-            start_tls=cfg.starttls,
-            username=cfg.username or None,
-            password=cfg.password or None,
-            timeout=20,
-        )
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                await aiosmtplib.send(
+                    msg,
+                    hostname=cfg.host,
+                    port=cfg.port,
+                    start_tls=cfg.starttls,
+                    username=cfg.username or None,
+                    password=cfg.password or None,
+                    timeout=20,
+                )
+                break
+            except Exception as exc:  # noqa: BLE001
+                if attempt >= _MAX_SEND_ATTEMPTS or not _is_transient_smtp_error(exc):
+                    raise
+                delay = _RETRY_BACKOFF_SECONDS[attempt - 1]
+                logger.warning(
+                    "transactional_mail.transient_retry attempt=%d/%d in %.0fs "
+                    "to=%s subject=%r err=%s",
+                    attempt, _MAX_SEND_ATTEMPTS, delay, to, subject, exc,
+                )
+                await asyncio.sleep(delay)
     except Exception:  # noqa: BLE001 — never let mail failures crash callers
         logger.exception("transactional_mail.failed to=%s subject=%r", to, subject)
         return {"status": "failed"}

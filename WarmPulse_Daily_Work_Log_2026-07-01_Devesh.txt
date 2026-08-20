@@ -1,0 +1,58 @@
+================================================================================
+                       WAMPULSE - DAILY WORK LOG
+================================================================================
+
+Date: July 1, 2026
+Author: Devesh
+Project: WarmPulse Mobile Development
+
+================================================================================
+UPDATE TODAY'S LOG
+================================================================================
+
+WarmPulse — Mobile Microsoft OAuth integration + build pipeline setup
+
+339 / 50 words ✓
+
+Shipped Microsoft OAuth sign-in integration for the WarmPulse mobile app, enabling users to authenticate via their Microsoft accounts in addition to Google. Added mobile_oauth_state.py service to handle OAuth state management with secure token storage and session validation across the mobile client. Created OAuthConnect.ts with provider abstraction (Google/Microsoft) and unified token exchange flow that posts refresh tokens back to the backend for persistent credential management.
+
+Built the OAuth UI layer with OAuthConnectButtons.tsx, rendering provider-specific sign-in buttons (Google branded with G-logo, Microsoft with Microsoft-blue gradient) that launch the native in-app browser via expo-web-browser and listen for OAuth callback URLs. The component handles the full auth dance: stores nonce/challenge in expo-secure-store, opens provider OAuth endpoint, parses incoming authorization code, and exchanges it for tokens via the backend's /api/auth/microsoft/callback endpoint.
+
+Set up the mobile build pipeline by creating eas.json with local APK build configuration and running expo prebuild to generate the native Android project structure. Configured Gradle build with release keystore (warmpulse-release.keystore) and signing credentials, targeting version 1.0.14 (code 15) with min SDK 24 and target SDK 34. Encountered CMake configuration failures during clean builds at the arm64-v8a toolchain stage — the NDK's CMake toolchain fails to configure native modules (expo-modules-core, react-android) after 21+ minutes, blocking APK generation.
+
+Deployed the latest backend changes to production: pulled commit 8de7e94 (Microsoft OAuth sign-in + onboarding improvements), ran alembic migrations, and rebuilt all Docker containers (api, worker, beat, frontend). Verified service health — all 7 containers running, Celery worker processing warmup tasks, Beat scheduler alive, API responding on :8001.
+
+Fixed local git branch divergence where the design spec commit (4af6ebf) had drifted from the implementation commit (8de7e94). Performed git reset --hard origin/main to sync with remote, discarding the stale design doc in favor of the shipped implementation.
+
+Mobile build remains blocked: the Gradle clean build fails at configureCMakeRelWithDebInfo[arm64-v8a] with exit code 1 after 21m 2s, and even non-clean builds fail at assembleRelease. Next step is to investigate the NDK toolchain configuration or fall back to EAS Build with a configured EXPO_TOKEN for cloud-based APK generation.
+
+================================================================================
+TECHNICAL DETAILS
+================================================================================
+
+Files Added/Committed:
+  • backend/app/services/mobile_oauth_state.py
+  • warmpulse-mobile/lib/oauthConnect.ts
+  • warmpulse-mobile/screens/app/connect/OAuthConnectButtons.tsx
+  • warmpulse-mobile/eas.json
+
+Build Environment:
+  • Expo SDK 54.0.0, React Native 0.81.5
+  • Gradle 8.14.3, Android NDK 27.1.12297006
+  • Target: com.warmpulse.app v1.0.14 (code 15)
+
+Commit: 89d5001 - feat(mobile): add OAuth state service + EAS build config + OAuth connect UI
+
+================================================================================
+PENDING ITEMS
+================================================================================
+
+☐ Fix Gradle CMake arm64-v8a configuration error
+☐ Complete APK generation and testing
+☐ Test Microsoft OAuth flow on physical device
+☐ Set up EXPO_TOKEN for automated EAS builds
+☐ Update version.json once APK is uploaded
+
+================================================================================
+
+Warm Pulse a Shailog Product

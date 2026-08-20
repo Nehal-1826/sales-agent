@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
@@ -49,6 +49,7 @@ from app.schemas.crm import (
     SequenceUpdate,
 )
 from app.config import get_settings
+from app.db.models.crm_email_templates import CrmEmailTemplate
 from app.services import (
     crm_ai_service,
     crm_sequence_service,
@@ -60,6 +61,10 @@ from app.services import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/crm", tags=["crm"])
+
+# Unauthenticated sub-router. Only serves template logo images, which are
+# loaded directly by recipients' mail clients — see get_template_logo_public.
+public_router = APIRouter(prefix="/api/crm/public", tags=["crm-public"])
 
 
 # --------------------------------------------------------------------------- #
@@ -537,6 +542,139 @@ async def delete_template(
     if not ok:
         raise HTTPException(status_code=404, detail="Template not found")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --------------------------------------------------------------------------- #
+# Import templates + .eml import                                               #
+# --------------------------------------------------------------------------- #
+
+
+@router.get("/leads/import-template")
+async def download_import_template(
+    user: Annotated[User, Depends(get_current_user)],
+    source: Annotated[str, Query(pattern="^(csv|linkedin)$")] = "csv",
+) -> Response:
+    """Download a ready-to-fill CSV for the lead importer.
+
+    Generated from the same column definitions the importer reads, so the file
+    a user fills in can never drift from what the parser accepts.
+    """
+    body = crm_service.build_import_template(source)
+    filename = f"warmpulse-leads-{source}-template.csv"
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post(
+    "/templates/from-eml",
+    response_model=CrmTemplateOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_template_from_eml(
+    session: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    file: Annotated[UploadFile, File()],
+    name: Annotated[str | None, Query(max_length=200)] = None,
+) -> CrmTemplateOut:
+    """Create an email template from an uploaded .eml file.
+
+    Designers export campaign emails from a mail client as .eml; re-typing that
+    into the form loses the markup. The HTML part is preferred over plain text,
+    matching how the message would actually render.
+    """
+    parsed = crm_template_service.parse_eml(await file.read())
+    fallback = (file.filename or "Imported template").rsplit(".", 1)[0]
+    row = await crm_template_service.create_template(
+        session,
+        workspace_id=user.workspace_id,
+        payload=CrmTemplateCreate(
+            name=(name or parsed["subject"] or fallback)[:200],
+            subject=(parsed["subject"] or fallback)[:300],
+            body=parsed["body"],
+        ),
+    )
+    await session.commit()
+    return CrmTemplateOut(**row)
+
+
+# --------------------------------------------------------------------------- #
+# Template logo                                                                #
+# --------------------------------------------------------------------------- #
+
+
+@router.post("/templates/{template_id}/logo")
+async def upload_template_logo(
+    template_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    file: Annotated[UploadFile, File()],
+) -> dict[str, Any]:
+    """Upload/replace the brand logo embedded in this template's emails."""
+    data = await file.read()
+    mime = crm_template_service.validate_logo(
+        content_type=file.content_type, data=data
+    )
+    await crm_template_service.set_template_logo(
+        session,
+        workspace_id=user.workspace_id,
+        template_id=template_id,
+        data=data,
+        mime=mime,
+    )
+    await session.commit()
+    return {
+        "has_logo": True,
+        "logo_url": crm_template_service.logo_public_url(
+            template_id, base_url=get_settings().app_base_url
+        ),
+    }
+
+
+@router.delete(
+    "/templates/{template_id}/logo", status_code=status.HTTP_204_NO_CONTENT
+)
+async def delete_template_logo(
+    template_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> Response:
+    await crm_template_service.clear_template_logo(
+        session, workspace_id=user.workspace_id, template_id=template_id
+    )
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@public_router.get("/templates/{template_id}/logo")
+async def get_template_logo_public(
+    template_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> Response:
+    """Serve a template logo with NO authentication. Intentional.
+
+    This URL is placed in outbound email. The image is fetched by the
+    recipient's mail client (or Gmail's image proxy) which has no session and
+    no bearer token, so requiring auth would leave a broken image in every
+    message. Gmail also strips base64 data: URIs, so inlining is not an
+    alternative.
+
+    Exposure is limited to the logo bytes of a template whose UUID the caller
+    already knows; no workspace data is reachable through it.
+    """
+    tpl = await session.get(CrmEmailTemplate, template_id)
+    if tpl is None or not tpl.logo_image:
+        raise HTTPException(status_code=404, detail="No logo")
+    return Response(
+        content=tpl.logo_image,
+        media_type=tpl.logo_mime or "application/octet-stream",
+        # Public and immutable-ish: mail clients and Gmail's proxy cache
+        # aggressively, and a re-upload changes nothing about this URL, so keep
+        # the window modest.
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 
 # --------------------------------------------------------------------------- #

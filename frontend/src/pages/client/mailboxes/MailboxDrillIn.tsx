@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Loader2, Pause, Play, Trash2, X } from 'lucide-react';
+import { Loader2, Pause, Play, Send, Trash2, X } from 'lucide-react';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Skeleton } from '@/components/ui/Skeleton';
 import {
@@ -15,6 +15,7 @@ import {
   useMailbox,
   usePauseMailbox,
   useResumeMailbox,
+  useRunWarmupNow,
   useUpdateMailbox,
 } from '@/features/mailboxes/api';
 import type { Mailbox, ContentMode, MailboxProvider } from '@/features/mailboxes/types';
@@ -310,7 +311,88 @@ function Overview({ mailbox }: { mailbox: Mailbox }) {
             : 'No activity yet'}
         </span>
       </div>
+
+      <RunNowCard mailbox={mailbox} />
     </div>
+  );
+}
+
+/** Surface the backend's 409 reason (quota spent / paused) rather than a generic toast. */
+function runNowError(err: unknown, fallback: string): string {
+  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+  return typeof detail === 'string' && detail.length > 0 ? detail : fallback;
+}
+
+/**
+ * On-demand warmup trigger. The engine runs on a 15-minute cycle, which makes
+ * a freshly-connected mailbox look inert; this lets the user (or a reviewer)
+ * watch one full send land right away. The backend re-checks the daily ramp
+ * quota, so this can never push the mailbox past its scheduled volume.
+ */
+function RunNowCard({ mailbox }: { mailbox: Mailbox }) {
+  const runNow = useRunWarmupNow();
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.22 }}
+      style={glassCard}
+    >
+      <p style={{ fontSize: 13, color: 'var(--wp-text)', fontWeight: 700 }}>Run warm-up now</p>
+      <p style={{ marginTop: 4, fontSize: 11.5, color: 'var(--wp-text-dim)' }}>
+        Sends one warm-up email to a peer inbox immediately instead of waiting for the next
+        15-minute cycle. Counts against today&apos;s ramp quota.
+      </p>
+      <div style={{ marginTop: 12 }}>
+        <button
+          type="button"
+          disabled={runNow.isPending || mailbox.is_paused}
+          onClick={() =>
+            runNow.mutate(mailbox.id, {
+              onSuccess: (res) =>
+                toast.success(
+                  res.engage_queued
+                    ? 'Warm-up send queued — engagement pass queued too.'
+                    : 'Warm-up send queued.',
+                ),
+              onError: (err) => toast.error(runNowError(err, 'Could not queue a warm-up send')),
+            })
+          }
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '7px 12px',
+            borderRadius: 10,
+            border: '1px solid var(--wp-border)',
+            background: 'var(--wp-surface-2)',
+            color: 'var(--wp-text)',
+            fontSize: 12.5,
+            fontWeight: 600,
+            cursor: runNow.isPending || mailbox.is_paused ? 'not-allowed' : 'pointer',
+            opacity: mailbox.is_paused ? 0.55 : 1,
+          }}
+        >
+          {runNow.isPending ? (
+            <>
+              <Loader2 size={13} strokeWidth={2.4} className="animate-spin" />
+              Queueing…
+            </>
+          ) : (
+            <>
+              <Send size={13} strokeWidth={2.4} />
+              Send warm-up email now
+            </>
+          )}
+        </button>
+        {mailbox.is_paused ? (
+          <p style={{ marginTop: 8, fontSize: 11.5, color: 'var(--wp-text-dim)' }}>
+            Warmup is paused — resume it from the Danger tab first.
+          </p>
+        ) : null}
+      </div>
+    </motion.div>
   );
 }
 

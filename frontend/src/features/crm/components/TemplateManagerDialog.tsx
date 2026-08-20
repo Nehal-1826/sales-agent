@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Eye, Loader2, Trash2, Upload, Sparkles } from 'lucide-react';
+import { Eye, Image as ImageIcon, Loader2, Trash2, Upload, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
@@ -17,6 +17,9 @@ import {
   useCrmTemplates,
   useCreateTemplate,
   useDeleteTemplate,
+  useCreateTemplateFromEml,
+  useUploadTemplateLogo,
+  useDeleteTemplateLogo,
   extractCrmError,
 } from '../api';
 import { CRM_TEMPLATE_VARIABLES } from '../types';
@@ -33,6 +36,91 @@ export interface TemplateManagerDialogProps {
  * ones. Built-in templates are listed read-only (no delete). The picker in the
  * step editor reads the same list.
  */
+
+/** Surface the backend's reason (415 wrong type, 413 too large) verbatim. */
+function logoError(err: unknown, fallback: string): string {
+  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response
+    ?.data?.detail;
+  return typeof detail === 'string' && detail.length > 0 ? detail : fallback;
+}
+
+/**
+ * Logo upload / preview / remove for one custom template.
+ *
+ * The logo is embedded in sent email through the {{logo}} variable, so it is
+ * served from a public URL — mail clients fetch images with no session, and
+ * Gmail strips base64 data: URIs.
+ */
+function TemplateLogoControl({
+  hasLogo,
+  logoUrl,
+  onUpload,
+  onRemove,
+  busy,
+}: {
+  hasLogo: boolean;
+  logoUrl: string | null;
+  onUpload: (file: File) => void;
+  onRemove: () => void;
+  busy: boolean;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  return (
+    <div className="flex items-center gap-1">
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          // Reset first so picking the same file twice still fires onChange.
+          e.target.value = '';
+          if (file) onUpload(file);
+        }}
+      />
+      {hasLogo && logoUrl ? (
+        <img
+          src={logoUrl}
+          alt=""
+          className="h-6 w-6 rounded border border-border-muted object-contain"
+        />
+      ) : null}
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        disabled={busy}
+        onClick={() => inputRef.current?.click()}
+        leftIcon={
+          busy ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <ImageIcon className="h-3.5 w-3.5" />
+          )
+        }
+        title={hasLogo ? 'Replace the logo shown in this template' : 'Add a logo to this template'}
+      >
+        {hasLogo ? 'Replace' : 'Logo'}
+      </Button>
+      {hasLogo ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={busy}
+          onClick={onRemove}
+          title="Remove the logo from this template"
+        >
+          Clear
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+
 export function TemplateManagerDialog({
   open,
   onOpenChange,
@@ -40,6 +128,9 @@ export function TemplateManagerDialog({
   const templates = useCrmTemplates();
   const createTemplate = useCreateTemplate();
   const deleteTemplate = useDeleteTemplate();
+  const fromEml = useCreateTemplateFromEml();
+  const uploadLogo = useUploadTemplateLogo();
+  const removeLogo = useDeleteTemplateLogo();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [name, setName] = useState('');
@@ -57,6 +148,21 @@ export function TemplateManagerDialog({
     if (!file) return;
     if (file.size > 200_000) {
       toast.error('File too large (max 200 KB).');
+      return;
+    }
+    // .eml is a full MIME message, not markup — hand it to the server, which
+    // picks the HTML part over the plain-text fallback and pulls the subject.
+    if (/\.eml$/i.test(file.name)) {
+      fromEml.mutate(file, {
+        onSuccess: (tpl) => {
+          setName(tpl.name);
+          setSubject(tpl.subject);
+          setBody(tpl.body);
+          toast.success('Template created from .eml');
+        },
+        onError: (err) =>
+          toast.error(extractCrmError(err, 'Could not read that .eml file')),
+      });
       return;
     }
     const text = await file.text();
@@ -110,12 +216,12 @@ export function TemplateManagerDialog({
                 leftIcon={<Upload className="h-3.5 w-3.5" />}
                 onClick={() => fileRef.current?.click()}
               >
-                Upload .html / .txt
+                Upload .html / .txt / .eml
               </Button>
               <input
                 ref={fileRef}
                 type="file"
-                accept=".html,.htm,.txt,text/html,text/plain"
+                accept=".html,.htm,.txt,.eml,text/html,text/plain,message/rfc822"
                 className="hidden"
                 onChange={(e) => void onUpload(e.target.files?.[0])}
               />
@@ -193,6 +299,27 @@ export function TemplateManagerDialog({
                       >
                         {previewId === t.id ? 'Hide' : 'View'}
                       </Button>
+                      <TemplateLogoControl
+                        hasLogo={Boolean(t.has_logo)}
+                        logoUrl={t.logo_url ?? null}
+                        onUpload={(file) =>
+                          uploadLogo.mutate(
+                            { id: t.id, file },
+                            {
+                              onSuccess: () => toast.success('Logo added to template'),
+                              onError: (err) =>
+                                toast.error(logoError(err, 'Could not upload logo')),
+                            },
+                          )
+                        }
+                        onRemove={() =>
+                          removeLogo.mutate(t.id, {
+                            onSuccess: () => toast.success('Logo removed'),
+                            onError: () => toast.error('Could not remove logo'),
+                          })
+                        }
+                        busy={uploadLogo.isPending || removeLogo.isPending}
+                      />
                       <Button
                         type="button"
                         variant="ghost"

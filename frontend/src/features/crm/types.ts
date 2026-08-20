@@ -304,6 +304,8 @@ export interface CrmTemplate {
   category: string | null;
   is_builtin: boolean;
   created_at: string | null;
+  has_logo?: boolean;
+  logo_url?: string | null;
 }
 
 export interface CreateTemplatePayload {
@@ -328,6 +330,9 @@ export const CRM_TEMPLATE_VARIABLES = [
   '{{company}}',
   '{{title}}',
   '{{sender_name}}',
+  // Renders the template's uploaded logo as an <img>; resolves to nothing when
+  // the template has no logo, so it is always safe to leave in a body.
+  '{{logo}}',
 ] as const;
 
 // ---------------------------------------------------------------------------

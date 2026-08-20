@@ -45,6 +45,7 @@ from app.schemas.mailboxes import (
     MailboxOut,
     MailboxProbeRequest,
     MailboxUpdate,
+    RunWarmupNowResponse,
     ScheduleWindowOut,
     TestConnectionResponse,
 )
@@ -548,7 +549,7 @@ async def create_mailbox(
             user_id=user.id,
             kind="mailbox_connected",
             title="Mailbox connected",
-            body=f"{mbx.email_address} is now connected. Warmup has started — you'll begin building sender reputation within 15 minutes.",
+            body=f"{mbx.email_address} is now connected. Warmup has started — your first warm-up email is being sent now.",
             payload={"mailbox_id": str(mbx.id), "email_address": mbx.email_address},
             commit=False,  # already committed above
         )
@@ -564,20 +565,42 @@ async def create_mailbox(
             plan = await session.get(Plan, user.plan_id)
             if plan is not None:
                 plan_name = plan.name
-        if plan_name:
-            from app.services import peer_pool_service
+        # Always call: with no plan (or no pool named after it) this now routes
+        # the workspace to the default pool rather than leaving it unassigned.
+        from app.services import peer_pool_service
 
-            await peer_pool_service.auto_route_workspace_by_plan(
-                session,
-                workspace_id=user.workspace_id,
-                plan_name=plan_name,
-                actor=user,
-            )
+        await peer_pool_service.auto_route_workspace_by_plan(
+            session,
+            workspace_id=user.workspace_id,
+            plan_name=plan_name,
+            actor=user,
+        )
     except Exception:  # pragma: no cover - defensive
         logger.warning(
             "auto-route by plan failed for workspace=%s",
             user.workspace_id,
             exc_info=True,
+        )
+
+    # Start warming immediately instead of waiting up to 15 minutes for the
+    # next beat cycle. A brand-new mailbox otherwise sits visibly idle right
+    # after connecting, which reads as "nothing is happening".
+    #
+    # Best-effort: the beat scheduler will pick this mailbox up regardless, so
+    # a broker hiccup here only costs the head start, never the mailbox. The
+    # send task re-checks the daily ramp quota, so this cannot exceed the
+    # day-1 allowance.
+    try:
+        from app.tasks.warmup_send import send_single_warmup_email
+
+        send_single_warmup_email.delay(str(mbx.id))
+        if mbx.provider == MailboxProvider.gmail and mbx.oauth_token_encrypted:
+            from app.tasks.client_engagement import engage_client_gmail_mailbox
+
+            engage_client_gmail_mailbox.delay(str(mbx.id))
+    except Exception:  # pragma: no cover - defensive
+        logger.warning(
+            "immediate warmup kickoff failed for mailbox=%s", mbx.id, exc_info=True
         )
 
     return mbx
@@ -701,6 +724,53 @@ async def resume_mailbox(
 # --------------------------------------------------------------------------- #
 
 
+_GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke"
+
+
+async def _revoke_google_grant(oauth_token_encrypted: bytes) -> bool:
+    """Ask Google to revoke the stored refresh token. Never raises.
+
+    Returns True when Google confirmed the revocation. Revoking a refresh
+    token invalidates the whole grant, so the user's Google Account stops
+    listing WarmPulse immediately.
+
+    The plaintext token lives only inside this function and is re-bound and
+    deleted before returning, matching the credential-handling pattern in
+    ``smtp_sender.send_email``.
+    """
+    import httpx  # local — keeps the module import graph light
+
+    token = ""
+    try:
+        token = get_fernet_service().decrypt(oauth_token_encrypted).decode("utf-8")
+    except Exception as exc:  # noqa: BLE001 — corrupt/rotated key, nothing to revoke
+        logger.warning(
+            "mailbox.revoke.decrypt_failed err=%s", _sanitize_exception(exc)
+        )
+        return False
+
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
+            resp = await client.post(
+                _GOOGLE_REVOKE_URL,
+                data={"token": token},
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+        # Google answers 200 on success. A 400 usually means the token was
+        # already expired or revoked — the end state we wanted either way.
+        if resp.status_code == 200:
+            logger.info("mailbox.revoke.ok")
+            return True
+        logger.info("mailbox.revoke.non_200 status=%s", resp.status_code)
+        return False
+    except Exception as exc:  # noqa: BLE001 — network/DNS/timeout
+        logger.warning("mailbox.revoke.failed err=%s", _sanitize_exception(exc))
+        return False
+    finally:
+        token = "REDACTED"
+        del token
+
+
 async def delete_mailbox(
     session: AsyncSession, *, user: User, mailbox_id: uuid.UUID
 ) -> None:
@@ -709,6 +779,25 @@ async def delete_mailbox(
     )
     mailbox_id_copy = mbx.id
     email_copy = mbx.email_address
+
+    # Hand the OAuth grant back to Google before we drop the token.
+    #
+    # Deleting our copy of the refresh token stops US using it, but the grant
+    # stays live on the user's Google Account — WarmPulse would keep showing
+    # up under "Third-party apps with account access" with gmail.modify
+    # still granted until the user revoked it by hand. gmail.modify is a
+    # RESTRICTED scope, so releasing it the moment the user disconnects is
+    # the behaviour Google's restricted-scope review expects.
+    #
+    # Best-effort by design: a revoke failure must never strand the user with
+    # a mailbox they cannot remove, so we log and continue with the delete.
+    if mbx.provider == MailboxProvider.gmail and mbx.oauth_token_encrypted:
+        # The helper already swallows its own failures, but the guarantee that
+        # a disconnect always completes should not depend on that staying
+        # true — belt and braces so a future refactor can't strand the user.
+        with contextlib.suppress(Exception):
+            await _revoke_google_grant(mbx.oauth_token_encrypted)
+
     # Wipe encrypted columns before the DELETE so transient WAL / rollback
     # scenarios can never resurrect the ciphertext.
     mbx.smtp_password_encrypted = b""
@@ -936,4 +1025,88 @@ async def test_connection(
         imap_ok=imap_ok,
         smtp_error=smtp_err,
         imap_error=imap_err,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# ON-DEMAND WARMUP TRIGGER                                                    #
+# --------------------------------------------------------------------------- #
+
+
+async def run_warmup_now(
+    session: AsyncSession, *, user: User, mailbox_id: uuid.UUID
+) -> RunWarmupNowResponse:
+    """Enqueue one warmup send (and, for Gmail, one engagement pass) now.
+
+    The beat schedule already drives warmup every 15 minutes; this is the
+    manual escape hatch so a user can watch the engine work immediately after
+    connecting a mailbox instead of waiting out the cycle.
+
+    Guards mirror ``tasks.warmup_send._schedule_impl`` so a manual trigger can
+    never exceed what the scheduler itself would have sent:
+
+    * mailbox must belong to the caller's workspace (404 otherwise)
+    * mailbox must be active and unpaused (409)
+    * the workspace must not be sabotaged (409)
+    * today's ramp quota must not already be spent (409)
+
+    The schedule *window* is deliberately NOT enforced — a manual trigger is
+    an explicit user action, so "outside your send window" shouldn't block it.
+    """
+    # Imported lazily: app.tasks imports app.services, so a module-level
+    # import here would close a circular import loop at startup.
+    from app.services.warmup.ramp import ramp_target
+    from app.services.warmup.sabotage import sabotaged_workspace_ids
+    from app.services.warmup.timing import today_count_utc
+    from app.tasks.client_engagement import engage_client_gmail_mailbox
+    from app.tasks.warmup_send import send_single_warmup_email
+
+    mbx = await get_mailbox_or_404(
+        session, workspace_id=user.workspace_id, mailbox_id=mailbox_id
+    )
+
+    if mbx.is_paused or mbx.warmup_status != WarmupStatus.active:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Warmup is not active for this mailbox — resume it first.",
+        )
+
+    if mbx.workspace_id in await sabotaged_workspace_ids(session):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Warmup is suspended for this workspace.",
+        )
+
+    sent_today = await today_count_utc(mbx.id, session)
+    quota_today = ramp_target(mbx.current_day, mbx.daily_target)
+    if sent_today >= quota_today:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Today's warmup quota is already used ({sent_today}/{quota_today}). "
+                "Sending more would break the ramp — try again tomorrow."
+            ),
+        )
+
+    send_single_warmup_email.delay(str(mbx.id))
+
+    # The engagement pass (spam-rescue / mark-read / star / label) runs
+    # through the Gmail API, so it only applies to OAuth-connected Gmail
+    # mailboxes. Everything else warms up send-only from this trigger.
+    engage_queued = (
+        mbx.provider == MailboxProvider.gmail and mbx.oauth_token_encrypted is not None
+    )
+    if engage_queued:
+        engage_client_gmail_mailbox.delay(str(mbx.id))
+
+    return RunWarmupNowResponse(
+        send_queued=True,
+        engage_queued=engage_queued,
+        sent_today=sent_today,
+        quota_today=quota_today,
+        note=(
+            "Warmup send queued. A peer inbox will receive it within a minute; "
+            "engagement (open / reply / star / spam-rescue) follows on the next "
+            "inbound cycle."
+        ),
     )

@@ -15,6 +15,7 @@ import type {
   MailboxListResponse,
   MailboxProvider,
   MailboxStatus,
+  RunWarmupNowResult,
   TestConnectionResult,
   UpdateMailboxPayload,
   WarmupThread,
@@ -401,6 +402,28 @@ export function useTestConnection(): UseMutationResult<TestConnectionResult, unk
         }
         throw err;
       }
+    },
+  });
+}
+
+/**
+ * Trigger one warmup send immediately instead of waiting for the 15-minute
+ * beat cycle. For OAuth-connected Gmail mailboxes the backend also queues an
+ * engagement pass (spam-rescue / read / star / label).
+ */
+export function useRunWarmupNow(): UseMutationResult<RunWarmupNowResult, unknown, string> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id) => {
+      const res: AxiosResponse<RunWarmupNowResult> = await api.post(
+        `/workspace/mailboxes/${id}/run-now`,
+      );
+      return res.data;
+    },
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: MAILBOXES_KEY });
+      qc.invalidateQueries({ queryKey: [...MAILBOXES_KEY, id] });
+      qc.invalidateQueries({ queryKey: ['warmup-activity'] });
     },
   });
 }

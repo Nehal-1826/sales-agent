@@ -710,6 +710,91 @@ export function useUpdateTemplate(): UseMutationResult<
   });
 }
 
+/**
+ * Upload (or replace) the brand logo embedded in a template's emails.
+ *
+ * Sent as multipart/form-data. The Content-Type header is deliberately NOT
+ * set — the browser must add it itself so it can append the multipart
+ * boundary; setting it by hand produces a body the server cannot parse.
+ */
+export function useUploadTemplateLogo(): UseMutationResult<
+  { has_logo: boolean; logo_url: string },
+  unknown,
+  { id: string; file: File }
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, file }) => {
+      const form = new FormData();
+      form.append('file', file);
+      const res: AxiosResponse<{ has_logo: boolean; logo_url: string }> =
+        await api.post(`/crm/templates/${id}/logo`, form);
+      return res.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: crmKeys.templates() });
+    },
+  });
+}
+
+export function useDeleteTemplateLogo(): UseMutationResult<void, unknown, string> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id) => {
+      await api.delete(`/crm/templates/${id}/logo`);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: crmKeys.templates() });
+    },
+  });
+}
+
+/**
+ * Download a ready-to-fill lead-import CSV.
+ *
+ * Fetched through the api client rather than a plain <a href> because the
+ * endpoint is authenticated — a bare link sends no bearer token and would 401.
+ * The blob URL is revoked immediately after the click to avoid leaking it.
+ */
+export async function downloadImportTemplate(source: 'csv' | 'linkedin'): Promise<void> {
+  const res = await api.get(`/crm/leads/import-template?source=${source}`, {
+    responseType: 'blob',
+  });
+  const url = URL.createObjectURL(res.data as Blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `warmpulse-leads-${source}-template.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+/** Create a template from an uploaded .eml export (subject + HTML body). */
+export function useCreateTemplateFromEml(): UseMutationResult<
+  CrmTemplate,
+  unknown,
+  File
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (file) => {
+      const form = new FormData();
+      form.append('file', file);
+      // Content-Type is intentionally unset so the browser adds the multipart
+      // boundary itself.
+      const res: AxiosResponse<CrmTemplate> = await api.post(
+        '/crm/templates/from-eml',
+        form,
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: crmKeys.templates() });
+    },
+  });
+}
+
 export function useDeleteTemplate(): UseMutationResult<void, unknown, string> {
   const qc = useQueryClient();
   return useMutation({

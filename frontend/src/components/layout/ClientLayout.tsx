@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { AlertTriangle, X } from 'lucide-react';
 import { AuthGuard } from './AuthGuard';
@@ -8,6 +8,48 @@ import { DnsGateScreen } from '@/components/DnsGateScreen';
 import { useDnsGate } from '@/lib/useDnsGate';
 import '@/pages/landing/hero-theme.css';
 import './admin-shell.css';
+
+/**
+ * True once the viewer has scrolled to (near) the bottom of the page.
+ *
+ * The legal footer is `position: fixed`, so it used to sit permanently on top
+ * of the app content. Revealing it only at the bottom of the scroll gives back
+ * that strip of screen while keeping Privacy/Terms one scroll away, which is
+ * where people look for them anyway.
+ *
+ * A page too short to scroll returns true: there is no "scroll down" gesture
+ * available, and with content that short the footer covers nothing.
+ */
+function useAtPageBottom(threshold = 48): boolean {
+  const [atBottom, setAtBottom] = useState(true);
+
+  useEffect(() => {
+    const compute = () => {
+      const doc = document.documentElement;
+      const scrollable = doc.scrollHeight - window.innerHeight;
+      if (scrollable <= threshold) {
+        setAtBottom(true);
+        return;
+      }
+      setAtBottom(window.scrollY >= scrollable - threshold);
+    };
+
+    compute();
+    window.addEventListener('scroll', compute, { passive: true });
+    window.addEventListener('resize', compute);
+    // Route changes and async content both change document height without
+    // firing scroll or resize, so watch the body box as well.
+    const observer = new ResizeObserver(compute);
+    observer.observe(document.body);
+    return () => {
+      window.removeEventListener('scroll', compute);
+      window.removeEventListener('resize', compute);
+      observer.disconnect();
+    };
+  }, [threshold]);
+
+  return atBottom;
+}
 
 /** Routes that remain reachable while the DNS gate is active. */
 const DNS_GATE_ALLOWLIST = ['/app/settings', '/app/mailboxes'];
@@ -74,6 +116,7 @@ function DnsGateBanner() {
 export function ClientLayout() {
   const { pathname } = useLocation();
   const { gateActive, mailbox, isLoading } = useDnsGate();
+  const showFooter = useAtPageBottom();
 
   const allowed = isAllowedDuringGate(pathname);
   // Don't block while the mailbox list is still loading — paints fast and
@@ -96,7 +139,14 @@ export function ClientLayout() {
             {blockRoute ? <DnsGateScreen mailbox={mailbox} /> : <Outlet />}
           </PageTransition>
         </main>
-        <footer className="fixed bottom-0 left-0 right-0 border-t border-white/[0.06] py-3 bg-bg/90 backdrop-blur-xl z-20">
+        <footer
+          aria-hidden={!showFooter}
+          className={`fixed bottom-0 left-0 right-0 border-t border-white/[0.06] py-3 bg-bg/90 backdrop-blur-xl z-20 transition-all duration-300 ${
+            showFooter
+              ? 'pointer-events-auto translate-y-0 opacity-100'
+              : 'pointer-events-none translate-y-full opacity-0'
+          }`}
+        >
           <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 text-xs text-text-dim">
             <span>© {new Date().getFullYear()} WarmPulse. All rights reserved.</span>
             <div className="flex items-center gap-4">

@@ -90,6 +90,14 @@ export interface TestConnectionResult {
   error?: string | null;
 }
 
+export interface RunWarmupNowResult {
+  send_queued: boolean;
+  engage_queued: boolean;
+  sent_today: number;
+  quota_today: number;
+  note?: string | null;
+}
+
 export interface WarmupThread {
   id: string;
   peer_email: string;

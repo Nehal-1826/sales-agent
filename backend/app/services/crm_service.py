@@ -631,6 +631,49 @@ def _strip_linkedin_preamble(csv_text: str) -> str:
     return csv_text
 
 
+# Column headers for the downloadable import templates.
+#
+# Deliberately the single source of truth: _lead_fields_from_row() below reads
+# exactly these keys, so a template handed to a user can never drift from what
+# the parser actually accepts. Change a column here and the sample file, the
+# parser and the docs all move together.
+IMPORT_TEMPLATE_COLUMNS: dict[str, list[str]] = {
+    "csv": ["name", "email", "company", "title", "phone", "value"],
+    # LinkedIn's own connections export header, matched case-insensitively.
+    "linkedin": [
+        "First Name", "Last Name", "Email Address",
+        "Company", "Position", "Connected On", "URL",
+    ],
+}
+
+IMPORT_TEMPLATE_SAMPLE_ROWS: dict[str, list[list[str]]] = {
+    "csv": [
+        ["Ada Lovelace", "ada@example.com", "Analytical Engines", "Engineer", "+91 90000 00000", "25000"],
+        ["Alan Turing", "alan@example.com", "Bletchley Ltd", "Researcher", "", "10000"],
+    ],
+    "linkedin": [
+        ["Ada", "Lovelace", "ada@example.com", "Analytical Engines", "Engineer", "01 Jan 2026", "https://www.linkedin.com/in/example"],
+    ],
+}
+
+
+def build_import_template(source: str) -> str:
+    """Return a ready-to-fill CSV for ``source`` ("csv" or "linkedin").
+
+    Generated from IMPORT_TEMPLATE_COLUMNS so the file a user downloads always
+    matches the columns import_leads_csv() reads.
+    """
+    key = (source or "csv").strip().lower()
+    if key not in IMPORT_TEMPLATE_COLUMNS:
+        key = "csv"
+    buf = io.StringIO()
+    writer = csv_module.writer(buf)
+    writer.writerow(IMPORT_TEMPLATE_COLUMNS[key])
+    for row in IMPORT_TEMPLATE_SAMPLE_ROWS[key]:
+        writer.writerow(row)
+    return buf.getvalue()
+
+
 def _lead_fields_from_row(norm: dict[str, str], *, linkedin: bool) -> dict[str, Any]:
     """Map a normalised CSV row to CrmLead kwargs for the given source.
 

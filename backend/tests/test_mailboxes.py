@@ -45,9 +45,11 @@ async def _setup_db() -> tuple[async_sessionmaker[AsyncSession], object]:
     from app.db import models  # noqa: F401 — register models on Base.metadata
     from app.db.base import Base
     from app.db.models.audit_logs import AuditLog
+    from app.db.models.client_pool_assignments import ClientPoolAssignment
     from app.db.models.mailboxes import Mailbox
     from app.db.models.notifications import Notification
     from app.db.models.payments import Payment
+    from app.db.models.peer_pools import PeerPool
     from app.db.models.plans import Plan
     from app.db.models.users import User
     from app.db.models.warmup_logs import WarmupLog
@@ -63,9 +65,22 @@ async def _setup_db() -> tuple[async_sessionmaker[AsyncSession], object]:
     # Notification is included because mailbox_service.delete_mailbox now
     # writes a "mailbox_disconnected" inbox row. WarmupLog is included because
     # the list route counts each mailbox's outbound sends for today.
+    # PeerPool + ClientPoolAssignment are included because creating a mailbox
+    # now auto-routes the workspace to a peer pool (falling back to the default
+    # pool when the user has no plan).
     tables = [
         t.__table__
-        for t in (User, Plan, Mailbox, AuditLog, Payment, Notification, WarmupLog)
+        for t in (
+            User,
+            Plan,
+            Mailbox,
+            AuditLog,
+            Payment,
+            Notification,
+            WarmupLog,
+            PeerPool,
+            ClientPoolAssignment,
+        )
     ]
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all, tables=tables)
@@ -830,3 +845,372 @@ async def test_create_with_gmail_spaced_app_password_is_normalized(
         decrypted = fernet.decrypt(mbx.smtp_password_encrypted).decode("utf-8")
         # Spaces removed; 16 chars.
         assert decrypted == "abcdefghijklmnop"
+
+
+# --------------------------------------------------------------------------- #
+# RUN WARMUP NOW                                                              #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_run_now_queues_send_and_engagement_for_gmail(
+    app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+) -> None:
+    """Gmail OAuth mailbox → both the send task and the engagement pass fire."""
+    app, maker, _ = app_and_maker
+    plan_id = await _seed_plan(maker, max_mailboxes=3)
+    user = await _make_user(maker, email="runnow@example.com", plan_id=plan_id)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        created = await c.post(
+            "/api/workspace/mailboxes",
+            json=_gmail_body(email="runnow-mbx@example.com"),
+            headers=_auth_header_for(user),
+        )
+        assert created.status_code == 201, created.text
+        mailbox_id = created.json()["id"]
+
+        from app.tasks import client_engagement, warmup_send
+
+        with patch.object(warmup_send.send_single_warmup_email, "delay") as send_delay, \
+             patch.object(client_engagement.engage_client_gmail_mailbox, "delay") as engage_delay:
+            resp = await c.post(
+                f"/api/workspace/mailboxes/{mailbox_id}/run-now",
+                headers=_auth_header_for(user),
+            )
+
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    assert payload["send_queued"] is True
+    assert payload["engage_queued"] is True
+    # Day 1 of the ladder owes 5 sends and nothing has gone out yet.
+    assert payload["sent_today"] == 0
+    assert payload["quota_today"] == 5
+    send_delay.assert_called_once_with(mailbox_id)
+    engage_delay.assert_called_once_with(mailbox_id)
+
+
+@pytest.mark.asyncio
+async def test_run_now_smtp_mailbox_skips_engagement(
+    app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+) -> None:
+    """Non-Gmail mailboxes have no Gmail API pass — send only."""
+    app, maker, _ = app_and_maker
+    plan_id = await _seed_plan(maker, max_mailboxes=3)
+    user = await _make_user(maker, email="runnow2@example.com", plan_id=plan_id)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        created = await c.post(
+            "/api/workspace/mailboxes",
+            json=_smtp_body(email="runnow2-mbx@example.com"),
+            headers=_auth_header_for(user),
+        )
+        assert created.status_code == 201, created.text
+        mailbox_id = created.json()["id"]
+
+        from app.tasks import client_engagement, warmup_send
+
+        with patch.object(warmup_send.send_single_warmup_email, "delay") as send_delay, \
+             patch.object(client_engagement.engage_client_gmail_mailbox, "delay") as engage_delay:
+            resp = await c.post(
+                f"/api/workspace/mailboxes/{mailbox_id}/run-now",
+                headers=_auth_header_for(user),
+            )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["engage_queued"] is False
+    send_delay.assert_called_once_with(mailbox_id)
+    engage_delay.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_run_now_blocked_when_daily_quota_spent(
+    app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+) -> None:
+    """A manual trigger can never push the mailbox past today's ramp target."""
+    from app.db.models.warmup_logs import WarmupAction, WarmupDirection, WarmupLog
+
+    app, maker, _ = app_and_maker
+    plan_id = await _seed_plan(maker, max_mailboxes=3)
+    user = await _make_user(maker, email="runnow3@example.com", plan_id=plan_id)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        created = await c.post(
+            "/api/workspace/mailboxes",
+            json=_smtp_body(email="runnow3-mbx@example.com"),
+            headers=_auth_header_for(user),
+        )
+        mailbox_id = created.json()["id"]
+
+        # Day 1 quota is 5 — burn all of it.
+        async with maker() as session:
+            for _ in range(5):
+                session.add(
+                    WarmupLog(
+                        mailbox_id=uuid.UUID(mailbox_id),
+                        # peer_inboxes isn't registered in this fixture's table
+                        # list; SQLite doesn't enforce the FK, and the quota
+                        # count only reads mailbox_id / direction / action.
+                        peer_inbox_id=uuid.uuid4(),
+                        direction=WarmupDirection.outbound,
+                        action=WarmupAction.sent,
+                    )
+                )
+            await session.commit()
+
+        from app.tasks import warmup_send
+
+        with patch.object(warmup_send.send_single_warmup_email, "delay") as send_delay:
+            resp = await c.post(
+                f"/api/workspace/mailboxes/{mailbox_id}/run-now",
+                headers=_auth_header_for(user),
+            )
+
+    assert resp.status_code == 409, resp.text
+    assert "quota" in resp.json()["detail"].lower()
+    send_delay.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_run_now_rejects_cross_workspace_mailbox(
+    app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+) -> None:
+    """Workspace isolation: another tenant's mailbox is a 404, not a 403."""
+    app, maker, _ = app_and_maker
+    plan_id = await _seed_plan(maker, max_mailboxes=3)
+    owner = await _make_user(maker, email="owner@example.com", plan_id=plan_id)
+    intruder = await _make_user(maker, email="intruder@example.com", plan_id=plan_id)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        created = await c.post(
+            "/api/workspace/mailboxes",
+            json=_smtp_body(email="owned-mbx@example.com"),
+            headers=_auth_header_for(owner),
+        )
+        mailbox_id = created.json()["id"]
+
+        from app.tasks import warmup_send
+
+        with patch.object(warmup_send.send_single_warmup_email, "delay") as send_delay:
+            resp = await c.post(
+                f"/api/workspace/mailboxes/{mailbox_id}/run-now",
+                headers=_auth_header_for(intruder),
+            )
+
+    assert resp.status_code == 404, resp.text
+    send_delay.assert_not_called()
+
+
+# --------------------------------------------------------------------------- #
+# OAUTH GRANT REVOCATION ON DISCONNECT                                        #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_delete_gmail_mailbox_revokes_google_grant(
+    app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+) -> None:
+    """Disconnecting a Gmail mailbox hands the OAuth grant back to Google.
+
+    gmail.modify is a RESTRICTED scope — dropping our copy of the token is not
+    enough, the grant itself has to be released or the user's Google Account
+    keeps listing WarmPulse.
+    """
+    from app.db.models.mailboxes import Mailbox
+    from app.services import mailbox_service
+
+    app, maker, _ = app_and_maker
+    plan_id = await _seed_plan(maker, max_mailboxes=3)
+    user = await _make_user(maker, email="revoke@example.com", plan_id=plan_id)
+
+    refresh_token = "1//0g-refresh-token-xxxxx"
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        created = await c.post(
+            "/api/workspace/mailboxes",
+            json=_gmail_body(email="revoke-mbx@example.com"),
+            headers=_auth_header_for(user),
+        )
+        assert created.status_code == 201, created.text
+        mailbox_id = created.json()["id"]
+
+        revoke = AsyncMock(return_value=True)
+        with patch.object(mailbox_service, "_revoke_google_grant", revoke):
+            resp = await c.delete(
+                f"/api/workspace/mailboxes/{mailbox_id}",
+                headers=_auth_header_for(user),
+            )
+
+    assert resp.status_code in (200, 204), resp.text
+    revoke.assert_awaited_once()
+    # It must be handed the still-encrypted token, never plaintext.
+    (passed_token,) = revoke.await_args.args
+    assert isinstance(passed_token, bytes)
+    assert passed_token != refresh_token.encode("utf-8")
+
+    async with maker() as session:
+        assert (await session.execute(select(Mailbox))).scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_delete_mailbox_succeeds_when_revoke_fails(
+    app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+) -> None:
+    """A revoke outage must never strand the user with an undeletable mailbox."""
+    from app.db.models.mailboxes import Mailbox
+    from app.services import mailbox_service
+
+    app, maker, _ = app_and_maker
+    plan_id = await _seed_plan(maker, max_mailboxes=3)
+    user = await _make_user(maker, email="revoke2@example.com", plan_id=plan_id)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        created = await c.post(
+            "/api/workspace/mailboxes",
+            json=_gmail_body(email="revoke2-mbx@example.com"),
+            headers=_auth_header_for(user),
+        )
+        mailbox_id = created.json()["id"]
+
+        boom = AsyncMock(side_effect=RuntimeError("google unreachable"))
+        with patch.object(mailbox_service, "_revoke_google_grant", boom):
+            resp = await c.delete(
+                f"/api/workspace/mailboxes/{mailbox_id}",
+                headers=_auth_header_for(user),
+            )
+
+    # Even when revocation blows up, the disconnect must complete — the user
+    # must never be stuck with a mailbox they cannot remove.
+    assert resp.status_code in (200, 204), resp.text
+    async with maker() as session:
+        assert (await session.execute(select(Mailbox))).scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_revoke_helper_posts_token_and_swallows_errors() -> None:
+    """The helper itself: posts to Google's revoke endpoint, never raises."""
+    from app.services import mailbox_service
+    from app.services.crypto import get_fernet_service
+
+    encrypted = get_fernet_service().encrypt(b"1//0g-refresh-token-xxxxx")
+
+    class _Resp:
+        status_code = 200
+
+    class _Client:
+        def __init__(self, *a, **kw) -> None:
+            self.posted: dict = {}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a) -> bool:
+            return False
+
+        async def post(self, url, data=None, headers=None):
+            _Client.last_url = url
+            _Client.last_data = data
+            return _Resp()
+
+    import httpx
+
+    with patch.object(httpx, "AsyncClient", _Client):
+        assert await mailbox_service._revoke_google_grant(encrypted) is True
+    assert _Client.last_url == "https://oauth2.googleapis.com/revoke"
+    assert _Client.last_data == {"token": "1//0g-refresh-token-xxxxx"}
+
+    # Network failure → False, never an exception.
+    class _Boom(_Client):
+        async def post(self, url, data=None, headers=None):
+            raise RuntimeError("dns")
+
+    with patch.object(httpx, "AsyncClient", _Boom):
+        assert await mailbox_service._revoke_google_grant(encrypted) is False
+
+    # Undecryptable blob → False, never an exception.
+    assert await mailbox_service._revoke_google_grant(b"not-a-fernet-token") is False
+
+
+# --------------------------------------------------------------------------- #
+# AUTO-ALLOCATION + IMMEDIATE WARMUP START                                    #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_creating_a_mailbox_starts_warmup_immediately(
+    app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+) -> None:
+    """A new mailbox must not sit idle waiting for the 15-minute beat cycle."""
+    app, maker, _ = app_and_maker
+    plan_id = await _seed_plan(maker, max_mailboxes=3)
+    user = await _make_user(maker, email="kick@example.com", plan_id=plan_id)
+
+    from app.tasks import warmup_send
+
+    transport = ASGITransport(app=app)
+    with patch.object(warmup_send.send_single_warmup_email, "delay") as send_delay:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+            created = await c.post(
+                "/api/workspace/mailboxes",
+                json=_smtp_body(email="kick-mbx@example.com"),
+                headers=_auth_header_for(user),
+            )
+
+    assert created.status_code == 201, created.text
+    mailbox_id = created.json()["id"]
+    send_delay.assert_called_once_with(mailbox_id)
+    # And it starts on day 1 of the ladder, already active.
+    assert created.json()["warmup_status"] == "active"
+    assert created.json()["current_day"] == 1
+
+
+@pytest.mark.asyncio
+async def test_workspace_without_a_plan_still_gets_a_pool(
+    app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+) -> None:
+    """Peer allocation must be automatic even with no plan.
+
+    auto_route_workspace_by_plan used to return early when the user had no
+    plan, leaving the workspace with no ClientPoolAssignment at all. Pairing
+    limped along via its own default-pool fallback, but the workspace showed
+    no routing anywhere. Now it falls back to the default pool explicitly.
+    """
+    from app.db.models.client_pool_assignments import ClientPoolAssignment
+    from app.db.models.peer_pools import PeerPool
+
+    app, maker, _ = app_and_maker
+
+    # A default pool must exist for the fallback to land on.
+    async with maker() as session:
+        session.add(PeerPool(name="default", is_default=True, daily_send_limit=100))
+        await session.commit()
+
+    # No plan_id at all.
+    user = await _make_user(maker, email="noplan@example.com", plan_id=None)
+
+    from app.tasks import warmup_send
+
+    transport = ASGITransport(app=app)
+    with patch.object(warmup_send.send_single_warmup_email, "delay"):
+        async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+            created = await c.post(
+                "/api/workspace/mailboxes",
+                json=_smtp_body(email="noplan-mbx@example.com"),
+                headers=_auth_header_for(user),
+            )
+    assert created.status_code == 201, created.text
+
+    async with maker() as session:
+        assignment = (
+            await session.execute(
+                select(ClientPoolAssignment).where(
+                    ClientPoolAssignment.workspace_id == user.workspace_id
+                )
+            )
+        ).scalar_one_or_none()
+    assert assignment is not None, "workspace was left with no peer pool assignment"

@@ -32,6 +32,7 @@ from app.db.models.users import User
 from app.db.models.warmup_logs import WarmupAction, WarmupDirection, WarmupLog
 from app.db.session import SessionLocal
 from app.services.crypto import get_fernet_service
+from app.services import notification_inbox_service
 from app.services.warmup.content_factory import get_content_generator
 from app.services.warmup.pairing import pick_peer_inbox
 from app.services.warmup.ramp import ramp_target
@@ -172,6 +173,37 @@ async def _send_impl(mailbox_id: str) -> dict:
         peer.used_today = (peer.used_today or 0) + 1
         peer.last_used_at = datetime.now(UTC)
         await db.commit()
+
+        # Send notification for first warmup email of the day (once per mailbox per day)
+        try:
+            import redis
+
+            # Do NOT import get_settings here. It is already imported at module
+            # scope, and a function-local import rebinds the name for the
+            # ENTIRE function — which made the get_settings() call ~60 lines
+            # above raise UnboundLocalError and killed every warmup send for a
+            # month. The except below never caught it: the failure happened
+            # long before this block was reached.
+            today = datetime.now(UTC).date().isoformat()
+            dedupe_key = f"{get_settings().redis_key_prefix}warmup:first_email:{mailbox.id}:{today}"
+
+            client = redis.Redis.from_url(get_settings().redis_url, decode_responses=False)
+            already_notified = client.get(dedupe_key)
+            if not already_notified:
+                if owner:
+                    await notification_inbox_service.notify_user(
+                        db,
+                        user_id=owner.id,
+                        kind="warmup_started",
+                        title="Warmup is running",
+                        body=f"Your first warmup email for today has been sent from {mailbox.email_address}. Keep your mailbox active to build sender reputation.",
+                        payload={"mailbox_id": str(mailbox.id)},
+                        commit=False,
+                    )
+                client.setex(dedupe_key, 24 * 3600, "1")
+        except Exception:
+            logger.warning("Failed to send warmup notification", exc_info=True)
+
         return {"status": "sent", "message_id": warmup_id}
 
 

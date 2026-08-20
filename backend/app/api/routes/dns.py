@@ -30,7 +30,7 @@ from app.schemas.dns import (
     DnsSummary,
     SpfResult,
 )
-from app.services import dns_validator
+from app.services import dns_validator, notification_inbox_service
 from app.services.dns_validator import (
     DKIM_FIX,
     DMARC_FIX,
@@ -134,5 +134,21 @@ async def mailbox_dns_check(
     mailbox.dkim_valid = result.dkim.valid
     mailbox.dmarc_valid = result.dmarc.valid
     await session.commit()
+
+    # Notify user if DNS is properly configured
+    all_valid = result.spf.valid and result.dkim.valid and result.dmarc.valid
+    if all_valid:
+        try:
+            await notification_inbox_service.notify_user(
+                session,
+                user_id=user.id,
+                kind="mailbox_verified",
+                title="Mailbox verified",
+                body=f"Great news! SPF, DKIM, and DMARC are all properly configured for {mailbox.email_address}.",
+                payload={"mailbox_id": str(mailbox.id)},
+                commit=False,
+            )
+        except Exception:
+            logger.warning("Failed to send mailbox_verified notification", exc_info=True)
 
     return _to_response(result)

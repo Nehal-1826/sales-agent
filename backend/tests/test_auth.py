@@ -542,3 +542,63 @@ async def test_2fa_disable_requires_code(async_client: AsyncClient) -> None:
     assert ok.status_code == 204
     me = await async_client.get("/api/auth/me", headers=auth_hdr)
     assert me.json()["totp_enabled"] is False
+
+
+# ---------- email verification idempotency ----------
+
+
+@pytest.mark.asyncio
+async def test_verify_email_is_idempotent(
+    async_client: AsyncClient, app_and_client
+) -> None:
+    """Following the verification link twice must succeed both times.
+
+    The link is hit more than once routinely: the client effect can fire
+    twice, users double-click, and corporate mail scanners (Outlook Safe
+    Links, antivirus gateways) prefetch links in email before the human ever
+    clicks. The handler used to clear the token on the first hit, so every
+    later request 400'd with "Invalid or expired verification link" — leaving
+    the account verified in the database while the user was told it failed.
+    """
+    from sqlalchemy import select
+
+    from app.db.models.users import User
+
+    _, ac, maker = app_and_client
+
+    email = "idempotent@example.com"
+    signup = await ac.post(
+        "/api/auth/signup",
+        json={"email": email, "password": "Sup3rSecret!pass"},
+    )
+    assert signup.status_code in (200, 201), signup.text
+
+    async with maker() as session:
+        user = (
+            await session.execute(select(User).where(User.email == email))
+        ).scalar_one()
+        token = user.email_verification_token
+    assert token
+
+    first = await ac.get(f"/api/auth/verify-email?token={token}")
+    assert first.status_code == 200, first.text
+
+    # The prefetch / double-fire case: same token, immediately again.
+    second = await ac.get(f"/api/auth/verify-email?token={token}")
+    assert second.status_code == 200, (
+        "second verification must not error — this is what showed users "
+        f"'not verified' after a successful verify: {second.text}"
+    )
+
+    async with maker() as session:
+        user = (
+            await session.execute(select(User).where(User.email == email))
+        ).scalar_one()
+        assert user.email_verified is True
+
+
+@pytest.mark.asyncio
+async def test_verify_email_rejects_unknown_token(async_client: AsyncClient) -> None:
+    """A genuinely bogus token must still be refused."""
+    resp = await async_client.get("/api/auth/verify-email?token=not-a-real-token")
+    assert resp.status_code == 400

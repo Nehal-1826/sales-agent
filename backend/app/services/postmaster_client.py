@@ -7,8 +7,23 @@ Thin async httpx wrapper around the three endpoints we need:
 * ``trafficStats`` fetch for a domain + date
 
 The OAuth flow uses the same Google client credentials registered for the
-mailbox-connect flow. The scope (``postmaster.readonly``) is non-sensitive
-so no review is needed.
+mailbox-connect flow.
+
+Scope: we request exactly ``postmaster.traffic.readonly`` — "get email
+traffic metrics for the domains you have registered with Postmaster Tools",
+which is precisely the one call this module makes
+(``/v1/domains/{domain}/trafficStats/{date}``). We deliberately do NOT
+request the broader ``postmaster`` or ``postmaster.domain`` scopes, which
+would also allow managing domains and domain users.
+
+This previously requested ``postmaster.readonly``, which is not a scope
+Google publishes — the documented Postmaster Tools scopes are ``postmaster``,
+``postmaster.domain`` and ``postmaster.traffic.readonly``.
+
+NOTE: the redirect URI below must be registered on the OAuth client under
+Cloud Console → Clients → Authorised redirect URIs. If it isn't, Google
+rejects the consent request with ``Error 400: redirect_uri_mismatch``
+before the user ever sees a consent screen.
 
 Secrets handling: never logs access_token or refresh_token verbatim. Where
 they appear in dict payloads we redact via :func:`_redact` before logging.
@@ -26,7 +41,7 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-POSTMASTER_SCOPE = "https://www.googleapis.com/auth/postmaster.readonly"
+POSTMASTER_SCOPE = "https://www.googleapis.com/auth/postmaster.traffic.readonly"
 GOOGLE_OAUTH_AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token"
 POSTMASTER_API_BASE = "https://gmailpostmastertools.googleapis.com/v1"

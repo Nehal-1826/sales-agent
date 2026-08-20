@@ -21,6 +21,14 @@ from pydantic import BaseModel, ConfigDict, Field
 # --------------------------------------------------------------------------- #
 
 
+# Upper bound for CRM email bodies (templates and sequence steps alike).
+#
+# Was 4000, which rejected any real HTML email — a modest branded template is
+# 8-10KB and the "Upload .html" button could not be used at all. Gmail clips
+# messages past roughly 102KB, so anything beyond this is wasted bytes.
+MAX_BODY_CHARS = 100_000
+
+
 class CrmCampaignStatusEnum(str, enum.Enum):
     active = "active"
     paused = "paused"
@@ -303,7 +311,7 @@ class SequenceStepOut(BaseModel):
 class SequenceStepCreate(BaseModel):
     delay_days: int = Field(default=0, ge=0)
     subject: str = Field(min_length=1, max_length=300)
-    body: str = Field(min_length=1, max_length=4000)
+    body: str = Field(min_length=1, max_length=MAX_BODY_CHARS)
     content_mode: CrmStepContentModeEnum = CrmStepContentModeEnum.text
     ai_prompt: str | None = Field(default=None, max_length=2000)
     # Omit to append at the end (max(step_order)+1).
@@ -315,7 +323,7 @@ class SequenceStepUpdate(BaseModel):
 
     delay_days: int | None = Field(default=None, ge=0)
     subject: str | None = Field(default=None, min_length=1, max_length=300)
-    body: str | None = Field(default=None, min_length=1, max_length=4000)
+    body: str | None = Field(default=None, min_length=1, max_length=MAX_BODY_CHARS)
     content_mode: CrmStepContentModeEnum | None = None
     ai_prompt: str | None = Field(default=None, max_length=2000)
     step_order: int | None = Field(default=None, ge=0)
@@ -379,12 +387,14 @@ class CrmTemplateOut(BaseModel):
     category: str | None = None
     is_builtin: bool
     created_at: datetime | None = None
+    has_logo: bool = False
+    logo_url: str | None = None
 
 
 class CrmTemplateCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     subject: str = Field(min_length=1, max_length=300)
-    body: str = Field(min_length=1, max_length=4000)
+    body: str = Field(min_length=1, max_length=MAX_BODY_CHARS)
     category: str | None = Field(default=None, max_length=64)
 
 
@@ -393,5 +403,5 @@ class CrmTemplateUpdate(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=200)
     subject: str | None = Field(default=None, min_length=1, max_length=300)
-    body: str | None = Field(default=None, min_length=1, max_length=4000)
+    body: str | None = Field(default=None, min_length=1, max_length=MAX_BODY_CHARS)
     category: str | None = Field(default=None, max_length=64)

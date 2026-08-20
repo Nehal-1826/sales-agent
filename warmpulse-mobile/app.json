@@ -2,7 +2,7 @@
   "expo": {
     "name": "WarmPulse",
     "slug": "warmpulse-mobile",
-    "version": "1.0.14",
+    "version": "1.0.15",
     "scheme": "warmpulse",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "com.warmpulse.app",
-      "versionCode": 15,
+      "versionCode": 16,
       "adaptiveIcon": {
         "backgroundColor": "#000000",
         "foregroundImage": "./assets/android-icon-foreground.png",

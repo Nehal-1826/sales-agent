@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { FileUp, Linkedin, Loader2, Table2, Upload } from 'lucide-react';
+import { FileUp, Linkedin, Loader2, Table2, Upload, Download } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { FormField } from '@/components/ui/FormField';
 import {
@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/AppDialog';
 import { toast } from '@/components/ui/AppToast';
 import { cn } from '@/lib/cn';
-import { useImportLeads, extractCrmError } from '../api';
+import { downloadImportTemplate, useImportLeads, extractCrmError } from '../api';
 
 type ImportSource = 'csv' | 'linkedin';
 
@@ -128,6 +128,18 @@ export function CsvImportDialog({ campaignId, open, onOpenChange }: CsvImportDia
               {meta.header}
             </code>
             <p className="mt-1.5 text-text-faint">{meta.hint}</p>
+            <button
+              type="button"
+              onClick={() => {
+                void downloadImportTemplate(source).catch(() =>
+                  toast.error('Could not download the template'),
+                );
+              }}
+              className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-border-muted bg-surface px-2.5 py-1 text-[11px] font-medium text-text hover:bg-surface-2"
+            >
+              <Download className="h-3 w-3" />
+              Download {source === 'linkedin' ? 'LinkedIn' : 'CSV'} template
+            </button>
           </div>
 
           {/* File input */}

@@ -18,7 +18,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String
+from sqlalchemy import LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, created_at_col, updated_at_col, uuid_pk
@@ -31,7 +31,19 @@ class CrmEmailTemplate(Base):
     workspace_id: Mapped[uuid.UUID] = mapped_column(nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     subject: Mapped[str] = mapped_column(String(300), nullable=False)
-    body: Mapped[str] = mapped_column(String(4000), nullable=False)
+    # Real HTML email templates run tens of KB — the old String(4000) cap made
+    # the "Upload .html" button unusable for anything but plain text.
+    body: Mapped[str] = mapped_column(Text, nullable=False)
     category: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    # Brand logo embedded in the rendered email via the {{logo}} variable.
+    # Stored as raw bytes (a logo is not a secret, so no Fernet) and capped by
+    # the upload route. Served by a PUBLIC, unauthenticated endpoint keyed on
+    # the template id: a recipient's mail client fetches the image with no
+    # session, and Gmail strips base64 data: URIs, so an inline encode would
+    # simply not render.
+    logo_image: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    logo_mime: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
     created_at: Mapped[datetime] = created_at_col()
     updated_at: Mapped[datetime] = updated_at_col()

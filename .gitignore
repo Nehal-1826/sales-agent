@@ -78,3 +78,8 @@ scripts/deploy-on-commit.sh
 
 # Mobile app build artifact (hosted, not versioned)
 frontend/downloads/*.apk
+
+# Local QA scratch — may contain live tokens, never commit
+scratch_creds.env
+scratchpad_email.txt
+scratchpad_qa/

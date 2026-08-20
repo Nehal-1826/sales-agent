@@ -83,6 +83,16 @@ async def verify_email(
     if user is None:
         raise HTTPException(status_code=400, detail="Invalid or expired verification link.")
 
+    # Idempotent: verifying an already-verified account is a success, not an
+    # error. This endpoint gets hit more than once routinely — the client
+    # effect can fire twice, users double-click the link, and corporate mail
+    # scanners (Outlook Safe Links, antivirus gateways) PREFETCH links in
+    # email before the human ever clicks. Previously the first hit consumed
+    # the token and every later hit 400'd, so the account was verified in the
+    # database while the user was told the link was invalid.
+    if user.email_verified:
+        return {"message": "Email already verified. You can log in."}
+
     # Tokens expire after 24h. SQLite hands back naive datetimes even for
     # timezone=True columns, so normalise before subtracting.
     if user.email_verification_sent_at:
@@ -94,7 +104,13 @@ async def verify_email(
             raise HTTPException(status_code=400, detail="Verification link has expired. Request a new one.")
 
     user.email_verified = True
-    user.email_verification_token = None
+    # Deliberately keep email_verification_token. Clearing it here made the
+    # endpoint single-use: a second request could no longer find the user and
+    # returned "Invalid or expired verification link" for an account that had
+    # just been verified successfully. Retaining it lets the already_verified
+    # branch above answer repeat hits with a success. The token grants nothing
+    # once email_verified is true — it only reaches that branch — and it is
+    # replaced whenever a fresh verification email is issued.
     await session.commit()
     return {"message": "Email verified. You can now log in."}
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { MailCheck, XCircle, Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -12,6 +12,19 @@ export default function VerifyEmailPage() {
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [message, setMessage] = useState('');
 
+  // Submit each token exactly once.
+  //
+  // `useSearchParams` does not return a referentially stable object, so having
+  // `params` in the dependency list re-ran this effect and fired a SECOND
+  // request for the same token. The backend used to consume the token on the
+  // first hit, so the second returned 400 and setStatus('error') overwrote the
+  // success that had already happened — the account was verified while the
+  // user was shown "Invalid or expired verification link".
+  //
+  // The backend is now idempotent too; this guard is the other half, and it
+  // also covers React StrictMode's deliberate double-invocation in dev.
+  const submittedToken = useRef<string | null>(null);
+
   useEffect(() => {
     if (!token) {
       // Landed here without a token — maybe navigated back after verifying
@@ -23,6 +36,9 @@ export default function VerifyEmailPage() {
       setMessage('No verification token found in the link.');
       return;
     }
+    if (submittedToken.current === token) return;
+    submittedToken.current = token;
+
     api
       .get(`/auth/verify-email?token=${encodeURIComponent(token)}`)
       .then(() => {

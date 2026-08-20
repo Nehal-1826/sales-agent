@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Index, Integer, String
+from sqlalchemy import ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, created_at_col, updated_at_col, uuid_pk
@@ -29,7 +29,9 @@ class CrmSequenceStep(Base):
     step_order: Mapped[int] = mapped_column(Integer, nullable=False)
     delay_days: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     subject: Mapped[str] = mapped_column(String(300), nullable=False)
-    body: Mapped[str] = mapped_column(String(4000), nullable=False)
+    # Raised alongside crm_email_templates.body: picking a template COPIES its
+    # body into the step, so a step must be able to hold any template.
+    body: Mapped[str] = mapped_column(Text, nullable=False)
     # How the body is sent: "text" (plain, escaped + wrapped), "html" (a
     # designer template's HTML, sent as-is + personalized), or "ai" (Gemini
     # writes a fresh email per lead from ``ai_prompt``; subject/body are the

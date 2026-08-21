@@ -247,6 +247,24 @@ async def update_pool(
         new_default = bool(data["is_default"])
         if new_default and not pool.is_default:
             await _demote_existing_default(session, keep_id=pool.id)
+        if not new_default and pool.is_default:
+            # Demoting the last remaining default would leave pairing with
+            # no fallback pool — every unassigned workspace would hit
+            # no_peer_available. Require promoting another pool first.
+            defaults_count = int(
+                (
+                    await session.execute(
+                        select(func.count(PeerPool.id)).where(
+                            PeerPool.is_default.is_(True)
+                        )
+                    )
+                ).scalar_one()
+            )
+            if defaults_count <= 1:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Cannot demote the only default pool — promote another pool first",
+                )
         pool.is_default = new_default
         changes["is_default"] = new_default
     try:
@@ -605,6 +623,41 @@ async def upsert_assignment(
     return target
 
 
+async def ensure_default_assignment(
+    session: AsyncSession,
+    *,
+    workspace_id: uuid.UUID,
+    actor: User,
+) -> ClientPoolAssignment | None:
+    """Idempotently route ``workspace_id`` to the default peer pool.
+
+    Best-effort helper (used at signup and as the auto-route fallback): if the
+    workspace already has a ``ClientPoolAssignment`` we return it unchanged
+    (manual/admin routing wins); otherwise we resolve the default pool and
+    upsert the assignment (which activates pending mailboxes). Returns None
+    when no default pool exists.
+    """
+    existing = (
+        await session.execute(
+            select(ClientPoolAssignment).where(
+                ClientPoolAssignment.workspace_id == workspace_id
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        return existing
+    default = (
+        await session.execute(
+            select(PeerPool).where(PeerPool.is_default.is_(True)).limit(1)
+        )
+    ).scalar_one_or_none()
+    if default is None:
+        return None
+    return await upsert_assignment(
+        session, actor=actor, workspace_id=workspace_id, pool_id=default.id
+    )
+
+
 async def auto_route_workspace_by_plan(
     session: AsyncSession,
     *,
@@ -617,10 +670,13 @@ async def auto_route_workspace_by_plan(
     Called when a client creates their first mailbox so warmup can begin
     immediately instead of waiting for an admin assignment. Respects existing
     routing: if the workspace already has a ``ClientPoolAssignment`` we return
-    ``None`` and change nothing (manual/admin assignment wins). If no pool's
-    name case-insensitively matches ``plan_name`` we also return ``None``.
-    Otherwise we upsert the assignment (which activates pending mailboxes) and
-    return the matched pool id.
+    ``None`` and change nothing (manual/admin assignment wins); ditto for a
+    falsy ``plan_name``. Plan-named pools only exist when
+    ``scripts/seed_plan_pools.py`` has run — when no pool's name
+    case-insensitively matches ``plan_name`` we fall back to the default pool
+    (via :func:`ensure_default_assignment`) so the workspace never sits
+    "unassigned" on the admin Pool Routing page. Returns the assigned pool id,
+    or None if no default pool exists either.
     """
     if not plan_name or not plan_name.strip():
         return None
@@ -642,7 +698,17 @@ async def auto_route_workspace_by_plan(
         )
     ).scalar_one_or_none()
     if pool is None:
-        return None
+        # No plan-named pool — default the workspace instead of leaving it
+        # unassigned until an admin routes it by hand.
+        logger.info(
+            "no plan-named pool for plan=%s, defaulting workspace=%s to the default pool",
+            plan_name,
+            workspace_id,
+        )
+        assignment = await ensure_default_assignment(
+            session, workspace_id=workspace_id, actor=actor
+        )
+        return assignment.pool_id if assignment is not None else None
 
     await upsert_assignment(
         session, actor=actor, workspace_id=workspace_id, pool_id=pool.id

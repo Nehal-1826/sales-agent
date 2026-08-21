@@ -184,7 +184,26 @@ async def signup_user(
     )
     tokens = _issue_token_pair(user, plan_name=None)
     user_resp = await _build_user_response(session, user)
+    workspace_id = user.workspace_id
     await session.commit()
+
+    # Best-effort: route the fresh workspace to the default peer pool so
+    # warmup can start without waiting for an admin assignment. Never let a
+    # routing problem fail signup. Lazy import matches the pattern in
+    # mailbox_service (peer_pool_service doesn't import this module, so
+    # there's no cycle).
+    try:
+        from app.services import peer_pool_service
+
+        await peer_pool_service.ensure_default_assignment(
+            session, workspace_id=workspace_id, actor=user
+        )
+    except Exception:  # pragma: no cover — defensive
+        logger.warning(
+            "default-pool assignment failed for workspace=%s",
+            workspace_id,
+            exc_info=True,
+        )
     return AuthResponse(tokens=tokens, user=user_resp)
 
 

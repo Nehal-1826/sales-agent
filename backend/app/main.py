@@ -39,6 +39,7 @@ from app.api.routes import (
     microsoft_oauth,
     payments,
     plans,
+    public_addons,
     tools,
     workspace_billing,
     workspace_branding,
@@ -170,6 +171,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_system_health.router)
     app.include_router(plans.router)
     app.include_router(admin_addons.router)
+    app.include_router(public_addons.router)
     app.include_router(payments.router)
     app.include_router(tools.router)
     app.include_router(workspace_team.router)

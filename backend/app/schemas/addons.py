@@ -26,6 +26,27 @@ class AddonOut(BaseModel):
         return f"₹{self.price_cents / 100:.0f}"
 
 
+class PublicAddonOut(BaseModel):
+    """Public add-on projection for the pricing page's add-on strip.
+
+    No ``owned`` flag and no admin fields — buying happens in-app behind
+    auth, so the unauthenticated shape is pure marketing data.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    key: str
+    name: str
+    description: str
+    price_cents: int
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def price_display(self) -> str:
+        return f"₹{self.price_cents / 100:.0f}"
+
+
 class AddonCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

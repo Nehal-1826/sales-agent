@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Check } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
+import { usePublicAddons } from '@/features/plans/publicAddons';
 
 interface ApiPlan {
   id: string;
@@ -91,6 +92,10 @@ export function Pricing() {
     // If the API is unreachable during public landing render, silently fall back.
   });
 
+  // Add-on strip — renders only when active add-ons exist (e.g. the Julex
+  // store mailbox). No buy button: add-ons are purchased in-app.
+  const { data: addons } = usePublicAddons();
+
   const effectivePlans: UiPlan[] =
     plans && plans.length > 0 ? plans : FALLBACK_PLANS;
 
@@ -177,6 +182,39 @@ export function Pricing() {
             </motion.div>
           ))}
         </div>
+
+        {addons && addons.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, amount: 0.3 }}
+            transition={{ duration: 0.5 }}
+            className="mt-14"
+          >
+            <h3 className="text-center font-mono text-[11px] uppercase tracking-[0.25em] text-text-dim">
+              Add-ons
+            </h3>
+            <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+              {addons.map((addon) => (
+                <div
+                  key={addon.id}
+                  className="rounded-xl border border-border-muted bg-surface p-5"
+                >
+                  <div className="flex items-baseline justify-between gap-3">
+                    <h4 className="text-sm font-semibold text-text">{addon.name}</h4>
+                    <span className="shrink-0 text-sm font-semibold text-accent">
+                      {addon.price_display}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-sm text-text-dim">{addon.description}</p>
+                  <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.2em] text-text-dim/70">
+                    Add at checkout
+                  </p>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
 
         <p className="mt-8 text-center font-mono text-[11px] uppercase tracking-[0.2em] text-text-dim/70">
           Dummy payments — no real card charged during beta.

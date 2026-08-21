@@ -19,10 +19,14 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import httpx
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.db.models.mailboxes import Mailbox
+from app.db.models.plans import Plan
+from app.db.models.users import User
 from app.db.models.workspace_settings import WorkspaceSetting
 
 logger = logging.getLogger(__name__)
@@ -140,3 +144,48 @@ async def get_workspace_settings(
 ) -> WorkspaceSetting | None:
     """Read the workspace settings row, if one exists."""
     return await session.get(WorkspaceSetting, workspace_id)
+
+
+async def get_public_status(
+    session: AsyncSession, *, store_key: str
+) -> dict[str, object] | None:
+    """Public status payload for Julex polling, or None when unlinked.
+
+    Exposed (unauthenticated) via ``GET /api/integrations/julex/status`` —
+    restricted to what Julex needs: store name, active mailbox count, plan
+    name, connection timestamp. The workspace owner (earliest-created user)
+    supplies the plan name so the answer is deterministic.
+    """
+    row = (
+        await session.execute(
+            select(WorkspaceSetting).where(WorkspaceSetting.julex_store_key == store_key)
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        return None
+
+    mailboxes = (
+        await session.execute(
+            select(func.count())
+            .select_from(Mailbox)
+            .where(Mailbox.workspace_id == row.workspace_id)
+        )
+    ).scalar_one()
+
+    plan_name = (
+        await session.execute(
+            select(Plan.name)
+            .join(User, User.plan_id == Plan.id)
+            .where(User.workspace_id == row.workspace_id)
+            .order_by(User.created_at.asc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+    return {
+        "connected": True,
+        "store_name": row.julex_store_name,
+        "mailboxes": int(mailboxes),
+        "plan": plan_name,
+        "connected_at": row.julex_connected_at,
+    }

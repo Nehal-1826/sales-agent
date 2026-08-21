@@ -62,6 +62,10 @@ export interface UseProPlusSettingsDataResult {
 
 /** Label-map for the 8 settings-API event keys (the design ships 6). */
 const EVENT_LABELS: Record<string, { label: string; desc: string }> = {
+  mailbox_connected: {
+    label: 'Mailbox connected',
+    desc: 'A new mailbox is connected and warmup starts',
+  },
   mailbox_paused: {
     label: 'Mailbox paused',
     desc: 'A mailbox is paused by you or by the system',

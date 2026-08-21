@@ -158,6 +158,13 @@ class Settings(BaseSettings):
         default=False, alias="TRANSACTIONAL_TEST_MODE"
     )
 
+    # Julex (julex.shop store-builder) integration. Merchants paste their
+    # Julex public API key into WarmPulse; we verify it against Julex's
+    # public settings endpoint. ``julex_origin`` is the browser origin the
+    # Julex frontend polls our status endpoint from (CORS-allowed).
+    julex_base_url: str = Field(default="https://julex.shop", alias="JULEX_BASE_URL")
+    julex_origin: str = Field(default="https://julex.shop", alias="JULEX_ORIGIN")
+
     @property
     def stripe_enabled(self) -> bool:
         """Stripe is "wired" when both the API key and webhook secret are set."""
@@ -204,10 +211,14 @@ class Settings(BaseSettings):
     def cors_origins(self) -> list[str]:
         # Include both loopback spellings — browsers treat them as distinct origins,
         # so a 307 redirect from one to the other would otherwise fail CORS.
+        # Julex's storefront-builder frontend polls the public status endpoint
+        # cross-origin, so its origin(s) must be allowed too.
         origins = {
             self.frontend_base_url,
             "http://localhost:5173",
             "http://127.0.0.1:5173",
+            self.julex_base_url,
+            self.julex_origin,
         }
         return [o for o in origins if o]
 

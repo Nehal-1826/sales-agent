@@ -45,10 +45,11 @@ router = APIRouter(prefix="/api/workspace/settings", tags=["workspace-settings"]
 
 # ---------- Defaults for the events matrix ----------
 
-# Eight events × three channels. The frontend Notifications tab renders this
+# Nine events × three channels. The frontend Notifications tab renders this
 # verbatim; new events should be added here AND in the frontend's events list.
 _DEFAULT_EVENT_KEYS: list[str] = [
     "mailbox_paused",
+    "mailbox_connected",
     "bounce_spike",
     "peer_failed",
     "weekly_digest",

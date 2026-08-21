@@ -9,6 +9,7 @@ import {
   Users,
   CreditCard,
   Settings,
+  Plug,
   Network,
   GitBranch,
   LineChart,
@@ -39,6 +40,7 @@ export const CLIENT_NAV: NavItem[] = [
   { label: 'Workspace', to: '/app/workspace', icon: Users },
   { label: 'Billing', to: '/app/billing', icon: CreditCard },
   { label: 'Settings', to: '/app/settings', icon: Settings },
+  { label: 'Integrations', to: '/app/integrations/julex', icon: Plug },
 ];
 
 /** A cluster of admin nav items shown under one uppercase header. */

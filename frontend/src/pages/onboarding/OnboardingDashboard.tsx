@@ -1543,6 +1543,33 @@ function ProviderHelpDisclosure({ provider }: { provider: string }) {
   );
 }
 
+/**
+ * One-line helper links shown above the provider router inside
+ * CredentialsPanel: quick domain purchase + Julex store integration.
+ * Styled like the panel's existing help text.
+ */
+function DomainHelpLinks() {
+  return (
+    <p
+      className="onb-credentials__hint"
+      style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', marginBottom: 10 }}
+    >
+      <a
+        href="https://www.namecheap.com/domains/registration/"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="onb-credentials__help-link"
+      >
+        Need a domain? Buy one →
+        <ExternalLink size={10} strokeWidth={2} />
+      </a>
+      <Link to="/app/integrations/julex" className="onb-credentials__help-link">
+        Link your Julex store →
+      </Link>
+    </p>
+  );
+}
+
 function CredentialsPanel({
   provider,
   dailyVolume,
@@ -1658,38 +1685,47 @@ function CredentialsPanel({
 
   if (isOauth) {
     return (
-      <OauthConnectCard
-        provider={provider as 'gmail' | 'outlook_oauth'}
-        label={providerLabel}
-        dailyVolume={dailyVolume}
-        onFinish={finish}
-        onSwitchToSmtp={onSwitchToSmtp}
-        onChangeProvider={onChangeProvider}
-      />
+      <>
+        <DomainHelpLinks />
+        <OauthConnectCard
+          provider={provider as 'gmail' | 'outlook_oauth'}
+          label={providerLabel}
+          dailyVolume={dailyVolume}
+          onFinish={finish}
+          onSwitchToSmtp={onSwitchToSmtp}
+          onChangeProvider={onChangeProvider}
+        />
+      </>
     );
   }
 
   if (isAppPassword) {
     return (
-      <AppPasswordCard
-        provider={provider as 'outlook' | 'yahoo' | 'zoho'}
-        label={providerLabel}
+      <>
+        <DomainHelpLinks />
+        <AppPasswordCard
+          provider={provider as 'outlook' | 'yahoo' | 'zoho'}
+          label={providerLabel}
+          dailyVolume={dailyVolume}
+          probe={probe}
+          onFinish={finish}
+          onChangeProvider={onChangeProvider}
+        />
+      </>
+    );
+  }
+
+  return (
+    <>
+      <DomainHelpLinks />
+      <SmtpConnectForm
+        provider={provider}
         dailyVolume={dailyVolume}
         probe={probe}
         onFinish={finish}
         onChangeProvider={onChangeProvider}
       />
-    );
-  }
-
-  return (
-    <SmtpConnectForm
-      provider={provider}
-      dailyVolume={dailyVolume}
-      probe={probe}
-      onFinish={finish}
-      onChangeProvider={onChangeProvider}
-    />
+    </>
   );
 }
 

@@ -175,6 +175,7 @@ const CrmPage = lazy(() => import('@/pages/client/CrmPage').then((m) => ({ defau
 const WorkspacePage = lazy(() => import('@/pages/client/WorkspacePage').then((m) => ({ default: m.WorkspacePage })));
 const BillingPage = lazy(() => import('@/pages/client/BillingPage').then((m) => ({ default: m.BillingPage })));
 const SettingsPage = lazy(() => import('@/pages/client/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+const JulexPage = lazy(() => import('@/pages/client/integrations/JulexPage').then((m) => ({ default: m.JulexPage })));
 
 // Admin pages
 const AdminDashboardPage = lazy(() => import('@/pages/admin/DashboardPage').then((m) => ({ default: m.AdminDashboardPage })));
@@ -358,6 +359,8 @@ export default function App() {
           <Route path="workspace" element={<WorkspacePage />} />
           <Route path="billing" element={<BillingPage />} />
           <Route path="settings" element={<SettingsPage />} />
+          {/* Integrations — one shared page for every plan tier. */}
+          <Route path="integrations/julex" element={<JulexPage />} />
         </Route>
 
         {/* Admin (super_admin only) */}

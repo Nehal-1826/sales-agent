@@ -1,16 +1,29 @@
-import React from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, Alert } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { wp, fonts } from '../../../../theme/tokens';
 import { Glass } from '../../../../components/Glass';
 import { Row } from '../../../../components/Row';
 import { Async } from '../../../../components/Async';
+import { PromptModal } from '../../../../components/PromptModal';
 import { CreditCard } from 'lucide-react-native';
-import { useAllPlans } from '../../../../lib/adminData';
+import { useAllPlans, type AdminPlan } from '../../../../lib/adminData';
+import { useSetPlanTokenCap } from '../../../../lib/adminMutations';
 
 export function AdminPlans() {
   const q = useAllPlans();
   const plans = q.data ?? [];
+  const [capTarget, setCapTarget] = useState<AdminPlan | null>(null);
+  const setCap = useSetPlanTokenCap();
+
+  const fail = () => Alert.alert('Failed', 'Could not set the token cap.');
+
+  function manage(plan: AdminPlan) {
+    Alert.alert(plan.name, `${plan.max_mailboxes} mailboxes · ₹${Math.round(plan.price_cents / 100).toLocaleString('en-IN')}`, [
+      { text: 'Set monthly token cap', onPress: () => setCapTarget(plan) },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }
 
   return (
     <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
@@ -25,16 +38,17 @@ export function AdminPlans() {
             {plans.map((plan, idx) => {
               const label =
                 plan.name +
-                (plan.is_active ? '' : ' · inactive') +
-                (plan.is_public ? '' : ' · hidden');
+                  (plan.is_active ? '' : ' · inactive') +
+                  (plan.is_public ? '' : ' · hidden');
               return (
                 <Row
                   key={plan.id}
                   icon={CreditCard}
                   title={label}
-                  subtitle={`${plan.max_mailboxes} mailboxes`}
+                  subtitle={`${plan.max_mailboxes} mailboxes · tap to set token cap`}
                   value={`₹${Math.round(plan.price_cents / 100).toLocaleString('en-IN')}`}
                   accent={plan.is_active ? wp.accent : wp.textFaint}
+                  onPress={() => manage(plan)}
                   last={idx === plans.length - 1}
                 />
               );
@@ -42,6 +56,32 @@ export function AdminPlans() {
           </Async>
         </Glass>
       </Animated.View>
+
+      <PromptModal
+        visible={!!capTarget}
+        title={`Token cap · ${capTarget?.name ?? ''}`}
+        message="Monthly token budget for this plan"
+        placeholder="e.g. 50000"
+        keyboardType="number-pad"
+        submitLabel="Set cap"
+        busy={setCap.isPending}
+        onSubmit={(val) => {
+          if (!capTarget) return;
+          const cap = Number(val);
+          if (!Number.isFinite(cap) || cap < 0) {
+            Alert.alert('Invalid', 'Enter a non-negative number.');
+            return;
+          }
+          setCap.mutate(
+            { planId: capTarget.id, cap },
+            {
+              onSuccess: (r) => { Alert.alert('Done', `Cap set to ${r.token_cap_per_month.toLocaleString()} tokens/mo.`); setCapTarget(null); },
+              onError: fail,
+            },
+          );
+        }}
+        onClose={() => setCapTarget(null)}
+      />
     </ScrollView>
   );
 }

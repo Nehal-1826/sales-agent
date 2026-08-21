@@ -154,6 +154,13 @@ async def _engage_impl(mailbox_id: str) -> dict:
         mailbox = await db.get(Mailbox, uuid.UUID(mailbox_id))
         if mailbox is None:
             return {"status": "mailbox_not_found"}
+        # Pause gate. The beat fan-out filters paused rows at enqueue time,
+        # but a task already sitting on the smtp queue (or in its retry
+        # ladder) must re-check here or engagement actions keep landing on a
+        # mailbox the user has since paused. Mirrors the scheduler's own
+        # eligibility filter (`_eligible_mailbox_ids`).
+        if mailbox.is_paused:
+            return {"status": "skipped_paused"}
         if mailbox.provider != MailboxProvider.gmail or not mailbox.oauth_token_encrypted:
             return {"status": "not_oauth_gmail"}
         refresh_token = fernet.decrypt(mailbox.oauth_token_encrypted).decode()

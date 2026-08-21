@@ -21,7 +21,8 @@ import asyncio
 import contextlib
 import json
 import logging
-from datetime import datetime
+import re
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import aioimaplib
@@ -274,6 +275,7 @@ async def list_unread_warmup_in_folder(
     fernet: FernetService,
     *,
     limit: int = 50,
+    max_age_days: int = 7,
 ) -> list[dict[str, str]]:
     """Return ``[{uid, warmup_id}]`` for UNSEEN messages in ``folder`` that
     carry an ``X-Warmup-Id`` header.
@@ -281,6 +283,11 @@ async def list_unread_warmup_in_folder(
     Used by the inbound engagement orchestrator to find warmup mail to act
     on. Returns ``[]`` when the folder doesn't exist (mostly relevant for
     Spam folders whose names vary by provider).
+
+    ``max_age_days`` filters on the message's IMAP INTERNALDATE: a peer
+    mailbox can carry weeks of UNSEEN warmup backlog, and acting on ancient
+    mail looks robotic. Messages whose INTERNALDATE can't be parsed are
+    kept (fail open — never drop warmup mail over a date quirk).
     """
     try:
         client = await _open(peer, fernet, folder=folder)
@@ -313,15 +320,17 @@ async def list_unread_warmup_in_folder(
             return []
 
         out: list[dict[str, str]] = []
+        cutoff = datetime.now(UTC) - timedelta(days=max_age_days)
         for uid in uids:
             fetch = await client.uid(
                 "fetch",
                 uid,
-                "(BODY.PEEK[HEADER.FIELDS (X-WARMUP-ID)])",
+                "(BODY.PEEK[HEADER.FIELDS (X-WARMUP-ID)] INTERNALDATE)",
             )
             if fetch.result != "OK":
                 continue
             warmup_id: str | None = None
+            internal_date: datetime | None = None
             for line in fetch.lines:
                 # aioimaplib hands header literals back as bytearray, not
                 # bytes. `isinstance(bytearray, bytes)` is False, so the old
@@ -336,9 +345,18 @@ async def list_unread_warmup_in_folder(
                 lower = text.lower()
                 if lower.startswith("x-warmup-id:"):
                     warmup_id = text.split(":", 1)[1].strip()
-                    break
-            if warmup_id:
-                out.append({"uid": uid, "warmup_id": warmup_id})
+                elif "internaldate" in lower:
+                    m = re.search(r'INTERNALDATE "(.+?)"', text, re.IGNORECASE)
+                    if m:
+                        with contextlib.suppress(ValueError):
+                            internal_date = datetime.strptime(
+                                m.group(1), "%d-%b-%Y %H:%M:%S %z"
+                            )
+            if not warmup_id:
+                continue
+            if internal_date is not None and internal_date < cutoff:
+                continue  # older than the engagement window — ignore
+            out.append({"uid": uid, "warmup_id": warmup_id})
         return out
     finally:
         with contextlib.suppress(Exception):

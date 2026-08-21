@@ -21,7 +21,7 @@ from sqlalchemy.types import Uuid
 from app.celery_app import celery_app
 from app.config import get_settings
 from app.db.models.audit_logs import AuditLog
-from app.db.models.mailboxes import Mailbox
+from app.db.models.mailboxes import Mailbox, WarmupStatus
 from app.db.models.peer_inboxes import PeerInbox
 from app.db.models.warmup_logs import WarmupAction, WarmupDirection, WarmupLog
 from app.db.session import SessionLocal
@@ -98,15 +98,34 @@ async def _resolve_mailbox_for_message(
         return cast("uuid.UUID | None", await db.scalar(stmt))
 
 
+async def _mailbox_pause_gate(db, mailbox_id: uuid.UUID | None) -> bool:
+    """True when the origin mailbox is paused (either representation).
+
+    Pause gate (mirrors the outbound gate in warmup_send._send_impl): a
+    paused mailbox must not receive peer engagement — this catches tasks
+    that were queued before the pause landed. ``mailbox_id=None`` (message
+    not tied to any outbound log) does not gate.
+    """
+    if mailbox_id is None:
+        return False
+    mailbox = await db.get(Mailbox, mailbox_id)
+    if mailbox is None:
+        return False
+    return mailbox.is_paused or mailbox.warmup_status != WarmupStatus.active
+
+
 async def _peer_open_impl(peer_id: str, message_id: str) -> dict:
     fernet = get_fernet_service()
     async with SessionLocal() as db:
         peer = await db.get(PeerInbox, uuid.UUID(peer_id))
         if peer is None:
             return {"status": "peer_not_found"}
+        mailbox_id = await _resolve_mailbox_for_message(uuid.UUID(peer_id), message_id)
+        # Pause gate: a paused mailbox must not accumulate engagement.
+        if await _mailbox_pause_gate(db, mailbox_id):
+            return {"status": "skipped_paused"}
         ok = await imap_watcher.mark_seen(peer, message_id, fernet)
     if ok:
-        mailbox_id = await _resolve_mailbox_for_message(uuid.UUID(peer_id), message_id)
         await _record_peer_action(peer_id, str(mailbox_id) if mailbox_id else None,
                                    WarmupAction.opened, message_id)
     return {"status": "opened" if ok else "not_found"}
@@ -123,9 +142,12 @@ async def _peer_star_impl(peer_id: str, message_id: str) -> dict:
         peer = await db.get(PeerInbox, uuid.UUID(peer_id))
         if peer is None:
             return {"status": "peer_not_found"}
+        mailbox_id = await _resolve_mailbox_for_message(uuid.UUID(peer_id), message_id)
+        # Pause gate: a paused mailbox must not accumulate engagement.
+        if await _mailbox_pause_gate(db, mailbox_id):
+            return {"status": "skipped_paused"}
         ok = await imap_watcher.mark_flagged(peer, message_id, fernet)
     if ok:
-        mailbox_id = await _resolve_mailbox_for_message(uuid.UUID(peer_id), message_id)
         await _record_peer_action(peer_id, str(mailbox_id) if mailbox_id else None,
                                    WarmupAction.starred, message_id)
     return {"status": "starred" if ok else "not_found"}
@@ -282,6 +304,14 @@ async def _peer_spam_rescue_impl(peer_id: str, message_id: str) -> dict:
         rescue_mailbox_id = await _resolve_mailbox_for_message(
             uuid.UUID(peer_id), message_id
         )
+        # Pause gate: a paused mailbox must not be rescued out of Spam —
+        # engagement on its warmup mail stops when the user pauses.
+        if await _mailbox_pause_gate(db, rescue_mailbox_id):
+            logger.info(
+                "spam_rescue skip peer=%s msg=%s (mailbox paused)",
+                peer_id, message_id,
+            )
+            return {"status": "skipped_paused"}
         if rescue_mailbox_id is not None and await is_mailbox_sabotaged(
             rescue_mailbox_id, db
         ):
@@ -400,6 +430,15 @@ async def _peer_reply_impl(
         mailbox = await db.get(Mailbox, uuid.UUID(mailbox_id))
         if mailbox is None:
             return {"status": "mailbox_not_found"}
+        # Pause gate (mirrors warmup_send._send_impl): never send a real
+        # SMTP reply to a paused mailbox — this catches tasks queued before
+        # the pause landed.
+        if mailbox.is_paused or mailbox.warmup_status != WarmupStatus.active:
+            logger.info(
+                "peer_reply skip peer=%s mailbox=%s (mailbox paused)",
+                peer_id, mailbox_id,
+            )
+            return {"status": "skipped_paused"}
         peer_email = peer.email_address
         mailbox_email = mailbox.email_address
 

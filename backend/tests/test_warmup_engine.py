@@ -385,3 +385,261 @@ async def test_scheduler_excludes_paused_mailboxes(monkeypatch) -> None:
     assert enqueued == [str(active_id)]
 
     await engine.dispose()
+
+
+# ---------------- inbound pause gates (peer actions) ----------------
+
+
+async def test_peer_reply_email_skips_paused_mailbox(monkeypatch) -> None:
+    """A paused mailbox must not receive real SMTP replies from peers.
+
+    Regression: the inbound loop never checked pause state, so peers kept
+    replying to warmup mail for a mailbox the user had paused. Covers both
+    pause representations (``is_paused`` and ``warmup_status=paused``).
+    """
+    from unittest.mock import AsyncMock
+
+    from app.db import models  # noqa: F401
+    from app.db.base import Base
+    from app.db.models.mailboxes import (
+        ContentMode,
+        Mailbox,
+        MailboxProvider,
+        WarmupStatus,
+    )
+    from app.db.models.peer_inboxes import PeerInbox, PeerProvider
+    from app.db.models.users import OnboardingStatus, User, UserRole
+    from app.db.models.warmup_logs import WarmupLog
+    from app.services.warmup import smtp_sender
+    from app.tasks import peer_actions
+
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    maker = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+    fernet = FernetService([Fernet.generate_key().decode()])
+
+    async with maker() as db:
+        user = User(
+            email="reply-paused@example.com",
+            hashed_password="x",
+            role=UserRole.client,
+            onboarding_status=OnboardingStatus.signed_up,
+        )
+        db.add(user)
+        await db.flush()
+        mb_flag = Mailbox(
+            user_id=user.id,
+            workspace_id=user.workspace_id,
+            email_address="rflag@example.com",
+            provider=MailboxProvider.smtp,
+            smtp_host="smtp.example.com",
+            smtp_port=587,
+            smtp_username="rflag@example.com",
+            smtp_password_encrypted=fernet.encrypt(b"pw"),
+            warmup_status=WarmupStatus.active,
+            is_paused=True,
+            daily_target=50,
+            current_day=5,
+            content_mode=ContentMode.A,
+        )
+        mb_status = Mailbox(
+            user_id=user.id,
+            workspace_id=user.workspace_id,
+            email_address="rstatus@example.com",
+            provider=MailboxProvider.smtp,
+            smtp_host="smtp.example.com",
+            smtp_port=587,
+            smtp_username="rstatus@example.com",
+            smtp_password_encrypted=fernet.encrypt(b"pw"),
+            warmup_status=WarmupStatus.paused,
+            is_paused=False,
+            daily_target=50,
+            current_day=5,
+            content_mode=ContentMode.A,
+        )
+        peer = PeerInbox(
+            email_address="reply-peer@example.com",
+            provider=PeerProvider.google_ws,
+        )
+        db.add_all([mb_flag, mb_status, peer])
+        await db.commit()
+        flag_id, status_id, peer_id = mb_flag.id, mb_status.id, peer.id
+
+    monkeypatch.setattr(peer_actions, "SessionLocal", maker)
+    monkeypatch.setattr(peer_actions, "get_fernet_service", lambda: fernet)
+    fake_send = AsyncMock()
+    monkeypatch.setattr(smtp_sender, "send_peer_reply", fake_send)
+
+    for mb_id in (flag_id, status_id):
+        result = await peer_actions._peer_reply_impl(
+            str(peer_id), str(mb_id), str(uuid.uuid4()), "Subj", str(uuid.uuid4())
+        )
+        assert result == {"status": "skipped_paused"}
+
+    fake_send.assert_not_awaited()
+    async with maker() as db:
+        rows = (
+            await db.scalars(
+                select(WarmupLog).where(WarmupLog.mailbox_id.in_([flag_id, status_id]))
+            )
+        ).all()
+        assert rows == []
+    await engine.dispose()
+
+
+async def test_peer_open_email_skips_paused_mailbox(monkeypatch) -> None:
+    """The open action must not touch the peer's IMAP for a paused mailbox."""
+    from unittest.mock import AsyncMock
+
+    from app.db import models  # noqa: F401
+    from app.db.base import Base
+    from app.db.models.mailboxes import (
+        ContentMode,
+        Mailbox,
+        MailboxProvider,
+        WarmupStatus,
+    )
+    from app.db.models.peer_inboxes import PeerInbox, PeerProvider
+    from app.db.models.users import OnboardingStatus, User, UserRole
+    from app.db.models.warmup_logs import WarmupAction, WarmupDirection, WarmupLog
+    from app.tasks import peer_actions
+
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    maker = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+    fernet = FernetService([Fernet.generate_key().decode()])
+
+    warmup_id = str(uuid.uuid4())
+    async with maker() as db:
+        user = User(
+            email="open-paused@example.com",
+            hashed_password="x",
+            role=UserRole.client,
+            onboarding_status=OnboardingStatus.signed_up,
+        )
+        db.add(user)
+        await db.flush()
+        mb = Mailbox(
+            user_id=user.id,
+            workspace_id=user.workspace_id,
+            email_address="oflag@example.com",
+            provider=MailboxProvider.smtp,
+            smtp_host="smtp.example.com",
+            smtp_port=587,
+            smtp_username="oflag@example.com",
+            smtp_password_encrypted=fernet.encrypt(b"pw"),
+            warmup_status=WarmupStatus.active,
+            is_paused=True,
+            daily_target=50,
+            current_day=5,
+            content_mode=ContentMode.A,
+        )
+        peer = PeerInbox(
+            email_address="open-peer@example.com",
+            provider=PeerProvider.google_ws,
+        )
+        db.add_all([mb, peer])
+        await db.flush()
+        db.add(
+            WarmupLog(
+                mailbox_id=mb.id,
+                peer_inbox_id=peer.id,
+                direction=WarmupDirection.outbound,
+                action=WarmupAction.sent,
+                message_id=warmup_id,
+            )
+        )
+        await db.commit()
+        mb_id, peer_id = mb.id, peer.id
+
+    monkeypatch.setattr(peer_actions, "SessionLocal", maker)
+    monkeypatch.setattr(peer_actions, "get_fernet_service", lambda: fernet)
+    fake_mark_seen = AsyncMock(return_value=True)
+    monkeypatch.setattr(peer_actions.imap_watcher, "mark_seen", fake_mark_seen)
+
+    result = await peer_actions._peer_open_impl(str(peer_id), warmup_id)
+
+    assert result == {"status": "skipped_paused"}
+    fake_mark_seen.assert_not_awaited()
+    async with maker() as db:
+        rows = (
+            await db.scalars(
+                select(WarmupLog).where(
+                    WarmupLog.direction == WarmupDirection.inbound,
+                    WarmupLog.mailbox_id == mb_id,
+                )
+            )
+        ).all()
+        assert rows == []
+    await engine.dispose()
+
+
+async def test_list_unread_warmup_age_cutoff(monkeypatch) -> None:
+    """``list_unread_warmup_in_folder`` drops messages older than max_age_days."""
+    from datetime import timedelta
+
+    from app.services.warmup import imap_watcher
+
+    now = datetime.now(UTC)
+    fresh_date = (now - timedelta(hours=1)).strftime("%d-%b-%Y %H:%M:%S %z")
+    old_date = (now - timedelta(days=30)).strftime("%d-%b-%Y %H:%M:%S %z")
+
+    class _Resp:
+        def __init__(self, result, lines):
+            self.result = result
+            self.lines = lines
+
+    class _FakeClient:
+        def __init__(self, msgs):
+            self._msgs = msgs  # ordered {uid: (warmup_id, internaldate)}
+
+        async def uid_search(self, *a):
+            return _Resp("OK", [" ".join(self._msgs).encode()])
+
+        async def uid(self, cmd, uid, spec):
+            warmup_id, idate = self._msgs[uid]
+            return _Resp(
+                "OK",
+                [
+                    f'* {uid} FETCH (INTERNALDATE "{idate}"'.encode(),
+                    bytearray(f"X-Warmup-Id: {warmup_id}\r\n".encode("ascii")),
+                ],
+            )
+
+        async def logout(self):
+            pass
+
+    msgs = {
+        "101": ("old-warmup", old_date),
+        "102": ("fresh-warmup", fresh_date),
+    }
+    peer = type("Peer", (), {"id": uuid.uuid4()})()
+    fernet = FernetService([Fernet.generate_key().decode()])
+
+    async def fake_open(peer, fernet, folder="INBOX"):
+        return _FakeClient(msgs)
+
+    monkeypatch.setattr(imap_watcher, "_open", fake_open)
+
+    rows = await imap_watcher.list_unread_warmup_in_folder(
+        peer, "INBOX", fernet, max_age_days=7
+    )
+    assert [r["warmup_id"] for r in rows] == ["fresh-warmup"]
+
+    # A window that admits both proves the fresh/old pair is otherwise intact.
+    rows_wide = await imap_watcher.list_unread_warmup_in_folder(
+        peer, "INBOX", fernet, max_age_days=365
+    )
+    assert {r["warmup_id"] for r in rows_wide} == {"fresh-warmup", "old-warmup"}

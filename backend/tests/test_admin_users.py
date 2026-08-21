@@ -183,6 +183,9 @@ async def test_bulk_pause_explicit_ids_skips_super_admin(
     admin_mbx = await _seed_mailbox(maker, user=admin, status="active")
     c1_mbx = await _seed_mailbox(maker, user=c1, status="active")
     c2_mbx = await _seed_mailbox(maker, user=c2, status="active")
+    # A pending mailbox in a target workspace — bulk pause must leave it
+    # untouched (pausing it would destroy its pre-warmup lifecycle status).
+    c1_pending_mbx = await _seed_mailbox(maker, user=c1, status="pending")
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as c:
@@ -193,6 +196,7 @@ async def test_bulk_pause_explicit_ids_skips_super_admin(
         )
     assert resp.status_code == 200
     body = resp.json()
+    # Only the two active mailboxes updated — the pending row is out of scope.
     assert body == {
         "users_affected": 2,
         "mailboxes_updated": 2,
@@ -207,6 +211,11 @@ async def test_bulk_pause_explicit_ids_skips_super_admin(
     admin_row = await _get_mailbox(maker, admin_mbx)
     assert admin_row.is_paused is False
     assert _status_of(admin_row) == "active"
+
+    # Pending mailbox survives the bulk pause UNCHANGED.
+    pending_row = await _get_mailbox(maker, c1_pending_mbx)
+    assert pending_row.is_paused is False
+    assert _status_of(pending_row) == "pending"
 
     # Exactly one audit row for the bulk action.
     async with maker() as session:

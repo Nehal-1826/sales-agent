@@ -267,6 +267,94 @@ async def test_poll_peer_inbox_dispatches_actions_for_unread_warmup_mail(
 
 
 @pytest.mark.asyncio
+async def test_poll_peer_inbox_skips_messages_for_paused_origin_mailbox(
+    app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+) -> None:
+    """The dispatch loop's pause gate: no actions for a paused origin mailbox.
+
+    Same shape as the dispatch smoke test above, but the origin mailbox is
+    paused — unread warmup mail must NOT produce any per-action dispatches.
+    """
+    from app.db.models.mailboxes import Mailbox, MailboxProvider, WarmupStatus
+    from app.db.models.peer_inboxes import PeerInbox, PeerProvider
+    from app.tasks import warmup_receive
+
+    _, maker, _ = app_and_maker
+
+    mailbox_id = uuid.uuid4()
+
+    async with maker() as db:
+        # Flipped from the dispatch test: the origin mailbox is paused.
+        db.add(
+            Mailbox(
+                id=mailbox_id,
+                user_id=uuid.uuid4(),
+                workspace_id=uuid.uuid4(),
+                email_address="paused-client@example.com",
+                provider=MailboxProvider.smtp,
+                warmup_status=WarmupStatus.active,
+                is_paused=True,
+            )
+        )
+        peer = PeerInbox(
+            email_address="peer-paused-origin@example.com",
+            provider=PeerProvider.google_ws,
+            smtp_creds_encrypted=b"x",
+            imap_creds_encrypted=b"x",
+            daily_capacity=50,
+            used_today=0,
+            reputation_score=0.8,
+            is_active=True,
+        )
+        db.add(peer)
+        await db.commit()
+        await db.refresh(peer)
+
+        warmup_id = str(uuid.uuid4())
+        db.add(
+            WarmupLog(
+                mailbox_id=mailbox_id,
+                peer_inbox_id=peer.id,
+                direction=WarmupDirection.outbound,
+                action=WarmupAction.sent,
+                message_id=warmup_id,
+                subject_snippet="Subject paused",
+            )
+        )
+        await db.commit()
+        peer_id = str(peer.id)
+
+    pa_mock = MagicMock()
+    fake_pa = type("FakePA", (), {})()
+    for name in (
+        "peer_open_email", "peer_star_email", "peer_spam_rescue", "peer_reply_email"
+    ):
+        setattr(
+            fake_pa, name,
+            type("X", (), {"apply_async": staticmethod(lambda *, args, countdown=0: pa_mock(args))})(),
+        )
+
+    msgs = [{"uid": "1", "warmup_id": warmup_id}]
+
+    with (
+        patch.object(warmup_receive, "_peer_action_tasks", return_value=fake_pa),
+        patch(
+            "app.services.warmup.imap_watcher.list_unread_warmup_spam",
+            new=AsyncMock(return_value=msgs),
+        ),
+        patch(
+            "app.services.warmup.imap_watcher.list_unread_warmup_inbox",
+            new=AsyncMock(return_value=[]),
+        ),
+    ):
+        result = await warmup_receive._poll_impl(peer_id)
+
+    assert result["status"] == "ok"
+    assert result["spam_seen"] == 1
+    assert pa_mock.call_count == 0
+
+
+@pytest.mark.asyncio
 async def test_poll_peer_inbox_skips_messages_we_didnt_send(
     app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
 ) -> None:

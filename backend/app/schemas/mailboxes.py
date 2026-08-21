@@ -177,7 +177,7 @@ class BulkMailboxPauseRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    user_ids: list[uuid.UUID] = []
+    user_ids: list[uuid.UUID] = Field(default_factory=list)
     action: Literal["pause", "resume"]
 
 

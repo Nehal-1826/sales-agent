@@ -707,10 +707,11 @@ async def bulk_pause_mailboxes(
 
     ``user_ids == []`` means ALL users with ``role == client``. Explicit ids
     are filtered to clients only — super_admin ids are silently skipped (and
-    counted). Pause mirrors :func:`pause_mailbox` (sets ``is_paused`` +
-    ``warmup_status`` unconditionally); resume mirrors the "never
-    warmup-activate pending/completed" invariant: only rows currently
-    ``warmup_status == paused`` (and ``is_paused``) go back to active.
+    counted). Pause mirrors :func:`pause_mailbox` but is scoped like the
+    resume branch: only rows currently ``warmup_status IN (active, paused)``
+    flip, so pending/completed mailboxes keep their lifecycle status; resume
+    only rows currently ``warmup_status == paused`` (and ``is_paused``) go
+    back to active.
     """
     if user_ids:
         unique_ids = set(user_ids)
@@ -732,9 +733,17 @@ async def bulk_pause_mailboxes(
     mailboxes_updated = 0
     if workspace_ids:
         if action == "pause":
+            # Only rows currently active/paused flip — pending/completed
+            # mailboxes keep their lifecycle status (mirrors the resume
+            # branch's "never warmup-(de)activate out of lifecycle" scoping).
             stmt = (
                 update(Mailbox)
-                .where(Mailbox.workspace_id.in_(workspace_ids))
+                .where(
+                    Mailbox.workspace_id.in_(workspace_ids),
+                    Mailbox.warmup_status.in_(
+                        [WarmupStatus.active, WarmupStatus.paused]
+                    ),
+                )
                 .values(is_paused=True, warmup_status=WarmupStatus.paused)
             )
         else:

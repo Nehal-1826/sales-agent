@@ -320,6 +320,95 @@ async def test_send_single_warmup_email_skips_paused_mailbox(monkeypatch) -> Non
     await engine.dispose()
 
 
+async def test_engage_skips_paused_mailbox(monkeypatch) -> None:
+    """client_engagement._engage_impl must re-check the pause gate after dequeue.
+
+    The beat fan-out filters paused rows at enqueue time, but a task already
+    sitting on the smtp queue must not engage (Gmail API calls, WarmupLog
+    rows) on a mailbox the user has since paused. Covers both pause
+    representations: ``is_paused=True`` and ``warmup_status=paused``.
+    """
+    from unittest.mock import MagicMock
+
+    from app.db import models  # noqa: F401
+    from app.db.base import Base
+    from app.db.models.mailboxes import Mailbox, MailboxProvider, WarmupStatus
+    from app.db.models.users import OnboardingStatus, User, UserRole
+
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    maker = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with maker() as db:
+        key = Fernet.generate_key()
+        fernet = FernetService([key.decode()])
+
+        user = User(email="engager-paused@example.com", hashed_password="x",
+                    role=UserRole.client, onboarding_status=OnboardingStatus.signed_up)
+        db.add(user)
+        await db.flush()
+
+        mb_flag = Mailbox(
+            user_id=user.id,
+            workspace_id=user.workspace_id,
+            email_address="engage-flag-paused@example.com",
+            provider=MailboxProvider.gmail,
+            oauth_token_encrypted=fernet.encrypt(b"some-refresh-token"),
+            warmup_status=WarmupStatus.active,
+            is_paused=True,
+        )
+        mb_status = Mailbox(
+            user_id=user.id,
+            workspace_id=user.workspace_id,
+            email_address="engage-status-paused@example.com",
+            provider=MailboxProvider.gmail,
+            oauth_token_encrypted=fernet.encrypt(b"some-refresh-token"),
+            warmup_status=WarmupStatus.paused,
+            is_paused=False,
+        )
+        db.add_all([mb_flag, mb_status])
+        await db.commit()
+        flag_id, status_id = mb_flag.id, mb_status.id
+
+    from app.tasks import client_engagement as ce_mod
+
+    monkeypatch.setattr(ce_mod, "SessionLocal", maker)
+    monkeypatch.setattr(ce_mod, "get_fernet_service", lambda: fernet)
+    monkeypatch.setattr(ce_mod, "get_settings", lambda: MagicMock())
+
+    # Recording mocks — the gate must return before the OAuth refresh or any
+    # Gmail API call is made.
+    calls: list[str] = []
+
+    async def fake_token(*a, **kw):
+        calls.append("google_access_token")
+        return "tok"
+
+    async def fake_senders():
+        calls.append("_peer_sender_map")
+        return {}
+
+    async def fake_label(*a, **kw):
+        calls.append("ensure_warmup_label")
+        return "label-id"
+
+    monkeypatch.setattr(ce_mod, "google_access_token", fake_token)
+    monkeypatch.setattr(ce_mod, "_peer_sender_map", fake_senders)
+    monkeypatch.setattr(ce_mod.gmail_engagement, "ensure_warmup_label", fake_label)
+
+    assert await ce_mod._engage_impl(str(flag_id)) == {"status": "skipped_paused"}
+    assert await ce_mod._engage_impl(str(status_id)) == {"status": "skipped_paused"}
+    assert calls == []  # neither OAuth refresh nor Gmail API ran
+
+    await engine.dispose()
+
+
 async def test_scheduler_excludes_paused_mailboxes(monkeypatch) -> None:
     """Regression: the beat scheduler must not enqueue paused mailboxes.
 

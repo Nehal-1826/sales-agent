@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TextInput, Alert, Platform } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TextInput, Alert } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { wp, fonts } from '../../../../theme/tokens';
 import { Glass, hexA } from '../../../../components/Glass';
@@ -49,7 +49,7 @@ export function AdminUsers() {
       { text: 'Copy impersonate token', onPress: () => {
         impersonate.mutate(u.id, {
           onSuccess: (r) => {
-            Alert.alert('Token minted', `30-min token for ${r.email} — check clipboard. (Mobile cannot swap sessions yet.)`);
+            Alert.alert('Token minted', `A 30-min impersonation token for ${r.email} was minted, but mobile session-swap isn't supported yet. Use the web admin to impersonate.`);
           },
           onError: () => Alert.alert('Cannot impersonate', 'This user may be a super_admin or the request failed.'),
         });
@@ -103,7 +103,7 @@ export function AdminUsers() {
         title={`Set plan for ${planTarget?.email ?? ''}`}
         message={plans.length ? 'Paste a plan ID:' : 'Loading plans — paste a plan ID:'}
         placeholder={plans[0]?.id ?? 'plan UUID'}
-        initialValue={planTarget?.plan ?? ''}
+        initialValue={''}
         submitLabel="Set plan"
         busy={setPlan.isPending}
         onSubmit={(val) => {

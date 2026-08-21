@@ -19,6 +19,7 @@ import {
   useTestSmtp,
   useToggleMaintenance,
   useResetPeerHealth,
+  type SmtpPatch,
 } from '../../../../lib/adminMutations';
 
 /** Which single-field edit prompt is open. */
@@ -29,12 +30,27 @@ type EditField =
   | { kind: 'human_delay_max_s'; label: string }
   | { kind: 'warmup_log_retention_days'; label: string }
   | { kind: 'default_cap_tokens'; label: string }
+  | { kind: 'llm_api_key'; label: string }
+  | { kind: 'oauth_client_id'; label: string }
+  | { kind: 'oauth_client_secret'; label: string }
   | { kind: 'smtp_host'; label: string }
   | { kind: 'smtp_port'; label: string }
   | { kind: 'smtp_username'; label: string }
   | { kind: 'smtp_password'; label: string }
   | { kind: 'smtp_from_addr'; label: string }
   | null;
+
+/** SMTP edit kinds → SmtpPatch body keys (backend UpdateSmtpPayload). */
+const SMTP_FIELD_MAP: Record<
+  'smtp_host' | 'smtp_port' | 'smtp_username' | 'smtp_password' | 'smtp_from_addr',
+  keyof SmtpPatch
+> = {
+  smtp_host: 'host',
+  smtp_port: 'port',
+  smtp_username: 'username',
+  smtp_password: 'password',
+  smtp_from_addr: 'from_addr',
+};
 
 export function AdminSettings2() {
   const q = useAdminSettings();
@@ -64,6 +80,9 @@ export function AdminSettings2() {
       case 'human_delay_max_s': return String(d?.defaults?.human_delay_max_s ?? '');
       case 'warmup_log_retention_days': return String(d?.defaults?.warmup_log_retention_days ?? '');
       case 'default_cap_tokens': return String(d?.llm?.default_cap_tokens ?? '');
+      case 'llm_api_key': return '';
+      case 'oauth_client_id': return '';
+      case 'oauth_client_secret': return '';
       case 'smtp_host': return d?.transactional_smtp?.host ?? '';
       case 'smtp_port': return '';
       case 'smtp_username': return '';
@@ -97,16 +116,25 @@ export function AdminSettings2() {
       case 'default_cap_tokens':
         updateLlm.mutate({ default_cap_tokens: Number(val) }, { onSuccess: onOk, onError: onErr });
         break;
+      case 'llm_api_key':
+        updateLlm.mutate({ api_key: val }, { onSuccess: onOk, onError: onErr });
+        break;
+      case 'oauth_client_id':
+        updateOauth.mutate({ client_id: val }, { onSuccess: onOk, onError: onErr });
+        break;
+      case 'oauth_client_secret':
+        updateOauth.mutate({ client_secret: val }, { onSuccess: onOk, onError: onErr });
+        break;
       case 'smtp_host':
       case 'smtp_port':
       case 'smtp_username':
       case 'smtp_password':
-      case 'smtp_from_addr':
-        updateSmtp.mutate(
-          edit.kind === 'smtp_port' ? { port: Number(val) } : { [edit.kind]: val },
-          { onSuccess: onOk, onError: onErr },
-        );
+      case 'smtp_from_addr': {
+        const patch: SmtpPatch =
+          edit.kind === 'smtp_port' ? { port: Number(val) } : { [SMTP_FIELD_MAP[edit.kind]]: val };
+        updateSmtp.mutate(patch, { onSuccess: onOk, onError: onErr });
         break;
+      }
     }
   }
 
@@ -138,13 +166,18 @@ export function AdminSettings2() {
   }
 
   function integrationsActions() {
-    Alert.alert('Integrations', 'Test or update a provider', [
+    Alert.alert('LLM provider', 'Test or update the LLM key', [
       { text: 'Test LLM', onPress: () => testLlm.mutate(undefined, { onSuccess: (r) => Alert.alert('LLM test', r.ok ? 'OK' : `Failed: ${r.error ?? ''}`), onError: fail }) },
-      { text: 'Test OAuth', onPress: () => testOauth.mutate(undefined, { onSuccess: (r) => Alert.alert('OAuth test', r.ok ? 'OK' : `Failed: ${r.error ?? ''}`), onError: fail }) },
-      { text: 'Test SMTP (sends email)', onPress: () => testSmtp.mutate(undefined, { onSuccess: (r) => Alert.alert('SMTP test', r.ok ? 'Sent.' : `Failed: ${r.error ?? r.detail ?? ''}`), onError: fail }) },
-      { text: 'Edit LLM API key', onPress: () => Alert.alert('Replace LLM key', 'Paste the new key:', [
-        { text: 'Cancel', style: 'cancel' },
-      ]) },
+      { text: 'Edit API key', onPress: () => setEdit({ kind: 'llm_api_key', label: 'LLM API key' }) },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }
+
+  function oauthActions() {
+    Alert.alert('Google OAuth', 'Test or update the OAuth client', [
+      { text: 'Edit client ID', onPress: () => setEdit({ kind: 'oauth_client_id', label: 'Google OAuth client ID' }) },
+      { text: 'Edit client secret', onPress: () => setEdit({ kind: 'oauth_client_secret', label: 'Google OAuth client secret' }) },
+      { text: 'Test', onPress: () => testOauth.mutate(undefined, { onSuccess: (r) => Alert.alert('OAuth test', r.ok ? 'OK' : `Failed: ${r.error ?? ''}`), onError: fail }) },
       { text: 'Cancel', style: 'cancel' },
     ]);
   }
@@ -167,7 +200,7 @@ export function AdminSettings2() {
               title="Google OAuth"
               value={d?.google_oauth?.configured ? 'Configured' : 'Not set'}
               accent={d?.google_oauth?.configured ? wp.success : wp.textFaint}
-              onPress={integrationsActions}
+              onPress={oauthActions}
             />
             <Row
               icon={Zap}
@@ -241,7 +274,7 @@ export function AdminSettings2() {
         initialValue={currentValue()}
         {...(edit && isNumeric(edit as never) ? numPad : {})}
         submitLabel="Save"
-        busy={updateDefaults.isPending || updateLlm.isPending || updateSmtp.isPending}
+        busy={updateDefaults.isPending || updateLlm.isPending || updateOauth.isPending || updateSmtp.isPending}
         onSubmit={submitEdit}
         onClose={() => setEdit(null)}
       />

@@ -669,9 +669,12 @@ async def auto_route_workspace_by_plan(
 
     Called when a client creates their first mailbox so warmup can begin
     immediately instead of waiting for an admin assignment. Respects existing
-    routing: if the workspace already has a ``ClientPoolAssignment`` we return
-    ``None`` and change nothing (manual/admin assignment wins); ditto for a
-    falsy ``plan_name``. Plan-named pools only exist when
+    routing: a manual/admin assignment to a NON-default pool always wins.
+    The exception is the automated signup-time default assignment
+    (:func:`ensure_default_assignment`): if the workspace's plan maps to a
+    plan-named pool, that default assignment is re-pointed so plan routing
+    isn't pre-empted by the signup default. Ditto for a falsy ``plan_name``
+    (None, nothing happens). Plan-named pools only exist when
     ``scripts/seed_plan_pools.py`` has run — when no pool's name
     case-insensitively matches ``plan_name`` we fall back to the default pool
     (via :func:`ensure_default_assignment`) so the workspace never sits
@@ -683,13 +686,11 @@ async def auto_route_workspace_by_plan(
 
     existing = (
         await session.execute(
-            select(ClientPoolAssignment.id).where(
+            select(ClientPoolAssignment).where(
                 ClientPoolAssignment.workspace_id == workspace_id
             )
         )
     ).scalar_one_or_none()
-    if existing is not None:
-        return None
 
     target = plan_name.strip().lower()
     pool = (
@@ -697,6 +698,23 @@ async def auto_route_workspace_by_plan(
             select(PeerPool).where(func.lower(PeerPool.name) == target).limit(1)
         )
     ).scalar_one_or_none()
+
+    if existing is not None:
+        if pool is None:
+            # No plan-named pool — keep whatever routing exists (default or
+            # manual) rather than erroring or re-pointing.
+            return None
+        existing_pool = await session.get(PeerPool, existing.pool_id)
+        if existing_pool is None or not existing_pool.is_default:
+            # Manual/admin routing to a non-default pool wins.
+            return None
+        # The assignment is the automated signup default — re-point it to
+        # the plan-named pool so plan routing isn't pre-empted.
+        await upsert_assignment(
+            session, actor=actor, workspace_id=workspace_id, pool_id=pool.id
+        )
+        return pool.id
+
     if pool is None:
         # No plan-named pool — default the workspace instead of leaving it
         # unassigned until an admin routes it by hand.

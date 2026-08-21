@@ -32,7 +32,7 @@ from sqlalchemy import select
 
 from app.celery_app import celery_app
 from app.config import get_settings
-from app.db.models.mailboxes import Mailbox, MailboxProvider
+from app.db.models.mailboxes import Mailbox, MailboxProvider, WarmupStatus
 from app.db.models.peer_inboxes import PeerInbox
 from app.db.models.warmup_logs import WarmupAction, WarmupDirection, WarmupLog
 from app.db.session import SessionLocal
@@ -157,9 +157,9 @@ async def _engage_impl(mailbox_id: str) -> dict:
         # Pause gate. The beat fan-out filters paused rows at enqueue time,
         # but a task already sitting on the smtp queue (or in its retry
         # ladder) must re-check here or engagement actions keep landing on a
-        # mailbox the user has since paused. Mirrors the scheduler's own
-        # eligibility filter (`_eligible_mailbox_ids`).
-        if mailbox.is_paused:
+        # mailbox the user has since paused. Gates on BOTH flags like the
+        # other engine gates (`is_paused` OR `warmup_status != active`).
+        if mailbox.is_paused or mailbox.warmup_status != WarmupStatus.active:
             return {"status": "skipped_paused"}
         if mailbox.provider != MailboxProvider.gmail or not mailbox.oauth_token_encrypted:
             return {"status": "not_oauth_gmail"}

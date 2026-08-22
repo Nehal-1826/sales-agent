@@ -87,6 +87,14 @@ async def _send_impl(mailbox_id: str) -> dict:
         if mailbox is None:
             return {"status": "mailbox_not_found"}
 
+        # Pause gate. The scheduler filters paused rows at enqueue time, but
+        # this task may run long after that — queue backlog, the +60/+120/+180s
+        # retry ladder, and acks-late redelivery can each add minutes of lag.
+        # Re-check here or warmup mail keeps flowing for ~15-21 min after the
+        # user pauses the mailbox.
+        if mailbox.warmup_status != WarmupStatus.active or mailbox.is_paused:
+            return {"status": "skipped_paused"}
+
         peer = await pick_peer_inbox(mailbox.id, db)
         if peer is None:
             return {"status": "no_peer_available"}

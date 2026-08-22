@@ -35,6 +35,7 @@ router = APIRouter(prefix="/api/workspace/webhooks", tags=["workspace-webhooks"]
 # notification_prefs default list.
 _ALLOWED_EVENTS: set[str] = {
     "mailbox_paused",
+    "mailbox_connected",
     "bounce_spike",
     "peer_failed",
     "weekly_digest",

@@ -44,6 +44,7 @@ async def _setup_db() -> tuple[async_sessionmaker[AsyncSession], object]:
     from app.db.models.plans import Plan
     from app.db.models.users import User
     from app.db.models.warmup_logs import WarmupLog
+    from app.db.models.workspace_settings import WorkspaceSetting
 
     _dedupe_metadata_indexes(Base)
     engine = create_async_engine(
@@ -64,6 +65,9 @@ async def _setup_db() -> tuple[async_sessionmaker[AsyncSession], object]:
             ClientPoolAssignment,
             AuditLog,
             WarmupLog,
+            # Signup (tested here for default-pool routing) reads the
+            # workspace's settings row when building the user response.
+            WorkspaceSetting,
         )
     ]
     async with engine.begin() as conn:
@@ -582,7 +586,7 @@ async def test_auto_route_workspace_by_plan(
     from app.services import peer_pool_service
 
     _, maker, _ = app_and_maker
-    await _seed_default_pool(maker)
+    default_id = await _seed_default_pool(maker)
     admin = await _make_admin(maker)
     workspace_id = uuid.uuid4()
 
@@ -617,7 +621,8 @@ async def test_auto_route_workspace_by_plan(
         assert len(rows) == 1
         assert rows[0].pool_id == pro_id
 
-    # Already assigned → returns None, doesn't change.
+    # Already assigned to a NON-default pool → returns None, doesn't change
+    # (manual/admin routing wins over plan routing).
     async with maker() as session:
         again = await peer_pool_service.auto_route_workspace_by_plan(
             session, workspace_id=workspace_id, plan_name="Starter", actor=admin
@@ -639,12 +644,30 @@ async def test_auto_route_workspace_by_plan(
         assert len(rows) == 1
         assert rows[0].pool_id == pro_id
 
-    # Unknown plan for a fresh workspace → None.
+    # Unknown plan for a fresh workspace → falls back to the DEFAULT pool
+    # (plan-named pools only exist if seed_plan_pools ran; without the
+    # fallback the workspace would sit "unassigned" forever).
+    fresh_ws = uuid.uuid4()
     async with maker() as session:
         unknown = await peer_pool_service.auto_route_workspace_by_plan(
-            session, workspace_id=uuid.uuid4(), plan_name="Nonexistent", actor=admin
+            session, workspace_id=fresh_ws, plan_name="Nonexistent", actor=admin
         )
-        assert unknown is None
+        assert unknown == default_id
+
+    async with maker() as session:
+        rows = list(
+            (
+                await session.execute(
+                    select(ClientPoolAssignment).where(
+                        ClientPoolAssignment.workspace_id == fresh_ws
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 1
+        assert rows[0].pool_id == default_id
 
     # Falsy plan name → None.
     async with maker() as session:
@@ -652,6 +675,102 @@ async def test_auto_route_workspace_by_plan(
             session, workspace_id=uuid.uuid4(), plan_name="", actor=admin
         )
         assert falsy is None
+
+
+async def test_auto_route_repoints_default_assignment_to_plan_pool(
+    app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+) -> None:
+    """The automated signup default assignment must not pre-empt plan routing.
+
+    Signup creates a ClientPoolAssignment at the default pool
+    (``ensure_default_assignment``). When the workspace's plan later maps to
+    a plan-named pool (first mailbox creation), that default assignment is
+    re-pointed to the plan pool.
+    """
+    from app.db.models.client_pool_assignments import ClientPoolAssignment
+    from app.db.models.peer_pools import PeerPool
+    from app.services import peer_pool_service
+
+    _, maker, _ = app_and_maker
+    default_id = await _seed_default_pool(maker)
+    admin = await _make_admin(maker)
+    workspace_id = uuid.uuid4()
+
+    # A plan-named pool exists.
+    async with maker() as session:
+        pro = PeerPool(name="Pro")
+        session.add(pro)
+        await session.commit()
+        await session.refresh(pro)
+        pro_id = pro.id
+
+    # Signup-time default assignment already in place.
+    async with maker() as session:
+        session.add(
+            ClientPoolAssignment(workspace_id=workspace_id, pool_id=default_id)
+        )
+        await session.commit()
+
+    async with maker() as session:
+        result = await peer_pool_service.auto_route_workspace_by_plan(
+            session, workspace_id=workspace_id, plan_name="pro", actor=admin
+        )
+    assert result == pro_id
+
+    async with maker() as session:
+        rows = list(
+            (
+                await session.execute(
+                    select(ClientPoolAssignment).where(
+                        ClientPoolAssignment.workspace_id == workspace_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 1
+        assert rows[0].pool_id == pro_id
+
+
+async def test_auto_route_keeps_default_assignment_when_no_plan_pool(
+    app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+) -> None:
+    """Default assignment + no plan-named pool → stays default, no error."""
+    from app.db.models.client_pool_assignments import ClientPoolAssignment
+    from app.services import peer_pool_service
+
+    _, maker, _ = app_and_maker
+    default_id = await _seed_default_pool(maker)
+    admin = await _make_admin(maker)
+    workspace_id = uuid.uuid4()
+
+    async with maker() as session:
+        session.add(
+            ClientPoolAssignment(workspace_id=workspace_id, pool_id=default_id)
+        )
+        await session.commit()
+
+    async with maker() as session:
+        result = await peer_pool_service.auto_route_workspace_by_plan(
+            session, workspace_id=workspace_id, plan_name="Nonexistent", actor=admin
+        )
+    assert result is None
+
+    async with maker() as session:
+        rows = list(
+            (
+                await session.execute(
+                    select(ClientPoolAssignment).where(
+                        ClientPoolAssignment.workspace_id == workspace_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 1
+        assert rows[0].pool_id == default_id
 
 
 @pytest.mark.asyncio
@@ -960,3 +1079,137 @@ async def test_routing_mailboxes_api_list_and_pin(
     async with maker() as session:
         rows = await peer_pool_service.list_routing_mailboxes(session)
     assert next(m for m in rows if m["id"] == mbx_id)["pool_id"] == pin_pool
+
+
+# --------------------------------------------------------------------------- #
+# Default-pool demotion guard                                                  #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_update_pool_cannot_demote_only_default(
+    app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+) -> None:
+    from fastapi import HTTPException
+
+    from app.db.models.peer_pools import PeerPool
+    from app.schemas.peer_pools import PoolUpdate
+    from app.services import peer_pool_service
+
+    _, maker, _ = app_and_maker
+    default_id = await _seed_default_pool(maker)
+    admin = await _make_admin(maker)
+
+    async with maker() as session:
+        with pytest.raises(HTTPException) as exc:
+            await peer_pool_service.update_pool(
+                session,
+                actor=admin,
+                pool_id=default_id,
+                payload=PoolUpdate(is_default=False),
+            )
+        assert exc.value.status_code == 409
+        assert "default pool" in exc.value.detail.lower()
+
+    # Still the default — nothing was applied.
+    async with maker() as session:
+        pool = await session.get(PeerPool, default_id)
+        assert pool is not None and pool.is_default is True
+
+
+@pytest.mark.asyncio
+async def test_update_pool_demote_allowed_when_second_default_exists(
+    app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+) -> None:
+    from app.db.models.peer_pools import PeerPool
+    from app.schemas.peer_pools import PoolUpdate
+    from app.services import peer_pool_service
+
+    _, maker, _ = app_and_maker
+    admin = await _make_admin(maker)
+
+    # Seed two defaults directly (the service normally keeps a single
+    # default; the guard just has to allow demotion when >1 exist).
+    async with maker() as session:
+        pool_a = PeerPool(name="def-a", is_default=True)
+        pool_b = PeerPool(name="def-b", is_default=True)
+        session.add_all([pool_a, pool_b])
+        await session.commit()
+        await session.refresh(pool_a)
+        id_a = pool_a.id
+
+    async with maker() as session:
+        updated = await peer_pool_service.update_pool(
+            session,
+            actor=admin,
+            pool_id=id_a,
+            payload=PoolUpdate(is_default=False),
+        )
+        assert updated.is_default is False
+
+    async with maker() as session:
+        remaining = list(
+            (
+                await session.execute(
+                    select(PeerPool).where(PeerPool.is_default.is_(True))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(remaining) == 1
+        assert remaining[0].name == "def-b"
+
+
+# --------------------------------------------------------------------------- #
+# Signup routes workspace to the default pool                                  #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_signup_assigns_workspace_to_default_pool(
+    app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+) -> None:
+    from app.db.models.client_pool_assignments import ClientPoolAssignment
+    from app.services import auth_service
+
+    _, maker, _ = app_and_maker
+    default_id = await _seed_default_pool(maker)
+
+    async with maker() as session:
+        resp = await auth_service.signup_user(
+            session, email="fresh-client@example.com", password="warm-Pulse-123!"
+        )
+        assert resp.user.email == "fresh-client@example.com"
+        workspace_id = resp.user.workspace_id
+
+    async with maker() as session:
+        rows = list(
+            (
+                await session.execute(
+                    select(ClientPoolAssignment).where(
+                        ClientPoolAssignment.workspace_id == workspace_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 1
+        assert rows[0].pool_id == default_id
+
+
+@pytest.mark.asyncio
+async def test_signup_survives_missing_default_pool(
+    app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+) -> None:
+    """No default pool (and no pools at all) — signup must still succeed."""
+    from app.services import auth_service
+
+    _, maker, _ = app_and_maker
+
+    async with maker() as session:
+        resp = await auth_service.signup_user(
+            session, email="no-pool-client@example.com", password="warm-Pulse-123!"
+        )
+        assert resp.user.email == "no-pool-client@example.com"

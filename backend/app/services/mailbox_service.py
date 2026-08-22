@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     import ssl
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.audit_logs import AuditLog
@@ -38,7 +38,7 @@ from app.db.models.mailboxes import (
 )
 from app.db.models.plans import Plan
 from app.db.models.schedule_windows import ScheduleWindow
-from app.db.models.users import OnboardingStatus, User
+from app.db.models.users import OnboardingStatus, User, UserRole
 from app.schemas.mailboxes import (
     MailboxCreateOauth,
     MailboxCreateSmtp,
@@ -717,6 +717,94 @@ async def resume_mailbox(
     await session.commit()
     await session.refresh(mbx)
     return mbx
+
+
+async def bulk_pause_mailboxes(
+    session: AsyncSession,
+    *,
+    actor: User,
+    user_ids: list[uuid.UUID],
+    action: str,
+) -> dict[str, Any]:
+    """Admin bulk pause/resume of every mailbox in the target users' workspaces.
+
+    ``user_ids == []`` means ALL users with ``role == client``. Explicit ids
+    are filtered to clients only — super_admin ids are silently skipped (and
+    counted). Pause mirrors :func:`pause_mailbox` but is scoped like the
+    resume branch: only rows currently ``warmup_status IN (active, paused)``
+    flip, so pending/completed mailboxes keep their lifecycle status; resume
+    only rows currently ``warmup_status == paused`` (and ``is_paused``) go
+    back to active.
+    """
+    if user_ids:
+        unique_ids = set(user_ids)
+        result = await session.execute(
+            select(User).where(
+                User.id.in_(unique_ids), User.role == UserRole.client
+            )
+        )
+        targets = list(result.scalars().all())
+        skipped = len(unique_ids) - len(targets)
+    else:
+        result = await session.execute(
+            select(User).where(User.role == UserRole.client)
+        )
+        targets = list(result.scalars().all())
+        skipped = 0
+
+    workspace_ids = [u.workspace_id for u in targets]
+    mailboxes_updated = 0
+    if workspace_ids:
+        if action == "pause":
+            # Only rows currently active/paused flip — pending/completed
+            # mailboxes keep their lifecycle status (mirrors the resume
+            # branch's "never warmup-(de)activate out of lifecycle" scoping).
+            stmt = (
+                update(Mailbox)
+                .where(
+                    Mailbox.workspace_id.in_(workspace_ids),
+                    Mailbox.warmup_status.in_(
+                        [WarmupStatus.active, WarmupStatus.paused]
+                    ),
+                )
+                .values(is_paused=True, warmup_status=WarmupStatus.paused)
+            )
+        else:
+            # Resume — only rows currently paused flip back to active, so
+            # pending/completed mailboxes are never warmup-activated.
+            stmt = (
+                update(Mailbox)
+                .where(
+                    Mailbox.workspace_id.in_(workspace_ids),
+                    Mailbox.warmup_status == WarmupStatus.paused,
+                    Mailbox.is_paused.is_(True),
+                )
+                .values(is_paused=False, warmup_status=WarmupStatus.active)
+            )
+        result = await session.execute(stmt)
+        mailboxes_updated = int(result.rowcount or 0)
+
+    await _write_audit(
+        session,
+        action=f"admin_bulk_mailbox_{action}",
+        actor_user_id=actor.id,
+        actor_role=(
+            actor.role.value if hasattr(actor.role, "value") else str(actor.role)
+        ),
+        payload={
+            "action": action,
+            "requested_user_ids": [str(i) for i in user_ids],
+            "users_affected": len(targets),
+            "mailboxes_updated": mailboxes_updated,
+            "skipped_super_admin": skipped,
+        },
+    )
+    await session.commit()
+    return {
+        "users_affected": len(targets),
+        "mailboxes_updated": mailboxes_updated,
+        "skipped_super_admin": skipped,
+    }
 
 
 # --------------------------------------------------------------------------- #

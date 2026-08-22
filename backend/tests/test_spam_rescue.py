@@ -44,6 +44,7 @@ async def _setup_db() -> tuple[async_sessionmaker[AsyncSession], object]:
     from app.db import models  # noqa: F401 — register all models on Base.metadata
     from app.db.base import Base
     from app.db.models.daily_metrics import DailyMetric
+    from app.db.models.mailboxes import Mailbox
     from app.db.models.peer_inboxes import PeerInbox
     from app.db.models.warmup_logs import WarmupLog
 
@@ -55,7 +56,8 @@ async def _setup_db() -> tuple[async_sessionmaker[AsyncSession], object]:
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    tables = [t.__table__ for t in (PeerInbox, DailyMetric, WarmupLog)]
+    # Mailbox is needed by the pause gate in _peer_spam_rescue_impl.
+    tables = [t.__table__ for t in (PeerInbox, DailyMetric, WarmupLog, Mailbox)]
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all, tables=tables)
     maker = async_sessionmaker(

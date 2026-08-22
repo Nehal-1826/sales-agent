@@ -36,6 +36,7 @@ from app.api.routes.admin_revenge import router as revenge_router
 from app.db.models.mailboxes import Mailbox
 from app.db.models.plans import Plan
 from app.db.models.users import User
+from app.schemas.mailboxes import BulkMailboxPauseRequest
 from app.services.security import create_access_token
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -232,6 +233,27 @@ async def unsuspend_user(
     _actor: Annotated[User, Depends(require_super_admin)],
 ) -> None:
     await _set_suspended(session, user_id, suspended=False)
+
+
+@router.post("/users/bulk-pause-mailboxes", status_code=200)
+async def bulk_pause_user_mailboxes(
+    payload: BulkMailboxPauseRequest,
+    session: Annotated[AsyncSession, Depends(get_db)],
+    actor: Annotated[User, Depends(require_super_admin)],
+) -> dict[str, Any]:
+    """Bulk pause/resume warmup mailboxes for selected client users.
+
+    ``user_ids: []`` targets every client user (the admin Users page's
+    select-all). Super_admin ids in the list are skipped and counted.
+    """
+    from app.services import mailbox_service
+
+    return await mailbox_service.bulk_pause_mailboxes(
+        session,
+        actor=actor,
+        user_ids=payload.user_ids,
+        action=payload.action,
+    )
 
 
 @router.post("/users/{user_id}/plan", status_code=204)

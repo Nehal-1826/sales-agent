@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.addons import Addon, WorkspaceAddon
-from app.schemas.addons import AddonCreate, AddonUpdate
+from app.schemas.addons import AddonCreate, AddonUpdate, PublicAddonOut
 
 
 async def list_active_addons(session: AsyncSession) -> list[Addon]:
@@ -21,6 +21,14 @@ async def list_active_addons(session: AsyncSession) -> list[Addon]:
         select(Addon).where(Addon.is_active.is_(True)).order_by(Addon.sort_order.asc())
     )
     return list(result.scalars().all())
+
+
+async def list_public_addons(session: AsyncSession) -> list[PublicAddonOut]:
+    """Public pricing-page listing — active add-ons only, projected to the
+    marketing shape (id, key, name, description, price_cents, price_display).
+    No caching: one cheap indexed query per landing-page view."""
+    addons = await list_active_addons(session)
+    return [PublicAddonOut.model_validate(a) for a in addons]
 
 
 async def list_all_addons(session: AsyncSession) -> list[Addon]:

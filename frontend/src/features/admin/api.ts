@@ -27,6 +27,8 @@ import type {
   AdminUserRow,
   AuditFilters,
   AuditLogResponse,
+  BulkPauseMailboxesRequest,
+  BulkPauseMailboxesResponse,
   ExportRequest,
   GenerateRequest,
   GenerateResult,
@@ -459,6 +461,35 @@ export function useDeleteUser(): UseMutationResult<void, unknown, string> {
       qc.invalidateQueries({ queryKey: ADMIN_KEYS.users });
       // The pool-routing matrix joins on User; orphan assignments disappear
       // once the User row is gone, so refresh those views too.
+      qc.invalidateQueries({ queryKey: ADMIN_KEYS.poolRouting });
+      qc.invalidateQueries({ queryKey: ADMIN_KEYS.poolUnassigned });
+      qc.invalidateQueries({ queryKey: ADMIN_KEYS.sankey });
+    },
+  });
+}
+
+/**
+ * Bulk pause/resume warmup mailboxes for client users.
+ * `user_ids: []` targets EVERY client user (the Users page select-all);
+ * super_admin ids are skipped server-side and reported in the response.
+ */
+export function useBulkPauseMailboxes(): UseMutationResult<
+  BulkPauseMailboxesResponse,
+  unknown,
+  BulkPauseMailboxesRequest
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload) => {
+      const res = await api.post<BulkPauseMailboxesResponse>(
+        '/admin/users/bulk-pause-mailboxes',
+        payload,
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_KEYS.users });
+      // Mailbox pause state feeds the same routing views a user delete does.
       qc.invalidateQueries({ queryKey: ADMIN_KEYS.poolRouting });
       qc.invalidateQueries({ queryKey: ADMIN_KEYS.poolUnassigned });
       qc.invalidateQueries({ queryKey: ADMIN_KEYS.sankey });

@@ -37,6 +37,7 @@ from app.schemas.mailboxes import (
     TestConnectionResponse,
 )
 from app.services import mailbox_service
+from app.services.notifications_dispatch import fire_and_forget_webhooks
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,25 @@ async def create_mailbox(
         import_leads.delay(str(mbx.id))
     except Exception:
         pass
+
+    # Fan out a "mailbox_connected" webhook (e.g. Julex listens for this to
+    # confirm a linked store's workspace is warming). Sync fire-and-forget —
+    # a webhook failure must NEVER break mailbox creation.
+    try:
+        provider = (
+            mbx.provider.value if hasattr(mbx.provider, "value") else str(mbx.provider)
+        )
+        fire_and_forget_webhooks(
+            user.workspace_id,
+            "mailbox_connected",
+            {
+                "mailbox_id": str(mbx.id),
+                "email_address": mbx.email_address,
+                "provider": provider,
+            },
+        )
+    except Exception:
+        logger.warning("mailbox_connected webhook fanout failed", exc_info=True)
 
     return mailbox_service.mailbox_to_out(mbx, window=window)
 

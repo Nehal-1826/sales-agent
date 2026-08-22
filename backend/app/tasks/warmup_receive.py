@@ -33,6 +33,7 @@ import uuid
 from sqlalchemy import select
 
 from app.celery_app import celery_app
+from app.db.models.mailboxes import Mailbox, WarmupStatus
 from app.db.models.peer_inboxes import PeerInbox
 from app.db.session import SessionLocal
 from app.services.crypto import get_fernet_service
@@ -113,6 +114,20 @@ async def _resolve_outbound_log(
     if row is None:
         return None
     return row[0], (row[1] or "")
+
+
+async def _origin_mailbox_is_paused(db, mailbox_id: uuid.UUID) -> bool:
+    """Pause gate (mirrors the outbound gate in warmup_send._send_impl).
+
+    A paused mailbox must stop *receiving* engagement too, not just stop
+    sending — otherwise peers keep opening/starring/replying to warmup mail
+    that landed before the pause, indefinitely. A missing mailbox row also
+    gates (dispatching actions for a deleted mailbox is useless).
+    """
+    mailbox = await db.get(Mailbox, mailbox_id)
+    if mailbox is None:
+        return True
+    return mailbox.is_paused or mailbox.warmup_status != WarmupStatus.active
 
 
 async def _dispatch_inbox_action(
@@ -201,6 +216,8 @@ async def _poll_impl(peer_id: str) -> dict:
             if resolved is None:
                 continue
             mailbox_id, _subject = resolved
+            if await _origin_mailbox_is_paused(db, mailbox_id):
+                continue
             label = await _dispatch_spam_action(
                 str(peer.id), str(mailbox_id), warmup_id, db
             )
@@ -212,6 +229,8 @@ async def _poll_impl(peer_id: str) -> dict:
             if resolved is None:
                 continue
             mailbox_id, subject = resolved
+            if await _origin_mailbox_is_paused(db, mailbox_id):
+                continue
             label = await _dispatch_inbox_action(
                 str(peer.id), str(mailbox_id), warmup_id, subject
             )

@@ -275,6 +275,19 @@ export interface UsersListResponse {
   page_size: number;
 }
 
+/** POST /admin/users/bulk-pause-mailboxes body — empty user_ids = ALL client users. */
+export interface BulkPauseMailboxesRequest {
+  user_ids: string[];
+  action: 'pause' | 'resume';
+}
+
+/** POST /admin/users/bulk-pause-mailboxes response counts. */
+export interface BulkPauseMailboxesResponse {
+  users_affected: number;
+  mailboxes_updated: number;
+  skipped_super_admin: number;
+}
+
 // ---------------------------------------------------------------------------
 // Audit log
 // ---------------------------------------------------------------------------

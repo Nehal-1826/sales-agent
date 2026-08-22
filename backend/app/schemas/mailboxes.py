@@ -167,6 +167,20 @@ class MailboxUpdate(BaseModel):
     is_paused: bool | None = None
 
 
+class BulkMailboxPauseRequest(BaseModel):
+    """Admin bulk pause/resume body for client users' mailboxes.
+
+    An empty ``user_ids`` list means "all client users" — the admin Users
+    page's select-all action relies on that. Non-client (super_admin) ids
+    are silently skipped by the service.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    user_ids: list[uuid.UUID] = Field(default_factory=list)
+    action: Literal["pause", "resume"]
+
+
 # --------------------------------------------------------------------------- #
 # Responses                                                                    #
 # --------------------------------------------------------------------------- #

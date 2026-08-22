@@ -10,6 +10,9 @@
  *   useImpersonateAndEnter   → marquee "Enter as User" CTA in profile panel
  *   useSuspendUser           → suspend / unsuspend action in profile panel
  *   useDeleteUser            → delete action (with confirm dialog) in profile panel
+ *   useBulkPauseMailboxes    → multi-select bulk pause/resume all mailboxes
+ *                              (card checkboxes + select-all + floating action bar;
+ *                              "Apply to ALL client users" sends user_ids: [])
  *
  * Field mapping (AdminUserRow → U3 visual):
  *   id          → card layoutId key
@@ -84,6 +87,8 @@ import {
   Receipt,
   Pencil,
   RotateCcw,
+  Pause,
+  Play,
 } from 'lucide-react';
 import {
   useAdminUsers,
@@ -94,6 +99,7 @@ import {
   useUnsabotageUser,
   useUpdateUserPlan,
   useDeleteUser,
+  useBulkPauseMailboxes,
   useImpersonateAndEnter,
   useAdminPayments,
   useAdminPlans,
@@ -103,6 +109,16 @@ import { Skull } from 'lucide-react';
 import { EditPaymentDialog } from '@/features/admin/payments/EditPaymentDialog';
 import { toast } from '@/components/ui/AppToast';
 import { confirm } from '@/components/ui/ConfirmDialog';
+import {
+  AppDialog,
+  AppDialogBody,
+  AppDialogContent,
+  AppDialogDescription,
+  AppDialogFooter,
+  AppDialogHeader,
+  AppDialogTitle,
+} from '@/components/ui/AppDialog';
+import { Button } from '@/components/ui/Button';
 import { extractErrorMessage } from '@/lib/errors';
 import { UserDetailDrawer } from './users';
 import type { AdminUserRow, AdminPayment } from '@/features/admin/types';
@@ -1051,6 +1067,17 @@ const ProfilePanel = forwardRef<
   );
 });
 
+// ─── Selection checkbox (bulk pause/resume) ─────────────────────────────────────
+// No standalone checkbox primitive exists in components/ui, so a styled native
+// input it is — accent-tinted to sit on the U3 glass cards.
+const SELECT_CHECKBOX_STYLE: CSSProperties = {
+  width: 16,
+  height: 16,
+  accentColor: T.accent,
+  cursor: 'pointer',
+  flexShrink: 0,
+};
+
 // ─── User card ───────────────────────────────────────────────────────────────────
 const UserCard = forwardRef<
   HTMLDivElement,
@@ -1058,10 +1085,13 @@ const UserCard = forwardRef<
     row: AdminUserRow;
     onClick: () => void;
     godMode: boolean;
+    selected: boolean;
+    onToggleSelect: (id: string) => void;
   }
->(({ row, onClick, godMode }, ref) => {
+>(({ row, onClick, godMode, selected, onToggleSelect }, ref) => {
   const displayStatus = toDisplayStatus(row.status);
   const isSuspended = row.status === 'suspended';
+  const isSuperAdmin = row.role === 'super_admin';
   const displayName = row.name ?? row.email.split('@')[0] ?? row.email;
 
   return (
@@ -1083,6 +1113,8 @@ const UserCard = forwardRef<
         position: 'relative',
         overflow: 'hidden',
         opacity: isSuspended ? 0.72 : 1,
+        outline: selected ? `1.5px solid ${T.accent}70` : 'none',
+        outlineOffset: -1.5,
       }}
     >
       {/* Sabotaged indicator (God Mode only) */}
@@ -1116,9 +1148,25 @@ const UserCard = forwardRef<
         />
       )}
 
-      {/* Top row: avatar + plan chip + role icon */}
+      {/* Top row: select checkbox + avatar + plan chip + role icon */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
-        <CardAvatar row={row} size={48} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <input
+            type="checkbox"
+            checked={selected}
+            disabled={isSuperAdmin}
+            title={isSuperAdmin ? 'Admins excluded' : undefined}
+            aria-label={isSuperAdmin ? 'Admins excluded from bulk actions' : `Select ${displayName}`}
+            onClick={(e) => e.stopPropagation()}
+            onChange={() => onToggleSelect(row.id)}
+            style={{
+              ...SELECT_CHECKBOX_STYLE,
+              cursor: isSuperAdmin ? 'not-allowed' : 'pointer',
+              opacity: isSuperAdmin ? 0.35 : 1,
+            }}
+          />
+          <CardAvatar row={row} size={48} />
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <PlanChip plan={row.plan} />
           <RoleIcon role={row.role} />
@@ -1170,6 +1218,69 @@ const UserCard = forwardRef<
   );
 });
 
+// ─── Bulk pause/resume confirm dialog ────────────────────────────────────────────
+/**
+ * Confirm for the bulk mailboxes pause/resume action. The primary button acts
+ * on the N selected users; the secondary "Apply to ALL client users" path sends
+ * `user_ids: []` (backend = every client user, super_admins always skipped).
+ */
+function BulkPauseDialog({
+  action,
+  selectedCount,
+  pending,
+  onConfirm,
+  onCancel,
+}: {
+  action: 'pause' | 'resume';
+  selectedCount: number;
+  pending: boolean;
+  onConfirm: (scope: 'selected' | 'all') => void;
+  onCancel: () => void;
+}) {
+  const isPause = action === 'pause';
+  const verb = isPause ? 'Pause' : 'Resume';
+  return (
+    <AppDialog open onOpenChange={(open) => { if (!open && !pending) onCancel(); }}>
+      <AppDialogContent>
+        <AppDialogHeader>
+          <AppDialogTitle>{verb} all mailboxes?</AppDialogTitle>
+          <AppDialogDescription>
+            {verb} warmup for all mailboxes of the {selectedCount} selected user
+            {selectedCount === 1 ? '' : 's'}? Super admins are excluded automatically.
+          </AppDialogDescription>
+        </AppDialogHeader>
+        <AppDialogBody>
+          <p className="text-sm text-text-dim">
+            This {isPause ? 'pauses' : 'resumes'} warmup sending and engagement for every
+            mailbox {isPause ? '— ramp progress is kept' : '— ramps resume from where they stopped'}.
+          </p>
+        </AppDialogBody>
+        <AppDialogFooter>
+          <Button variant="ghost" onClick={onCancel} disabled={pending}>
+            Cancel
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => onConfirm('all')}
+            disabled={pending}
+            className="text-accent3 border-accent3/40 hover:bg-accent3/10"
+          >
+            Apply to ALL client users
+          </Button>
+          <Button
+            variant={isPause ? 'danger' : 'primary'}
+            onClick={() => onConfirm('selected')}
+            disabled={pending}
+            isLoading={pending}
+          >
+            {verb} {selectedCount} selected
+          </Button>
+        </AppDialogFooter>
+      </AppDialogContent>
+    </AppDialog>
+  );
+}
+
 // ─── Main page component ─────────────────────────────────────────────────────────
 
 type StatusFilter = 'active' | 'suspended' | 'pending' | null;
@@ -1181,6 +1292,11 @@ export function UsersPage() {
   const [expandedRow, setExpandedRow] = useState<AdminUserRow | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const selectAllRef = useRef<HTMLInputElement>(null);
+
+  // Bulk pause/resume selection (multi-select on the card grid)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkAction, setBulkAction] = useState<'pause' | 'resume' | null>(null);
 
   const godMode = useAdminUi((s) => s.godMode);
   const [windowDays] = useState<7 | 30 | 90>(30);
@@ -1193,6 +1309,7 @@ export function UsersPage() {
   const updatePlan = useUpdateUserPlan();
   const deleteUser = useDeleteUser();
   const impersonate = useImpersonateAndEnter();
+  const bulkPause = useBulkPauseMailboxes();
 
   const rows: AdminUserRow[] = users.data?.items ?? [];
 
@@ -1249,6 +1366,71 @@ export function UsersPage() {
   }, [rows, planFilter, statusFilter, query]);
 
   const hasFilters = !!planFilter || !!statusFilter || !!query;
+
+  // ── Bulk selection (super_admins are excluded everywhere — backend skips them) ──
+  const selectableRows = useMemo(
+    () => filteredRows.filter((r) => r.role !== 'super_admin'),
+    [filteredRows],
+  );
+
+  const selectedCount = selectedIds.size;
+  const allSelected =
+    selectableRows.length > 0 && selectableRows.every((r) => selectedIds.has(r.id));
+  const someSelected = !allSelected && selectableRows.some((r) => selectedIds.has(r.id));
+
+  // Native checkbox indeterminate state can't be set via React props — set it imperatively.
+  useEffect(() => {
+    if (selectAllRef.current) selectAllRef.current.indeterminate = someSelected;
+  }, [someSelected, allSelected]);
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAll = useCallback(() => {
+    setSelectedIds((prev) => {
+      const everySelected =
+        selectableRows.length > 0 && selectableRows.every((r) => prev.has(r.id));
+      const next = new Set(prev);
+      if (everySelected) {
+        for (const r of selectableRows) next.delete(r.id);
+      } else {
+        for (const r of selectableRows) next.add(r.id);
+      }
+      return next;
+    });
+  }, [selectableRows]);
+
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+
+  const runBulkPause = useCallback(
+    async (scope: 'selected' | 'all') => {
+      const action = bulkAction;
+      if (!action) return;
+      const userIds = scope === 'all' ? [] : Array.from(selectedIds);
+      try {
+        const res = await bulkPause.mutateAsync({ user_ids: userIds, action });
+        const verb = action === 'pause' ? 'Paused' : 'Resumed';
+        const skipped =
+          res.skipped_super_admin > 0
+            ? ` (${res.skipped_super_admin} admin${res.skipped_super_admin === 1 ? '' : 's'} skipped)`
+            : '';
+        toast.success(
+          `${verb} ${res.mailboxes_updated} mailbox${res.mailboxes_updated === 1 ? '' : 'es'} across ${res.users_affected} user${res.users_affected === 1 ? '' : 's'}${skipped}.`,
+        );
+        setBulkAction(null);
+        clearSelection();
+      } catch (err) {
+        toast.error(extractErrorMessage(err, 'Bulk mailbox action failed.'));
+      }
+    },
+    [bulkAction, selectedIds, bulkPause, clearSelection],
+  );
 
   const clearAll = () => {
     setPlanFilter(null);
@@ -1555,10 +1737,44 @@ export function UsersPage() {
           )}
         </AnimatePresence>
 
+        {/* Select all (filtered) — bulk pause/resume selection */}
+        <label
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 7,
+            padding: '5px 11px',
+            borderRadius: 8,
+            background: 'rgba(255,255,255,0.05)',
+            border: '1px solid rgba(255,255,255,0.10)',
+            color: T.dim,
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            userSelect: 'none',
+            marginLeft: 'auto',
+          }}
+        >
+          <input
+            ref={selectAllRef}
+            type="checkbox"
+            checked={allSelected}
+            onChange={toggleSelectAll}
+            disabled={selectableRows.length === 0}
+            aria-label="Select all filtered users"
+            style={{
+              ...SELECT_CHECKBOX_STYLE,
+              opacity: selectableRows.length === 0 ? 0.35 : 1,
+            }}
+          />
+          Select all ({selectableRows.length} filtered)
+        </label>
+
         {/* Count badge */}
         <motion.span
           layout
-          style={{ fontSize: 12, color: T.ghost, marginLeft: 'auto', whiteSpace: 'nowrap' }}
+          style={{ fontSize: 12, color: T.ghost, whiteSpace: 'nowrap' }}
         >
           {users.isLoading ? '…' : `${filteredRows.length} of ${rows.length}`}
         </motion.span>
@@ -1624,6 +1840,8 @@ export function UsersPage() {
                     row={row}
                     godMode={godMode}
                     onClick={() => setExpandedRow(row)}
+                    selected={selectedIds.has(row.id)}
+                    onToggleSelect={toggleSelect}
                   />
                 ))}
               </AnimatePresence>
@@ -1694,6 +1912,105 @@ export function UsersPage() {
 
       {/* ── Detail drawer (click card footer / kebab for full detail) ── */}
       <UserDetailDrawer userId={detailId} onClose={() => setDetailId(null)} />
+
+      {/* ── Bulk action bar (visible while selection is non-empty) ── */}
+      <AnimatePresence>
+        {selectedCount > 0 && (
+          <motion.div
+            key="bulk-bar"
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 24 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 26 }}
+            style={{
+              position: 'fixed',
+              bottom: 22,
+              left: 0,
+              right: 0,
+              zIndex: 20,
+              display: 'flex',
+              justifyContent: 'center',
+              pointerEvents: 'none',
+            }}
+          >
+            <div
+              style={{
+                pointerEvents: 'all',
+                ...T.glassDeep,
+                padding: '12px 18px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                flexWrap: 'wrap',
+              }}
+            >
+              <span style={{ fontSize: 13, fontWeight: 700, color: T.text, whiteSpace: 'nowrap' }}>
+                {selectedCount} selected
+              </span>
+              <motion.button
+                whileHover={{ scale: 1.04 }}
+                whileTap={{ scale: 0.96 }}
+                onClick={() => setBulkAction('pause')}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
+                  borderRadius: 10,
+                  background: T.warningDim,
+                  border: `1px solid ${T.warning}40`,
+                  color: T.warning,
+                  fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                }}
+              >
+                <Pause size={13} />
+                Pause all mailboxes
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.04 }}
+                whileTap={{ scale: 0.96 }}
+                onClick={() => setBulkAction('resume')}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
+                  borderRadius: 10,
+                  background: T.successDim,
+                  border: `1px solid ${T.success}40`,
+                  color: T.success,
+                  fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                }}
+              >
+                <Play size={13} />
+                Resume all mailboxes
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.92 }}
+                onClick={clearSelection}
+                title="Clear selection"
+                aria-label="Clear selection"
+                style={{
+                  width: 28, height: 28, borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid rgba(255,255,255,0.10)',
+                  color: T.dim,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer', flexShrink: 0,
+                }}
+              >
+                <X size={13} />
+              </motion.button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Bulk pause/resume confirm ── */}
+      {bulkAction && (
+        <BulkPauseDialog
+          action={bulkAction}
+          selectedCount={selectedCount}
+          pending={bulkPause.isPending}
+          onConfirm={runBulkPause}
+          onCancel={() => setBulkAction(null)}
+        />
+      )}
 
       {/* ── Hint ── */}
       <motion.div

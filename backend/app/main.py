@@ -34,16 +34,19 @@ from app.api.routes import (
     crm,
     dns,
     google_oauth,
+    integrations_julex,
     mailboxes,
     microsoft_oauth,
     payments,
     plans,
+    public_addons,
     tools,
     workspace_billing,
     workspace_branding,
     workspace_custom_domain,
     workspace_dedicated_pool,
     workspace_inbox,
+    workspace_integrations,
     workspace_notifications,
     workspace_placement,
     workspace_postmaster,
@@ -160,6 +163,7 @@ def create_app() -> FastAPI:
     app.include_router(google_oauth.router)
     app.include_router(microsoft_oauth.router)
     app.include_router(firebase_auth_routes.router)
+    app.include_router(integrations_julex.router)
     app.include_router(mailboxes.router)
     app.include_router(crm.router)
     app.include_router(crm.public_router)
@@ -168,6 +172,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_system_health.router)
     app.include_router(plans.router)
     app.include_router(admin_addons.router)
+    app.include_router(public_addons.router)
     app.include_router(payments.router)
     app.include_router(tools.router)
     app.include_router(workspace_team.router)
@@ -180,6 +185,7 @@ def create_app() -> FastAPI:
     app.include_router(workspace_settings.router)
     app.include_router(workspace_notifications.router)
     app.include_router(workspace_inbox.router)
+    app.include_router(workspace_integrations.router)
     app.include_router(workspace_webhooks.router)
     # ─── Pro Plus: external reputation signals ───────────────────────
     app.include_router(workspace_postmaster.router)

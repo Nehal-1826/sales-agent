@@ -14,8 +14,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0040_add_julex_integration_fields"
-down_revision: str | None = "0039_device_tokens"
+revision: str = "0042_julex_integration_fields"
+down_revision: str | None = "0041_crm_body_text"
 branch_labels = None
 depends_on = None
 

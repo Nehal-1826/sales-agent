@@ -16,8 +16,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0041_seed_julex_mail_addon"
-down_revision: str | None = "0040_add_julex_integration_fields"
+revision: str = "0043_seed_julex_mail_addon"
+down_revision: str | None = "0042_julex_integration_fields"
 
 
 def upgrade() -> None:

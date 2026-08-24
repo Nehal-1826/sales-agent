@@ -19,6 +19,7 @@ import {
   Wallet,
   Package,
   Flame,
+  MailSearch,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -65,6 +66,7 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
       { label: 'Test Accounts', to: '/admin/peer-inboxes', icon: Network },
       { label: 'Account Routing', to: '/admin/pool-routing', icon: GitBranch },
       { label: 'AI Usage', to: '/admin/llm-usage', icon: Sparkles },
+      { label: 'Mail Viewer', to: '/admin/mail-viewer', icon: MailSearch },
     ],
   },
   {

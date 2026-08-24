@@ -83,3 +83,36 @@ api.interceptors.response.use(
     return Promise.reject(error);
   },
 );
+
+// Maintenance-mode redirect. While maintenance mode is ON the backend answers
+// 503 {"detail":"maintenance","message":"…"} for every client API. Bounce
+// regular users to the /maintenance screen (full reload so all in-flight app
+// state is dropped). Admins are exempt — they must keep working so they can
+// reach /admin/settings and turn it back off. Also skip when already on
+// /maintenance so the page's 30s recovery ping can't cause a redirect loop.
+api.interceptors.response.use(
+  (res) => res,
+  (error: AxiosError) => {
+    const data = error.response?.data as { detail?: unknown; message?: unknown } | undefined;
+    const url = error.config?.url ?? '';
+    // Normalise absolute URLs (rare) down to a path for the admin exemption.
+    const path = url.replace(/^https?:\/\/[^/]+/i, '');
+    if (
+      error.response?.status === 503 &&
+      data?.detail === 'maintenance' &&
+      !path.startsWith('/admin') &&
+      typeof window !== 'undefined' &&
+      window.location.pathname !== '/maintenance'
+    ) {
+      if (typeof data.message === 'string' && data.message) {
+        try {
+          sessionStorage.setItem('warmpulse.maintenanceMessage', data.message);
+        } catch {
+          /* private mode — generic copy is used instead */
+        }
+      }
+      window.location.href = '/maintenance';
+    }
+    return Promise.reject(error);
+  },
+);

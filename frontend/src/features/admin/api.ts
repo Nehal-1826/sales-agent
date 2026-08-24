@@ -89,6 +89,9 @@ export const ADMIN_KEYS = {
   auditLog: ['admin', 'audit-log'] as const,
   crmOverview: ['admin', 'crm', 'overview'] as const,
   crmWorkspace: ['admin', 'crm', 'workspace'] as const,
+  mailViewerAccounts: ['admin-mail-accounts'] as const,
+  mailViewerMessages: ['admin-mail-messages'] as const,
+  mailViewerMessage: ['admin-mail-message'] as const,
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -1581,6 +1584,126 @@ export function useUpdateAddon(): UseMutationResult<
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ADMIN_KEYS.addons });
       qc.invalidateQueries({ queryKey: ['addons'] });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Mail viewer (admin IMAP proxy — read-only inbox inspector)
+// ---------------------------------------------------------------------------
+
+export type MailViewerSource = 'mailbox' | 'peer';
+
+export interface MailViewerAccount {
+  source: MailViewerSource;
+  id: string;
+  email: string;
+  provider: string;
+  /** false for OAuth mailboxes — the backend IMAP proxy can't reach them yet. */
+  imap_supported: boolean;
+  /** Client mailbox owner (null for peers). */
+  owner_email: string | null;
+}
+
+export interface MailViewerMessageSummary {
+  uid: number;
+  from: string;
+  to: string;
+  subject: string;
+  date: string;
+  snippet: string;
+}
+
+export interface MailViewerMessagesPage {
+  folder: string;
+  folders: string[];
+  messages: MailViewerMessageSummary[];
+}
+
+export interface MailViewerMessageDetail {
+  uid: number;
+  from: string;
+  to: string;
+  cc?: string | null;
+  subject: string;
+  date: string;
+  text_body: string;
+  headers: {
+    message_id?: string | null;
+    x_warmup_id?: string | null;
+  };
+}
+
+export function useMailViewerAccounts(): UseQueryResult<MailViewerAccount[]> {
+  return useQuery({
+    queryKey: ADMIN_KEYS.mailViewerAccounts,
+    staleTime: 60_000,
+    queryFn: async () => {
+      // Backend returns {accounts: [...]}; accept a bare array too (same
+      // defensive pattern as the other admin list hooks).
+      const data = await getOrEmpty<{ accounts?: MailViewerAccount[] } | MailViewerAccount[]>(
+        '/admin/mail-viewer/accounts',
+        undefined,
+        [],
+      );
+      const list = Array.isArray(data) ? data : (data.accounts ?? []);
+      return list.filter((a): a is MailViewerAccount => !!a && typeof a.email === 'string');
+    },
+  });
+}
+
+export function useMailViewerMessages(
+  source: MailViewerSource,
+  id: string | null,
+  folder: string,
+): UseQueryResult<MailViewerMessagesPage> {
+  return useQuery({
+    queryKey: [...ADMIN_KEYS.mailViewerMessages, source, id, folder],
+    enabled: !!id,
+    staleTime: 60_000,
+    retry: 1,
+    queryFn: async () => {
+      try {
+        const res = await api.get<MailViewerMessagesPage | MailViewerMessageSummary[]>(
+          `/admin/mail-viewer/${source}/${id}/messages`,
+          { params: { folder, limit: 50 } },
+        );
+        const data = res.data;
+        if (Array.isArray(data)) return { folder, folders: ['INBOX'], messages: data };
+        return {
+          folder: typeof data.folder === 'string' ? data.folder : folder,
+          folders:
+            Array.isArray(data.folders) && data.folders.length > 0 ? data.folders : ['INBOX'],
+          messages: Array.isArray(data.messages) ? data.messages : [],
+        };
+      } catch (err) {
+        // Soft-missing (endpoint absent) → empty folder view so the page
+        // still renders. Real IMAP failures (502) and 400s must surface to
+        // the page's error state, so they rethrow.
+        if (isSoftMissing(err)) return { folder, folders: ['INBOX'], messages: [] };
+        throw err;
+      }
+    },
+  });
+}
+
+export function useMailViewerMessage(
+  source: MailViewerSource,
+  id: string | null,
+  folder: string,
+  uid: number | null,
+): UseQueryResult<MailViewerMessageDetail> {
+  return useQuery({
+    queryKey: [...ADMIN_KEYS.mailViewerMessage, source, id, folder, uid],
+    enabled: !!id && uid != null,
+    staleTime: 5 * 60_000,
+    retry: 1,
+    queryFn: async () => {
+      const res = await api.get<MailViewerMessageDetail>(
+        `/admin/mail-viewer/${source}/${id}/message/${uid}`,
+        { params: { folder } },
+      );
+      return res.data;
     },
   });
 }

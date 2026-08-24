@@ -193,6 +193,11 @@ const AuditLogPage = lazy(() => import('@/pages/admin/AuditLogPage').then((m) =>
 const AdminReportsPage = lazy(() => import('@/pages/admin/ReportsPage').then((m) => ({ default: m.AdminReportsPage })));
 const AdminBillingPage = lazy(() => import('@/pages/admin/BillingPage').then((m) => ({ default: m.BillingPage })));
 const AdminSettingsPage = lazy(() => import('@/pages/admin/SettingsPage').then((m) => ({ default: m.AdminSettingsPage })));
+const MailViewerPage = lazy(() => import('@/pages/admin/MailViewerPage').then((m) => ({ default: m.MailViewerPage })));
+
+// Public maintenance screen — no auth, no layout chrome. The axios 503
+// interceptor (lib/api.ts) bounces users here while maintenance mode is ON.
+const MaintenancePage = lazy(() => import('@/pages/MaintenancePage').then((m) => ({ default: m.MaintenancePage })));
 
 /**
  * Suspense fallback while a lazy route chunk fetches — a centered warm
@@ -298,6 +303,10 @@ export default function App() {
         <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/verify-email-pending" element={<VerifyEmailPendingPage />} />
 
+        {/* Maintenance screen — public, no auth, no layout. The response
+            interceptor in lib/api.ts redirects here on 503 maintenance. */}
+        <Route path="/maintenance" element={<MaintenancePage />} />
+
         {/* OAuth popup last-leg landing. Unauthenticated — the popup
             from /onboarding races back here with the result in the URL
             fragment. No layout chrome; the route itself owns
@@ -381,6 +390,7 @@ export default function App() {
           <Route path="reports" element={<AdminReportsPage />} />
           <Route path="billing" element={<AdminBillingPage />} />
           <Route path="settings" element={<AdminSettingsPage />} />
+          <Route path="mail-viewer" element={<MailViewerPage />} />
         </Route>
 
         {/* 404 */}

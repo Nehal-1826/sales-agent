@@ -1592,7 +1592,7 @@ export function useUpdateAddon(): UseMutationResult<
 // Mail viewer (admin IMAP proxy — read-only inbox inspector)
 // ---------------------------------------------------------------------------
 
-export type MailViewerSource = 'mailbox' | 'peer';
+export type MailViewerSource = 'mailbox' | 'peer' | 'platform';
 
 export interface MailViewerAccount {
   source: MailViewerSource;

@@ -62,6 +62,10 @@ class UpdateSmtpPayload(BaseModel):
     password: str | None = Field(default=None, max_length=512)
     from_addr: str | None = Field(default=None, max_length=320)
     starttls: bool | None = None
+    # Optional explicit IMAP endpoint for the platform inbox (Mail Viewer).
+    # Unset = derived from the SMTP host (smtp.* → imap.*, else same host).
+    imap_host: str | None = Field(default=None, max_length=255)
+    imap_port: int | None = Field(default=None, ge=1, le=65_535)
 
 
 class MaintenancePayload(BaseModel):
@@ -241,6 +245,8 @@ async def get_admin_settings(
             "from_addr": smtp.get("from_addr", ""),
             "starttls": bool(smtp.get("starttls", True)),
             "password_masked": _mask(smtp.get("password_tail", "")),
+            "imap_host": smtp.get("imap_host", ""),
+            "imap_port": int(smtp.get("imap_port", 0) or 0),
             "configured": smtp_db_configured,
             "mode": smtp_mode,
             "env_host": env.transactional_smtp_host or "",

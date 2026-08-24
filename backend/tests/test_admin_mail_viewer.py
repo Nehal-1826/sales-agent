@@ -352,7 +352,15 @@ def _canned_messages() -> dict[int, dict]:
 @pytest.mark.asyncio
 async def test_accounts_list_flags_and_owner(
     app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from app.services import admin_mail_viewer as amv
+
+    async def _no_platform() -> tuple[str, int, str, str, str]:
+        raise ValueError("platform mail server not configured")
+
+    monkeypatch.setattr(amv, "_platform_imap_config", _no_platform)
+
     app, maker, _ = app_and_maker
     admin = await _make_admin(maker)
     client_user = await _make_client(maker)
@@ -392,10 +400,17 @@ async def test_accounts_list_flags_and_owner(
 
     assert by_email["bare@peer.example.com"]["imap_supported"] is False
 
-    # Mailboxes first (by email), then peers (by email).
-    sources = [a["source"] for a in accounts]
+    # The platform's own inbox is pinned FIRST (listed even when the mail
+    # server is unconfigured — just flagged unsupported).
+    assert accounts[0]["source"] == "platform"
+    assert accounts[0]["id"] == "platform"
+    assert accounts[0]["imap_supported"] is False
+
+    # Then mailboxes (by email), then peers (by email).
+    rest = accounts[1:]
+    sources = [a["source"] for a in rest]
     assert sources == sorted(sources, key=lambda s: 0 if s == "mailbox" else 1)
-    assert accounts.index(smtp_entry) < accounts.index(peer_entry)
+    assert rest.index(smtp_entry) < rest.index(peer_entry)
 
 
 # --------------------------------------------------------------------------- #
@@ -648,3 +663,140 @@ async def test_client_token_forbidden(
     async with AsyncClient(transport=transport, base_url="http://testserver") as c:
         resp = await c.get("/api/admin/mail-viewer/accounts", headers=_auth_for(client_user))
     assert resp.status_code == 403, resp.text
+
+
+# --------------------------------------------------------------------------- #
+# 3. platform (WarmPulse's own transactional) inbox                           #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_platform_account_listed_first_when_configured(
+    app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services import admin_mail_viewer as amv
+
+    async def _good_platform() -> tuple[str, int, str, str, str]:
+        return ("imap.warmpulse.tech", 993, "hello@warmpulse.tech", "pw", "hello@warmpulse.tech")
+
+    monkeypatch.setattr(amv, "_platform_imap_config", _good_platform)
+
+    app, maker, _ = app_and_maker
+    admin = await _make_admin(maker)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        resp = await c.get("/api/admin/mail-viewer/accounts", headers=_auth_for(admin))
+    assert resp.status_code == 200, resp.text
+    accounts = resp.json()
+    assert accounts[0] == {
+        "source": "platform",
+        "id": "platform",
+        "email": "hello@warmpulse.tech",
+        "provider": "platform",
+        "imap_supported": True,
+        "owner_email": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_platform_messages_via_fake_imap(
+    app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.db.models.audit_logs import AuditLog
+    from app.services import admin_mail_viewer as amv
+
+    async def _good_platform() -> tuple[str, int, str, str, str]:
+        return ("imap.warmpulse.tech", 993, "hello@warmpulse.tech", "pw", "hello@warmpulse.tech")
+
+    monkeypatch.setattr(amv, "_platform_imap_config", _good_platform)
+    fake = _install_fake_imap(monkeypatch, FakeImapClient(messages=_canned_messages()))
+
+    app, maker, _ = app_and_maker
+    admin = await _make_admin(maker)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        resp = await c.get(
+            "/api/admin/mail-viewer/platform/platform/messages",
+            params={"folder": "INBOX", "limit": 50},
+            headers=_auth_for(admin),
+        )
+    assert resp.status_code == 200, resp.text
+    msgs = resp.json()["messages"]
+    assert len(msgs) == 2
+    assert msgs[0]["subject"] == "Résumé review"
+    # Connected with the platform account's creds and logged out cleanly.
+    assert fake.login_args == ("hello@warmpulse.tech", "pw")
+    assert fake.logged_out is True
+
+    # Audit recorded the platform view with no target id.
+    async with maker() as session:
+        rows = (
+            (
+                await session.execute(
+                    select(AuditLog).where(
+                        AuditLog.action == "admin_mail_view",
+                        AuditLog.target_type == "platform",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert len(rows) == 1
+    assert rows[0].target_id is None
+
+
+@pytest.mark.asyncio
+async def test_platform_unconfigured_400(
+    app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services import admin_mail_viewer as amv
+
+    async def _no_platform() -> tuple[str, int, str, str, str]:
+        raise ValueError("platform mail server not configured")
+
+    monkeypatch.setattr(amv, "_platform_imap_config", _no_platform)
+
+    app, maker, _ = app_and_maker
+    admin = await _make_admin(maker)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        resp = await c.get(
+            "/api/admin/mail-viewer/platform/platform/messages",
+            headers=_auth_for(admin),
+        )
+    assert resp.status_code == 400, resp.text
+    assert "not configured" in resp.json()["detail"]
+
+
+def test_imap_host_derivation() -> None:
+    """smtp.* hosts derive their imap twin; explicit config always wins."""
+    import types
+
+    from app.services import transactional_mail as tm
+
+    assert tm._derive_imap_host("smtp.zoho.in") == "imap.zoho.in"
+    assert tm._derive_imap_host("mail.warmpulse.tech") == "mail.warmpulse.tech"
+
+    env_only = types.SimpleNamespace(
+        transactional_imap_host="",
+        transactional_imap_port=993,
+        transactional_smtp_host="smtp.zoho.in",
+    )
+    assert tm._imap_endpoint({}, env_only) == ("imap.zoho.in", 993)
+
+    override = types.SimpleNamespace(
+        transactional_imap_host="",
+        transactional_imap_port=993,
+        transactional_smtp_host="smtp.zoho.in",
+    )
+    assert tm._imap_endpoint({"imap_host": "imap.custom.host", "imap_port": 143}, override) == (
+        "imap.custom.host",
+        143,
+    )

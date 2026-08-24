@@ -112,14 +112,62 @@ async def _write_audit(
 # --------------------------------------------------------------------------- #
 
 
-async def list_viewable_accounts(session: AsyncSession) -> list[dict[str, Any]]:
-    """Every account a super_admin can inspect: client mailboxes + peers.
+async def _platform_imap_config() -> tuple[str, int, str, str, str]:
+    """(imap_host, imap_port, username, password, email) for the platform's
+    own transactional mail account, or ValueError when unconfigured.
 
-    Client mailboxes carry ``owner_email`` (the earliest-created user of the
-    owning workspace — same owner-resolution rule as
-    ``julex_service.get_public_status``). Peers are capped at the newest-ish
-    200 by email order to keep the dropdown sane.
+    Reuses transactional_mail's resolver so admin-panel settings, env vars
+    and the encrypted password are handled identically to sending.
     """
+    from app.services import transactional_mail
+
+    cfg = await transactional_mail._resolve_smtp_config()
+    if not cfg.host or not cfg.username or not cfg.password:
+        raise ValueError(
+            "platform mail server not configured (Admin → Settings → Transactional SMTP)"
+        )
+    email = cfg.from_addr or cfg.username
+    # from_addr may carry a display name ("WarmPulse <hello@…>") — strip it.
+    if "<" in email and email.endswith(">"):
+        email = email[email.rindex("<") + 1 : -1]
+    return cfg.imap_host, cfg.imap_port, cfg.username, cfg.password, email
+
+
+async def list_viewable_accounts(session: AsyncSession) -> list[dict[str, Any]]:
+    """Every account a super_admin can inspect: the platform's own inbox,
+    client mailboxes + peers.
+
+    The platform account (transactional mail server — signup/2FA/billing
+    sends) is pinned first so "our mails" are one click away. Client
+    mailboxes carry ``owner_email`` (the earliest-created user of the owning
+    workspace — same owner-resolution rule as ``julex_service.get_public_status``).
+    Peers are capped at the newest-ish 200 by email order to keep the
+    dropdown sane.
+    """
+    accounts: list[dict[str, Any]] = []
+    try:
+        host, port, username, _password, email = await _platform_imap_config()
+        accounts.append(
+            {
+                "source": "platform",
+                "id": "platform",
+                "email": email,
+                "provider": "platform",
+                "imap_supported": True,
+                "owner_email": None,
+            }
+        )
+    except ValueError:
+        accounts.append(
+            {
+                "source": "platform",
+                "id": "platform",
+                "email": "platform-mail",
+                "provider": "platform",
+                "imap_supported": False,
+                "owner_email": None,
+            }
+        )
     owner_email_sq = (
         select(User.email)
         .where(User.workspace_id == Mailbox.workspace_id)
@@ -132,7 +180,6 @@ async def list_viewable_accounts(session: AsyncSession) -> list[dict[str, Any]]:
         await session.execute(select(Mailbox, owner_email_sq).order_by(Mailbox.email_address.asc()))
     ).all()
 
-    accounts: list[dict[str, Any]] = []
     for mbx, owner_email in mailbox_rows:
         provider = _provider_value(mbx.provider)
         accounts.append(
@@ -173,7 +220,7 @@ async def list_viewable_accounts(session: AsyncSession) -> list[dict[str, Any]]:
 
 async def _resolve_creds(
     session: AsyncSession, *, source: str, account_id: str | uuid.UUID
-) -> tuple[str, int, str, str, str, str, uuid.UUID]:
+) -> tuple[str, int, str, str, str, str, uuid.UUID | None]:
     """Return ``(host, port, username, password, email, target_type, id)``.
 
     The password is plaintext — it must only live in the caller's frame
@@ -182,6 +229,12 @@ async def _resolve_creds(
     Raises ``ValueError`` (→ HTTP 400) for every config problem: unknown
     account, OAuth provider, missing imap_host / password / peer creds.
     """
+    if source == "platform":
+        # The platform's own transactional inbox — id is the literal string
+        # "platform", not a UUID; audits carry target_id=None.
+        host, port, username, password, email = await _platform_imap_config()
+        return host, port, username, password, email, "platform", None
+
     try:
         account_uuid = (
             account_id if isinstance(account_id, uuid.UUID) else uuid.UUID(str(account_id))

@@ -39,7 +39,7 @@ async def list_accounts(
 
 @router.get("/{source}/{account_id}/messages")
 async def list_messages(
-    source: Literal["mailbox", "peer"],
+    source: Literal["mailbox", "peer", "platform"],
     account_id: str,
     session: Annotated[AsyncSession, Depends(get_db)],
     actor: Annotated[User, Depends(require_super_admin)],
@@ -65,7 +65,7 @@ async def list_messages(
 
 @router.get("/{source}/{account_id}/message/{uid}")
 async def get_message(
-    source: Literal["mailbox", "peer"],
+    source: Literal["mailbox", "peer", "platform"],
     account_id: str,
     uid: str,
     session: Annotated[AsyncSession, Depends(get_db)],

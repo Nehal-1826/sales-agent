@@ -88,6 +88,25 @@ class _SmtpConfig:
     from_addr: str
     starttls: bool
     source: str  # "admin" | "env" | "" (dry-run)
+    # IMAP endpoint for the platform inbox (admin Mail Viewer). Derived from
+    # the SMTP host when not explicitly configured: smtp.* → imap.*, else the
+    # same host (iRedMail-style servers serve both on one hostname).
+    imap_host: str = ""
+    imap_port: int = 993
+
+
+def _derive_imap_host(smtp_host: str) -> str:
+    if smtp_host.startswith("smtp."):
+        return "imap." + smtp_host[len("smtp.") :]
+    return smtp_host
+
+
+def _imap_endpoint(cfg: dict, settings) -> tuple[str, int]:
+    """(imap_host, imap_port) — explicit config wins, else derived."""
+    host = str(cfg.get("imap_host") or "") or settings.transactional_imap_host
+    port = int(cfg.get("imap_port") or 0) or settings.transactional_imap_port
+    smtp_host = str(cfg.get("host") or settings.transactional_smtp_host or "")
+    return (host or _derive_imap_host(smtp_host), port or 993)
 
 
 async def _resolve_smtp_config() -> _SmtpConfig:
@@ -129,6 +148,7 @@ async def _resolve_smtp_config() -> _SmtpConfig:
                 )
             except Exception:  # noqa: BLE001
                 logger.exception("transactional_mail.password_decrypt_failed")
+        imap_host, imap_port = _imap_endpoint(cfg, settings)
         return _SmtpConfig(
             host=str(cfg["host"]),
             port=int(cfg.get("port") or 587),
@@ -137,7 +157,10 @@ async def _resolve_smtp_config() -> _SmtpConfig:
             from_addr=str(cfg.get("from_addr") or settings.transactional_smtp_from),
             starttls=bool(cfg.get("starttls", True)),
             source="admin",
+            imap_host=imap_host,
+            imap_port=imap_port,
         )
+    imap_host, imap_port = _imap_endpoint(cfg, settings)
     return _SmtpConfig(
         host=settings.transactional_smtp_host or "",
         port=settings.transactional_smtp_port,
@@ -146,6 +169,8 @@ async def _resolve_smtp_config() -> _SmtpConfig:
         from_addr=settings.transactional_smtp_from,
         starttls=settings.transactional_smtp_starttls,
         source="env" if settings.transactional_smtp_host else "",
+        imap_host=imap_host,
+        imap_port=imap_port,
     )
 
 

@@ -154,6 +154,10 @@ class Settings(BaseSettings):
     transactional_smtp_starttls: bool = Field(
         default=True, alias="TRANSACTIONAL_SMTP_STARTTLS"
     )
+    # IMAP for the platform inbox (admin Mail Viewer). Empty host = derive
+    # from the SMTP host (smtp.* → imap.*, else same host), port 993.
+    transactional_imap_host: str = Field(default="", alias="TRANSACTIONAL_IMAP_HOST")
+    transactional_imap_port: int = Field(default=993, alias="TRANSACTIONAL_IMAP_PORT")
     transactional_test_mode: bool = Field(
         default=False, alias="TRANSACTIONAL_TEST_MODE"
     )

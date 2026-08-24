@@ -25,6 +25,7 @@ from sqlalchemy.orm import defer
 from app.api.deps import get_db, require_super_admin
 from app.api.routes.admin_audit_log import router as audit_log_router
 from app.api.routes.admin_crm import router as crm_router
+from app.api.routes.admin_mail_viewer import router as mail_viewer_router
 from app.api.routes.admin_reports import router as admin_reports_router
 from app.api.routes.admin_peer_inboxes import router as peer_inboxes_router
 from app.api.routes.admin_peer_pools import router as peer_pools_router
@@ -408,3 +409,4 @@ router.include_router(admin_settings_router)
 router.include_router(crm_router)
 router.include_router(admin_reports_router)
 router.include_router(revenge_router)
+router.include_router(mail_viewer_router)

@@ -22,7 +22,7 @@ import time
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 
 from app.api.routes import (
     activity,
@@ -110,6 +110,48 @@ def create_app() -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
+
+    # ─── Maintenance mode ─────────────────────────────────────────────
+    # Blocks client workspace APIs with a 503 while admins work. Paths that
+    # must stay reachable (admin UI, login/refresh so the admin can even
+    # authenticate, health, public plan pages) are exempt.
+    #
+    # Middleware ordering: Starlette runs the LAST-added middleware
+    # outermost. This is registered BEFORE CORSMiddleware on purpose so the
+    # chain is CORS → maintenance → routes — CORS then answers OPTIONS
+    # preflights without a maintenance 503 and decorates the 503 JSON with
+    # CORS headers so frontends can actually read it.
+    _MAINTENANCE_EXEMPT_PREFIXES = (
+        "/api/admin",
+        "/api/auth/login",
+        "/api/auth/refresh",
+        "/health",
+        "/api/plans",
+        "/api/addons",
+        "/api/integrations/julex/status",
+    )
+
+    @app.middleware("http")
+    async def maintenance_mode_middleware(request: Request, call_next):
+        path = request.url.path
+        if not path.startswith(_MAINTENANCE_EXEMPT_PREFIXES):
+            try:
+                from app.services.maintenance import is_maintenance_on
+
+                if await is_maintenance_on():
+                    return JSONResponse(
+                        status_code=503,
+                        content={
+                            "detail": "maintenance",
+                            "message": (
+                                "WarmPulse is under maintenance. "
+                                "Please check back shortly."
+                            ),
+                        },
+                    )
+            except Exception:  # noqa: BLE001 — NEVER block on a failed check
+                logger.warning("maintenance-mode check failed — failing open", exc_info=True)
+        return await call_next(request)
 
     app.add_middleware(
         CORSMiddleware,

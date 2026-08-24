@@ -31,6 +31,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.audit_logs import AuditLog
+from app.db.models.mailboxes import Mailbox
 from app.db.models.peer_inboxes import PeerInbox, PeerProvider
 from app.db.models.peer_pools import PeerPool, PeerPoolMember
 from app.db.models.users import User
@@ -48,6 +49,44 @@ from app.schemas.peer_inboxes import (
 from app.services.crypto import get_fernet_service
 
 logger = logging.getLogger(__name__)
+
+
+# --------------------------------------------------------------------------- #
+# Client-overlap guard (peer-network contamination fix)                        #
+# --------------------------------------------------------------------------- #
+
+
+async def is_client_email(session: AsyncSession, email: str) -> bool:
+    """True when the address belongs to a client mailbox or login account.
+
+    The peer network and the client network must stay disjoint: a client
+    mailbox used as a "helper" peer makes clients warm up each other (and
+    leaks their addresses across tenants). Shared by the pairing engine's
+    anti-join, the reverse mailbox-create guard, CRM auto-import, and the
+    seeding / purge scripts. Case-insensitive on purpose.
+    """
+    needle = email.strip().lower()
+    mailbox_hit = await session.scalar(
+        select(Mailbox.id)
+        .where(func.lower(Mailbox.email_address) == needle)
+        .limit(1)
+    )
+    if mailbox_hit is not None:
+        return True
+    user_hit = await session.scalar(
+        select(User.id).where(func.lower(User.email) == needle).limit(1)
+    )
+    return user_hit is not None
+
+
+async def _ensure_not_client_email(session: AsyncSession, email: str) -> None:
+    if await is_client_email(session, email):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"'{email}' is a client mailbox/account and can never be a peer inbox"
+            ),
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -265,6 +304,11 @@ async def _add_to_default_pool(session: AsyncSession, peer_id: uuid.UUID) -> Non
 async def create_peer(
     session: AsyncSession, *, actor: User, payload: PeerInboxCreate
 ) -> PeerInbox:
+    # Contamination guard — reject before any secret is encrypted or state
+    # is touched: an email that belongs to a client mailbox / login account
+    # must never enter the peer network.
+    await _ensure_not_client_email(session, payload.email_address)
+
     # Encrypt creds BEFORE touching the session so any crypto failure rolls
     # cleanly without partial state. Host/port are persisted in the blob so the
     # warmup engine can actually connect later (see _encrypt_creds docstring).
@@ -548,6 +592,13 @@ async def bulk_import_peers(
             )
             if existing.scalar_one_or_none() is not None:
                 raise ValueError(f"peer with email '{email_lc}' already exists")
+            # Contamination guard — ValueError so the row lands in the
+            # per-row failure list instead of failing the whole import.
+            if await is_client_email(session, email_lc):
+                raise ValueError(
+                    f"'{email_lc}' is a client mailbox/account "
+                    "and can never be a peer inbox"
+                )
             seen_in_batch.add(email_lc)
 
             smtp_blob = _encrypt_creds(

@@ -10,6 +10,9 @@ Routing rules (spec §7 — peer pools):
           - ``is_active = true``
           - ``used_today < daily_capacity``
           - NOT used by this mailbox in the last 24 h (cooldown)
+          - NOT sharing an email with any client mailbox or login
+            account (contamination guard — clients must never warm up
+            each other), and never the mailbox's own address
     6. Among candidates, weighted random pick by ``reputation_score``.
 
 Weighted draw: peers with score 0 never win; a floor of 0.01 is applied so
@@ -32,6 +35,7 @@ from app.db.models.client_pool_assignments import ClientPoolAssignment
 from app.db.models.mailboxes import Mailbox
 from app.db.models.peer_inboxes import PeerInbox
 from app.db.models.peer_pools import PeerPool, PeerPoolMember
+from app.db.models.users import User
 from app.db.models.warmup_logs import WarmupDirection, WarmupLog
 
 logger = logging.getLogger(__name__)
@@ -59,6 +63,25 @@ async def _default_pool_id(db: AsyncSession) -> uuid.UUID | None:
 async def _eligible_in_pool(
     pool_id: uuid.UUID, db: AsyncSession
 ) -> list[PeerInbox]:
+    # Defense-in-depth against peer-network contamination: a peer whose email
+    # matches ANY client mailbox or login account must never be selected,
+    # even if a contaminated row already exists in the pool (rows created
+    # before the create/import guards landed). Anti-join via correlated NOT
+    # EXISTS keeps this a single query.
+    mailbox_overlap = (
+        select(Mailbox.id)
+        .where(
+            func.lower(Mailbox.email_address) == func.lower(PeerInbox.email_address)
+        )
+        .exists()
+        .correlate(PeerInbox)
+    )
+    user_overlap = (
+        select(User.id)
+        .where(func.lower(User.email) == func.lower(PeerInbox.email_address))
+        .exists()
+        .correlate(PeerInbox)
+    )
     stmt = (
         select(PeerInbox)
         .join(PeerPoolMember, PeerPoolMember.peer_inbox_id == PeerInbox.id)
@@ -66,6 +89,8 @@ async def _eligible_in_pool(
             PeerPoolMember.pool_id == pool_id,
             PeerInbox.is_active.is_(True),
             PeerInbox.used_today < PeerInbox.daily_capacity,
+            ~mailbox_overlap,
+            ~user_overlap,
         )
     )
     return list((await db.scalars(stmt)).all())
@@ -143,6 +168,15 @@ async def pick_peer_inbox(mailbox_id: uuid.UUID, db: AsyncSession) -> PeerInbox 
             return None
         candidates = await _eligible_in_pool(default_id, db)
         chosen_pool_id = default_id
+
+    # Belt-and-suspenders self-send guard: even if a contaminated peer row
+    # slipped past the anti-join above, a peer sharing the mailbox's own
+    # address must never receive a warmup send from that mailbox.
+    candidates = [
+        c
+        for c in candidates
+        if c.email_address.lower() != mailbox.email_address.lower()
+    ]
 
     if not candidates or chosen_pool_id is None:
         return None

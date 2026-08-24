@@ -17,6 +17,7 @@ The pre-existing ``default`` and ``Shailog`` pools are left untouched.
 from __future__ import annotations
 
 import asyncio
+import uuid
 
 from sqlalchemy import select
 
@@ -62,9 +63,35 @@ async def main() -> None:
             pools[name] = pool
 
         # 2) Helper membership (all active peers in every plan pool) ------
-        peer_ids = (
-            await db.execute(select(PeerInbox.id).where(PeerInbox.is_active.is_(True)))
-        ).scalars().all()
+        # Contamination guard: a peer whose email belongs to a client
+        # mailbox or login account must never join a plan pool — that
+        # would make clients warm up each other.
+        client_emails: set[str] = {
+            row[0].lower()
+            for row in (await db.execute(select(Mailbox.email_address))).all()
+        }
+        client_emails.update(
+            row[0].lower() for row in (await db.execute(select(User.email))).all()
+        )
+        peer_rows = (
+            await db.execute(
+                select(PeerInbox.id, PeerInbox.email_address).where(
+                    PeerInbox.is_active.is_(True)
+                )
+            )
+        ).all()
+        skipped_contaminated = 0
+        peer_ids: list[uuid.UUID] = []
+        for pid, peer_email in peer_rows:
+            if peer_email.lower() in client_emails:
+                skipped_contaminated += 1
+                continue
+            peer_ids.append(pid)
+        if skipped_contaminated:
+            print(
+                f"skipped {skipped_contaminated} contaminated peer(s) "
+                "(email belongs to a client mailbox/account)"
+            )
         for name, pool in pools.items():
             existing = set(
                 (

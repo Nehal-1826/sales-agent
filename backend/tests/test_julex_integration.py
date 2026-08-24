@@ -113,6 +113,7 @@ async def _setup_db():
     from app.db.models.mailboxes import Mailbox
     from app.db.models.notifications import Notification
     from app.db.models.payments import Payment
+    from app.db.models.peer_inboxes import PeerInbox
     from app.db.models.plans import Plan
     from app.db.models.users import User
     from app.db.models.warmup_logs import WarmupLog
@@ -134,6 +135,9 @@ async def _setup_db():
             AuditLog,
             ApiKey,
             Mailbox,
+            # Mailbox-create runs the reverse contamination guard, which
+            # queries peer_inboxes.
+            PeerInbox,
             Payment,
             Notification,
             WarmupLog,

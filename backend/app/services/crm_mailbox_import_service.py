@@ -26,6 +26,7 @@ from app.db.models.plans import Plan
 from app.db.models.users import User
 from app.services.crm_service import crm_lead_cap
 from app.services.crypto import get_fernet_service
+from app.services.peer_inbox_service import is_client_email
 
 logger = logging.getLogger(__name__)
 
@@ -375,11 +376,18 @@ async def import_leads_from_mailbox(
 
     now = datetime.now(UTC)
     imported = 0
+    skipped_client_emails = 0
     new_lead_ids: list[uuid.UUID] = []
     for addr, name in contacts.items():
         if cap is not None and (existing_count + imported) >= cap:
             break
         if addr in existing_emails:
+            continue
+        # Never auto-import WarmPulse's own clients (a mailbox or login
+        # account on this platform) as leads — that would market one tenant
+        # to another and leak addresses across workspaces.
+        if await is_client_email(session, addr):
+            skipped_client_emails += 1
             continue
 
         lead = CrmLead(
@@ -435,18 +443,29 @@ async def import_leads_from_mailbox(
                 mailbox.workspace_id,
             )
 
+    if skipped_client_emails:
+        logger.info(
+            "crm_import mailbox=%s workspace=%s skipped_client_emails=%s "
+            "(WarmPulse client mailboxes/accounts are never imported as leads)",
+            mailbox_id,
+            mailbox.workspace_id,
+            skipped_client_emails,
+        )
     logger.info(
-        "crm_import mailbox=%s workspace=%s plan=%s found=%s imported=%s enrolled=%s",
+        "crm_import mailbox=%s workspace=%s plan=%s found=%s imported=%s "
+        "skipped_client=%s enrolled=%s",
         mailbox_id,
         mailbox.workspace_id,
         plan_name,
         len(contacts),
         imported,
+        skipped_client_emails,
         enrolled,
     )
     return {
         "imported": imported,
         "found": len(contacts),
         "campaign": campaign_name,
+        "skipped_client_emails": skipped_client_emails,
         "enrolled": enrolled,
     }

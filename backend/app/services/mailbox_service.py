@@ -36,6 +36,7 @@ from app.db.models.mailboxes import (
 from app.db.models.mailboxes import (
     ContentMode as DbContentMode,
 )
+from app.db.models.peer_inboxes import PeerInbox
 from app.db.models.plans import Plan
 from app.db.models.schedule_windows import ScheduleWindow
 from app.db.models.users import OnboardingStatus, User, UserRole
@@ -318,6 +319,27 @@ def _content_mode_db(val: SchemaContentMode | str) -> DbContentMode:
     return DbContentMode(raw)
 
 
+async def _ensure_not_peer_email(session: AsyncSession, email: str) -> None:
+    """Reverse contamination guard: an email registered as a system peer
+    inbox can never be connected as a client mailbox — that would make the
+    warmup engine route a client's own warmup sends through a system helper
+    identity (and expose the peer network's creds to a tenant)."""
+    needle = email.strip().lower()
+    hit = await session.scalar(
+        select(PeerInbox.id)
+        .where(func.lower(PeerInbox.email_address) == needle)
+        .limit(1)
+    )
+    if hit is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"'{email}' is registered as a system peer inbox "
+                "and cannot be connected as a client mailbox"
+            ),
+        )
+
+
 async def probe_credentials(
     payload: "MailboxCreateSmtp | MailboxProbeRequest",
 ) -> "TestConnectionResponse":
@@ -387,6 +409,11 @@ async def create_mailbox(
     Tests that want to bypass the live probe pass ``skip_probe=True``.
     """
     await _enforce_plan_cap(session, user)
+
+    # Reverse contamination guard — applies to BOTH the SMTP and OAuth
+    # create paths (they converge in this function): a system peer inbox
+    # email can never become a client mailbox.
+    await _ensure_not_peer_email(session, payload.email_address)
 
     # --- Live credential probe (SMTP-flavoured only) ---------------------
     # Runs BEFORE any secret is touched / encrypted / persisted. OAuth tokens

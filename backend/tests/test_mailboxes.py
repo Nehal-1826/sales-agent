@@ -49,6 +49,7 @@ async def _setup_db() -> tuple[async_sessionmaker[AsyncSession], object]:
     from app.db.models.mailboxes import Mailbox
     from app.db.models.notifications import Notification
     from app.db.models.payments import Payment
+    from app.db.models.peer_inboxes import PeerInbox
     from app.db.models.peer_pools import PeerPool
     from app.db.models.plans import Plan
     from app.db.models.users import User
@@ -67,7 +68,8 @@ async def _setup_db() -> tuple[async_sessionmaker[AsyncSession], object]:
     # the list route counts each mailbox's outbound sends for today.
     # PeerPool + ClientPoolAssignment are included because creating a mailbox
     # now auto-routes the workspace to a peer pool (falling back to the default
-    # pool when the user has no plan).
+    # pool when the user has no plan). PeerInbox is included because the
+    # create path runs the reverse contamination guard against peer_inboxes.
     tables = [
         t.__table__
         for t in (
@@ -78,6 +80,7 @@ async def _setup_db() -> tuple[async_sessionmaker[AsyncSession], object]:
             Payment,
             Notification,
             WarmupLog,
+            PeerInbox,
             PeerPool,
             ClientPoolAssignment,
         )

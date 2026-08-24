@@ -101,3 +101,34 @@ async def set_maintenance_mode(session: AsyncSession, *, enabled: bool) -> None:
         row.updated_at = datetime.now(UTC)
     await session.commit()
     force_refresh()
+
+
+def sync_flag_file(enabled: bool, *, path: str | None = None) -> bool:
+    """Mirror the DB flag into the nginx maintenance flag file.
+
+    Nginx serves the static maintenance page whenever this file exists —
+    which keeps the maintenance UX alive even while the API/frontend
+    containers are being rebuilt (the whole point of the file-based gate).
+    Best-effort: a missing/unwritable path logs a warning and returns False;
+    the API-level middleware still works from the DB flag alone.
+
+    ``path`` overrides ``MAINTENANCE_FLAG_PATH`` (tests pass a tmp path).
+    """
+    from app.config import get_settings
+
+    flag = path or get_settings().maintenance_flag_path
+    if not flag:
+        return False
+    try:
+        if enabled:
+            with open(flag, "a", encoding="utf-8") as fh:  # touch — never truncate
+                fh.write("")
+        else:
+            import os
+
+            if os.path.exists(flag):
+                os.remove(flag)
+        return True
+    except OSError as exc:
+        logger.warning("maintenance flag file sync failed (%s): %s", flag, exc)
+        return False

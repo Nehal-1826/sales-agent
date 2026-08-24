@@ -83,3 +83,6 @@ frontend/downloads/*.apk
 scratch_creds.env
 scratchpad_email.txt
 scratchpad_qa/
+
+# nginx maintenance flag (ops/maintenance.sh)
+maintenance.on

@@ -70,7 +70,10 @@ function fmtDate(value: string | null | undefined): string {
 /** Human copy for a messages-load failure: 502 = IMAP dead, 400 = backend detail. */
 function describeMessagesError(err: unknown): string {
   if (err instanceof AxiosError) {
-    if (err.response?.status === 502) return 'IMAP unreachable for this account.';
+    // 502 detail carries "host:port — reason" from the backend (never creds).
+    if (err.response?.status === 502) {
+      return extractErrorMessage(err, 'IMAP unreachable for this account.');
+    }
     if (err.response?.status === 400) {
       return extractErrorMessage(err, 'This account cannot be viewed over IMAP.');
     }

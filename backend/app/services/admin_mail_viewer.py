@@ -306,14 +306,27 @@ async def _connect(host: str, port: int, username: str, password: str):
     tls.check_hostname = False
     tls.verify_mode = _ssl.CERT_NONE
 
-    client = aioimaplib.IMAP4_SSL(host=host, port=port, timeout=_IMAP_TIMEOUT, ssl_context=tls)
     try:
+        client = aioimaplib.IMAP4_SSL(
+            host=host, port=port, timeout=_IMAP_TIMEOUT, ssl_context=tls
+        )
         await asyncio.wait_for(client.wait_hello_from_server(), timeout=_IMAP_TIMEOUT)
         await asyncio.wait_for(client.login(username, password), timeout=_IMAP_TIMEOUT)
-    except BaseException:
+    except aioimaplib.Abort as exc:
+        # Connection-level failure — carry host:port so the 502 detail tells
+        # the admin WHICH server was unreachable (no credentials included).
         with contextlib.suppress(Exception):
             await client.logout()
-        raise
+        raise OSError(f"{host}:{port} — {exc}") from exc
+    except aioimaplib.Error as exc:
+        # The server answered but refused us — LOGIN rejected, TLS mismatch.
+        with contextlib.suppress(Exception):
+            await client.logout()
+        raise ValueError(f"{host}:{port} rejected the login — {exc}") from exc
+    except BaseException as exc:
+        with contextlib.suppress(Exception):
+            await client.logout()
+        raise OSError(f"{host}:{port} — {exc.__class__.__name__}: {exc}") from exc
     return client
 
 

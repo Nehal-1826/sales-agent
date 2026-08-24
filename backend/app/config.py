@@ -169,6 +169,12 @@ class Settings(BaseSettings):
     julex_base_url: str = Field(default="https://julex.shop", alias="JULEX_BASE_URL")
     julex_origin: str = Field(default="https://julex.shop", alias="JULEX_ORIGIN")
 
+    # Nginx-level maintenance flag file (see ops/nginx/warmpulse.conf +
+    # ops/maintenance.sh). Empty = file sync disabled (local dev); in prod the
+    # compose file mounts the repo root at /host-app and points this at the
+    # flag file so the admin toggle drives BOTH the API middleware and nginx.
+    maintenance_flag_path: str = Field(default="", alias="MAINTENANCE_FLAG_PATH")
+
     @property
     def stripe_enabled(self) -> bool:
         """Stripe is "wired" when both the API key and webhook secret are set."""

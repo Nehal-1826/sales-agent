@@ -60,7 +60,7 @@ async def list_messages(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (OSError, aioimaplib.Abort) as exc:  # TimeoutError ⊂ OSError
         logger.warning("mail-viewer IMAP unreachable: %s", exc)
-        raise HTTPException(status_code=502, detail="IMAP unreachable") from exc
+        raise HTTPException(status_code=502, detail=f"IMAP unreachable — {exc}") from exc
 
 
 @router.get("/{source}/{account_id}/message/{uid}")
@@ -86,4 +86,4 @@ async def get_message(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (OSError, aioimaplib.Abort) as exc:  # TimeoutError ⊂ OSError
         logger.warning("mail-viewer IMAP unreachable: %s", exc)
-        raise HTTPException(status_code=502, detail="IMAP unreachable") from exc
+        raise HTTPException(status_code=502, detail=f"IMAP unreachable — {exc}") from exc

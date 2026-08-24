@@ -38,6 +38,13 @@ services:
     container_name: warmpulse-api
     restart: unless-stopped
     env_file: ./backend/.env.docker
+    environment:
+      # Admin maintenance toggle mirrors into this file (repo root on the
+      # host) — nginx serves the static maintenance page while it exists.
+      # See ops/nginx/warmpulse.conf + ops/maintenance.sh.
+      - MAINTENANCE_FLAG_PATH=/host-app/maintenance.on
+    volumes:
+      - .:/host-app
     network_mode: host
     depends_on:
       postgres:

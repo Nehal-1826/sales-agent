@@ -20,6 +20,7 @@ from app.db.models.users import User
 from app.db.models.llm_usage import LlmUsage
 from app.db.models.peer_inboxes import PeerInbox
 from app.services.crypto import get_fernet_service
+from app.services import maintenance
 
 router = APIRouter(prefix="/settings", tags=["admin-settings"])
 
@@ -348,6 +349,11 @@ async def set_maintenance(
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
     await _save(session, "danger", {"maintenance_mode": payload.enabled})
+    # Keep the API middleware and the nginx flag file in lockstep — nginx
+    # serves the static maintenance page (ops/nginx/warmpulse.conf) even
+    # while containers are being rebuilt.
+    maintenance.force_refresh()
+    maintenance.sync_flag_file(payload.enabled)
 
 
 # ---------- Action endpoints ----------

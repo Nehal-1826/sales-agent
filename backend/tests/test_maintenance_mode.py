@@ -204,3 +204,16 @@ async def test_middleware_fails_open_on_db_error(
         resp = await c.get("/api/workspace/mailboxes", headers=_auth_for(client_user))
     assert resp.status_code != 503, resp.text
     assert resp.status_code == 200
+
+
+def test_sync_flag_file_roundtrip(tmp_path) -> None:
+    """The nginx flag file mirrors the toggle: created on, removed off."""
+    from app.services import maintenance
+
+    flag = tmp_path / "maintenance.on"
+    assert maintenance.sync_flag_file(True, path=str(flag)) is True
+    assert flag.exists()
+    assert maintenance.sync_flag_file(False, path=str(flag)) is True
+    assert not flag.exists()
+    # Empty path (local dev default) is a documented no-op.
+    assert maintenance.sync_flag_file(True, path="") is False

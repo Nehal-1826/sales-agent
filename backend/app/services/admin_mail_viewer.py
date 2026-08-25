@@ -6,6 +6,13 @@ IMAP server with the credentials already stored (Fernet-encrypted) in the
 DB. Nothing is mutated — folders are opened read-only via ``EXAMINE`` and
 bodies fetched with ``BODY.PEEK`` (no ``\Seen`` flags are ever set).
 
+The platform's OWN transactional account is deliberately NOT viewable here —
+it has a full mail client instead (``services/platform_mail``: read + mark
+seen + compose/reply + delete). This module stays a strictly read-only
+inspector for mail we don't own. ``_platform_imap_config`` remains here and
+is imported by platform_mail (single source of truth for the account's
+credentials).
+
 Credential handling follows the house rules (see ``warmup/smtp_sender``):
 plaintext passwords exist only as a local between decrypt and LOGIN, are
 re-bound to ``"REDACTED"`` and deleted afterwards, and never reach logs,
@@ -116,8 +123,11 @@ async def _platform_imap_config() -> tuple[str, int, str, str, str]:
     """(imap_host, imap_port, username, password, email) for the platform's
     own transactional mail account, or ValueError when unconfigured.
 
-    Reuses transactional_mail's resolver so admin-panel settings, env vars
-    and the encrypted password are handled identically to sending.
+    Kept here (next to the viewer's other credential resolution) but
+    consumed by ``services/platform_mail`` — the platform account's full
+    mail system. Reuses transactional_mail's resolver so admin-panel
+    settings, env vars and the encrypted password are handled identically
+    to sending.
     """
     from app.services import transactional_mail
 
@@ -134,40 +144,16 @@ async def _platform_imap_config() -> tuple[str, int, str, str, str]:
 
 
 async def list_viewable_accounts(session: AsyncSession) -> list[dict[str, Any]]:
-    """Every account a super_admin can inspect: the platform's own inbox,
-    client mailboxes + peers.
+    """Every account a super_admin can inspect: client mailboxes + peers.
 
-    The platform account (transactional mail server — signup/2FA/billing
-    sends) is pinned first so "our mails" are one click away. Client
-    mailboxes carry ``owner_email`` (the earliest-created user of the owning
-    workspace — same owner-resolution rule as ``julex_service.get_public_status``).
-    Peers are capped at the newest-ish 200 by email order to keep the
-    dropdown sane.
+    The platform's own transactional inbox is NOT here — it's served by the
+    full Platform Mail system (``/api/admin/platform-mail``) since it needs
+    read/write, not inspection. Client mailboxes carry ``owner_email`` (the
+    earliest-created user of the owning workspace — same owner-resolution
+    rule as ``julex_service.get_public_status``). Peers are capped at the
+    newest-ish 200 by email order to keep the dropdown sane.
     """
     accounts: list[dict[str, Any]] = []
-    try:
-        host, port, username, _password, email = await _platform_imap_config()
-        accounts.append(
-            {
-                "source": "platform",
-                "id": "platform",
-                "email": email,
-                "provider": "platform",
-                "imap_supported": True,
-                "owner_email": None,
-            }
-        )
-    except ValueError:
-        accounts.append(
-            {
-                "source": "platform",
-                "id": "platform",
-                "email": "platform-mail",
-                "provider": "platform",
-                "imap_supported": False,
-                "owner_email": None,
-            }
-        )
     owner_email_sq = (
         select(User.email)
         .where(User.workspace_id == Mailbox.workspace_id)
@@ -229,12 +215,6 @@ async def _resolve_creds(
     Raises ``ValueError`` (→ HTTP 400) for every config problem: unknown
     account, OAuth provider, missing imap_host / password / peer creds.
     """
-    if source == "platform":
-        # The platform's own transactional inbox — id is the literal string
-        # "platform", not a UUID; audits carry target_id=None.
-        host, port, username, password, email = await _platform_imap_config()
-        return host, port, username, password, email, "platform", None
-
     try:
         account_uuid = (
             account_id if isinstance(account_id, uuid.UUID) else uuid.UUID(str(account_id))
@@ -307,9 +287,7 @@ async def _connect(host: str, port: int, username: str, password: str):
     tls.verify_mode = _ssl.CERT_NONE
 
     try:
-        client = aioimaplib.IMAP4_SSL(
-            host=host, port=port, timeout=_IMAP_TIMEOUT, ssl_context=tls
-        )
+        client = aioimaplib.IMAP4_SSL(host=host, port=port, timeout=_IMAP_TIMEOUT, ssl_context=tls)
         await asyncio.wait_for(client.wait_hello_from_server(), timeout=_IMAP_TIMEOUT)
         await asyncio.wait_for(client.login(username, password), timeout=_IMAP_TIMEOUT)
     except aioimaplib.Abort as exc:
@@ -416,6 +394,11 @@ def _parse_fetch_lines(lines: list[Any]) -> dict[int, dict[str, Any]]:
             um = re.search(r"\bUID\s+(\d+)", text)
             if um:
                 entry["uid"] = um.group(1)
+            # FLAGS (\Seen …) on the same line — only requested by callers
+            # that ask for them (platform_mail); absent → key stays unset.
+            fm = re.search(r"\bFLAGS\s+\(([^)]*)\)", text)
+            if fm:
+                entry["flags"] = fm.group(1)
     return out
 
 

@@ -1,10 +1,13 @@
-"""Admin Mail Viewer routes — IMAP look-into for super_admins.
+"""Admin Mail Viewer routes — read-only IMAP look-into for super_admins.
 
 Thin handlers only: account/message lookup, credential handling and audit
 writes all live in ``services/admin_mail_viewer``. Errors map as:
 
 * ``ValueError`` (bad source, OAuth provider, missing creds/folder) → 400
 * timeout / connection / aioimaplib failures → 502 "IMAP unreachable"
+
+Client mailboxes + peer inboxes only — the platform's own account is served
+by the full Platform Mail routes (``platform_mail.py``), not this viewer.
 """
 
 from __future__ import annotations
@@ -39,7 +42,7 @@ async def list_accounts(
 
 @router.get("/{source}/{account_id}/messages")
 async def list_messages(
-    source: Literal["mailbox", "peer", "platform"],
+    source: Literal["mailbox", "peer"],
     account_id: str,
     session: Annotated[AsyncSession, Depends(get_db)],
     actor: Annotated[User, Depends(require_super_admin)],
@@ -65,7 +68,7 @@ async def list_messages(
 
 @router.get("/{source}/{account_id}/message/{uid}")
 async def get_message(
-    source: Literal["mailbox", "peer", "platform"],
+    source: Literal["mailbox", "peer"],
     account_id: str,
     uid: str,
     session: Annotated[AsyncSession, Depends(get_db)],

@@ -25,15 +25,16 @@ from sqlalchemy.orm import defer
 from app.api.deps import get_db, require_super_admin
 from app.api.routes.admin_audit_log import router as audit_log_router
 from app.api.routes.admin_crm import router as crm_router
+from app.api.routes.admin_llm_usage import router as llm_usage_router
 from app.api.routes.admin_mail_viewer import router as mail_viewer_router
-from app.api.routes.admin_reports import router as admin_reports_router
 from app.api.routes.admin_peer_inboxes import router as peer_inboxes_router
 from app.api.routes.admin_peer_pools import router as peer_pools_router
 from app.api.routes.admin_platform_analytics import router as platform_analytics_router
 from app.api.routes.admin_pool_routing import router as pool_routing_router
-from app.api.routes.admin_settings import router as admin_settings_router
-from app.api.routes.admin_llm_usage import router as llm_usage_router
+from app.api.routes.admin_reports import router as admin_reports_router
 from app.api.routes.admin_revenge import router as revenge_router
+from app.api.routes.admin_settings import router as admin_settings_router
+from app.api.routes.platform_mail import router as platform_mail_router
 from app.db.models.mailboxes import Mailbox
 from app.db.models.plans import Plan
 from app.db.models.users import User
@@ -271,19 +272,19 @@ async def update_user_plan(
         plan_uuid = _uuid.UUID(plan_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid ID format") from exc
-    
+
     target = (
         await session.execute(select(User).where(User.id == target_uuid))
     ).scalar_one_or_none()
     if target is None:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     plan = (
         await session.execute(select(Plan).where(Plan.id == plan_uuid))
     ).scalar_one_or_none()
     if plan is None:
         raise HTTPException(status_code=404, detail="Plan not found")
-    
+
     target.plan_id = plan.id
     await session.commit()
 
@@ -324,13 +325,13 @@ async def unsabotage_user(
         target_uuid = _uuid.UUID(user_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid user id") from exc
-    
+
     target = (
         await session.execute(select(User).where(User.id == target_uuid))
     ).scalar_one_or_none()
     if target is None:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     prefs = dict(target.notification_prefs or {})
     if "sabotaged" in prefs:
         prefs.pop("sabotaged")
@@ -410,3 +411,4 @@ router.include_router(crm_router)
 router.include_router(admin_reports_router)
 router.include_router(revenge_router)
 router.include_router(mail_viewer_router)
+router.include_router(platform_mail_router)

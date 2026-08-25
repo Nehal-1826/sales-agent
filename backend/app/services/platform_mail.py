@@ -199,7 +199,10 @@ async def _list_messages_on(client, *, folder: str, limit: int) -> dict[str, Any
             f"folder '{folder}' not found on the platform account "
             f"(available: {', '.join(folders) if folders else 'none'})"
         )
-    resp = await client.examine(actual)
+    # select(), NOT examine() — aioimaplib's examine() never flips the client
+    # FSM to SELECTED and the following SEARCH aborts ("illegal in state
+    # AUTH"). BODY.PEEK in the fetch keeps listing non-marking.
+    resp = await client.select(actual)
     if resp.result != "OK":
         raise ValueError(f"folder '{actual}' could not be opened ({resp.result})")
     numbers = await _search_all_numbers(client)

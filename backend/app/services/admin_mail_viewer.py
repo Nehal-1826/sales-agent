@@ -361,7 +361,12 @@ async def _open_folder(client, folder: str) -> tuple[str, list[str]]:
             f"folder '{folder}' not found on this account "
             f"(available: {', '.join(folders) if folders else 'none'})"
         )
-    resp = await client.examine(actual)
+    # select(), NOT examine(): aioimaplib's examine() is a raw command that
+    # never transitions the client state machine to SELECTED, so the next
+    # SEARCH aborts with "illegal in state AUTH" against real servers.
+    # Read-safety is preserved by BODY.PEEK in every fetch — nothing gets
+    # marked \Seen. (Same pattern as imap_watcher.)
+    resp = await client.select(actual)
     if resp.result != "OK":
         raise ValueError(f"folder '{actual}' could not be opened ({resp.result})")
     return actual, folders

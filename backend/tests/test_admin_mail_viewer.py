@@ -238,6 +238,11 @@ class FakeImapClient:
         # seq (1-based, ascending = oldest first) -> message dict
         self.messages: dict[int, dict] = messages or {}
         self.examine_calls: list[str] = []
+        self.select_calls: list[str] = []
+        # Mirror aioimaplib's FSM: SEARCH/FETCH are illegal until a mailbox
+        # is SELECTED. (examine() does NOT select in aioimaplib — state stays
+        # AUTH and the next SEARCH aborts. Caught this class of bug for real.)
+        self.selected = False
         self.login_args: tuple[str, str] | None = None
         self.logged_out = False
 
@@ -254,15 +259,27 @@ class FakeImapClient:
 
     async def examine(self, folder: str) -> _Resp:
         self.examine_calls.append(folder)
+        return _Resp()
+
+    async def select(self, mailbox: str = "INBOX") -> _Resp:
+        self.select_calls.append(mailbox)
+        self.selected = True
+        return _Resp()
         if folder in self.folders:
             return _Resp()
         return _Resp(result="NO")
 
     async def search(self, *criteria: str, charset: str | None = None) -> _Resp:
+        if not self.selected:
+            import aioimaplib as _aio
+            raise _aio.Abort("command SEARCH illegal in state AUTH")
         nums = " ".join(str(i) for i in sorted(self.messages))
         return _Resp(lines=[nums.encode()])
 
     async def fetch(self, message_set: str, message_parts: str) -> _Resp:
+        if not self.selected:
+            import aioimaplib as _aio
+            raise _aio.Abort("command FETCH illegal in state AUTH")
         lines: list = []
         for seq_str in message_set.split(","):
             seq = int(seq_str)
@@ -451,7 +468,7 @@ async def test_list_messages_smtp_mailbox(
     # Connected with the decrypted password + resolved IMAP host/port, and
     # always logged out.
     assert fake.login_args == ("viewme@acme.com", "pw-secret-123")
-    assert fake.examine_calls == ["INBOX"]
+    assert fake.select_calls == ["INBOX"]
     assert fake.logged_out is True
 
     # Folder alias resolution: "Sent" opens the provider's real Sent folder.

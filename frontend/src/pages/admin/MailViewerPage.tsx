@@ -50,7 +50,6 @@ function accountKey(a: Pick<MailViewerAccount, 'source' | 'id'>): string {
 }
 
 function sourceLabel(a: Pick<MailViewerAccount, 'source'>): string {
-  if (a.source === 'platform') return 'Platform';
   return a.source === 'mailbox' ? 'Client' : 'Peer';
 }
 
@@ -172,16 +171,14 @@ function AccountSwitcher({
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm text-text">{a.email}</span>
                       <span className="block truncate text-xs text-text-dim">
-                        {a.source === 'platform' ? 'WarmPulse transactional inbox' : a.owner_email ? `owner ${a.owner_email}` : 'system peer'} · {a.provider}
+                        {a.owner_email ? `owner ${a.owner_email}` : 'system peer'} · {a.provider}
                       </span>
                     </span>
                     <span
                       className={`flex-none rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                         a.source === 'peer'
                           ? 'bg-accent/15 text-accent'
-                          : a.source === 'platform'
-                            ? 'bg-accent3/15 text-accent3'
-                            : 'bg-surface-2 text-text-dim'
+                          : 'bg-surface-2 text-text-dim'
                       }`}
                     >
                       {sourceLabel(a)}

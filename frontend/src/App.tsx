@@ -194,6 +194,7 @@ const AdminReportsPage = lazy(() => import('@/pages/admin/ReportsPage').then((m)
 const AdminBillingPage = lazy(() => import('@/pages/admin/BillingPage').then((m) => ({ default: m.BillingPage })));
 const AdminSettingsPage = lazy(() => import('@/pages/admin/SettingsPage').then((m) => ({ default: m.AdminSettingsPage })));
 const MailViewerPage = lazy(() => import('@/pages/admin/MailViewerPage').then((m) => ({ default: m.MailViewerPage })));
+const PlatformMailPage = lazy(() => import('@/pages/admin/PlatformMailPage').then((m) => ({ default: m.PlatformMailPage })));
 
 // Public maintenance screen — no auth, no layout chrome. The axios 503
 // interceptor (lib/api.ts) bounces users here while maintenance mode is ON.
@@ -390,6 +391,7 @@ export default function App() {
           <Route path="reports" element={<AdminReportsPage />} />
           <Route path="billing" element={<AdminBillingPage />} />
           <Route path="settings" element={<AdminSettingsPage />} />
+          <Route path="platform-mail" element={<PlatformMailPage />} />
           <Route path="mail-viewer" element={<MailViewerPage />} />
         </Route>
 

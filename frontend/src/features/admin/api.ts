@@ -92,6 +92,9 @@ export const ADMIN_KEYS = {
   mailViewerAccounts: ['admin-mail-accounts'] as const,
   mailViewerMessages: ['admin-mail-messages'] as const,
   mailViewerMessage: ['admin-mail-message'] as const,
+  platformMailFolders: ['admin-platform-mail-folders'] as const,
+  platformMailMessages: ['admin-platform-mail-messages'] as const,
+  platformMailMessage: ['admin-platform-mail-message'] as const,
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -1592,7 +1595,7 @@ export function useUpdateAddon(): UseMutationResult<
 // Mail viewer (admin IMAP proxy — read-only inbox inspector)
 // ---------------------------------------------------------------------------
 
-export type MailViewerSource = 'mailbox' | 'peer' | 'platform';
+export type MailViewerSource = 'mailbox' | 'peer';
 
 export interface MailViewerAccount {
   source: MailViewerSource;
@@ -1704,6 +1707,192 @@ export function useMailViewerMessage(
         { params: { folder } },
       );
       return res.data;
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Platform mail (admin mail client for the WarmPulse platform account)
+// ---------------------------------------------------------------------------
+
+export interface PlatformMailFolders {
+  folders: string[];
+  unread: Record<string, number>;
+}
+
+export interface PlatformMailMessageSummary {
+  uid: number;
+  from: string;
+  to: string;
+  subject: string;
+  date: string;
+  snippet: string;
+  seen: boolean;
+}
+
+export interface PlatformMailMessagesPage {
+  folder: string;
+  folders: string[];
+  messages: PlatformMailMessageSummary[];
+}
+
+export interface PlatformMailMessageDetail {
+  uid: number;
+  from: string;
+  to: string;
+  cc?: string | null;
+  subject: string;
+  date: string;
+  text_body: string;
+  headers: {
+    message_id?: string | null;
+    x_warmup_id?: string | null;
+  };
+  seen: boolean;
+}
+
+export interface PlatformMailSendPayload {
+  to: string;
+  cc?: string;
+  subject: string;
+  body_text: string;
+  body_html?: string;
+  in_reply_to?: string;
+  references?: string;
+}
+
+export interface PlatformMailSendResult {
+  status: string;
+  to: string;
+  message_id: string;
+}
+
+export function usePlatformMailFolders(): UseQueryResult<PlatformMailFolders> {
+  return useQuery({
+    queryKey: ADMIN_KEYS.platformMailFolders,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      // Soft-missing (endpoint absent) → empty folder view so the page still
+      // renders; real IMAP failures (502/400) rethrow to the page error state.
+      const data = await getOrEmpty<PlatformMailFolders>(
+        '/admin/platform-mail/folders',
+        undefined,
+        { folders: [], unread: {} },
+      );
+      return {
+        folders: Array.isArray(data.folders) ? data.folders : [],
+        unread:
+          data.unread && typeof data.unread === 'object' && !Array.isArray(data.unread)
+            ? data.unread
+            : {},
+      };
+    },
+  });
+}
+
+export function usePlatformMailMessages(folder: string): UseQueryResult<PlatformMailMessagesPage> {
+  return useQuery({
+    queryKey: [...ADMIN_KEYS.platformMailMessages, folder],
+    staleTime: 60_000,
+    retry: 1,
+    queryFn: async () => {
+      try {
+        const res = await api.get<PlatformMailMessagesPage>('/admin/platform-mail/messages', {
+          params: { folder, limit: 50 },
+        });
+        const data = res.data;
+        return {
+          folder: typeof data.folder === 'string' ? data.folder : folder,
+          folders:
+            Array.isArray(data.folders) && data.folders.length > 0 ? data.folders : ['INBOX'],
+          messages: Array.isArray(data.messages) ? data.messages : [],
+        };
+      } catch (err) {
+        if (isSoftMissing(err)) return { folder, folders: ['INBOX'], messages: [] };
+        throw err;
+      }
+    },
+  });
+}
+
+/**
+ * Fetch one message. The backend marks the message read server-side as a
+ * side-effect of this fetch, so a successful load also invalidates the
+ * folders + list queries — unread badges drop as soon as a message opens.
+ */
+export function usePlatformMailMessage(
+  folder: string,
+  uid: number | null,
+): UseQueryResult<PlatformMailMessageDetail> {
+  const qc = useQueryClient();
+  return useQuery({
+    queryKey: [...ADMIN_KEYS.platformMailMessage, folder, uid],
+    enabled: uid != null,
+    staleTime: 5 * 60_000,
+    retry: 1,
+    queryFn: async () => {
+      const res = await api.get<PlatformMailMessageDetail>(`/admin/platform-mail/message/${uid}`, {
+        params: { folder },
+      });
+      void qc.invalidateQueries({ queryKey: ADMIN_KEYS.platformMailFolders });
+      void qc.invalidateQueries({ queryKey: ADMIN_KEYS.platformMailMessages });
+      return res.data;
+    },
+  });
+}
+
+export function usePlatformMailSend(): UseMutationResult<
+  PlatformMailSendResult,
+  unknown,
+  PlatformMailSendPayload
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload) => {
+      const res = await api.post<PlatformMailSendResult>('/admin/platform-mail/send', payload);
+      return res.data;
+    },
+    onSuccess: () => {
+      // Sent mail only shows up once the backend rescans IMAP — invalidate
+      // so the Sent folder + unread counts reload on the next fetch.
+      qc.invalidateQueries({ queryKey: ADMIN_KEYS.platformMailFolders });
+      qc.invalidateQueries({ queryKey: ADMIN_KEYS.platformMailMessages });
+    },
+  });
+}
+
+export function usePlatformMailSetSeen(): UseMutationResult<
+  void,
+  unknown,
+  { folder: string; uid: number; seen: boolean }
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ folder, uid, seen }) => {
+      await api.post(`/admin/platform-mail/${uid}/seen`, null, { params: { folder, seen } });
+    },
+    onSuccess: () => {
+      // Deliberately NOT invalidating the detail query: refetching a detail
+      // re-marks it read server-side, which would undo seen=false.
+      qc.invalidateQueries({ queryKey: ADMIN_KEYS.platformMailFolders });
+      qc.invalidateQueries({ queryKey: ADMIN_KEYS.platformMailMessages });
+    },
+  });
+}
+
+export function usePlatformMailDelete(): UseMutationResult<
+  void,
+  unknown,
+  { folder: string; uid: number }
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ folder, uid }) => {
+      await api.delete(`/admin/platform-mail/${uid}`, { params: { folder } });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_KEYS.platformMailFolders });
+      qc.invalidateQueries({ queryKey: ADMIN_KEYS.platformMailMessages });
     },
   });
 }

@@ -401,6 +401,10 @@ class FakeSMTP:
 
     async def starttls(self) -> None:
         self.starttls_called = True
+        if getattr(self, "implicit_tls", False):
+            import aiosmtplib as _aio
+
+            raise _aio.SMTPException("Connection already using TLS")
 
     async def login(self, username, password) -> None:
         self.login_args = (username, password)
@@ -877,11 +881,27 @@ async def test_transactional_send_also_lands_in_sent(
 
     sent_msgs: list[EmailMessage] = []
 
-    async def _fake_aiosmtp_send(msg, **kwargs):
-        sent_msgs.append(msg)
+    class _RecordingSmtp:
+        def __init__(self, *, hostname=None, port=None, timeout=None, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def starttls(self):
+            pass
+
+        async def login(self, u, p):
+            pass
+
+        async def send_message(self, message, **kwargs):
+            sent_msgs.append(message)
 
     monkeypatch.setattr(tm, "_resolve_smtp_config", _fake_cfg)
-    monkeypatch.setattr(tm.aiosmtplib, "send", _fake_aiosmtp_send)
+    monkeypatch.setattr(tm.aiosmtplib, "SMTP", _RecordingSmtp)
     monkeypatch.setattr(tm, "get_settings", lambda: _types.SimpleNamespace(
         transactional_test_mode=False))
 
@@ -905,3 +925,41 @@ async def test_transactional_send_also_lands_in_sent(
     assert b"newuser@example.com" in sent_bytes
     assert b"Welcome to WarmPulse!" in sent_bytes
     assert b"Message-ID:" in sent_bytes
+
+
+async def test_send_tolerates_implicit_tls_relay(
+    app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression (live prod bug): mail.warmpulse.tech:587 presents implicit
+    TLS, so STARTTLS raises "Connection already using TLS". The send must
+    proceed — authenticate on the already-encrypted socket."""
+    import aiosmtplib as real_aiosmtplib
+
+    _install_platform_config(monkeypatch)
+
+    class ImplicitTlsFake(FakeSMTP):
+        implicit_tls = True
+
+    from app.services import platform_mail as pm
+
+    monkeypatch.setattr(pm.aiosmtplib, "SMTP", ImplicitTlsFake)
+    fake_imap = _install_fake_imap(monkeypatch, FakeImapClient(messages={}))
+    app, maker, _ = app_and_maker
+    admin = await _make_admin(maker)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        resp = await c.post(
+            "/api/admin/platform-mail/send",
+            json={"to": "customer@example.com", "subject": "tls", "body_text": "hi"},
+            headers=_auth_for(admin),
+        )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "sent"
+    smtp = SMTP_SENDS[-1]
+    assert smtp.starttls_called is True  # attempted…
+    assert smtp.login_args is not None  # …and auth proceeded anyway
+    assert len(smtp.sent) == 1
+    await pm.wait_for_appends()
+    assert len(fake_imap.append_calls) == 1

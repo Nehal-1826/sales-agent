@@ -114,18 +114,55 @@ def _smtp_configured(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(tm, "_resolve_smtp_config", _cfg)
 
 
+class _FakeSmtpClient:
+    """Async-context fake for aiosmtplib.SMTP driven by a send-behaviour fn."""
+
+    latest_behavior = None  # type: ignore[var-annotated]
+
+    def __init__(self, *, hostname=None, port=None, timeout=None, **kwargs):
+        self.hostname = hostname
+        self.port = port
+
+    async def __aenter__(self) -> "_FakeSmtpClient":
+        return self
+
+    async def __aexit__(self, *exc_info) -> bool:
+        return False
+
+    async def starttls(self) -> None:
+        behavior = _FakeSmtpClient.latest_behavior
+        if behavior is not None and behavior.get("starttls_error"):
+            import aiosmtplib as _aio
+
+            raise _aio.SMTPException(behavior["starttls_error"])
+
+    async def login(self, username: str, password: str) -> None:
+        pass
+
+    async def send_message(self, message, **kwargs):
+        behavior = _FakeSmtpClient.latest_behavior
+        if behavior is not None and behavior.get("send") is not None:
+            await behavior["send"]()
+
+
+def _install_fake_smtp_client(monkeypatch: pytest.MonkeyPatch, behavior: dict) -> None:
+    _FakeSmtpClient.latest_behavior = behavior
+    monkeypatch.setattr(tm.aiosmtplib, "SMTP", _FakeSmtpClient)
+
+
+
 async def test_recovers_when_a_transient_failure_clears(
     monkeypatch: pytest.MonkeyPatch, _no_sleep: None, _smtp_configured: None
 ) -> None:
     """Two 451s then success — the user still gets their email."""
     calls = {"n": 0}
 
-    async def _send(*_a, **_kw) -> None:
+    async def _send() -> None:
         calls["n"] += 1
         if calls["n"] < 3:
             raise _Refused(451)
 
-    monkeypatch.setattr(tm.aiosmtplib, "send", _send)
+    _install_fake_smtp_client(monkeypatch, {"send": _send})
 
     result = await tm.send_transactional(
         to="user@example.com", subject="Welcome", body_text="hi"
@@ -141,11 +178,11 @@ async def test_gives_up_after_max_attempts(
     """A sustained outage fails cleanly — and never IndexErrors."""
     calls = {"n": 0}
 
-    async def _send(*_a, **_kw) -> None:
+    async def _send() -> None:
         calls["n"] += 1
         raise _Refused(451)
 
-    monkeypatch.setattr(tm.aiosmtplib, "send", _send)
+    _install_fake_smtp_client(monkeypatch, {"send": _send})
 
     result = await tm.send_transactional(
         to="user@example.com", subject="Welcome", body_text="hi"
@@ -165,7 +202,7 @@ async def test_permanent_failure_is_not_retried(
         calls["n"] += 1
         raise _Refused(550)
 
-    monkeypatch.setattr(tm.aiosmtplib, "send", _send)
+    _install_fake_smtp_client(monkeypatch, {"send": _send})
 
     result = await tm.send_transactional(
         to="user@example.com", subject="Welcome", body_text="hi"
@@ -183,7 +220,7 @@ async def test_happy_path_sends_once(
     async def _send(*_a, **_kw) -> None:
         calls["n"] += 1
 
-    monkeypatch.setattr(tm.aiosmtplib, "send", _send)
+    _install_fake_smtp_client(monkeypatch, {"send": _send})
 
     result = await tm.send_transactional(
         to="user@example.com", subject="Welcome", body_text="hi"

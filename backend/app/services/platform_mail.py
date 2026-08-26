@@ -449,7 +449,20 @@ async def _smtp_send(cfg: _SmtpConfig, msg: EmailMessage) -> None:
         smtp = aiosmtplib.SMTP(hostname=cfg.host, port=cfg.port, timeout=_SMTP_TIMEOUT)
         async with smtp:
             if cfg.starttls:
-                await smtp.starttls()
+                try:
+                    await smtp.starttls()
+                except aiosmtplib.SMTPException as exc:
+                    # Some relays present implicit TLS on 587 (wrappermode) —
+                    # the socket is ALREADY encrypted, so STARTTLS is refused
+                    # with "Connection already using TLS". The connection is
+                    # safe to authenticate on as-is.
+                    if "already using TLS" not in str(exc):
+                        raise
+                    logger.info(
+                        "platform_mail.starttls_skipped — %s:%s already implicit TLS",
+                        cfg.host,
+                        cfg.port,
+                    )
             if cfg.username:
                 await smtp.login(cfg.username, cfg.password)
             await smtp.send_message(msg)

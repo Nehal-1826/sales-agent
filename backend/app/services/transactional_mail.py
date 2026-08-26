@@ -224,15 +224,28 @@ async def send_transactional(
         while True:
             attempt += 1
             try:
-                await aiosmtplib.send(
-                    msg,
-                    hostname=cfg.host,
-                    port=cfg.port,
-                    start_tls=cfg.starttls,
-                    username=cfg.username or None,
-                    password=cfg.password or None,
-                    timeout=20,
+                smtp = aiosmtplib.SMTP(
+                    hostname=cfg.host, port=cfg.port, timeout=20
                 )
+                async with smtp:
+                    if cfg.starttls:
+                        try:
+                            await smtp.starttls()
+                        except aiosmtplib.SMTPException as tls_exc:
+                            # Implicit-TLS relay (wrappermode on 587): the
+                            # socket is already encrypted — authenticate on
+                            # it directly instead of failing every send.
+                            if "already using TLS" not in str(tls_exc):
+                                raise
+                            logger.info(
+                                "transactional_mail.starttls_skipped — "
+                                "%s:%s already implicit TLS",
+                                cfg.host,
+                                cfg.port,
+                            )
+                    if cfg.username:
+                        await smtp.login(cfg.username, cfg.password)
+                    await smtp.send_message(msg)
                 # Automated mail lands in the platform Sent folder too (the
                 # admin Platform Mail view shows every signup/2FA/billing
                 # send). Background task — never blocks or fails the send.

@@ -372,7 +372,10 @@ async def _open_folder(client, folder: str) -> tuple[str, list[str]]:
     return actual, folders
 
 
-_FETCH_MARKER_RE = re.compile(r"^\*\s+(\d+)\s+FETCH\b", re.IGNORECASE)
+# FETCH markers arrive as "* 2 FETCH (...)" OR "2 FETCH (...)" — aioimaplib
+# strips the untagged-marker prefix on some servers/versions (live-probed on
+# the prod Dovecot: no asterisk). The asterisk must be optional.
+_FETCH_MARKER_RE = re.compile(r"^\*?\s*(\d+)\s+FETCH\b", re.IGNORECASE)
 # Tagged command status lines ("TAG4 OK FETCH completed") — protocol, not literal.
 _TAGGED_STATUS_RE = re.compile(r"^[A-Za-z0-9._+-]+\s+(?:OK|NO|BAD|BYE|PREAUTH)\b")
 # Literal size announcements ("BODY[TEXT] {64}") — protocol, not literal.
@@ -492,7 +495,12 @@ async def _search_all_numbers(client) -> list[str]:
         raise aioimaplib.Abort(f"SEARCH failed: {resp.result}")
     numbers: list[str] = []
     for line in resp.lines:
-        numbers.extend(_line_text(line).split())
+        text = _line_text(line)
+        # Dovecot's tagged completion ("Search completed (0.001 + 0.000
+        # secs).") carries digit-ish tokens — only harvest data lines.
+        if "completed" in text.lower():
+            continue
+        numbers.extend(text.split())
     return numbers
 
 

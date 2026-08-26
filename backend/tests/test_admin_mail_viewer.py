@@ -286,7 +286,7 @@ class FakeImapClient:
             msg = self.messages[seq]
             headers, text = msg["headers"], msg["text"]
             lines.append(
-                f"* {seq} FETCH (UID {msg['uid']} "
+                f"{seq} FETCH (UID {msg['uid']} "
                 f"BODY[HEADER.FIELDS (FROM TO CC SUBJECT DATE MESSAGE-ID)] "
                 f"{{{len(headers)}}}".encode()
             )
@@ -304,7 +304,7 @@ class FakeImapClient:
             if str(msg["uid"]) == str(uid):
                 full = msg["full"]
                 lines = [
-                    f"* {seq} FETCH (UID {uid} BODY[] {{{len(full)}}}".encode(),
+                    f"{seq} FETCH (UID {uid} BODY[] {{{len(full)}}}".encode(),
                     bytearray(full),
                     b")",
                 ]

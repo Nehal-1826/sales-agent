@@ -511,8 +511,12 @@ async def _append_to_sent(message_bytes: bytes) -> None:
         if sent is None:
             logger.info("platform_mail.sent_append_skipped — no Sent folder on account")
             return
-        date_time = datetime.now(UTC).strftime("%d-%b-%Y %H:%M:%S +0000")
-        resp = await client.append(message_bytes, mailbox=sent, flags="(\\Seen)", date=date_time)
+        # aioimaplib validates the date param's TYPE — a preformatted string
+        # raises "date_time not of a known type" (live-probed on the prod
+        # relay). Pass a tz-aware datetime and let the library format it.
+        resp = await client.append(
+            message_bytes, mailbox=sent, flags="(\\Seen)", date=datetime.now(UTC)
+        )
         if resp.result != "OK":
             logger.warning("platform_mail.sent_append_failed: %s", resp.result)
     finally:

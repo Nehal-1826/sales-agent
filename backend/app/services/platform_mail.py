@@ -30,6 +30,8 @@ Audit: ``platform_mail_send`` / ``platform_mail_delete`` /
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import contextlib
 import email
 import email.policy
@@ -61,7 +63,6 @@ from app.services.admin_mail_viewer import (
     _parse_fetch_lines,
     _platform_imap_config,
     _resolve_folder,
-    _search_all_numbers,
     _snippet,
     _write_audit,
 )
@@ -72,6 +73,8 @@ logger = logging.getLogger(__name__)
 _SMTP_TIMEOUT = 15.0
 # Whole-request ceiling for one send (Cloudflare-safe).
 _SEND_DEADLINE_S = 45.0
+# Compose attachments cap — one mail's attachments together.
+_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 
 # Aliases we report unread counts for in list_folders(). Keyed by the
 # _FOLDER_ALIASES names (resolved against the account's real LIST response).
@@ -121,6 +124,33 @@ async def _select_read_write(client, actual: str) -> None:
 
 def _flags_seen(flags: str | None) -> bool:
     return "\\Seen" in (flags or "")
+
+
+def _flags_starred(flags: str | None) -> bool:
+    return "\\Flagged" in (flags or "")
+
+
+def _imap_quote(value: str) -> str:
+    """IMAP astring quoting for SEARCH TEXT etc. (\" and \\ escaped)."""
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+async def _search_numbers(client, search: str | None) -> list[str]:
+    """SEARCH ALL, or SEARCH TEXT <query> when filtering (headers + body)."""
+    if search and search.strip():
+        resp = await client.search(f"TEXT {_imap_quote(search.strip())}", charset=None)
+    else:
+        resp = await client.search("ALL", charset=None)
+    if resp.result != "OK":
+        raise aioimaplib.Abort(f"SEARCH failed: {resp.result}")
+    numbers: list[str] = []
+    for line in resp.lines:
+        text = _line_text(line)
+        if "completed" in text.lower():
+            continue
+        numbers.extend(text.split())
+    return numbers
 
 
 def _parse_unseen(lines: list[Any]) -> int | None:
@@ -173,17 +203,19 @@ async def list_messages(
     actor: User | None,
     folder: str = "INBOX",
     limit: int = 50,
+    search: str | None = None,
 ) -> dict[str, Any]:
-    """Newest-first message summaries for ``folder`` incl. ``seen`` state.
+    """Newest-first message summaries for ``folder`` incl. ``seen``/``starred``.
 
-    Same shape as the admin viewer's listing plus ``seen: bool``, parsed from
-    the FETCH FLAGS. Read-only (EXAMINE + BODY.PEEK) — marking read happens
-    only on full-message opens.
+    Same shape as the admin viewer's listing plus ``seen`` and ``starred``
+    (from the FETCH FLAGS). ``search`` filters via IMAP ``SEARCH TEXT``
+    (matches headers + body) within the folder. Read-only (BODY.PEEK) —
+    marking read happens only on full-message opens.
     """
     client, _account_email = await _connect_platform()
     try:
         result = await asyncio.wait_for(
-            _list_messages_on(client, folder=folder, limit=limit),
+            _list_messages_on(client, folder=folder, limit=limit, search=search),
             timeout=_TOTAL_BUDGET,
         )
     except TimeoutError as exc:
@@ -194,7 +226,9 @@ async def list_messages(
     return result
 
 
-async def _list_messages_on(client, *, folder: str, limit: int) -> dict[str, Any]:
+async def _list_messages_on(
+    client, *, folder: str, limit: int, search: str | None = None
+) -> dict[str, Any]:
     folders = await _list_folders(client)
     actual = _resolve_folder(folder, folders)
     if actual is None:
@@ -208,7 +242,7 @@ async def _list_messages_on(client, *, folder: str, limit: int) -> dict[str, Any
     resp = await client.select(actual)
     if resp.result != "OK":
         raise ValueError(f"folder '{actual}' could not be opened ({resp.result})")
-    numbers = await _search_all_numbers(client)
+    numbers = await _search_numbers(client, search)
     chosen = [n for n in numbers[-limit:][::-1] if n.isdigit()]
     messages: list[dict[str, Any]] = []
     if chosen:
@@ -231,6 +265,7 @@ async def _list_messages_on(client, *, folder: str, limit: int) -> dict[str, Any
                     "date": _decode_header(header_msg.get("Date")),
                     "snippet": _snippet(text_raw),
                     "seen": _flags_seen(entry.get("flags")),
+                    "starred": _flags_starred(entry.get("flags")),
                 }
             )
     return {"folder": actual, "folders": folders, "messages": messages}
@@ -315,10 +350,104 @@ async def _get_message_on(client, *, folder: str, uid: str) -> dict[str, Any]:
         "date": _decode_header(msg.get("Date")),
         "text_body": _body_text(msg),
         "html_body": _body_html(msg),
+        "attachments": _attachment_list(msg),
         "headers": headers,
         # State as it was on open — the silent STORE above already marked the
         # mail read for every future listing.
         "seen": seen_before,
+        "starred": _flags_starred(flags),
+    }
+
+
+def _attachment_list(msg: email.message.Message) -> list[dict[str, Any]]:
+    """Attachment summaries with IMAP part paths for later download fetches.
+
+    A part is an attachment when it carries a filename (Content-Disposition
+    or Content-Type name param). IMAP numbers a multipart's children 1..n and
+    descends with dots ("2", "3", "1.2"); embedded message/rfc822 parts are
+    left opaque — attachments inside a DSN's returned mail are not surfaced
+    (they belong to the enclosed mail, not this one).
+    """
+    out: list[dict[str, Any]] = []
+
+    def walk(container: email.message.Message, prefix: str) -> None:
+        if container.get_content_maintype() != "multipart":
+            return
+        for index, sub in enumerate(container.get_payload(), start=1):
+            path = f"{prefix}{index}"
+            if sub.get_content_maintype() == "multipart":
+                walk(sub, f"{path}.")
+                continue
+            filename = sub.get_filename()
+            if not filename:
+                continue
+            payload = sub.get_payload(decode=True) or b""
+            out.append(
+                {
+                    "part": path,
+                    "filename": _decode_header(filename) or filename,
+                    "content_type": sub.get_content_type(),
+                    "size": len(payload),
+                }
+            )
+
+    walk(msg, "")
+    return out
+
+
+_PART_PATH_RE = re.compile(r"^\d+(\.\d+)*$")
+
+
+async def get_attachment(
+    session: AsyncSession,
+    *,
+    actor: User | None,
+    folder: str,
+    uid: str,
+    part: str,
+) -> dict[str, Any]:
+    """Download one attachment part by its IMAP part path (read-only PEEK).
+
+    Returns ``{"filename", "content_type", "data": bytes}`` — the route
+    streams ``data`` with a Content-Disposition attachment header.
+    """
+    if not _PART_PATH_RE.fullmatch(part):
+        raise ValueError(f"invalid attachment part path: {part!r}")
+    client, account_email = await _connect_platform()
+    try:
+        actual, _folders = await _resolve_or_400(client, folder)
+        await _select_read_write(client, actual)
+        fetch = await client.uid("fetch", str(uid), f"(BODY.PEEK[{part}])")
+        if fetch.result != "OK":
+            raise aioimaplib.Abort(f"FETCH failed: {fetch.result}")
+        parsed = _parse_fetch_lines(fetch.lines)
+        part_bytes = b""
+        for entry in parsed.values():
+            part_bytes = b"".join(entry["literals"])
+            break
+        if not part_bytes:
+            raise ValueError(f"attachment part {part} not found on message {uid}")
+        pmsg = email.message_from_bytes(part_bytes)
+        payload = pmsg.get_payload(decode=True)
+        if payload is None:  # no CTE — the raw bytes ARE the content
+            payload = part_bytes
+    finally:
+        with contextlib.suppress(Exception):
+            await client.logout()
+
+    await _write_audit(
+        session,
+        actor=actor,
+        action="platform_mail_attachment",
+        target_type="platform",
+        target_id=None,
+        payload={"account_email": account_email, "folder": folder, "uid": uid, "part": part},
+    )
+    await session.commit()
+    return {
+        "filename": _decode_header(pmsg.get_filename()) or f"part-{part}",
+        "content_type": pmsg.get_content_type() or "application/octet-stream",
+        "data": payload,
     }
 
 
@@ -355,6 +484,44 @@ async def set_seen(
         target_type="platform",
         target_id=None,
         payload={"account_email": account_email, "folder": folder, "uid": uid, "seen": seen},
+    )
+    await session.commit()
+
+
+async def set_starred(
+    session: AsyncSession,
+    *,
+    actor: User | None,
+    folder: str,
+    uid: str,
+    starred: bool,
+) -> None:
+    """Set / clear the ``\\Flagged`` (star) flag on one message."""
+    client, account_email = await _connect_platform()
+    try:
+        actual, _folders = await _resolve_or_400(client, folder)
+        await _select_read_write(client, actual)
+        mode = "+FLAGS.SILENT" if starred else "-FLAGS.SILENT"
+        resp = await client.uid("store", str(uid), mode, "(\\Flagged)")
+        if resp.result != "OK":
+            raise aioimaplib.Abort(f"STORE failed: {resp.result}")
+    finally:
+        with contextlib.suppress(Exception):
+            await client.logout()
+
+    await _write_audit(
+        session,
+        actor=actor,
+        action="platform_mail_flag",
+        target_type="platform",
+        target_id=None,
+        payload={
+            "account_email": account_email,
+            "folder": folder,
+            "uid": uid,
+            "flag": "\\Flagged",
+            "starred": starred,
+        },
     )
     await session.commit()
 
@@ -422,6 +589,7 @@ def _build_message(
     body_html: str | None,
     in_reply_to: str | None,
     references: str | None,
+    attachments: list[dict[str, Any]] | None = None,
 ) -> EmailMessage:
     msg = EmailMessage()
     msg["From"] = from_addr
@@ -438,6 +606,17 @@ def _build_message(
     msg.set_content(body_text)
     if body_html:
         msg.add_alternative(body_html, subtype="html")
+    # add_attachment after the (alternative) body — EmailMessage restructures
+    # the tree into multipart/mixed correctly.
+    for att in attachments or []:
+        data = base64.b64decode(att["content_b64"], validate=True)
+        maintype, _, subtype = (att.get("content_type") or "").partition("/")
+        msg.add_attachment(
+            data,
+            maintype=maintype or "application",
+            subtype=subtype or "octet-stream",
+            filename=att["filename"],
+        )
     return msg
 
 
@@ -537,18 +716,33 @@ async def send_mail(
     cc: str | None = None,
     in_reply_to: str | None = None,
     references: str | None = None,
+    attachments: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Send one mail from the platform account and APPEND it to Sent.
 
     Raises ``ValueError`` (→ 400) when the transactional SMTP settings are
-    unconfigured; SMTP/IMAP failures surface as ``OSError`` (→ 502). The
-    Sent APPEND is best-effort and never fails the request.
+    unconfigured or the attachments are invalid/too large; SMTP/IMAP
+    failures surface as ``OSError`` (→ 502). The Sent APPEND is best-effort
+    and never fails the request.
     """
     cfg = await transactional_mail._resolve_smtp_config()
     if not cfg.host or not cfg.username or not cfg.password:
         raise ValueError(
             "platform mail server not configured (Admin → Settings → Transactional SMTP)"
         )
+    if attachments:
+        total = 0
+        for att in attachments:
+            try:
+                decoded = base64.b64decode(att["content_b64"], validate=True)
+            except (ValueError, TypeError, binascii.Error) as exc:
+                raise ValueError(f"attachment {att.get('filename', '?')} is not valid base64") from exc
+            total += len(decoded)
+        if total > _MAX_ATTACHMENT_BYTES:
+            raise ValueError(
+                f"attachments total {total} bytes exceed the "
+                f"{_MAX_ATTACHMENT_BYTES} byte limit"
+            )
     from_addr = cfg.from_addr or cfg.username
     msg = _build_message(
         from_addr=from_addr,
@@ -559,6 +753,7 @@ async def send_mail(
         body_html=body_html,
         in_reply_to=in_reply_to,
         references=references,
+        attachments=attachments,
     )
     message_id = str(msg["Message-ID"])
     # CRLF-terminated RFC822 — required by IMAP APPEND.

@@ -11,6 +11,7 @@ SMTP layer with an async context-manager FakeSMTP recording send args.
 
 from __future__ import annotations
 
+import base64
 import email.policy
 import uuid
 from collections.abc import AsyncIterator
@@ -202,6 +203,7 @@ class FakeImapClient:
         self.expunge_calls = 0
         self.append_calls: list[tuple[str, str | None, str | None, bytes]] = []
         self.status_calls: list[str] = []
+        self.search_criteria: list[tuple[str, ...]] = []
         # Login outcome (admin_mail_viewer.FakeImapClient mirrors this) —
         # aioimaplib returns "NO" without raising.
         self.login_result = "OK"
@@ -253,6 +255,7 @@ class FakeImapClient:
         if not self.selected:
             import aioimaplib as _aio
             raise _aio.Abort("command SEARCH illegal in state AUTH")
+        self.search_criteria.append(tuple(criteria))
         nums = " ".join(str(i) for i in sorted(self.messages))
         return _Resp(lines=[nums.encode()])
 
@@ -284,8 +287,26 @@ class FakeImapClient:
             seq = self._seq_by_uid(uid)
             if seq is None:
                 return _Resp(lines=[])
-            full = self.messages[seq]["full"]
-            flags = self.messages[seq]["flags"]
+            msg = self.messages[seq]
+            # Part fetch (attachment download): BODY.PEEK[<part>] returns that
+            # part's raw bytes (MIME headers included) from msg["parts"].
+            if len(criteria) > 1 and "BODY.PEEK[" in criteria[1]:
+                import re as _re
+
+                m = _re.search(r"BODY\.PEEK\[([0-9.]+)\]", criteria[1])
+                if m:
+                    part = m.group(1)
+                    data = msg.get("parts", {}).get(part)
+                    if data is None:
+                        return _Resp(lines=[])
+                    lines = [
+                        f"{seq} FETCH (UID {uid} BODY[{part}] {{{len(data)}}}".encode(),
+                        bytearray(data),
+                        b")",
+                    ]
+                    return _Resp(lines=lines)
+            full = msg["full"]
+            flags = msg["flags"]
             lines = [
                 f"{seq} FETCH (UID {uid} FLAGS ({flags}) BODY[] {{{len(full)}}}".encode(),
                 bytearray(full),
@@ -359,10 +380,19 @@ def _canned_messages() -> dict[int, dict]:
         b"<html><body><p>How fast can we <b>ramp</b> a new mailbox?</p>"
         b"<script>alert('x')</script></body></html>"
     )
+    # Part 2: an attachment (base64 of "ramp notes v1\n").
+    attachment_content = base64.b64encode(b"ramp notes v1\n")
+    attachment_part = (
+        b"Content-Type: text/plain; name=\"ramp-notes.txt\"\r\n"
+        b"Content-Disposition: attachment; filename=\"ramp-notes.txt\"\r\n"
+        b"Content-Transfer-Encoding: base64\r\n\r\n" + attachment_content
+    )
     full_2 = (
         headers_2
         + b"In-Reply-To: <old-1@vendor.example.com>\r\n"
         + b"References: <thread-root@example.com> <old-1@vendor.example.com>\r\n"
+        + b"Content-Type: multipart/mixed; boundary=\"MX2\"\r\n\r\n"
+        + b"--MX2\r\n"
         + b"Content-Type: multipart/alternative; boundary=\"PB2\"\r\n\r\n"
         + b"--PB2\r\n"
         + b"Content-Type: text/plain; charset=utf-8\r\n\r\n"
@@ -371,12 +401,15 @@ def _canned_messages() -> dict[int, dict]:
         + b"Content-Type: text/html; charset=utf-8\r\n\r\n"
         + html_2
         + b"\r\n--PB2--\r\n"
+        + b"\r\n--MX2\r\n"
+        + attachment_part
+        + b"\r\n--MX2--\r\n"
     )
     return {
         1: {
             "uid": 201,
-            "flags": "\\Seen",
-            "flag_set": {"\\Seen"},
+            "flags": "\\Seen \\Flagged",
+            "flag_set": {"\\Seen", "\\Flagged"},
             "headers": headers_1,
             "text": text_1,
             "full": headers_1 + b"Content-Type: text/plain\r\n\r\n" + text_1,
@@ -388,6 +421,8 @@ def _canned_messages() -> dict[int, dict]:
             "headers": headers_2,
             "text": text_2,
             "full": full_2,
+            # IMAP part-path → raw part bytes (attachment download fetches).
+            "parts": {"2": attachment_part},
         },
     }
 
@@ -633,7 +668,7 @@ async def test_set_seen_true_and_false(
         ("201", "-FLAGS.SILENT", "(\\Seen)"),
     ]
     assert fake.messages[2]["flag_set"] == {"\\Seen"}
-    assert fake.messages[1]["flag_set"] == set()
+    assert fake.messages[1]["flag_set"] == {"\\Flagged"}  # \Seen cleared, star kept
 
     async with maker() as session:
         rows = (
@@ -982,3 +1017,208 @@ async def test_send_tolerates_implicit_tls_relay(
     assert len(smtp.sent) == 1
     await pm.wait_for_appends()
     assert len(fake_imap.append_calls) == 1
+
+
+# --------------------------------------------------------------------------- #
+# 7. Gmail-style additions: search, star, attachments                         #
+# --------------------------------------------------------------------------- #
+
+
+async def test_search_uses_imap_search_text(
+    app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A search filters the folder server-side via SEARCH TEXT "…"."""
+    _install_platform_config(monkeypatch)
+    fake = _install_fake_imap(monkeypatch, FakeImapClient(messages=_canned_messages()))
+    app, maker, _ = app_and_maker
+    admin = await _make_admin(maker)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        resp = await c.get(
+            "/api/admin/platform-mail/messages",
+            params={"folder": "INBOX", "search": 'invoice "acme corp"'},
+            headers=_auth_for(admin),
+        )
+    assert resp.status_code == 200, resp.text
+    assert fake.search_criteria == [('TEXT "invoice \\"acme corp\\""',)]
+    # No search → plain SEARCH ALL.
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        resp = await c.get(
+            "/api/admin/platform-mail/messages",
+            params={"folder": "INBOX"},
+            headers=_auth_for(admin),
+        )
+    assert resp.status_code == 200, resp.text
+    assert fake.search_criteria[-1] == ("ALL",)
+
+
+async def test_starred_state_and_toggle(
+    app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.db.models.audit_logs import AuditLog
+
+    _install_platform_config(monkeypatch)
+    fake = _install_fake_imap(monkeypatch, FakeImapClient(messages=_canned_messages()))
+    app, maker, _ = app_and_maker
+    admin = await _make_admin(maker)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        resp = await c.get(
+            "/api/admin/platform-mail/messages",
+            params={"folder": "INBOX"},
+            headers=_auth_for(admin),
+        )
+    assert resp.status_code == 200, resp.text
+    msgs = resp.json()["messages"]
+    assert msgs[0]["uid"] == "202"
+    assert msgs[0]["starred"] is False  # not flagged yet
+    assert msgs[1]["uid"] == "201"
+    assert msgs[1]["starred"] is True  # canned flags "\Seen \Flagged"
+
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        resp = await c.post(
+            "/api/admin/platform-mail/202/star",
+            params={"folder": "INBOX", "starred": True},
+            headers=_auth_for(admin),
+        )
+    assert resp.status_code == 204, resp.text
+    assert fake.store_calls == [("202", "+FLAGS.SILENT", "(\Flagged)")]
+    assert "\Flagged" in fake.messages[2]["flag_set"]
+
+    async with maker() as session:
+        rows = (
+            (
+                await session.execute(
+                    select(AuditLog).where(
+                        AuditLog.action == "platform_mail_flag",
+                        AuditLog.payload["flag"].as_string() == "\Flagged",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert len(rows) == 1
+    assert rows[0].payload["starred"] is True
+
+
+async def test_get_message_lists_attachments(
+    app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_platform_config(monkeypatch)
+    _install_fake_imap(monkeypatch, FakeImapClient(messages=_canned_messages()))
+    app, maker, _ = app_and_maker
+    admin = await _make_admin(maker)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        resp = await c.get(
+            "/api/admin/platform-mail/message/202",
+            params={"folder": "INBOX"},
+            headers=_auth_for(admin),
+        )
+    assert resp.status_code == 200, resp.text
+    atts = resp.json()["attachments"]
+    assert len(atts) == 1
+    assert atts[0]["part"] == "2"
+    assert atts[0]["filename"] == "ramp-notes.txt"
+    assert atts[0]["content_type"] == "text/plain"
+    assert atts[0]["size"] == len(b"ramp notes v1\n")
+
+
+async def test_get_attachment_downloads_part(
+    app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_platform_config(monkeypatch)
+    _install_fake_imap(monkeypatch, FakeImapClient(messages=_canned_messages()))
+    app, maker, _ = app_and_maker
+    admin = await _make_admin(maker)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        resp = await c.get(
+            "/api/admin/platform-mail/202/attachment/2",
+            params={"folder": "INBOX"},
+            headers=_auth_for(admin),
+        )
+    assert resp.status_code == 200, resp.text
+    assert resp.content == b"ramp notes v1\n"  # base64 CTE decoded
+    assert resp.headers["content-type"].startswith("text/plain")
+    assert 'filename="ramp-notes.txt"' in resp.headers["content-disposition"]
+
+    # Traversal-shaped part paths are rejected before touching IMAP.
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        resp = await c.get(
+            "/api/admin/platform-mail/202/attachment/2..2",
+            params={"folder": "INBOX"},
+            headers=_auth_for(admin),
+        )
+    assert resp.status_code == 400, resp.text
+
+
+async def test_send_with_attachments(
+    app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_platform_config(monkeypatch)
+    sends = _install_fake_smtp(monkeypatch)
+    fake = _install_fake_imap(monkeypatch, FakeImapClient(messages={}))
+    app, maker, _ = app_and_maker
+    admin = await _make_admin(maker)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        resp = await c.post(
+            "/api/admin/platform-mail/send",
+            json={
+                "to": "customer@example.com",
+                "subject": "Notes attached",
+                "body_text": "see attachment",
+                "attachments": [
+                    {
+                        "filename": "notes.txt",
+                        "content_type": "text/plain",
+                        "content_b64": base64.b64encode(b"attached notes\n").decode(),
+                    }
+                ],
+            },
+            headers=_auth_for(admin),
+        )
+    assert resp.status_code == 200, resp.text
+    msg = sends[0].sent[0]
+    att = msg.get_payload()[-1]
+    assert att.get_content_type() == "text/plain"
+    assert att.get_filename() == "notes.txt"
+    assert att.get_payload(decode=True) == b"attached notes\n"
+
+    from app.services import platform_mail as pm
+
+    await pm.wait_for_appends()
+    assert b"notes.txt" in fake.append_calls[0][3]
+
+    # Oversized attachments are rejected without hitting SMTP.
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        resp = await c.post(
+            "/api/admin/platform-mail/send",
+            json={
+                "to": "customer@example.com",
+                "subject": "too big",
+                "body_text": "nope",
+                "attachments": [
+                    {
+                        "filename": "big.bin",
+                        "content_type": "application/octet-stream",
+                        "content_b64": base64.b64encode(b"x" * (10 * 1024 * 1024 + 1)).decode(),
+                    }
+                ],
+            },
+            headers=_auth_for(admin),
+        )
+    assert resp.status_code == 400, resp.text
+    assert len(sends[0].sent) == 1  # nothing new went out

@@ -15,10 +15,11 @@ it seen, flags can be toggled, messages deleted, mail composed and sent.
 from __future__ import annotations
 
 import logging
+import urllib.parse
 from typing import Annotated, Any
 
 import aioimaplib
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,6 +36,18 @@ router = APIRouter(
 )
 
 
+class PlatformMailAttachment(BaseModel):
+    """One compose attachment — raw bytes as base64 (strict)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    filename: str = Field(min_length=1, max_length=255)
+    content_type: str = Field(default="application/octet-stream", max_length=255)
+    # 10 MB of raw bytes ≈ 13.9 MB of base64 — the service re-checks the
+    # decoded total.
+    content_b64: str = Field(min_length=1, max_length=14_000_000)
+
+
 class PlatformMailSend(BaseModel):
     """Compose/send body — strict: unknown fields are rejected."""
 
@@ -47,6 +60,7 @@ class PlatformMailSend(BaseModel):
     body_html: str | None = Field(default=None, max_length=200_000)
     in_reply_to: str | None = None
     references: str | None = None
+    attachments: list[PlatformMailAttachment] | None = None
 
 
 def _imap_error(exc: Exception) -> HTTPException:
@@ -74,10 +88,16 @@ async def list_messages(
     actor: Annotated[User, Depends(require_super_admin)],
     folder: str = Query("INBOX"),
     limit: int = Query(50, ge=1, le=100),
+    search: str | None = Query(None, max_length=200),
 ) -> dict[str, Any]:
-    """Newest-first message summaries (with seen state) for one folder."""
+    """Newest-first message summaries (with seen/starred state) for one folder.
+
+    ``search`` filters the folder via IMAP SEARCH TEXT (headers + body).
+    """
     try:
-        return await platform_mail.list_messages(session, actor=actor, folder=folder, limit=limit)
+        return await platform_mail.list_messages(
+            session, actor=actor, folder=folder, limit=limit, search=search
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (OSError, aioimaplib.Abort) as exc:
@@ -118,12 +138,64 @@ async def send_mail(
             cc=str(payload.cc) if payload.cc else None,
             in_reply_to=payload.in_reply_to,
             references=payload.references,
+            attachments=[a.model_dump() for a in payload.attachments] if payload.attachments else None,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (OSError, aioimaplib.Abort) as exc:
         logger.warning("platform-mail send failed: %s", exc)
         raise HTTPException(status_code=502, detail=f"send failed — {exc}") from exc
+
+
+@router.get("/{uid}/attachment/{part}")
+async def get_attachment(
+    uid: str,
+    part: str,
+    session: Annotated[AsyncSession, Depends(get_db)],
+    actor: Annotated[User, Depends(require_super_admin)],
+    folder: str = Query("INBOX"),
+) -> Response:
+    """Download one attachment part of a message (streams the decoded bytes)."""
+    try:
+        result = await platform_mail.get_attachment(
+            session, actor=actor, folder=folder, uid=uid, part=part
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (OSError, aioimaplib.Abort) as exc:
+        raise _imap_error(exc) from exc
+    filename = result["filename"]
+    quoted = urllib.parse.quote(filename)
+    # ASCII fallback + RFC 5987 for non-ASCII filenames.
+    ascii_name = filename.encode("ascii", errors="ignore") or b"attachment"
+    return Response(
+        content=result["data"],
+        media_type=result["content_type"],
+        headers={
+            "Content-Disposition": (
+                f"attachment; filename=\"{ascii_name.decode()}\"; filename*=UTF-8''{quoted}"
+            )
+        },
+    )
+
+
+@router.post("/{uid}/star", status_code=204)
+async def set_starred(
+    uid: str,
+    session: Annotated[AsyncSession, Depends(get_db)],
+    actor: Annotated[User, Depends(require_super_admin)],
+    folder: str = Query("INBOX"),
+    starred: bool = Query(True),
+) -> None:
+    """Set (or clear) the \\Flagged (star) flag on one message."""
+    try:
+        await platform_mail.set_starred(
+            session, actor=actor, folder=folder, uid=uid, starred=starred
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (OSError, aioimaplib.Abort) as exc:
+        raise _imap_error(exc) from exc
 
 
 @router.post("/{uid}/seen", status_code=204)

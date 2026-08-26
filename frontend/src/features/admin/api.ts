@@ -1729,12 +1729,21 @@ export interface PlatformMailMessageSummary {
   date: string;
   snippet: string;
   seen: boolean;
+  starred: boolean;
 }
 
 export interface PlatformMailMessagesPage {
   folder: string;
   folders: string[];
   messages: PlatformMailMessageSummary[];
+}
+
+export interface PlatformMailAttachmentInfo {
+  /** IMAP part path — used to fetch/download this part. */
+  part: string;
+  filename: string;
+  content_type: string;
+  size: number;
 }
 
 export interface PlatformMailMessageDetail {
@@ -1746,6 +1755,7 @@ export interface PlatformMailMessageDetail {
   date: string;
   text_body: string;
   html_body?: string | null;
+  attachments: PlatformMailAttachmentInfo[];
   headers: {
     message_id?: string | null;
     x_warmup_id?: string | null;
@@ -1753,6 +1763,24 @@ export interface PlatformMailMessageDetail {
     references?: string | null;
   };
   seen: boolean;
+  starred: boolean;
+}
+
+export interface PlatformMailSendAttachment {
+  filename: string;
+  content_type?: string;
+  content_b64: string;
+}
+
+export interface PlatformMailSendPayload {
+  to: string;
+  cc?: string;
+  subject: string;
+  body_text: string;
+  body_html?: string;
+  in_reply_to?: string;
+  references?: string;
+  attachments?: PlatformMailSendAttachment[];
 }
 
 export interface PlatformMailSendPayload {
@@ -1794,15 +1822,18 @@ export function usePlatformMailFolders(): UseQueryResult<PlatformMailFolders> {
   });
 }
 
-export function usePlatformMailMessages(folder: string): UseQueryResult<PlatformMailMessagesPage> {
+export function usePlatformMailMessages(
+  folder: string,
+  search: string = '',
+): UseQueryResult<PlatformMailMessagesPage> {
   return useQuery({
-    queryKey: [...ADMIN_KEYS.platformMailMessages, folder],
+    queryKey: [...ADMIN_KEYS.platformMailMessages, folder, search],
     staleTime: 60_000,
     retry: 1,
     queryFn: async () => {
       try {
         const res = await api.get<PlatformMailMessagesPage>('/admin/platform-mail/messages', {
-          params: { folder, limit: 50 },
+          params: { folder, limit: 50, ...(search ? { search } : {}) },
         });
         const data = res.data;
         return {
@@ -1882,6 +1913,54 @@ export function usePlatformMailSetSeen(): UseMutationResult<
       qc.invalidateQueries({ queryKey: ADMIN_KEYS.platformMailMessages });
     },
   });
+}
+
+export function usePlatformMailSetStar(): UseMutationResult<
+  void,
+  unknown,
+  { folder: string; uid: number; starred: boolean }
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ folder, uid, starred }) => {
+      await api.post(`/admin/platform-mail/${uid}/star`, null, { params: { folder, starred } });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_KEYS.platformMailFolders });
+      qc.invalidateQueries({ queryKey: ADMIN_KEYS.platformMailMessages });
+    },
+  });
+}
+
+/**
+ * Download one attachment to the browser (auth'd axios → blob → object URL).
+ * Not a hook — call from an onClick.
+ */
+export async function downloadPlatformMailAttachment(
+  folder: string,
+  uid: number,
+  part: string,
+  fallbackName: string,
+): Promise<void> {
+  const res = await api.get<Blob>(`/admin/platform-mail/${uid}/attachment/${part}`, {
+    params: { folder },
+    responseType: 'blob',
+  });
+  const dispo = res.headers?.['content-disposition'] as string | undefined;
+  const match = dispo?.match(/filename\*=UTF-8''([^;]+)/i);
+  const utf8Name = match?.[1] ? decodeURIComponent(match[1]) : undefined;
+  const name = utf8Name ?? fallbackName;
+  const url = URL.createObjectURL(res.data);
+  try {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  }
 }
 
 export function usePlatformMailDelete(): UseMutationResult<

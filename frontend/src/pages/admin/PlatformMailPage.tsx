@@ -1,38 +1,52 @@
 /**
- * /admin/platform-mail — full mail client for the WarmPulse platform account
- * (super_admin).
+ * /admin/platform-mail — Gmail-style mail client for the WarmPulse platform
+ * account (super_admin).
  *
- * Three zones: folder rail (unread badges), message list (unread dots, hover
- * mark-unread / delete), and a detail pane (reply, delete, mark unread).
- * Compose + reply go through POST /admin/platform-mail/send over the platform
- * transactional SMTP. This is where admins handle mail addressed to the
- * platform itself (provider notices, abuse replies, bounces).
+ * Layout mirrors Gmail: folder rail with unread badges, search in the header
+ * (server-side IMAP SEARCH TEXT), message rows with star + avatar + inline
+ * snippet, and a reading pane that opens a mail "like the original client":
+ * toolbar (reply / forward / star / mark unread / delete), sender row with a
+ * "to me" details popover, the HTML body rendered in a sandboxed iframe
+ * (MailBodyView) on a white card, attachment chips that download, and a
+ * quick-reply box at the bottom.
  *
- * Responsive: the three panes sit side-by-side on xl screens; on narrower
- * widths the detail pane flows to a full-width row below the list.
+ * Responsive: the panes sit side-by-side on xl screens; on narrower widths
+ * the reading pane flows to a full-width row below the list.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AxiosError } from 'axios';
 import {
   AlertOctagon,
+  ArrowLeft,
+  ChevronDown,
+  Download,
   Folder as FolderIcon,
+  Forward,
   Inbox,
   Loader2,
-  Mail,
+  MailOpen,
+  Paperclip,
   PenSquare,
   Reply,
+  Search,
   Send,
+  Star,
   Trash,
   Trash2,
+  X,
 } from 'lucide-react';
 import {
+  downloadPlatformMailAttachment,
   usePlatformMailDelete,
   usePlatformMailFolders,
   usePlatformMailMessage,
   usePlatformMailMessages,
   usePlatformMailSend,
   usePlatformMailSetSeen,
+  usePlatformMailSetStar,
+  type PlatformMailAttachmentInfo,
   type PlatformMailMessageDetail,
+  type PlatformMailSendAttachment,
 } from '@/features/admin/api';
 import { extractErrorMessage } from '@/lib/errors';
 import { toast } from '@/components/ui/AppToast';
@@ -49,10 +63,32 @@ import {
   AppDialogHeader,
   AppDialogTitle,
 } from '@/components/ui/AppDialog';
+import { AppPopover, AppPopoverContent, AppPopoverTrigger } from '@/components/ui/AppPopover';
 
 const DEFAULT_FOLDER = 'INBOX';
 
-function fmtDate(value: string | null | undefined): string {
+// ---------------------------------------------------------------------------
+// Small helpers
+// ---------------------------------------------------------------------------
+
+/** "14:42" today, "24 Aug" this year, "24 Aug 25" older — Gmail-style. */
+function fmtShortDate(value: string | null | undefined): string {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) {
+    return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  }
+  const opts: Intl.DateTimeFormatOptions =
+    d.getFullYear() === now.getFullYear()
+      ? { day: 'numeric', month: 'short' }
+      : { day: 'numeric', month: 'short', year: '2-digit' };
+  return d.toLocaleDateString(undefined, opts);
+}
+
+function fmtFullDate(value: string | null | undefined): string {
   if (!value) return '—';
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
@@ -65,10 +101,55 @@ function fmtDate(value: string | null | undefined): string {
   });
 }
 
+function humanSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${bytes} B`;
+}
+
+/** Display name from a "Name <a@b>" header, else the bare address. */
+function senderName(from: string | null | undefined): string {
+  const raw = (from || '').trim();
+  if (!raw) return '(unknown)';
+  const m = raw.match(/^(.*?)\s*<[^>]+>$/);
+  const name = (m?.[1] ?? '').replace(/^"|"$/g, '').trim();
+  return name || raw;
+}
+
+function firstInitial(name: string): string {
+  const ch = name.trim().charAt(0);
+  return ch ? ch.toUpperCase() : '?';
+}
+
+// Avatar palette — semantic tokens only (DESIGN.md).
+const AVATAR_CLASSES = [
+  'bg-accent/20 text-accent',
+  'bg-accent2/20 text-accent2',
+  'bg-accent3/20 text-accent3',
+  'bg-surface-2 text-text',
+  'bg-accent/10 text-accent',
+];
+
+function avatarClass(seed: string): string {
+  let h = 0;
+  for (let i = 0; i < seed.length; i += 1) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return AVATAR_CLASSES[h % AVATAR_CLASSES.length] ?? 'bg-accent/20 text-accent';
+}
+
+function Avatar({ label, seed, size = 'h-9 w-9 text-sm' }: { label: string; seed: string; size?: string }) {
+  return (
+    <span
+      aria-hidden
+      className={`flex flex-none items-center justify-center rounded-full font-semibold ${size} ${avatarClass(seed)}`}
+    >
+      {label}
+    </span>
+  );
+}
+
 /** Human copy for a messages-load failure: 502 = IMAP dead, 400 = backend detail. */
 function describeMessagesError(err: unknown): string {
   if (err instanceof AxiosError) {
-    // 502 detail carries "host:port — reason" from the backend (never creds).
     if (err.response?.status === 502) {
       return extractErrorMessage(err, 'IMAP unreachable for the platform account.');
     }
@@ -104,12 +185,27 @@ interface ComposeDraft {
 
 const EMPTY_DRAFT: ComposeDraft = { to: '', cc: '', subject: '', body_text: '' };
 
+/** Read a File as base64 (without the data: prefix). */
+function fileToB64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result ?? '');
+      resolve(result.slice(result.indexOf(',') + 1));
+    };
+    reader.onerror = () => reject(reader.error ?? new Error(`could not read ${file.name}`));
+    reader.readAsDataURL(file);
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Compose / reply dialog
 // ---------------------------------------------------------------------------
 
 function ComposeDialog({ initial, onClose }: { initial: ComposeDraft; onClose: () => void }) {
   const [draft, setDraft] = useState<ComposeDraft>(initial);
+  const [files, setFiles] = useState<File[]>([]);
+  const fileRef = useRef<HTMLInputElement>(null);
   const sendMut = usePlatformMailSend();
 
   const set = (patch: Partial<ComposeDraft>) => setDraft((d) => ({ ...d, ...patch }));
@@ -119,22 +215,47 @@ function ComposeDialog({ initial, onClose }: { initial: ComposeDraft; onClose: (
 
   const submit = () => {
     if (!canSend || sendMut.isPending) return;
-    sendMut.mutate(
-      {
-        to,
-        cc: draft.cc.trim() || undefined,
-        subject: draft.subject.trim(),
-        body_text: draft.body_text,
-        in_reply_to: draft.in_reply_to,
-        references: draft.references,
-      },
-      {
-        onSuccess: () => {
-          toast.success(`Message sent to ${to}`);
-          onClose();
+    void (async () => {
+      let attachments: PlatformMailSendAttachment[] | undefined;
+      if (files.length > 0) {
+        attachments = await Promise.all(
+          files.map(async (f) => ({
+            filename: f.name,
+            content_type: f.type || 'application/octet-stream',
+            content_b64: await fileToB64(f),
+          })),
+        );
+      }
+      sendMut.mutate(
+        {
+          to,
+          cc: draft.cc.trim() || undefined,
+          subject: draft.subject.trim(),
+          body_text: draft.body_text,
+          in_reply_to: draft.in_reply_to,
+          references: draft.references,
+          attachments,
         },
-      },
-    );
+        {
+          onSuccess: () => {
+            toast.success(`Message sent to ${to}`);
+            onClose();
+          },
+        },
+      );
+    })();
+  };
+
+  const addFiles = (list: FileList | null) => {
+    if (!list) return;
+    const incoming = Array.from(list);
+    const next = [...files, ...incoming].slice(0, 10);
+    const total = next.reduce((acc, f) => acc + f.size, 0);
+    if (total > 10 * 1024 * 1024) {
+      toast.error('Attachments exceed the 10 MB total limit.');
+      return;
+    }
+    setFiles(next);
   };
 
   return (
@@ -205,23 +326,68 @@ function ComposeDialog({ initial, onClose }: { initial: ComposeDraft; onClose: (
               className="flex w-full resize-y rounded-lg border border-border-muted bg-surface px-3 py-2 font-mono text-xs text-text placeholder:text-text-dim focus-ring focus:border-accent disabled:cursor-not-allowed disabled:opacity-50"
             />
           </div>
+
+          {/* Attachments */}
+          {files.length > 0 ? (
+            <ul className="flex flex-wrap gap-2">
+              {files.map((f, i) => (
+                <li
+                  key={`${f.name}:${i}`}
+                  className="flex items-center gap-1.5 rounded-full border border-border-muted bg-surface-2 px-2.5 py-1 text-xs text-text"
+                >
+                  <Paperclip className="h-3 w-3 text-text-dim" />
+                  <span className="max-w-[12rem] truncate">{f.name}</span>
+                  <span className="text-text-faint">{humanSize(f.size)}</span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${f.name}`}
+                    onClick={() => setFiles(files.filter((_, idx) => idx !== i))}
+                    className="rounded-full p-0.5 text-text-dim hover:bg-surface hover:text-text"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <input
+            ref={fileRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              addFiles(e.target.files);
+              e.target.value = '';
+            }}
+          />
+
           {sendMut.isError ? (
             <div className="rounded-lg border border-accent3/30 bg-accent3/10 p-3 text-xs text-text">
               {extractErrorMessage(sendMut.error, 'Send failed. Please try again.')}
             </div>
           ) : null}
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={onClose} disabled={sendMut.isPending}>
-              Cancel
-            </Button>
+          <div className="flex items-center justify-between">
             <Button
-              onClick={submit}
-              leftIcon={<Send className="h-3.5 w-3.5" />}
-              isLoading={sendMut.isPending}
-              disabled={!canSend}
+              variant="ghost"
+              size="sm"
+              leftIcon={<Paperclip className="h-3.5 w-3.5" />}
+              onClick={() => fileRef.current?.click()}
             >
-              Send
+              Attach files
             </Button>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={onClose} disabled={sendMut.isPending}>
+                Cancel
+              </Button>
+              <Button
+                onClick={submit}
+                leftIcon={<Send className="h-3.5 w-3.5" />}
+                isLoading={sendMut.isPending}
+                disabled={!canSend}
+              >
+                Send
+              </Button>
+            </div>
           </div>
         </AppDialogBody>
       </AppDialogContent>
@@ -230,96 +396,288 @@ function ComposeDialog({ initial, onClose }: { initial: ComposeDraft; onClose: (
 }
 
 // ---------------------------------------------------------------------------
-// Detail pane (right zone)
+// Reading pane — Gmail-style open message
 // ---------------------------------------------------------------------------
+
+function AttachmentChips({
+  folder,
+  uid,
+  attachments,
+}: {
+  folder: string;
+  uid: number;
+  attachments: PlatformMailAttachmentInfo[];
+}) {
+  if (!attachments.length) return null;
+  return (
+    <div className="flex flex-wrap gap-2 px-4 py-3">
+      {attachments.map((a) => (
+        <button
+          key={a.part}
+          type="button"
+          title={`Download ${a.filename}`}
+          onClick={() => {
+            void downloadPlatformMailAttachment(folder, uid, a.part, a.filename).catch((err) =>
+              toast.error(extractErrorMessage(err, 'Download failed.')),
+            );
+          }}
+          className="flex items-center gap-2 rounded-lg border border-border-muted bg-surface-2 px-3 py-1.5 text-xs text-text transition-colors hover:border-accent/50 hover:bg-surface"
+        >
+          <Paperclip className="h-3.5 w-3.5 flex-none text-text-dim" />
+          <span className="max-w-[14rem] truncate font-medium">{a.filename}</span>
+          <span className="flex-none text-text-faint">{humanSize(a.size)}</span>
+          <Download className="h-3.5 w-3.5 flex-none text-text-dim" />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function QuickReply({ detail }: { detail: PlatformMailMessageDetail }) {
+  const [text, setText] = useState('');
+  const sendMut = usePlatformMailSend();
+  const to = detail.from || '';
+  const subject = detail.subject.trim();
+  const replySubject = /^re:/i.test(subject) ? subject : `Re: ${subject || '(no subject)'}`;
+  const canSend = EMAIL_RE.test(to) && text.trim().length > 0;
+
+  const send = () => {
+    if (!canSend || sendMut.isPending) return;
+    sendMut.mutate(
+      {
+        to,
+        subject: replySubject,
+        body_text: text,
+        in_reply_to: detail.headers?.message_id ?? undefined,
+        references: detail.headers?.message_id ?? undefined,
+      },
+      {
+        onSuccess: () => {
+          toast.success(`Reply sent to ${to}`);
+          setText('');
+        },
+      },
+    );
+  };
+
+  return (
+    <div className="mt-1 rounded-xl border border-border-muted bg-surface-2/60 p-3">
+      <p className="pb-2 text-xs text-text-dim">
+        Reply to <span className="font-medium text-text">{senderName(to)}</span>
+      </p>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={3}
+        placeholder={`Reply to ${senderName(to)}…`}
+        className="flex w-full resize-y rounded-lg border border-border-muted bg-surface px-3 py-2 text-sm text-text placeholder:text-text-dim focus-ring focus:border-accent"
+      />
+      <div className="flex justify-end gap-2 pt-2">
+        <Button
+          size="sm"
+          onClick={send}
+          leftIcon={<Send className="h-3.5 w-3.5" />}
+          isLoading={sendMut.isPending}
+          disabled={!canSend}
+        >
+          Send
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 function MessageDetailPane({
   folder,
   uid,
+  onBack,
   onReply,
+  onForward,
   onDelete,
   onMarkUnread,
+  onStar,
 }: {
   folder: string;
   uid: number;
+  onBack: () => void;
   onReply: (d: PlatformMailMessageDetail) => void;
+  onForward: (d: PlatformMailMessageDetail) => void;
   onDelete: (uid: number) => void;
   onMarkUnread: (uid: number) => void;
+  onStar: (uid: number, starred: boolean) => void;
 }) {
   const q = usePlatformMailMessage(folder, uid);
   const d = q.data;
+  const [showDetails, setShowDetails] = useState(false);
+
+  const toLabel = (() => {
+    const raw = (d?.to || '').trim();
+    if (!raw) return 'to me';
+    const name = senderName(raw);
+    return name.toLowerCase() === raw.toLowerCase() ? `to ${raw}` : `to ${name}`;
+  })();
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex flex-wrap items-center justify-end gap-2 border-b border-border-muted p-3">
-        <Button
-          variant="secondary"
-          size="sm"
-          leftIcon={<Reply className="h-3.5 w-3.5" />}
-          disabled={!d}
-          onClick={() => d && onReply(d)}
+      {/* Toolbar */}
+      <div className="flex items-center gap-1 border-b border-border-muted px-2 py-1.5">
+        <button
+          type="button"
+          title="Back to list"
+          aria-label="Back to list"
+          onClick={onBack}
+          className="rounded-lg p-2 text-text-dim transition-colors hover:bg-surface-2 hover:text-text"
         >
-          Reply
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          leftIcon={<Mail className="h-3.5 w-3.5" />}
-          onClick={() => onMarkUnread(uid)}
-        >
-          Mark unread
-        </Button>
-        <Button
-          variant="danger"
-          size="sm"
-          leftIcon={<Trash2 className="h-3.5 w-3.5" />}
-          onClick={() => onDelete(uid)}
-        >
-          Delete
-        </Button>
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+        <span className="flex-1" />
+        {d ? (
+          <>
+            <button
+              type="button"
+              title="Reply"
+              aria-label="Reply"
+              onClick={() => onReply(d)}
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs text-text-dim transition-colors hover:bg-surface-2 hover:text-text"
+            >
+              <Reply className="h-4 w-4" /> Reply
+            </button>
+            <button
+              type="button"
+              title="Forward"
+              aria-label="Forward"
+              onClick={() => onForward(d)}
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs text-text-dim transition-colors hover:bg-surface-2 hover:text-text"
+            >
+              <Forward className="h-4 w-4" /> Forward
+            </button>
+            <button
+              type="button"
+              title={d.starred ? 'Remove star' : 'Star'}
+              aria-label={d.starred ? 'Remove star' : 'Star'}
+              onClick={() => onStar(uid, !d.starred)}
+              className={`rounded-lg p-2 transition-colors hover:bg-surface-2 ${
+                d.starred ? 'text-accent3' : 'text-text-dim hover:text-text'
+              }`}
+            >
+              <Star className={`h-4 w-4 ${d.starred ? 'fill-current' : ''}`} />
+            </button>
+            <button
+              type="button"
+              title="Mark unread"
+              aria-label="Mark unread"
+              onClick={() => onMarkUnread(uid)}
+              className="rounded-lg p-2 text-text-dim transition-colors hover:bg-surface-2 hover:text-text"
+            >
+              <MailOpen className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              title="Delete"
+              aria-label="Delete"
+              onClick={() => onDelete(uid)}
+              className="rounded-lg p-2 text-text-dim transition-colors hover:bg-surface-2 hover:text-accent3"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </>
+        ) : null}
       </div>
-      {q.isLoading ? (
-        <div className="flex items-center gap-2 p-6 text-sm text-text-dim">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading message…
-        </div>
-      ) : q.isError ? (
-        <div className="m-4 rounded-lg border border-accent3/30 bg-accent3/10 p-4 text-sm text-text">
-          {extractErrorMessage(q.error, 'Could not load this message.')}
-        </div>
-      ) : d ? (
-        <>
-          <h2 className="px-4 pb-2 pt-4 text-base font-semibold text-text">
-            {d.subject || '(no subject)'}
-          </h2>
-          <dl className="grid grid-cols-[4.5rem_1fr] gap-x-4 gap-y-1.5 border-b border-border-muted px-4 pb-3 text-xs">
-            <dt className="text-text-dim">From</dt>
-            <dd className="break-all font-mono text-text">{d.from || '—'}</dd>
-            <dt className="text-text-dim">To</dt>
-            <dd className="break-all font-mono text-text">{d.to || '—'}</dd>
-            {d.cc ? (
-              <>
-                <dt className="text-text-dim">Cc</dt>
-                <dd className="break-all font-mono text-text">{d.cc}</dd>
-              </>
-            ) : null}
-            <dt className="text-text-dim">Date</dt>
-            <dd className="font-mono text-text">{fmtDate(d.date)}</dd>
-            {d.headers?.message_id ? (
-              <>
-                <dt className="text-text-dim">Msg-ID</dt>
-                <dd className="break-all font-mono text-text-dim">{d.headers.message_id}</dd>
-              </>
-            ) : null}
-          </dl>
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            <MailBodyView
-              html={d.html_body}
-              text={d.text_body}
-              htmlClassName="h-full min-h-[320px] w-full rounded-lg border-0 bg-white"
-            />
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {q.isLoading ? (
+          <div className="flex items-center gap-2 p-6 text-sm text-text-dim">
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading message…
           </div>
-        </>
-      ) : null}
+        ) : q.isError ? (
+          <div className="m-4 rounded-lg border border-accent3/30 bg-accent3/10 p-4 text-sm text-text">
+            {extractErrorMessage(q.error, 'Could not load this message.')}
+          </div>
+        ) : d ? (
+          <div className="p-4">
+            <h2 className="pb-3 text-lg font-bold text-text">{d.subject || '(no subject)'}</h2>
+
+            {/* Sender row */}
+            <div className="flex items-start gap-3 pb-3">
+              <Avatar label={firstInitial(senderName(d.from))} seed={d.from || '?'} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-text">
+                  {senderName(d.from)}{' '}
+                  <span className="font-normal text-text-faint">&lt;{d.from}&gt;</span>
+                </p>
+                <AppPopover open={showDetails} onOpenChange={setShowDetails}>
+                  <AppPopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className="mt-0.5 inline-flex items-center gap-0.5 text-xs text-text-dim hover:text-text"
+                    >
+                      {toLabel} <ChevronDown className="h-3 w-3" />
+                    </button>
+                  </AppPopoverTrigger>
+                  <AppPopoverContent align="start" className="w-80">
+                    <dl className="space-y-1.5 text-xs">
+                      <div>
+                        <dt className="text-text-dim">From</dt>
+                        <dd className="break-all font-mono text-text">{d.from || '—'}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-text-dim">To</dt>
+                        <dd className="break-all font-mono text-text">{d.to || '—'}</dd>
+                      </div>
+                      {d.cc ? (
+                        <div>
+                          <dt className="text-text-dim">Cc</dt>
+                          <dd className="break-all font-mono text-text">{d.cc}</dd>
+                        </div>
+                      ) : null}
+                      <div>
+                        <dt className="text-text-dim">Date</dt>
+                        <dd className="font-mono text-text">{fmtFullDate(d.date)}</dd>
+                      </div>
+                      {d.headers?.message_id ? (
+                        <div>
+                          <dt className="text-text-dim">Msg-ID</dt>
+                          <dd className="break-all font-mono text-text-dim">
+                            {d.headers.message_id}
+                          </dd>
+                        </div>
+                      ) : null}
+                    </dl>
+                  </AppPopoverContent>
+                </AppPopover>
+              </div>
+              <span className="flex-none pt-0.5 text-xs text-text-dim">{fmtFullDate(d.date)}</span>
+            </div>
+
+            {/* Body — HTML mails render on a white card "like the original";
+                plain text stays on the themed surface (no hardcoded colors). */}
+            {d.html_body ? (
+              <div className="overflow-hidden rounded-xl border border-border-muted bg-white">
+                <MailBodyView
+                  html={d.html_body}
+                  text={d.text_body}
+                  htmlClassName="h-full min-h-[280px] w-full border-0 bg-white"
+                />
+              </div>
+            ) : (
+              <div className="rounded-xl border border-border-muted bg-surface px-4 py-3">
+                <MailBodyView
+                  text={d.text_body}
+                  textClassName="whitespace-pre-wrap break-words text-sm leading-relaxed text-text"
+                />
+              </div>
+            )}
+
+            {d.attachments?.length ? (
+              <AttachmentChips folder={folder} uid={uid} attachments={d.attachments} />
+            ) : null}
+
+            <div className="pt-2">
+              <QuickReply detail={d} />
+            </div>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -334,14 +692,23 @@ export function PlatformMailPage() {
   const unread = useMemo(() => foldersQuery.data?.unread ?? {}, [foldersQuery.data]);
 
   const [folder, setFolder] = useState(DEFAULT_FOLDER);
-  const messagesQuery = usePlatformMailMessages(folder);
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const messagesQuery = usePlatformMailMessages(folder, search);
   const messages = useMemo(() => messagesQuery.data?.messages ?? [], [messagesQuery.data]);
 
   const [selectedUid, setSelectedUid] = useState<number | null>(null);
   const [compose, setCompose] = useState<ComposeDraft | null>(null);
 
   const seenMut = usePlatformMailSetSeen();
+  const starMut = usePlatformMailSetStar();
   const deleteMut = usePlatformMailDelete();
+
+  // Debounce the search box → server SEARCH TEXT.
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput.trim()), 350);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
   // If the folder list doesn't contain the active folder (renamed/removed on
   // the server), fall back to INBOX and drop the selection.
@@ -364,6 +731,13 @@ export function PlatformMailPage() {
     );
     // Closing the pane matters: refetching the detail would re-mark it read.
     if (selectedUid === uid) setSelectedUid(null);
+  };
+
+  const toggleStar = (uid: number, starred: boolean) => {
+    starMut.mutate(
+      { folder, uid, starred },
+      { onError: (err) => toast.error(extractErrorMessage(err, 'Could not update the star.')) },
+    );
   };
 
   const removeMessage = (uid: number) => {
@@ -392,6 +766,24 @@ export function PlatformMailPage() {
     });
   };
 
+  const openForward = (d: PlatformMailMessageDetail) => {
+    const subject = d.subject.trim();
+    const quoted = [
+      '---------- Forwarded message ----------',
+      `From: ${d.from || '(unknown)'}`,
+      `Date: ${d.date || ''}`,
+      `Subject: ${subject || '(no subject)'}`,
+      '',
+      d.text_body || '',
+    ].join('\n');
+    setCompose({
+      to: '',
+      cc: '',
+      subject: /^fwd:/i.test(subject) ? subject : `Fwd: ${subject || '(no subject)'}`,
+      body_text: `\n\n${quoted}`,
+    });
+  };
+
   return (
     <div className="min-h-screen space-y-6 p-7">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -402,6 +794,30 @@ export function PlatformMailPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-dim" />
+            <Input
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder={`Search ${folder}`}
+              className="w-56 pl-9 pr-8"
+              aria-label="Search messages"
+            />
+            {searchInput ? (
+              <button
+                type="button"
+                aria-label="Clear search"
+                title="Clear search"
+                onClick={() => {
+                  setSearchInput('');
+                  setSearch('');
+                }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-text-dim hover:bg-surface-2 hover:text-text"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            ) : null}
+          </div>
           {/* No queryKey → "refresh whatever's on screen" (folders + list + open message). */}
           <RefreshButton />
           <Button
@@ -455,11 +871,20 @@ export function PlatformMailPage() {
           )}
         </aside>
 
-        {/* Middle — message list for the active folder */}
+        {/* Middle — message list for the active folder (Gmail rows) */}
         <section className={selectedUid == null ? 'md:col-span-1 xl:col-span-2' : ''}>
           <div className="mb-2 flex items-center justify-between gap-2">
             <p className="font-mono text-[11px] font-semibold uppercase tracking-wider text-text-dim">
-              {folder} · {messages.length} message{messages.length === 1 ? '' : 's'}
+              {search ? (
+                <>
+                  Search “{search}” in {folder} · {messages.length} result
+                  {messages.length === 1 ? '' : 's'}
+                </>
+              ) : (
+                <>
+                  {folder} · {messages.length} message{messages.length === 1 ? '' : 's'}
+                </>
+              )}
             </p>
             {messagesQuery.isFetching && !messagesQuery.isLoading ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin text-text-dim" />
@@ -479,53 +904,78 @@ export function PlatformMailPage() {
           ) : messages.length === 0 ? (
             <EmptyState
               icon={<Inbox className="h-5 w-5" />}
-              title={`No messages in ${folder}`}
-              description="This folder is empty, or the platform account has no mail in it yet."
+              title={search ? `No results for “${search}”` : `No messages in ${folder}`}
+              description={
+                search
+                  ? 'Nothing in this folder matches the search.'
+                  : 'This folder is empty, or the platform account has no mail in it yet.'
+              }
             />
           ) : (
             <div className="divide-y divide-border-muted overflow-hidden rounded-xl border border-border-muted bg-surface-2/40">
               {messages.map((m) => {
                 const isSelected = m.uid === selectedUid;
+                const name = senderName(m.from);
                 return (
                   <div
                     key={m.uid}
-                    className={`group flex items-start gap-3 px-4 py-3 transition-colors ${
+                    className={`group flex items-start gap-2 px-3 py-2.5 transition-colors ${
                       isSelected ? 'bg-surface-2/70' : 'hover:bg-surface-2/70'
                     }`}
                   >
                     <button
                       type="button"
+                      title={m.starred ? 'Remove star' : 'Star'}
+                      aria-label={m.starred ? 'Remove star' : 'Star'}
+                      onClick={() => toggleStar(m.uid, !m.starred)}
+                      className={`mt-1 rounded-md p-1 transition-colors hover:bg-surface ${
+                        m.starred ? 'text-accent3' : 'text-text-faint opacity-0 group-hover:opacity-100 focus:opacity-100'
+                      }`}
+                    >
+                      <Star className={`h-3.5 w-3.5 ${m.starred ? 'fill-current' : ''}`} />
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setSelectedUid(m.uid)}
-                      className="flex min-w-0 flex-1 items-start gap-3 text-left focus:outline-none"
+                      className="flex min-w-0 flex-1 items-center gap-3 text-left focus:outline-none"
                       title="Open message"
                     >
-                      <span className="mt-1.5 flex-none">
-                        <span
-                          className={`block h-2 w-2 rounded-full ${
-                            m.seen ? 'bg-transparent' : 'bg-accent'
-                          }`}
-                        />
-                      </span>
+                      <Avatar
+                        label={firstInitial(name)}
+                        seed={m.from || '?'}
+                        size="h-8 w-8 text-xs"
+                      />
                       <span className="min-w-0 flex-1">
                         <span className="flex items-baseline justify-between gap-3">
                           <span
                             className={`min-w-0 truncate text-sm ${
-                              m.seen ? 'text-text' : 'font-semibold text-text'
+                              m.seen ? 'text-text' : 'font-bold text-text'
                             }`}
                           >
-                            {m.from || '—'}
+                            {name}
                           </span>
-                          <span className="flex-none font-mono text-[11px] text-text-dim">
-                            {fmtDate(m.date)}
+                          <span className="flex-none text-[11px] text-text-dim">
+                            {fmtShortDate(m.date)}
                           </span>
                         </span>
-                        <span className="mt-0.5 block truncate text-sm text-text">
-                          {m.subject || '(no subject)'}
-                        </span>
-                        <span className="mt-0.5 block truncate text-xs text-text-faint">
-                          {m.snippet}
+                        <span className="mt-0.5 flex items-baseline gap-2">
+                          <span
+                            className={`min-w-0 truncate text-sm ${
+                              m.seen ? 'text-text-dim' : 'font-semibold text-text'
+                            }`}
+                          >
+                            {m.subject || '(no subject)'}
+                          </span>
+                          <span className="hidden min-w-0 flex-1 truncate text-xs text-text-faint md:block">
+                            — {m.snippet}
+                          </span>
                         </span>
                       </span>
+                      {!m.seen ? (
+                        <span className="mt-2 flex-none">
+                          <span className="block h-2 w-2 rounded-full bg-accent" title="Unread" />
+                        </span>
+                      ) : null}
                     </button>
                     <span className="flex flex-none items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
                       {m.seen ? (
@@ -536,7 +986,7 @@ export function PlatformMailPage() {
                           onClick={() => markUnread(m.uid)}
                           className="rounded-md p-1.5 text-text-dim transition-colors hover:bg-surface-2 hover:text-text"
                         >
-                          <Mail className="h-3.5 w-3.5" />
+                          <MailOpen className="h-3.5 w-3.5" />
                         </button>
                       ) : null}
                       <button
@@ -556,16 +1006,19 @@ export function PlatformMailPage() {
           )}
         </section>
 
-        {/* Right — detail pane for the selected message (full-width row below xl) */}
+        {/* Right — Gmail-style reading pane (full-width row below xl) */}
         {selectedUid != null ? (
           <section className="flex max-h-[calc(100vh-16rem)] min-h-0 flex-col overflow-hidden rounded-xl border border-border-muted bg-surface-2/40 md:col-span-2 xl:col-span-1">
             <MessageDetailPane
               key={`${folder}:${selectedUid}`}
               folder={folder}
               uid={selectedUid}
+              onBack={() => setSelectedUid(null)}
               onReply={openReply}
+              onForward={openForward}
               onDelete={removeMessage}
               onMarkUnread={markUnread}
+              onStar={toggleStar}
             />
           </section>
         ) : null}
@@ -573,7 +1026,11 @@ export function PlatformMailPage() {
 
       {/* Compose / reply dialog — mounted only while composing. */}
       {compose ? (
-        <ComposeDialog key={compose.in_reply_to ?? 'new'} initial={compose} onClose={() => setCompose(null)} />
+        <ComposeDialog
+          key={compose.in_reply_to ?? compose.body_text.slice(0, 24)}
+          initial={compose}
+          onClose={() => setCompose(null)}
+        />
       ) : null}
     </div>
   );

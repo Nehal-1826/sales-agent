@@ -393,6 +393,14 @@ _FETCH_MARKER_RE = re.compile(r"^\*?\s*(\d+)\s+FETCH\b", re.IGNORECASE)
 _TAGGED_STATUS_RE = re.compile(r"^[A-Za-z0-9._+-]+\s+(?:OK|NO|BAD|BYE|PREAUTH)\b")
 # Literal size announcements ("BODY[TEXT] {64}") — protocol, not literal.
 _LITERAL_ANNOUNCE_RE = re.compile(r"\{\d+\}$")
+# Dovecot's command-completion tail ("Fetch completed (0.001 + 0.000 secs).").
+# aioimaplib strips the "TAG OK" prefix before appending it to Response.lines
+# (live-probed on prod — bodies carried a trailing "Fetch completed…" line),
+# so the tagged-status regex alone does not catch it.
+_COMPLETION_LINE_RE = re.compile(
+    r"^[A-Za-z]+\s+completed\s*\(\d+(?:\.\d+)?\s*\+\s*\d+(?:\.\d+)?\s*secs?\)\.?$",
+    re.IGNORECASE,
+)
 
 
 def _parse_fetch_lines(lines: list[Any]) -> dict[int, dict[str, Any]]:
@@ -421,6 +429,7 @@ def _parse_fetch_lines(lines: list[Any]) -> dict[int, dict[str, Any]]:
                 or stripped in (b")", b"")
                 or _TAGGED_STATUS_RE.match(text)
                 or _LITERAL_ANNOUNCE_RE.search(text)
+                or _COMPLETION_LINE_RE.match(text)
             ):
                 if current is not None:
                     out[current]["literals"].append(bytes(line))

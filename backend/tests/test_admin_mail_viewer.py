@@ -318,6 +318,10 @@ class FakeImapClient:
                     f"{seq} FETCH (UID {uid} BODY[] {{{len(full)}}}".encode(),
                     bytearray(full),
                     b")",
+                    # Prod aioimaplib strips "TAG OK" off Dovecot's completion
+                    # before appending it — the shape classifier must NOT
+                    # treat this tail as a message literal.
+                    b"Fetch completed (0.001 + 0.000 secs).",
                 ]
                 return _Resp(lines=lines)
         return _Resp(lines=[])
@@ -549,6 +553,9 @@ async def test_get_message_full_body(
     assert body["uid"] == "102"
     assert body["subject"] == "Résumé review"
     assert "Please review the attached doc." in body["text_body"]
+    # Dovecot's "Fetch completed (…secs)" tail must never leak into a body.
+    assert "Fetch completed" not in body["text_body"]
+    assert "Fetch completed" not in (body["html_body"] or "")
     # HTML alternative is returned sanitized — scripts, event handlers and
     # javascript: URLs gone; real markup kept for "like the original" render.
     html = body["html_body"]

@@ -69,6 +69,8 @@ from app.services.transactional_mail import _SmtpConfig
 logger = logging.getLogger(__name__)
 
 _SMTP_TIMEOUT = 15.0
+# Whole-request ceiling for one send (Cloudflare-safe).
+_SEND_DEADLINE_S = 45.0
 
 # Aliases we report unread counts for in list_folders(). Keyed by the
 # _FOLDER_ALIASES names (resolved against the account's real LIST response).
@@ -455,6 +457,34 @@ async def _smtp_send(cfg: _SmtpConfig, msg: EmailMessage) -> None:
         raise OSError(f"{cfg.host}:{cfg.port} — {exc}") from exc
 
 
+_append_tasks: set[asyncio.Task] = set()
+
+
+def schedule_sent_append(message_bytes: bytes) -> None:
+    """Schedule the Sent-folder APPEND off the request path.
+
+    The API must answer quickly (Cloudflare kills origin responses around
+    100s); the IMAP round-trip happens in the background. Failures are
+    logged inside the task and never propagate.
+    """
+    task = asyncio.create_task(_append_to_sent_quiet(message_bytes))
+    _append_tasks.add(task)
+    task.add_done_callback(_append_tasks.discard)
+
+
+async def wait_for_appends() -> None:
+    """Await all in-flight appends (tests)."""
+    while _append_tasks:
+        await asyncio.gather(*list(_append_tasks), return_exceptions=True)
+
+
+async def _append_to_sent_quiet(message_bytes: bytes) -> None:
+    try:
+        await _append_to_sent(message_bytes)
+    except Exception as exc:  # noqa: BLE001 — background, never raises
+        logger.warning("platform_mail.sent_append_failed: %s", exc)
+
+
 async def _append_to_sent(message_bytes: bytes) -> None:
     """Best-effort APPEND of the sent message into the account's Sent folder.
 
@@ -516,15 +546,18 @@ async def send_mail(
     message_bytes = msg.as_bytes(policy=email.policy.SMTP)
 
     try:
-        await _smtp_send(cfg, msg)
+        # Hard ceiling: the request MUST answer with real JSON well inside
+        # Cloudflare's ~100s origin window — a stalled DNS/connect that
+        # per-command timeouts miss still gets cut off here with a 502.
+        await asyncio.wait_for(_smtp_send(cfg, msg), timeout=_SEND_DEADLINE_S)
+    except TimeoutError as exc:
+        raise OSError(f"{cfg.host}:{cfg.port} — send deadline exceeded") from exc
     finally:
         cfg.password = "REDACTED"  # noqa: F841 — defensive overwrite
         del cfg
 
-    try:
-        await _append_to_sent(message_bytes)
-    except Exception as exc:  # noqa: BLE001 — append must not fail a delivered send
-        logger.warning("platform_mail.sent_append_failed: %s", exc)
+    # Sent-folder copy runs in the background — never on the request path.
+    schedule_sent_append(message_bytes)
 
     await _write_audit(
         session,

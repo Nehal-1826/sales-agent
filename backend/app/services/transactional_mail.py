@@ -19,7 +19,10 @@ the headline / intro / detail rows / CTA, never raw HTML.
 from __future__ import annotations
 
 import asyncio
+import email.policy
+import email.utils
 import logging
+import uuid
 from dataclasses import dataclass
 from email.message import EmailMessage
 
@@ -210,6 +213,8 @@ async def send_transactional(
     msg["From"] = cfg.from_addr
     msg["To"] = to
     msg["Subject"] = subject
+    msg["Date"] = email.utils.formatdate(localtime=False)
+    msg["Message-ID"] = f"<warmpulse-{uuid.uuid4()}@warmpulse.tech>"
     msg.set_content(body_text)
     if body_html:
         msg.add_alternative(body_html, subtype="html")
@@ -228,6 +233,12 @@ async def send_transactional(
                     password=cfg.password or None,
                     timeout=20,
                 )
+                # Automated mail lands in the platform Sent folder too (the
+                # admin Platform Mail view shows every signup/2FA/billing
+                # send). Background task — never blocks or fails the send.
+                from app.services.platform_mail import schedule_sent_append
+
+                schedule_sent_append(msg.as_bytes(policy=email.policy.SMTP))
                 break
             except Exception as exc:  # noqa: BLE001
                 if attempt >= _MAX_SEND_ATTEMPTS or not _is_transient_smtp_error(exc):

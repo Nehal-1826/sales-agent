@@ -680,6 +680,9 @@ async def test_send_mail_smtp_and_sent_append(
 
     # IMAP: the sent mail is APPENDed into the Sent folder flagged \Seen,
     # as CRLF-terminated RFC822 bytes.
+    from app.services import platform_mail as pm
+
+    await pm.wait_for_appends()
     assert len(fake.append_calls) == 1
     sent_folder, sent_flags, _sent_date, sent_bytes = fake.append_calls[0]
     assert sent_folder == "Sent"
@@ -843,3 +846,62 @@ async def test_unconfigured_platform_400(
         )
         assert resp.status_code == 400, resp.text
         assert "not configured" in resp.json()["detail"]
+
+
+async def test_transactional_send_also_lands_in_sent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Automated mail (signup/2FA/billing) APPENDs to the platform Sent
+    folder via the shared background scheduler — service-level test."""
+    from email.message import EmailMessage
+
+    import types as _types
+
+    from app.services import platform_mail as pm
+    from app.services import transactional_mail as tm
+
+    cfg = _types.SimpleNamespace(
+        host="smtp.warmpulse.tech",
+        port=587,
+        username="hello@warmpulse.tech",
+        password="smtp-pw-123",
+        from_addr="WarmPulse <hello@warmpulse.tech>",
+        starttls=True,
+        source="admin",
+        imap_host="imap.warmpulse.tech",
+        imap_port=993,
+    )
+
+    async def _fake_cfg():
+        return cfg
+
+    sent_msgs: list[EmailMessage] = []
+
+    async def _fake_aiosmtp_send(msg, **kwargs):
+        sent_msgs.append(msg)
+
+    monkeypatch.setattr(tm, "_resolve_smtp_config", _fake_cfg)
+    monkeypatch.setattr(tm.aiosmtplib, "send", _fake_aiosmtp_send)
+    monkeypatch.setattr(tm, "get_settings", lambda: _types.SimpleNamespace(
+        transactional_test_mode=False))
+
+    fake = _install_fake_imap(monkeypatch, FakeImapClient(messages={}))
+
+    result = await tm.send_transactional(
+        to="newuser@example.com",
+        subject="Welcome to WarmPulse!",
+        body_text="Your account is ready.",
+        body_html="<p>Your account is ready.</p>",
+    )
+    assert result == {"status": "sent"}
+    assert len(sent_msgs) == 1
+
+    # Background append drained → Sent folder copy with the real headers.
+    await pm.wait_for_appends()
+    assert len(fake.append_calls) == 1
+    sent_folder, sent_flags, _date, sent_bytes = fake.append_calls[0]
+    assert sent_folder == "Sent"
+    assert "\Seen" in (sent_flags or "")
+    assert b"newuser@example.com" in sent_bytes
+    assert b"Welcome to WarmPulse!" in sent_bytes
+    assert b"Message-ID:" in sent_bytes

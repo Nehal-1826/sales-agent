@@ -1631,6 +1631,7 @@ export interface MailViewerMessageDetail {
   subject: string;
   date: string;
   text_body: string;
+  html_body?: string | null;
   headers: {
     message_id?: string | null;
     x_warmup_id?: string | null;
@@ -1744,9 +1745,12 @@ export interface PlatformMailMessageDetail {
   subject: string;
   date: string;
   text_body: string;
+  html_body?: string | null;
   headers: {
     message_id?: string | null;
     x_warmup_id?: string | null;
+    in_reply_to?: string | null;
+    references?: string | null;
   };
   seen: boolean;
 }

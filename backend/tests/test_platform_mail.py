@@ -202,6 +202,10 @@ class FakeImapClient:
         self.expunge_calls = 0
         self.append_calls: list[tuple[str, str | None, str | None, bytes]] = []
         self.status_calls: list[str] = []
+        # Login outcome (admin_mail_viewer.FakeImapClient mirrors this) —
+        # aioimaplib returns "NO" without raising.
+        self.login_result = "OK"
+        self.login_lines: list | None = None
         self.login_args: tuple[str, str] | None = None
         self.logged_out = False
 
@@ -216,7 +220,7 @@ class FakeImapClient:
 
     async def login(self, username: str, password: str) -> _Resp:
         self.login_args = (username, password)
-        return _Resp()
+        return _Resp(result=self.login_result, lines=self.login_lines)
 
     async def list(self, reference: str, pattern: str) -> _Resp:
         lines = [f'(\\HasNoChildren) "/" "{name}"'.encode() for name in self.folders]
@@ -351,12 +355,22 @@ def _canned_messages() -> dict[int, dict]:
         b"Message-ID: <new-2@example.com>\r\n"
     )
     text_2 = b"Hi,\r\nHow fast can we ramp a new mailbox to 40 mails/day?\r\n"
+    html_2 = (
+        b"<html><body><p>How fast can we <b>ramp</b> a new mailbox?</p>"
+        b"<script>alert('x')</script></body></html>"
+    )
     full_2 = (
         headers_2
         + b"In-Reply-To: <old-1@vendor.example.com>\r\n"
         + b"References: <thread-root@example.com> <old-1@vendor.example.com>\r\n"
+        + b"Content-Type: multipart/alternative; boundary=\"PB2\"\r\n\r\n"
+        + b"--PB2\r\n"
         + b"Content-Type: text/plain; charset=utf-8\r\n\r\n"
         + text_2
+        + b"\r\n--PB2\r\n"
+        + b"Content-Type: text/html; charset=utf-8\r\n\r\n"
+        + html_2
+        + b"\r\n--PB2--\r\n"
     )
     return {
         1: {
@@ -551,6 +565,11 @@ async def test_get_message_marks_seen(
     assert body["uid"] == "202"
     assert body["subject"] == "Question about warmup ramp"
     assert "ramp a new mailbox" in body["text_body"]
+    # Sanitized HTML alternative for the "like the original" client render.
+    html = body["html_body"]
+    assert html is not None
+    assert "<b>ramp</b>" in html
+    assert "script" not in html.lower()
     assert body["headers"]["message_id"] == "<new-2@example.com>"
     assert body["headers"]["in_reply_to"] == "<old-1@vendor.example.com>"
     # State as it was on open — the STORE below is what made it read.

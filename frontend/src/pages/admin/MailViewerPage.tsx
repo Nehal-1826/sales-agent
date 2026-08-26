@@ -22,6 +22,7 @@ import {
   type MailViewerSource,
 } from '@/features/admin/api';
 import { extractErrorMessage } from '@/lib/errors';
+import { MailBodyView } from '@/components/admin/MailBodyView';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -282,9 +283,11 @@ function MessageDetailDialog({
                 ) : null}
               </dl>
               <div className="max-h-[45vh] overflow-y-auto rounded-lg border border-border-muted bg-bg/60 p-4">
-                <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-text">
-                  {d.text_body || '(empty body)'}
-                </pre>
+                <MailBodyView
+                  html={d.html_body}
+                  text={d.text_body}
+                  htmlClassName="h-[40vh] w-full rounded-lg border-0 bg-white"
+                />
               </div>
             </>
           ) : null}

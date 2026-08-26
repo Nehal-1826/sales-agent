@@ -52,6 +52,7 @@ from app.services.admin_mail_viewer import (
     _IMAP_TIMEOUT,
     _TEXT_PARTS,
     _TOTAL_BUDGET,
+    _body_html,
     _body_text,
     _connect,
     _decode_header,
@@ -313,6 +314,7 @@ async def _get_message_on(client, *, folder: str, uid: str) -> dict[str, Any]:
         "subject": _decode_header(msg.get("Subject")),
         "date": _decode_header(msg.get("Date")),
         "text_body": _body_text(msg),
+        "html_body": _body_html(msg),
         "headers": headers,
         # State as it was on open — the silent STORE above already marked the
         # mail read for every future listing.

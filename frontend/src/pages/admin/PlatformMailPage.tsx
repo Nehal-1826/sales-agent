@@ -36,6 +36,7 @@ import {
 } from '@/features/admin/api';
 import { extractErrorMessage } from '@/lib/errors';
 import { toast } from '@/components/ui/AppToast';
+import { MailBodyView } from '@/components/admin/MailBodyView';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -311,9 +312,11 @@ function MessageDetailPane({
             ) : null}
           </dl>
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-text">
-              {d.text_body || '(empty body)'}
-            </pre>
+            <MailBodyView
+              html={d.html_body}
+              text={d.text_body}
+              htmlClassName="h-full min-h-[320px] w-full rounded-lg border-0 bg-white"
+            />
           </div>
         </>
       ) : null}

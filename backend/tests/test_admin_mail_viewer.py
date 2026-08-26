@@ -233,7 +233,14 @@ class _Resp:
 class FakeImapClient:
     """Canned aioimaplib.IMAP4_SSL — literal payloads as bytearray."""
 
-    def __init__(self, *, folders: list[str] | None = None, messages: dict | None):
+    def __init__(
+        self,
+        *,
+        folders: list[str] | None = None,
+        messages: dict | None = None,
+        login_result: str = "OK",
+        login_lines: list | None = None,
+    ):
         self.folders = folders or ["INBOX", "Sent"]
         # seq (1-based, ascending = oldest first) -> message dict
         self.messages: dict[int, dict] = messages or {}
@@ -243,6 +250,11 @@ class FakeImapClient:
         # is SELECTED. (examine() does NOT select in aioimaplib — state stays
         # AUTH and the next SEARCH aborts. Caught this class of bug for real.)
         self.selected = False
+        # LOGIN outcome — the real aioimaplib does NOT raise on "NO" (Zoho:
+        # "[ALERT] You are yet to enable IMAP…"); it returns result="NO" and
+        # the FSM stays NONAUTH, so the next command would fail confusingly.
+        self.login_result = login_result
+        self.login_lines = login_lines
         self.login_args: tuple[str, str] | None = None
         self.logged_out = False
 
@@ -251,7 +263,7 @@ class FakeImapClient:
 
     async def login(self, username: str, password: str) -> _Resp:
         self.login_args = (username, password)
-        return _Resp()
+        return _Resp(result=self.login_result, lines=self.login_lines)
 
     async def list(self, reference: str, pattern: str) -> _Resp:
         lines = [f'(\\HasNoChildren) "/" "{name}"'.encode() for name in self.folders]
@@ -264,8 +276,7 @@ class FakeImapClient:
     async def select(self, mailbox: str = "INBOX") -> _Resp:
         self.select_calls.append(mailbox)
         self.selected = True
-        return _Resp()
-        if folder in self.folders:
+        if mailbox in self.folders:
             return _Resp()
         return _Resp(result="NO")
 
@@ -344,11 +355,25 @@ def _canned_messages() -> dict[int, dict]:
         b"Message-ID: <new-2@example.com>\r\n"
     )
     text_2 = b"<html><body>Please review the attached <b>doc</b>.</body></html>"
+    html_2 = (
+        b"<html><body style=\"font-family:sans-serif\">"
+        b"<p>Please review the attached <b>doc</b>.</p>"
+        b"<script>alert('x')</script>"
+        b"<p onclick=\"steal()\">and reply by Friday.</p>"
+        b"<a href=\"javascript:evil()\">bad link</a>"
+        b"</body></html>"
+    )
     full_2 = (
         headers_2
         + b"X-Warmup-Id: wu-abc-123\r\n"
+        + b"Content-Type: multipart/alternative; boundary=\"BOUND2\"\r\n\r\n"
+        + b"--BOUND2\r\n"
         + b"Content-Type: text/plain; charset=utf-8\r\n\r\n"
         + b"Please review the attached doc.\r\nCheers,\r\nCarol\r\n"
+        + b"--BOUND2\r\n"
+        + b"Content-Type: text/html; charset=utf-8\r\n\r\n"
+        + html_2
+        + b"\r\n--BOUND2--\r\n"
     )
     return {
         1: {
@@ -524,9 +549,61 @@ async def test_get_message_full_body(
     assert body["uid"] == "102"
     assert body["subject"] == "Résumé review"
     assert "Please review the attached doc." in body["text_body"]
+    # HTML alternative is returned sanitized — scripts, event handlers and
+    # javascript: URLs gone; real markup kept for "like the original" render.
+    html = body["html_body"]
+    assert html is not None
+    assert "<b>doc</b>" in html
+    assert "reply by Friday" in html
+    assert "script" not in html.lower()
+    assert "onclick" not in html.lower()
+    assert "javascript:" not in html.lower()
     assert body["headers"]["message_id"] == "<new-2@example.com>"
     assert body["headers"]["x_warmup_id"] == "wu-abc-123"
     assert "pw-secret" not in resp.text  # creds never leak into responses
+
+
+# --------------------------------------------------------------------------- #
+# 2c. rejected IMAP login → 400 with the server's own words                   #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_login_rejected_maps_to_400_with_server_detail(
+    app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Zoho-style rejection: login returns NO without raising (state NONAUTH).
+
+    Must surface as a 400 carrying the server's alert text — NOT as the old
+    baffling "LIST illegal in state NONAUTH" 502.
+    """
+    app, maker, _ = app_and_maker
+    admin = await _make_admin(maker)
+    client_user = await _make_client(maker)
+    mailbox_id = await _make_mailbox(maker, client_user, email="locked@zoho.example.com")
+
+    _install_fake_imap(
+        monkeypatch,
+        FakeImapClient(
+            messages={},
+            login_result="NO",
+            login_lines=[b"[ALERT] You are yet to enable IMAP for your account."],
+        ),
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        resp = await c.get(
+            f"/api/admin/mail-viewer/mailbox/{mailbox_id}/messages",
+            headers=_auth_for(admin),
+        )
+    assert resp.status_code == 400, resp.text
+    detail = resp.json()["detail"]
+    assert "rejected the login" in detail
+    assert "imap.example.com:993" in detail
+    assert "enable IMAP" in detail
+    assert "pw-secret" not in resp.text  # creds never leak into errors
 
 
 # --------------------------------------------------------------------------- #

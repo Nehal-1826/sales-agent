@@ -289,7 +289,7 @@ async def _connect(host: str, port: int, username: str, password: str):
     try:
         client = aioimaplib.IMAP4_SSL(host=host, port=port, timeout=_IMAP_TIMEOUT, ssl_context=tls)
         await asyncio.wait_for(client.wait_hello_from_server(), timeout=_IMAP_TIMEOUT)
-        await asyncio.wait_for(client.login(username, password), timeout=_IMAP_TIMEOUT)
+        resp = await asyncio.wait_for(client.login(username, password), timeout=_IMAP_TIMEOUT)
     except aioimaplib.Abort as exc:
         # Connection-level failure — carry host:port so the 502 detail tells
         # the admin WHICH server was unreachable (no credentials included).
@@ -297,7 +297,7 @@ async def _connect(host: str, port: int, username: str, password: str):
             await client.logout()
         raise OSError(f"{host}:{port} — {exc}") from exc
     except aioimaplib.Error as exc:
-        # The server answered but refused us — LOGIN rejected, TLS mismatch.
+        # The server answered but refused us — TLS mismatch.
         with contextlib.suppress(Exception):
             await client.logout()
         raise ValueError(f"{host}:{port} rejected the login — {exc}") from exc
@@ -305,6 +305,19 @@ async def _connect(host: str, port: int, username: str, password: str):
         with contextlib.suppress(Exception):
             await client.logout()
         raise OSError(f"{host}:{port} — {exc.__class__.__name__}: {exc}") from exc
+    if resp.result != "OK":
+        # A rejected LOGIN does NOT raise in aioimaplib — the Response just
+        # carries result="NO" and the FSM stays NONAUTH, so the next command
+        # dies with a baffling "LIST illegal in state NONAUTH" 502
+        # (live-probed: Zoho "[ALERT] You are yet to enable IMAP…"). Surface
+        # the server's own words as a 400 instead.
+        with contextlib.suppress(Exception):
+            await client.logout()
+        detail = next(
+            (t for line in resp.lines if (t := _line_text(line).strip())),
+            "",
+        )
+        raise ValueError(f"{host}:{port} rejected the login — {detail or resp.result}")
     return client
 
 
@@ -457,35 +470,90 @@ def _snippet(raw: bytes, max_chars: int = 500) -> str:
     return text[:max_chars]
 
 
-def _body_text(msg: email.message.Message) -> str:
-    """Full body text — text/plain part preferred, else HTML stripped."""
-    plain_part: email.message.Message | None = None
-    html_part: email.message.Message | None = None
+def _iter_leaf_parts(msg: email.message.Message):
+    """Non-multipart, non-attachment parts of a message tree."""
     for part in msg.walk():
         if part.is_multipart():
             continue
         disposition = str(part.get("Content-Disposition") or "").lower()
         if "attachment" in disposition:
             continue
+        yield part
+
+
+def _part_text(part: email.message.Message) -> str:
+    """Decoded text of one leaf part ('' when it has no textual payload)."""
+    payload = part.get_payload(decode=True)
+    if payload is None:
+        raw = part.get_payload()
+        return raw if isinstance(raw, str) else ""
+    charset = part.get_content_charset() or "utf-8"
+    try:
+        return payload.decode(charset, errors="replace")
+    except LookupError:  # unknown charset name
+        return payload.decode("utf-8", errors="replace")
+
+
+def _body_text(msg: email.message.Message) -> str:
+    """Full body text — text/plain preferred, else HTML stripped, else any
+    other text/* leaf (MAILER-DAEMON bounces carry text/rfc822-* instead of
+    a normal body, which would otherwise render as an empty pane)."""
+    plain: email.message.Message | None = None
+    html: email.message.Message | None = None
+    fallback: email.message.Message | None = None
+    for part in _iter_leaf_parts(msg):
         ctype = part.get_content_type()
-        if ctype == "text/plain" and plain_part is None:
-            plain_part = part
-        elif ctype == "text/html" and html_part is None:
-            html_part = part
-    chosen = plain_part or html_part
+        if ctype == "text/plain" and plain is None:
+            plain = part
+        elif ctype == "text/html" and html is None:
+            html = part
+        elif ctype.startswith("text/") and fallback is None:
+            fallback = part
+    chosen = plain or html or fallback
     if chosen is None:
         return ""
-    payload = chosen.get_payload(decode=True)
-    if payload is None:
-        return ""
-    charset = chosen.get_content_charset() or "utf-8"
-    try:
-        text = payload.decode(charset, errors="replace")
-    except LookupError:  # unknown charset name
-        text = payload.decode("utf-8", errors="replace")
+    text = _part_text(chosen)
     if chosen.get_content_type() == "text/html":
         text = _HTML_TAG_RE.sub(" ", text)
     return text.strip()
+
+
+# --- HTML body (rendered "like the original" client-side) ------------------- #
+# The frontend shows this inside a sandboxed iframe (sandbox="" — scripts,
+# forms, navigation all off), so this server-side pass is belt-and-braces:
+# strip active content and script-y URLs even if a future caller renders it
+# without the iframe. <style> is KEPT — mail layout depends on it and it
+# cannot execute anything.
+_DANGEROUS_BLOCK_RE = re.compile(
+    r"<\s*(script|iframe|object|embed|base|form)\b.*?<\s*/\s*\1\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
+_DANGEROUS_TAG_RE = re.compile(
+    r"<\s*/?\s*(script|iframe|object|embed|base|form)\b[^>]*>", re.IGNORECASE
+)
+_EVENT_ATTR_RE = re.compile(
+    r"""\son[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)""", re.IGNORECASE
+)
+_JS_URL_RE = re.compile(
+    r"""((?:href|src|action)\s*=\s*(?:"|')?)\s*javascript:[^"'>\s]*""", re.IGNORECASE
+)
+
+
+def _sanitize_html(html: str) -> str:
+    out = _DANGEROUS_BLOCK_RE.sub("", html)
+    out = _DANGEROUS_TAG_RE.sub("", out)
+    out = _EVENT_ATTR_RE.sub("", out)
+    return _JS_URL_RE.sub(r"\1#", out)
+
+
+def _body_html(msg: email.message.Message) -> str | None:
+    """Sanitized text/html body, or None when the mail has no HTML part."""
+    for part in _iter_leaf_parts(msg):
+        if part.get_content_type() == "text/html":
+            text = _part_text(part)
+            if text:
+                return _sanitize_html(text)
+    return None
 
 
 async def _search_all_numbers(client) -> list[str]:
@@ -654,5 +722,6 @@ async def _get_message_on(client, *, folder: str, uid: str) -> dict[str, Any]:
         "subject": _decode_header(msg.get("Subject")),
         "date": _decode_header(msg.get("Date")),
         "text_body": _body_text(msg),
+        "html_body": _body_html(msg),
         "headers": headers,
     }

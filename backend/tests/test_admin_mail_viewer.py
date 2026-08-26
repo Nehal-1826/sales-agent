@@ -701,3 +701,33 @@ def test_imap_host_derivation() -> None:
         "imap.custom.host",
         143,
     )
+
+
+def test_parse_fetch_lines_accepts_bytes_literals() -> None:
+    """Regression: some aioimaplib versions deliver FETCH literals as plain
+    bytes (not bytearray). A live server returned 3 messages but the
+    bytearray-only classifier dropped every literal and the list rendered
+    empty."""
+    from app.services.admin_mail_viewer import _parse_fetch_lines
+
+    hdr1 = (
+        b'From: Alice <alice@example.com>\r\nTo: bob@x.com\r\nSubject: Hi\r\nDate: Mon, 24 Aug 2026 10:30:00 +0000\r\n\r\n'
+    )
+    hdr2 = (
+        b'From: Carol <carol@example.com>\r\nTo: bob@x.com\r\nSubject: Re: Hi\r\nDate: Mon, 24 Aug 2026 11:00:00 +0000\r\n\r\n'
+    )
+    lines = [
+        b'* 1 FETCH (UID 101 FLAGS (\\Seen) BODY[HEADER.FIELDS (FROM TO SUBJECT DATE)])',
+        hdr1,
+        b')',
+        b'* 2 FETCH (UID 102 FLAGS () BODY[HEADER.FIELDS (FROM TO SUBJECT DATE)])',
+        hdr2,
+        b')',
+        b'TAG4 OK FETCH completed',
+    ]
+    parsed = _parse_fetch_lines(lines)
+    assert set(parsed) == {1, 2}
+    assert parsed[1]['uid'] == '101'
+    assert 'Seen' in (parsed[1].get('flags') or '')
+    assert b'Alice' in parsed[1]['literals'][0]
+    assert b'Carol' in parsed[2]['literals'][0]

@@ -545,12 +545,18 @@ async def send_mail(
     # CRLF-terminated RFC822 — required by IMAP APPEND.
     message_bytes = msg.as_bytes(policy=email.policy.SMTP)
 
+    logger.info(
+        "platform_mail.send_start host=%s port=%s starttls=%s to=%s",
+        cfg.host, cfg.port, cfg.starttls, to,
+    )
     try:
         # Hard ceiling: the request MUST answer with real JSON well inside
         # Cloudflare's ~100s origin window — a stalled DNS/connect that
         # per-command timeouts miss still gets cut off here with a 502.
         await asyncio.wait_for(_smtp_send(cfg, msg), timeout=_SEND_DEADLINE_S)
+        logger.info("platform_mail.smtp_accepted to=%s message_id=%s", to, message_id)
     except TimeoutError as exc:
+        logger.warning("platform_mail.send_deadline host=%s port=%s", cfg.host, cfg.port)
         raise OSError(f"{cfg.host}:{cfg.port} — send deadline exceeded") from exc
     finally:
         cfg.password = "REDACTED"  # noqa: F841 — defensive overwrite

@@ -373,6 +373,10 @@ async def _open_folder(client, folder: str) -> tuple[str, list[str]]:
 
 
 _FETCH_MARKER_RE = re.compile(r"^\*\s+(\d+)\s+FETCH\b", re.IGNORECASE)
+# Tagged command status lines ("TAG4 OK FETCH completed") — protocol, not literal.
+_TAGGED_STATUS_RE = re.compile(r"^[A-Za-z0-9._+-]+\s+(?:OK|NO|BAD|BYE|PREAUTH)\b")
+# Literal size announcements ("BODY[TEXT] {64}") — protocol, not literal.
+_LITERAL_ANNOUNCE_RE = re.compile(r"\{\d+\}$")
 
 
 def _parse_fetch_lines(lines: list[Any]) -> dict[int, dict[str, Any]]:
@@ -387,11 +391,26 @@ def _parse_fetch_lines(lines: list[Any]) -> dict[int, dict[str, Any]]:
     out: dict[int, dict[str, Any]] = {}
     current: int | None = None
     for line in lines:
-        if isinstance(line, bytearray):  # literal payload, not a protocol line
-            if current is not None:
-                out[current]["literals"].append(bytes(line))
-            continue
-        text = _line_text(line)
+        if isinstance(line, (bytes, bytearray)):
+            # bytearray is always a literal. Plain bytes is AMBIGUOUS: some
+            # aioimaplib versions / servers deliver literals as bytes, and
+            # protocol lines are bytes too. Classify by shape — a protocol
+            # line is a FETCH marker, a bare ")", or a tagged status
+            # ("TAG OK FETCH completed"); anything else (headers, bodies)
+            # is a literal payload.
+            stripped = bytes(line).strip()
+            text = _line_text(stripped)
+            if isinstance(line, bytearray) or not (
+                _FETCH_MARKER_RE.match(text)
+                or stripped in (b")", b"")
+                or _TAGGED_STATUS_RE.match(text)
+                or _LITERAL_ANNOUNCE_RE.search(text)
+            ):
+                if current is not None:
+                    out[current]["literals"].append(bytes(line))
+                continue
+        else:
+            text = _line_text(line)
         m = _FETCH_MARKER_RE.match(text.strip())
         if m:
             current = int(m.group(1))

@@ -480,9 +480,17 @@ def _snippet(raw: bytes, max_chars: int = 500) -> str:
 
 
 def _iter_leaf_parts(msg: email.message.Message):
-    """Non-multipart, non-attachment parts of a message tree."""
+    """Non-multipart, non-attachment parts of a message tree.
+
+    Stops at embedded message containers (``message/rfc822`` inside a
+    MAILER-DAEMON bounce): the parts after one belong to the RETURNED mail,
+    not this message — clients show that as an attachment, so its text/html
+    must not become this mail's ``html_body``.
+    """
     for part in msg.walk():
         if part.is_multipart():
+            if part.get_content_maintype() == "message":
+                return
             continue
         disposition = str(part.get("Content-Disposition") or "").lower()
         if "attachment" in disposition:

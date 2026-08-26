@@ -359,6 +359,39 @@ def _canned_messages() -> dict[int, dict]:
         b"Message-ID: <new-2@example.com>\r\n"
     )
     text_2 = b"<html><body>Please review the attached <b>doc</b>.</body></html>"
+    # MAILER-DAEMON DSN bounce (the julex.shop shape seen on prod): human
+    # text first, then the RETURNED mail embedded as message/rfc822 — whose
+    # text/html part must NOT become the bounce's html_body.
+    headers_3 = (
+        b"From: Mail Delivery System <MAILER-DAEMON@mail.julex.shop>\r\n"
+        b"To: noreply@warmpulse.tech\r\n"
+        b"Subject: Undelivered Mail Returned to Sender\r\n"
+        b"Date: Tue, 25 Aug 2026 08:00:00 +0000\r\n"
+        b"Message-ID: <bounce-3@mail.julex.shop>\r\n"
+    )
+    text_3 = b"This is the mail system at host mail.julex.shop.\r\n\r\nYour message could not be delivered.\r\n"
+    embedded = (
+        b"From: WarmPulse <noreply@warmpulse.tech>\r\n"
+        b"Subject: 2FA disabled\r\n"
+        b"Content-Type: multipart/alternative; boundary=\"EB\"\r\n\r\n"
+        b"--EB\r\n"
+        b"Content-Type: text/plain\r\n\r\n2FA was disabled.\r\n"
+        b"--EB\r\n"
+        b"Content-Type: text/html\r\n\r\n"
+        b"<html><body><h1>2FA disabled</h1><script>x()</script></body></html>\r\n"
+        b"--EB--\r\n"
+    )
+    full_3 = (
+        headers_3
+        + b"Content-Type: multipart/report; report-type=delivery-status; boundary=\"RB\"\r\n\r\n"
+        + b"--RB\r\n"
+        + b"Content-Type: text/plain; charset=utf-8\r\n\r\n"
+        + text_3
+        + b"--RB\r\n"
+        + b"Content-Type: message/rfc822\r\n\r\n"
+        + embedded
+        + b"\r\n--RB--\r\n"
+    )
     html_2 = (
         b"<html><body style=\"font-family:sans-serif\">"
         b"<p>Please review the attached <b>doc</b>.</p>"
@@ -387,6 +420,7 @@ def _canned_messages() -> dict[int, dict]:
             "full": headers_1 + b"Content-Type: text/plain\r\n\r\n" + text_1,
         },
         2: {"uid": 102, "headers": headers_2, "text": text_2, "full": full_2},
+        3: {"uid": 103, "headers": headers_3, "text": text_3, "full": full_3},
     }
 
 
@@ -479,20 +513,22 @@ async def test_list_messages_smtp_mailbox(
     assert body["folder"] == "INBOX"
     assert "INBOX" in body["folders"] and "Sent" in body["folders"]
 
-    # Newest first: seq 2 (Carol) then seq 1 (Alice).
+    # Newest first: seq 3 (bounce) then seq 2 (Carol) then seq 1 (Alice).
     msgs = body["messages"]
-    assert len(msgs) == 2
-    assert msgs[0]["uid"] == "102"
-    assert "carol@example.com" in msgs[0]["from"]
-    assert msgs[0]["subject"] == "Résumé review"  # RFC2047-decoded
-    assert msgs[0]["date"] == "Mon, 24 Aug 2026 10:30:00 +0000"
-    assert "review the attached doc" in msgs[0]["snippet"]  # HTML stripped
-    assert len(msgs[0]["snippet"]) <= 500
+    assert len(msgs) == 3
+    assert msgs[0]["uid"] == "103"
+    assert "MAILER-DAEMON" in msgs[0]["from"]
+    assert msgs[1]["uid"] == "102"
+    assert "carol@example.com" in msgs[1]["from"]
+    assert msgs[1]["subject"] == "Résumé review"  # RFC2047-decoded
+    assert msgs[1]["date"] == "Mon, 24 Aug 2026 10:30:00 +0000"
+    assert "review the attached doc" in msgs[1]["snippet"]  # HTML stripped
+    assert len(msgs[1]["snippet"]) <= 500
 
-    assert msgs[1]["uid"] == "101"
-    assert "alice@example.com" in msgs[1]["from"]
-    assert msgs[1]["subject"] == "Monday check-in"
-    assert msgs[1]["snippet"].startswith("Hey Bob,")
+    assert msgs[2]["uid"] == "101"
+    assert "alice@example.com" in msgs[2]["from"]
+    assert msgs[2]["subject"] == "Monday check-in"
+    assert msgs[2]["snippet"].startswith("Hey Bob,")
 
     # Connected with the decrypted password + resolved IMAP host/port, and
     # always logged out.
@@ -568,6 +604,37 @@ async def test_get_message_full_body(
     assert body["headers"]["message_id"] == "<new-2@example.com>"
     assert body["headers"]["x_warmup_id"] == "wu-abc-123"
     assert "pw-secret" not in resp.text  # creds never leak into responses
+
+
+@pytest.mark.asyncio
+async def test_get_message_dsn_bounce_renders_human_text_not_embedded_html(
+    app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """MAILER-DAEMON bounce (multipart/report): the DSN's human text is the
+    body; the RETURNED mail's text/html (inside message/rfc822) is not
+    lifted out as the bounce's own html_body — clients show it as attachment."""
+    app, maker, _ = app_and_maker
+    admin = await _make_admin(maker)
+    client_user = await _make_client(maker)
+    mailbox_id = await _make_mailbox(maker, client_user, email="viewme@acme.com")
+
+    _install_fake_imap(monkeypatch, FakeImapClient(messages=_canned_messages()))
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        resp = await c.get(
+            f"/api/admin/mail-viewer/mailbox/{mailbox_id}/message/103",
+            params={"folder": "INBOX"},
+            headers=_auth_for(admin),
+        )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["uid"] == "103"
+    assert body["subject"] == "Undelivered Mail Returned to Sender"
+    assert "mail system at host mail.julex.shop" in body["text_body"]
+    assert body["html_body"] is None  # embedded 2FA mail stays an attachment
+    assert "2FA" not in (body["text_body"] or "")
 
 
 # --------------------------------------------------------------------------- #
@@ -721,7 +788,7 @@ async def test_list_messages_peer_uses_stored_creds(
             headers=_auth_for(admin),
         )
     assert resp.status_code == 200, resp.text
-    assert len(resp.json()["messages"]) == 2
+    assert len(resp.json()["messages"]) == 3
     assert fake.login_args == ("helper@peer.example.com", "peer-imap-pw")
 
     from app.db.models.audit_logs import AuditLog

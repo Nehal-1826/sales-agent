@@ -980,17 +980,36 @@ def _sanitize_exception(exc: BaseException) -> str:
     return f"{name}: {hint}"
 
 
-def _permissive_tls_context() -> ssl.SSLContext:
-    """TLS context that encrypts the wire but skips chain/hostname verification.
+def _strict_tls_context() -> ssl.SSLContext:
+    """Fully verifying TLS context — chain and hostname both checked.
 
-    Why we tolerate self-signed certs here: shared mail hosts (Hostinger, many
-    cPanel setups, self-hosted iRedMail before Let's Encrypt is wired) routinely
-    present a wildcard cert for ``*.hostinger.com`` while users connect via
-    ``mail.theirdomain.com`` — strict chain verification rejects this with
-    ``SSLCertVerificationError`` *before* auth even runs. This is the same
-    "I trust this server" posture Thunderbird/Outlook expose as a checkbox.
-    The credential probe still genuinely tests AUTH; we simply don't refuse
-    to talk to a server whose cert chain is messy.
+    This is what every probe tries FIRST. Only a genuine certificate
+    verification failure is allowed to fall back to
+    ``_permissive_tls_context()``, and that fallback is always logged.
+    """
+    import ssl
+
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = True
+    ctx.verify_mode = ssl.CERT_REQUIRED
+    return ctx
+
+
+def _permissive_tls_context() -> ssl.SSLContext:
+    """Encrypted-but-unverified fallback. Never the first choice.
+
+    Why this exists at all: shared mail hosts (Hostinger, many cPanel setups,
+    self-hosted iRedMail before Let's Encrypt is wired) routinely present a
+    wildcard cert for ``*.hostinger.com`` while the user connects via
+    ``mail.theirdomain.com``. Strict verification rejects that with
+    ``SSLCertVerificationError`` *before* auth runs, so refusing outright
+    would lock out mailboxes that work fine in Thunderbird/Outlook — which
+    expose exactly this as an "I trust this server" checkbox.
+
+    The posture is therefore: verify first, and downgrade to unverified ONLY
+    for a certificate problem, never for any other error, and never to
+    plaintext. Every downgrade is recorded via ``_log_tls_downgrade`` so the
+    exception is auditable rather than silent and blanket.
     """
     import ssl
 
@@ -998,6 +1017,38 @@ def _permissive_tls_context() -> ssl.SSLContext:
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
     return ctx
+
+
+def _is_cert_verification_error(exc: BaseException) -> bool:
+    """True only for a TLS certificate verification failure.
+
+    Any other failure (auth rejected, connection refused, timeout, DNS) must
+    NOT trigger the unverified retry — otherwise the fallback silently widens
+    into "retry everything without verification", which is the blanket
+    posture this design exists to avoid.
+    """
+    import ssl
+
+    if isinstance(exc, ssl.SSLCertVerificationError):
+        return True
+    # aiosmtplib/aioimaplib wrap the ssl error in their own exception types,
+    # so also match on the chained cause.
+    cause = getattr(exc, "__cause__", None) or getattr(exc, "__context__", None)
+    return isinstance(cause, ssl.SSLCertVerificationError)
+
+
+def _log_tls_downgrade(protocol: str, host: str, port: int) -> None:
+    """Record that a probe fell back to an unverified TLS session.
+
+    Deliberately host/port only — never the username or password.
+    """
+    logger.warning(
+        "tls.unverified_fallback protocol=%s host=%s port=%s "
+        "reason=certificate_verification_failed",
+        protocol,
+        host,
+        port,
+    )
 
 
 async def _probe_smtp(
@@ -1019,30 +1070,39 @@ async def _probe_smtp(
 
     import aiosmtplib
 
-    try:
-        tls = _permissive_tls_context()
+    def _client(verify: bool):
+        tls = _strict_tls_context() if verify else _permissive_tls_context()
         # Port 465 = implicit TLS; 587 = STARTTLS upgrade; anything else = plain
         # then opportunistic STARTTLS.
         if port == 465:
-            client = aiosmtplib.SMTP(
+            return aiosmtplib.SMTP(
                 hostname=host, port=port, timeout=_TIMEOUT_SECONDS,
-                use_tls=True, tls_context=tls, validate_certs=False,
+                use_tls=True, tls_context=tls, validate_certs=verify,
             )
-        else:
-            client = aiosmtplib.SMTP(
-                hostname=host, port=port, timeout=_TIMEOUT_SECONDS,
-                start_tls=True, tls_context=tls, validate_certs=False,
-            )
+        return aiosmtplib.SMTP(
+            hostname=host, port=port, timeout=_TIMEOUT_SECONDS,
+            start_tls=True, tls_context=tls, validate_certs=verify,
+        )
 
-        async def _go() -> None:
-            await client.connect()
-            try:
-                await client.login(username, password)
-            finally:
-                with contextlib.suppress(Exception):
-                    await client.quit()
+    async def _attempt(verify: bool) -> None:
+        client = _client(verify)
+        await client.connect()
+        try:
+            await client.login(username, password)
+        finally:
+            with contextlib.suppress(Exception):
+                await client.quit()
 
-        await asyncio.wait_for(_go(), timeout=_TIMEOUT_SECONDS)
+    try:
+        # Verify the certificate first. Only a certificate problem earns a
+        # second, unverified attempt — anything else propagates as-is.
+        try:
+            await asyncio.wait_for(_attempt(True), timeout=_TIMEOUT_SECONDS)
+        except Exception as exc:
+            if not _is_cert_verification_error(exc):
+                raise
+            _log_tls_downgrade("smtp", host, port)
+            await asyncio.wait_for(_attempt(False), timeout=_TIMEOUT_SECONDS)
         return True, None
     except Exception as exc:  # noqa: BLE001 — class name only, never the message
         return False, f"probe_unknown: {type(exc).__name__}"
@@ -1064,23 +1124,29 @@ async def _probe_imap(
 
     import aioimaplib
 
-    try:
-        # Same permissive TLS posture as _probe_smtp — see docstring there.
+    async def _attempt(verify: bool) -> None:
+        # Same verify-first posture as _probe_smtp — see the docstrings on
+        # _strict_tls_context / _permissive_tls_context.
         client = aioimaplib.IMAP4_SSL(
             host=host, port=port, timeout=_TIMEOUT_SECONDS,
-            ssl_context=_permissive_tls_context(),
+            ssl_context=_strict_tls_context() if verify else _permissive_tls_context(),
         )
+        await client.wait_hello_from_server()
+        resp = await client.login(username, password)
+        ok = getattr(resp, "result", None)
+        if ok is not None and str(ok).upper() != "OK":
+            raise RuntimeError("imap login rejected")
+        with contextlib.suppress(Exception):
+            await client.logout()
 
-        async def _go() -> None:
-            await client.wait_hello_from_server()
-            resp = await client.login(username, password)
-            ok = getattr(resp, "result", None)
-            if ok is not None and str(ok).upper() != "OK":
-                raise RuntimeError("imap login rejected")
-            with contextlib.suppress(Exception):
-                await client.logout()
-
-        await asyncio.wait_for(_go(), timeout=_TIMEOUT_SECONDS)
+    try:
+        try:
+            await asyncio.wait_for(_attempt(True), timeout=_TIMEOUT_SECONDS)
+        except Exception as exc:
+            if not _is_cert_verification_error(exc):
+                raise
+            _log_tls_downgrade("imap", host, port)
+            await asyncio.wait_for(_attempt(False), timeout=_TIMEOUT_SECONDS)
         return True, None
     except Exception as exc:  # noqa: BLE001 — class name only, never the message
         return False, f"probe_unknown: {type(exc).__name__}"

@@ -61,6 +61,7 @@ import {
   AppDialogContent,
   AppDialogDescription,
   AppDialogHeader,
+  AppDialogPage,
   AppDialogTitle,
 } from '@/components/ui/AppDialog';
 import { AppPopover, AppPopoverContent, AppPopoverTrigger } from '@/components/ui/AppPopover';
@@ -490,6 +491,7 @@ function QuickReply({ detail }: { detail: PlatformMailMessageDetail }) {
 function MessageDetailPane({
   folder,
   uid,
+  scrollRef,
   onBack,
   onReply,
   onForward,
@@ -499,6 +501,7 @@ function MessageDetailPane({
 }: {
   folder: string;
   uid: number;
+  scrollRef?: React.MutableRefObject<HTMLDivElement | null>;
   onBack: () => void;
   onReply: (d: PlatformMailMessageDetail) => void;
   onForward: (d: PlatformMailMessageDetail) => void;
@@ -584,7 +587,12 @@ function MessageDetailPane({
         ) : null}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div
+        ref={(el) => {
+          if (scrollRef) scrollRef.current = el;
+        }}
+        className="app-dialog-body min-h-0 flex-1 overflow-y-auto"
+      >
         {q.isLoading ? (
           <div className="flex items-center gap-2 p-6 text-sm text-text-dim">
             <Loader2 className="h-4 w-4 animate-spin" /> Loading message…
@@ -594,7 +602,7 @@ function MessageDetailPane({
             {extractErrorMessage(q.error, 'Could not load this message.')}
           </div>
         ) : d ? (
-          <div className="p-4">
+          <div className="mx-auto w-full max-w-5xl p-4 sm:p-6">
             <h2 className="pb-3 text-lg font-bold text-text">{d.subject || '(no subject)'}</h2>
 
             {/* Sender row */}
@@ -656,7 +664,7 @@ function MessageDetailPane({
                 <MailBodyView
                   html={d.html_body}
                   text={d.text_body}
-                  htmlClassName="h-full min-h-[280px] w-full border-0 bg-white"
+                  htmlClassName="min-h-[280px] w-full border-0 bg-white"
                 />
               </div>
             ) : (
@@ -698,6 +706,9 @@ export function PlatformMailPage() {
   const messages = useMemo(() => messagesQuery.data?.messages ?? [], [messagesQuery.data]);
 
   const [selectedUid, setSelectedUid] = useState<number | null>(null);
+  // The reading popup's scroll container (lives inside MessageDetailPane) —
+  // handed to AppDialogPage so wheel/touch scroll the message, not the page.
+  const detailScrollRef = useRef<HTMLDivElement | null>(null);
   const [compose, setCompose] = useState<ComposeDraft | null>(null);
 
   const seenMut = usePlatformMailSetSeen();
@@ -872,7 +883,7 @@ export function PlatformMailPage() {
         </aside>
 
         {/* Middle — message list for the active folder (Gmail rows) */}
-        <section className={selectedUid == null ? 'md:col-span-1 xl:col-span-2' : ''}>
+        <section className="md:col-span-1 xl:col-span-2">
           <div className="mb-2 flex items-center justify-between gap-2">
             <p className="font-mono text-[11px] font-semibold uppercase tracking-wider text-text-dim">
               {search ? (
@@ -1005,14 +1016,25 @@ export function PlatformMailPage() {
             </div>
           )}
         </section>
+      </div>
 
-        {/* Right — Gmail-style reading pane (full-width row below xl) */}
-        {selectedUid != null ? (
-          <section className="flex max-h-[calc(100vh-16rem)] min-h-0 flex-col overflow-hidden rounded-xl border border-border-muted bg-surface-2/40 md:col-span-2 xl:col-span-1">
+      {/* Reading popup — clicking a mail opens a near-fullscreen overlay so
+          the message gets the whole screen at any window size (ESC / Back
+          closes). The pane's own scroll container drives wheel/touch via
+          scrollRef. */}
+      <AppDialog
+        open={selectedUid != null}
+        onOpenChange={(o) => {
+          if (!o) setSelectedUid(null);
+        }}
+      >
+        <AppDialogPage dialogTitle="Platform message" scrollRef={detailScrollRef}>
+          {selectedUid != null ? (
             <MessageDetailPane
               key={`${folder}:${selectedUid}`}
               folder={folder}
               uid={selectedUid}
+              scrollRef={detailScrollRef}
               onBack={() => setSelectedUid(null)}
               onReply={openReply}
               onForward={openForward}
@@ -1020,9 +1042,9 @@ export function PlatformMailPage() {
               onMarkUnread={markUnread}
               onStar={toggleStar}
             />
-          </section>
-        ) : null}
-      </div>
+          ) : null}
+        </AppDialogPage>
+      </AppDialog>
 
       {/* Compose / reply dialog — mounted only while composing. */}
       {compose ? (

@@ -282,11 +282,11 @@ function MessageDetailDialog({
                   </>
                 ) : null}
               </dl>
-              <div className="max-h-[45vh] overflow-y-auto rounded-lg border border-border-muted bg-bg/60 p-4">
+              <div className="max-h-[60vh] overflow-y-auto rounded-lg border border-border-muted bg-bg/60 p-4">
                 <MailBodyView
                   html={d.html_body}
                   text={d.text_body}
-                  htmlClassName="h-[40vh] w-full rounded-lg border-0 bg-white"
+                  htmlClassName="min-h-[200px] w-full rounded-lg border-0 bg-white"
                 />
               </div>
             </>

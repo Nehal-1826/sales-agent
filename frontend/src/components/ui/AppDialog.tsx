@@ -374,6 +374,70 @@ export const AppDialogContent = forwardRef<HTMLDivElement, AppDialogContentProps
 );
 
 // ---------------------------------------------------------------------------
+// Page variant — near-fullscreen content shell
+// ---------------------------------------------------------------------------
+
+/** Stable no-op ref so AppDialogPage can always mount a DialogScrollManager. */
+const emptyRef: React.RefObject<HTMLDivElement | null> = { current: null };
+
+interface AppDialogPageProps extends ComponentPropsWithoutRef<typeof DialogPrimitive.Content> {
+  /**
+   * Ref of the element inside this page that owns the vertical scrolling
+   * (e.g. the reading pane's overflow-y-auto div). Wheel/touch events are
+   * manually routed there — see useManualDialogScroll.
+   */
+  scrollRef?: React.RefObject<HTMLDivElement | null>;
+  /** Screen-reader title (the visible header lives in the children). */
+  dialogTitle?: string;
+}
+
+/**
+ * AppDialogPage — a full-viewport variant of the dialog shell for
+ * document-style surfaces (e.g. reading a mail). Covers ~the whole screen
+ * with a thin margin (inset-2 mobile / inset-6 ≥sm), rounded, on the same
+ * blurred vignette overlay as the sheet dialogs. Children get the full
+ * height; the child that scrolls passes its element via `scrollRef`.
+ */
+export const AppDialogPage = forwardRef<HTMLDivElement, AppDialogPageProps>(
+  function AppDialogPage(
+    { className, children, scrollRef, dialogTitle = 'Dialog', style, ...props },
+    ref,
+  ) {
+    return (
+      <AppDialogPortal>
+        <AppDialogOverlay />
+        <DialogPrimitive.Content
+          ref={ref}
+          className={cn(
+            'fixed inset-2 z-50 flex flex-col overflow-hidden',
+            'rounded-2xl border border-border-muted/80 text-text',
+            'sm:inset-6',
+            'data-[state=open]:animate-in data-[state=closed]:animate-out',
+            'data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0',
+            'data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95',
+            'duration-200 ease-out',
+            className,
+          )}
+          style={{
+            background:
+              'linear-gradient(180deg, var(--wp-surface, #16161d) 0%, var(--wp-surface-2, #1c1c25) 100%)',
+            ...style,
+          }}
+          {...props}
+        >
+          <DialogScrollManager scrollRef={scrollRef ?? emptyRef} />
+          <DialogPrimitive.Title className="sr-only">{dialogTitle}</DialogPrimitive.Title>
+          <DialogPrimitive.Description className="sr-only">
+            {dialogTitle}
+          </DialogPrimitive.Description>
+          {children}
+        </DialogPrimitive.Content>
+      </AppDialogPortal>
+    );
+  },
+);
+
+// ---------------------------------------------------------------------------
 // Header / Body / Footer
 // ---------------------------------------------------------------------------
 

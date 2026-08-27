@@ -3,7 +3,7 @@ import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/cn';
 import { useT } from '@/lib/i18n';
 
-type Provider = 'gmail' | 'outlook' | 'outlook_oauth' | 'yahoo' | 'zoho' | 'smtp';
+type Provider = 'gmail' | 'outlook' | 'outlook_oauth' | 'yahoo' | 'zoho' | 'smtp' | 'self_hosted';
 
 interface ProviderOption {
   id: Provider;
@@ -50,6 +50,13 @@ const PROVIDERS: ProviderOption[] = [
     subtitleKey: 'onb.prov.sub.smtp',
     auth: 'smtp',
     accent: 'text-emerald-400',
+  },
+  {
+    id: 'self_hosted',
+    name: 'Self-hosted mail server',
+    subtitleKey: 'onb.prov.sub.self_hosted',
+    auth: 'smtp',
+    accent: 'text-sky-400',
   },
 ];
 

@@ -46,6 +46,7 @@ const PROVIDER_LABEL_KEYS: Record<NonNullable<OnboardingDraft['provider']>, stri
   yahoo: 'onb.confirm.provYahoo',
   zoho: 'onb.confirm.provZoho',
   smtp: 'onb.confirm.provSmtp',
+  self_hosted: 'onb.confirm.provSelfHosted',
 };
 
 const MODE_LABEL_KEYS: Record<'A' | 'B' | 'C' | 'D', string> = {

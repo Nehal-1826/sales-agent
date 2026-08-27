@@ -22,6 +22,29 @@ import { Spinner } from '@/components/ui/Spinner';
  * reachable through any route. We left it in place to keep this changeset
  * focused; a dedicated cleanup pass can delete those files once the new
  * dashboard has been in production for a release or two.
+ *
+ * Self-hosted preflight (Step2bServerCheck): this wizard's step-sequencing
+ * switch was removed when the file became a redirect stub, so there is
+ * currently no live call site to wire the new step into here. The intended
+ * insertion point, for whenever this tree is revived (or its `switch`
+ * logic — see git history prior to the "onboarding rework" commit — is
+ * restored), is between Step2Provider and Step3Credentials, gated on
+ * `draft.provider === 'self_hosted'`:
+ *
+ *   {step === 2.5 && draft.provider === 'self_hosted' ? (
+ *     <Step2bServerCheck
+ *       smtpHost={draft.smtp_host}
+ *       smtpPort={draft.smtp_port}
+ *       username={draft.email_address}
+ *       onValidityChange={(valid) => setStepValid((p) => ({ ...p, 2.5: valid }))}
+ *     />
+ *   ) : null}
+ *
+ * The live self-hosted onboarding flow today is OnboardingDashboard.tsx,
+ * which reimplements provider selection and credentials inline rather than
+ * reusing these Step*.tsx components — that flow does not yet call the
+ * preflight endpoint. Wiring the check into the live flow is out of scope
+ * here; see the Task 10 report for details.
  */
 export function OnboardingWizard() {
   const navigate = useNavigate();

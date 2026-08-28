@@ -182,6 +182,21 @@ interface ComposeDraft {
   references?: string;
   /** Shown in the "Replying to …" banner when this is a reply. */
   replyContext?: string;
+  /** Forwarded original (plain), appended below the editable intro on send. */
+  quote_text?: string;
+  /** Forwarded original (sanitized HTML) — sent as the multipart HTML part. */
+  quote_html?: string;
+  /** Shown in the "Forwarding …" banner when this is a forward. */
+  forwardContext?: string;
+}
+
+/** Escape user-typed intro text before embedding it in the HTML part. */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 const EMPTY_DRAFT: ComposeDraft = { to: '', cc: '', subject: '', body_text: '' };
@@ -212,7 +227,10 @@ function ComposeDialog({ initial, onClose }: { initial: ComposeDraft; onClose: (
   const set = (patch: Partial<ComposeDraft>) => setDraft((d) => ({ ...d, ...patch }));
   const to = draft.to.trim();
   const toOk = EMAIL_RE.test(to);
-  const canSend = toOk && draft.subject.trim().length > 0 && draft.body_text.trim().length > 0;
+  // Forwards carry the original below the (possibly empty) intro, so an empty
+  // textarea is fine; a fresh compose still needs a real body.
+  const hasBody = draft.body_text.trim().length > 0 || !!draft.quote_text;
+  const canSend = toOk && draft.subject.trim().length > 0 && hasBody;
 
   const submit = () => {
     if (!canSend || sendMut.isPending) return;
@@ -232,7 +250,15 @@ function ComposeDialog({ initial, onClose }: { initial: ComposeDraft; onClose: (
           to,
           cc: draft.cc.trim() || undefined,
           subject: draft.subject.trim(),
-          body_text: draft.body_text,
+          // Forward: user-typed intro above the quoted original — the text
+          // part gets both, the HTML part gets the intro plus the original
+          // mail's rendered HTML (so it looks like the original on arrival).
+          body_text: draft.quote_text
+            ? `${draft.body_text}\n\n${draft.quote_text}`
+            : draft.body_text,
+          body_html: draft.quote_html
+            ? `<div>${escapeHtml(draft.body_text).replace(/\n/g, '<br>')}</div><br><br>${draft.quote_html}`
+            : undefined,
           in_reply_to: draft.in_reply_to,
           references: draft.references,
           attachments,
@@ -316,17 +342,42 @@ function ComposeDialog({ initial, onClose }: { initial: ComposeDraft; onClose: (
           </div>
           <div className="space-y-1.5">
             <label htmlFor="platform-mail-body" className="text-xs font-medium text-text-dim">
-              Body <span className="text-accent3">*</span>
+              Body {draft.quote_text == null && <span className="text-accent3">*</span>}
             </label>
             <textarea
               id="platform-mail-body"
               value={draft.body_text}
               onChange={(e) => set({ body_text: e.target.value })}
               rows={8}
-              placeholder="Write the message…"
+              placeholder={
+                draft.quote_text != null
+                  ? 'Optional note above the forwarded message…'
+                  : 'Write the message…'
+              }
               className="flex w-full resize-y rounded-lg border border-border-muted bg-surface px-3 py-2 font-mono text-xs text-text placeholder:text-text-dim focus-ring focus:border-accent disabled:cursor-not-allowed disabled:opacity-50"
             />
           </div>
+
+          {/* Forwarded original — sent verbatim below the intro (HTML part
+              keeps the original rendering; text part carries the flat copy). */}
+          {draft.quote_text != null ? (
+            <div className="rounded-lg border border-border-muted bg-surface-2/60 px-3 py-2.5">
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-text-dim">
+                <Forward className="h-3.5 w-3.5" />
+                {draft.forwardContext
+                  ? `Forwarding: ${draft.forwardContext}`
+                  : 'Forwarded message attached'}
+                {draft.quote_html ? (
+                  <span className="font-normal text-text-faint">
+                    · original formatting preserved
+                  </span>
+                ) : null}
+              </p>
+              <p className="mt-1.5 max-h-16 overflow-hidden font-mono text-[11px] leading-relaxed text-text-faint">
+                {draft.quote_text.replace(/\s+/g, ' ').slice(0, 220)}
+              </p>
+            </div>
+          ) : null}
 
           {/* Attachments */}
           {files.length > 0 ? (
@@ -779,19 +830,28 @@ export function PlatformMailPage() {
 
   const openForward = (d: PlatformMailMessageDetail) => {
     const subject = d.subject.trim();
-    const quoted = [
+    const header = [
       '---------- Forwarded message ----------',
       `From: ${d.from || '(unknown)'}`,
       `Date: ${d.date || ''}`,
       `Subject: ${subject || '(no subject)'}`,
-      '',
-      d.text_body || '',
-    ].join('\n');
+    ];
+    const quote_text = `${header.join('\n')}\n\n${d.text_body || ''}`;
+    // Gmail-style quoted HTML — the original mail's rendered HTML in a
+    // left-rule container, so the forward looks like the original instead of
+    // a flattened text version. html_body was already sanitized server-side.
+    const quote_html = d.html_body
+      ? `<div>${header.map((l) => `${escapeHtml(l)}<br>`).join('')}</div><br>` +
+        `<div style="padding-left:10px;margin:0 0 0 .8ex;border-left:1px solid #cccccc">${d.html_body}</div>`
+      : undefined;
     setCompose({
       to: '',
       cc: '',
       subject: /^fwd:/i.test(subject) ? subject : `Fwd: ${subject || '(no subject)'}`,
-      body_text: `\n\n${quoted}`,
+      body_text: '',
+      quote_text,
+      quote_html,
+      forwardContext: `${d.from || 'unknown sender'} · ${subject || '(no subject)'}`,
     });
   };
 

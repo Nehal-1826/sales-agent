@@ -450,7 +450,15 @@ export function AddMailboxDialog({ open, onOpenChange }: AddMailboxDialogProps) 
             qc.invalidateQueries({ queryKey: ['mailboxes', 'list'] });
             close(false);
           },
-          onError: () => toast.error('Failed to finalize OAuth mailbox'),
+          onError: (err) => {
+            // Surface the backend's reason (plan cap, credential probe, etc.)
+            // instead of a generic "failed" — same contract as the SMTP path.
+            const detail =
+              err instanceof AxiosError
+                ? (err.response?.data as { detail?: string } | undefined)?.detail
+                : undefined;
+            toast.error(detail ?? 'Failed to finalize OAuth mailbox');
+          },
         },
       );
     };

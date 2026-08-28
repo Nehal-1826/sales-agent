@@ -835,6 +835,147 @@ async def bulk_pause_mailboxes(
 
 
 # --------------------------------------------------------------------------- #
+# Admin: cross-workspace listing + transfer                                    #
+# --------------------------------------------------------------------------- #
+
+
+async def admin_list_mailboxes(
+    session: AsyncSession,
+    *,
+    search: str | None = None,
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    """Every client mailbox across workspaces, newest first, with its owner.
+
+    Powers the admin transfer picker. ``search`` matches a substring of the
+    mailbox address OR the owner's email (case-insensitive).
+    """
+    stmt = (
+        select(Mailbox, User.email.label("owner_email"))
+        .join(User, User.id == Mailbox.user_id)
+        .order_by(Mailbox.created_at.desc())
+        .limit(limit)
+    )
+    if search:
+        needle = f"%{search.strip().lower()}%"
+        stmt = stmt.where(
+            func.lower(Mailbox.email_address).like(needle)
+            | func.lower(User.email).like(needle)
+        )
+    rows = (await session.execute(stmt)).all()
+    return [
+        {
+            "id": str(mbx.id),
+            "email_address": mbx.email_address,
+            "provider": (
+                mbx.provider.value if hasattr(mbx.provider, "value") else str(mbx.provider)
+            ),
+            "warmup_status": (
+                mbx.warmup_status.value
+                if hasattr(mbx.warmup_status, "value")
+                else str(mbx.warmup_status)
+            ),
+            "is_paused": mbx.is_paused,
+            "owner_user_id": str(mbx.user_id),
+            "owner_email": owner_email,
+            "workspace_id": str(mbx.workspace_id),
+            "created_at": mbx.created_at.isoformat() if mbx.created_at else None,
+        }
+        for (mbx, owner_email) in rows
+    ]
+
+
+async def transfer_mailbox(
+    session: AsyncSession,
+    *,
+    actor: User,
+    mailbox_id: uuid.UUID,
+    target_user_id: uuid.UUID,
+) -> dict[str, Any]:
+    """Move one mailbox (with its warmup state) to another user's workspace.
+
+    Admin-only ownership tool: e.g. a mailbox connected under a personal
+    account (dvshrrd) moved to the business account (info@…). The mailbox row
+    keeps its ramp/warmth/log history; only ``user_id``/``workspace_id``
+    change. Enforces the destination's plan cap first and audits the move.
+    """
+    mbx = await session.get(Mailbox, mailbox_id)
+    if mbx is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mailbox not found")
+
+    target = (
+        await session.execute(select(User).where(User.id == target_user_id))
+    ).scalar_one_or_none()
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target user not found")
+    if target.role != UserRole.client:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Mailboxes can only be transferred to client users",
+        )
+    if mbx.user_id == target.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Mailbox already belongs to that user",
+        )
+
+    # Destination plan cap (same rule a fresh create would hit).
+    await _enforce_plan_cap(session, target)
+
+    from_user_id = mbx.user_id
+    from_workspace_id = mbx.workspace_id
+    mbx.user_id = target.id
+    mbx.workspace_id = target.workspace_id
+
+    await _write_audit(
+        session,
+        action="mailbox.transferred",
+        actor_user_id=actor.id,
+        actor_role=actor.role.value if hasattr(actor.role, "value") else str(actor.role),
+        target_id=mbx.id,
+        payload={
+            "email_address": mbx.email_address,
+            "from_user_id": str(from_user_id),
+            "from_workspace_id": str(from_workspace_id),
+            "to_user_id": str(target.id),
+            "to_workspace_id": str(target.workspace_id),
+        },
+    )
+    await session.commit()
+
+    # Re-route the destination workspace to the peer pool matching its plan —
+    # best-effort, exactly like create_mailbox (the transfer itself persists).
+    try:
+        plan_name: str | None = None
+        if target.plan_id is not None:
+            plan = await session.get(Plan, target.plan_id)
+            if plan is not None:
+                plan_name = plan.name
+        from app.services import peer_pool_service
+
+        await peer_pool_service.auto_route_workspace_by_plan(
+            session,
+            workspace_id=target.workspace_id,
+            plan_name=plan_name,
+            actor=actor,
+        )
+    except Exception:  # pragma: no cover - defensive
+        logger.warning(
+            "auto-route after transfer failed for workspace=%s",
+            target.workspace_id,
+            exc_info=True,
+        )
+
+    return {
+        "id": str(mbx.id),
+        "email_address": mbx.email_address,
+        "new_owner_user_id": str(target.id),
+        "new_owner_email": target.email,
+        "new_workspace_id": str(target.workspace_id),
+    }
+
+
+# --------------------------------------------------------------------------- #
 # Delete — wipe creds first, then remove row                                   #
 # --------------------------------------------------------------------------- #
 

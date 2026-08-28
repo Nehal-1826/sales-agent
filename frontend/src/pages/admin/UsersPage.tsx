@@ -106,6 +106,7 @@ import {
 } from '@/features/admin/api';
 import { useAdminUi } from '@/stores/adminUi';
 import { Skull } from 'lucide-react';
+import { ArrowLeftRight } from 'lucide-react';
 import { EditPaymentDialog } from '@/features/admin/payments/EditPaymentDialog';
 import { toast } from '@/components/ui/AppToast';
 import { confirm } from '@/components/ui/ConfirmDialog';
@@ -121,6 +122,7 @@ import {
 import { Button } from '@/components/ui/Button';
 import { extractErrorMessage } from '@/lib/errors';
 import { UserDetailDrawer } from './users';
+import { TransferMailboxDialog } from './users/TransferMailboxDialog';
 import type { AdminUserRow, AdminPayment } from '@/features/admin/types';
 import { useLocaleFormat } from '@/hooks/useLocaleFormat';
 import { formatDate } from '@/lib/format';
@@ -1291,6 +1293,7 @@ export function UsersPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(null);
   const [expandedRow, setExpandedRow] = useState<AdminUserRow | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [transferOpen, setTransferOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
 
@@ -1583,14 +1586,21 @@ export function UsersPage() {
               </p>
             </div>
           </div>
-          {/* Export CSV */}
-          <ExportButton
-            rows={filteredRows}
-            columns={USERS_EXPORT_COLUMNS}
-            filename={`users-${exportStamp()}`}
-          />
+          {/* Mailbox transfer + Export CSV */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Button variant="secondary" size="sm" onClick={() => setTransferOpen(true)}>
+              <ArrowLeftRight size={14} /> Transfer mailbox
+            </Button>
+            <ExportButton
+              rows={filteredRows}
+              columns={USERS_EXPORT_COLUMNS}
+              filename={`users-${exportStamp()}`}
+            />
+          </div>
         </div>
       </motion.div>
+
+      <TransferMailboxDialog open={transferOpen} onOpenChange={setTransferOpen} />
 
       {/* ── KPI strip ── */}
       <motion.div

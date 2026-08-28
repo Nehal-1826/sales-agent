@@ -268,3 +268,11 @@ class RunWarmupNowResponse(BaseModel):
     sent_today: int
     quota_today: int
     note: str | None = None
+
+
+class MailboxTransferRequest(BaseModel):
+    """Admin transfer body — destination owner for a mailbox move."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    target_user_id: str = Field(min_length=1, max_length=64)

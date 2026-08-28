@@ -309,6 +309,67 @@ export function useAdminUserDetail(id: string | null): UseQueryResult<AdminUserR
   });
 }
 
+// ---------------------------------------------------------------------------
+// Mailbox transfer (super-admin ownership tool)
+// ---------------------------------------------------------------------------
+
+export interface AdminMailboxRow {
+  id: string;
+  email_address: string;
+  provider: string;
+  warmup_status: string;
+  is_paused: boolean;
+  owner_user_id: string;
+  owner_email: string;
+  workspace_id: string;
+  created_at: string | null;
+}
+
+export function useAdminMailboxes(
+  search: string | null,
+): UseQueryResult<AdminMailboxRow[]> {
+  return useQuery({
+    queryKey: [...ADMIN_KEYS.users, 'mailboxes', search],
+    staleTime: 30_000,
+    queryFn: async () => {
+      const res = await getOrEmpty<{ items: AdminMailboxRow[] }>(
+        '/admin/mailboxes',
+        search ? { search } : undefined,
+        { items: [] },
+      );
+      return res.items;
+    },
+  });
+}
+
+export interface TransferMailboxResult {
+  id: string;
+  email_address: string;
+  new_owner_user_id: string;
+  new_owner_email: string;
+  new_workspace_id: string;
+}
+
+export function useAdminTransferMailbox(): UseMutationResult<
+  TransferMailboxResult,
+  unknown,
+  { mailboxId: string; targetUserId: string }
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ mailboxId, targetUserId }) => {
+      const res = await api.post<TransferMailboxResult>(
+        `/admin/mailboxes/${mailboxId}/transfer`,
+        { target_user_id: targetUserId },
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_KEYS.users });
+    },
+  });
+}
+
 /**
  * Fetch a user's avatar as an object URL. The admin avatar route is
  * super_admin-gated, so an `<img src>` can't carry the bearer token — we

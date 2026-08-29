@@ -1280,14 +1280,33 @@ async def _probe_imap(
         with contextlib.suppress(Exception):
             await client.logout()
 
+    async def _strict_handshake() -> None:
+        # aioimaplib hides TLS handshake failures inside an unretrieved
+        # asyncio task — wait_hello_from_server() then just hangs and the
+        # caller only ever sees a TimeoutError, so a certificate problem is
+        # indistinguishable from a dead server and the permissive fallback
+        # never engages (mail.ijrnexus.com hit exactly this: incomplete cert
+        # chain → probe timeout instead of downgrade). Handshake once
+        # ourselves with asyncio, where SSLCertVerificationError surfaces
+        # normally, and pick the client context from the outcome.
+        _reader, writer = await asyncio.open_connection(
+            host, port, ssl=_strict_tls_context(),
+            ssl_handshake_timeout=_TIMEOUT_SECONDS,
+        )
+        writer.close()
+        with contextlib.suppress(Exception):
+            await writer.wait_closed()
+
     try:
+        verify = True
         try:
-            await asyncio.wait_for(_attempt(True), timeout=_TIMEOUT_SECONDS)
+            await asyncio.wait_for(_strict_handshake(), timeout=_TIMEOUT_SECONDS)
         except Exception as exc:
             if not _is_cert_verification_error(exc):
                 raise
             _log_tls_downgrade("imap", host, port)
-            await asyncio.wait_for(_attempt(False), timeout=_TIMEOUT_SECONDS)
+            verify = False
+        await asyncio.wait_for(_attempt(verify), timeout=_TIMEOUT_SECONDS)
         return True, None
     except Exception as exc:  # noqa: BLE001 — class name only, never the message
         return False, f"probe_unknown: {type(exc).__name__}"

@@ -63,6 +63,7 @@ from app.services.admin_mail_viewer import (
     _parse_fetch_lines,
     _platform_imap_config,
     _resolve_folder,
+    _sanitize_html,
     _snippet,
     _write_audit,
 )
@@ -744,6 +745,12 @@ async def send_mail(
                 f"{_MAX_ATTACHMENT_BYTES} byte limit"
             )
     from_addr = cfg.from_addr or cfg.username
+    # Outbound HTML is sanitized exactly like inbound (strip script/iframe/
+    # event-handlers/javascript: URLs) before it's placed on the wire —
+    # defense-in-depth even though the composer is super-admin-only and
+    # forwarded bodies were already sanitized on the way in.
+    if body_html:
+        body_html = _sanitize_html(body_html)
     msg = _build_message(
         from_addr=from_addr,
         to=to,

@@ -38,7 +38,7 @@ from app.api.routes.platform_mail import router as platform_mail_router
 from app.db.models.mailboxes import Mailbox
 from app.db.models.plans import Plan
 from app.db.models.users import User
-from app.schemas.mailboxes import BulkMailboxPauseRequest
+from app.schemas.mailboxes import BulkMailboxPauseRequest, MailboxTransferRequest
 from app.services.security import create_access_token
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -255,6 +255,52 @@ async def bulk_pause_user_mailboxes(
         actor=actor,
         user_ids=payload.user_ids,
         action=payload.action,
+    )
+
+
+@router.get("/mailboxes", dependencies=[Depends(require_super_admin)])
+async def admin_list_mailboxes(
+    session: Annotated[AsyncSession, Depends(get_db)],
+    actor: Annotated[User, Depends(require_super_admin)],
+    search: str | None = Query(None, max_length=200),
+    limit: int = Query(200, ge=1, le=500),
+) -> dict[str, Any]:
+    """Every client mailbox across workspaces (owner included) — transfer picker."""
+    from app.services import mailbox_service
+
+    return {
+        "items": await mailbox_service.admin_list_mailboxes(
+            session, search=search, limit=limit
+        )
+    }
+
+
+@router.post("/mailboxes/{mailbox_id}/transfer", status_code=200)
+async def admin_transfer_mailbox(
+    mailbox_id: str,
+    payload: MailboxTransferRequest,
+    session: Annotated[AsyncSession, Depends(get_db)],
+    actor: Annotated[User, Depends(require_super_admin)],
+) -> dict[str, Any]:
+    """Move a mailbox (with warmup state) to another client user's workspace.
+
+    Super-admin only; audited as ``mailbox.transferred``.
+    """
+    import uuid as _uuid
+
+    try:
+        mbx_uuid = _uuid.UUID(mailbox_id)
+        target_uuid = _uuid.UUID(payload.target_user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid mailbox or user id") from exc
+
+    from app.services import mailbox_service
+
+    return await mailbox_service.transfer_mailbox(
+        session,
+        actor=actor,
+        mailbox_id=mbx_uuid,
+        target_user_id=target_uuid,
     )
 
 

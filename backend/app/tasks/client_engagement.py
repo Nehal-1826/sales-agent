@@ -73,10 +73,19 @@ async def _eligible_mailbox_ids() -> list[str]:
 
 
 async def _schedule_impl() -> dict:
-    ids = await _eligible_mailbox_ids()
-    for mid in ids:
-        engage_client_gmail_mailbox.delay(mid)
-    return {"enqueued": len(ids)}
+    # DISABLED 2026-09-06: Google's verification team rejected the
+    # gmail.modify/gmail.labels scopes under the "Appropriate access to and
+    # use of Google Gmail APIs" policy — programmatically rescuing mail from
+    # Spam / marking / labelling inside the user's mailbox reads as
+    # "circumventing filters". The consent screen now requests gmail.send
+    # only, so no OAuth mailbox can grant these scopes any more; existing
+    # refresh tokens must not keep exercising them either. Inbound
+    # engagement for peer-sent warmup mail continues on the peer side over
+    # IMAP (tasks/warmup_receive.py + peer_actions.py), which is where the
+    # client's reputation is actually built. Kept as a no-op (rather than
+    # removed) so the beat schedule entry stays valid.
+    logger.info("client engagement cycle skipped — gmail.modify scopes retired")
+    return {"enqueued": 0, "skipped_reason": "gmail_modify_scopes_retired"}
 
 
 @celery_app.task(

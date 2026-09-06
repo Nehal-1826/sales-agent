@@ -36,14 +36,12 @@ _GOOGLE_USERINFO_ENDPOINT = "https://www.googleapis.com/oauth2/v3/userinfo"
 _LOGIN_SCOPES = "openid email profile"
 # Warmup engine scopes — each is actively used, per Google's least-privilege
 # requirement (no "future-proofing" grants):
-#   * gmail.send   — send warmup mail from the mailbox via the Gmail REST
+#   * gmail.send — send warmup mail from the mailbox via the Gmail REST
 #                    ``messages/send`` endpoint (services/warmup/oauth_token).
-#   * gmail.modify — engage with warmup mail the peer network sends *to* this
-#                    mailbox: rescue it from Spam, mark it read, star it, and
-#                    apply the WarmPulse label (tasks/client_engagement +
-#                    services/warmup/gmail_engagement).
-#   * gmail.labels — ensure the user-visible "WarmPulse" label exists before
-#                    applying it (services/warmup/gmail_engagement.ensure_warmup_label).
+# gmail.modify + gmail.labels were REMOVED 2026-09-06: Google's verification
+# rejected the engagement use case (spam-rescue / mark-read / star / label)
+# under the "Appropriate access to and use of Google Gmail APIs" policy.
+# Inbound engagement now runs exclusively on the peer side over IMAP.
 # Keep this list in exact string-match with the OAuth consent screen's
 # configured scopes.
 _MAILBOX_SCOPES = " ".join([
@@ -51,8 +49,6 @@ _MAILBOX_SCOPES = " ".join([
     "email",
     "profile",
     "https://www.googleapis.com/auth/gmail.send",
-    "https://www.googleapis.com/auth/gmail.modify",
-    "https://www.googleapis.com/auth/gmail.labels",
 ])
 
 

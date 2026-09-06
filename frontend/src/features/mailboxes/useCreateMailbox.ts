@@ -46,27 +46,26 @@ export function useCreateMailbox(): UseMutationResult<
 > {
   return useMutation<CreateMailboxResponse, unknown, CreateMailboxPayload>({
     mutationFn: async (payload) => {
-      // Normalize to the backend's MailboxProviderEnum {gmail, outlook, yahoo, smtp}.
-      // - 'zoho' / 'outlook' (app-password tile) → 'smtp' on the wire (SMTP+IMAP creds).
-      // - 'outlook_oauth' (Microsoft OAuth tile) → 'outlook' on the wire (refresh token).
-      const wireProvider =
-        payload.provider === 'zoho' || payload.provider === 'outlook'
-          ? 'smtp'
-          : payload.provider === 'outlook_oauth'
-            ? 'outlook'
-            : payload.provider;
+      // The wire shape is decided by what the caller supplied, not by the
+      // tile label: SMTP credentials present → SMTP/IMAP create (provider
+      // 'gmail'/'outlook'/'zoho' app-password tiles map to wire 'smtp',
+      // matching backend MailboxCreateSmtp's Literal); otherwise → OAuth
+      // refresh-token create (backend MailboxCreateOauth).
+      const isSmtp = !!payload.smtp_password || !!payload.smtp_host;
+      const wireProvider = !isSmtp
+        ? payload.provider === 'outlook_oauth'
+          ? 'outlook'
+          : payload.provider
+        : payload.provider === 'yahoo'
+          ? 'yahoo'
+          : 'smtp';
       const body: Record<string, unknown> = {
         provider: wireProvider,
         email_address: payload.email_address,
         content_mode: payload.content_mode,
         daily_target: payload.daily_target ?? payload.daily_volume ?? 50,
       };
-      if (
-        payload.provider === 'smtp' ||
-        payload.provider === 'yahoo' ||
-        payload.provider === 'zoho' ||
-        payload.provider === 'outlook'
-      ) {
+      if (isSmtp) {
         body.smtp_host = payload.smtp_host;
         body.smtp_port = payload.smtp_port ?? 587;
         body.smtp_username = payload.smtp_username;

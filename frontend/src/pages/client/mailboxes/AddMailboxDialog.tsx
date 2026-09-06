@@ -65,7 +65,14 @@ const PROVIDERS: Array<{
   sub: string;
   oauth: boolean;
 }> = [
-  { value: 'gmail', label: 'Gmail / Workspace', sub: 'OAuth — recommended', oauth: true },
+  // Gmail connects via app password over SMTP/IMAP by default — Google's
+  // OAuth verification for warmup tools was rejected under the "appropriate
+  // access to Gmail APIs" policy, so OAuth must not be the only path. The
+  // app-password route gives identical warmup capability (proven by the
+  // SMTP/IMAP mailboxes already running at full warmth) with zero dependence
+  // on the verification outcome. Google sign-in remains available as a
+  // secondary option while the app is under the 100-user unverified cap.
+  { value: 'gmail', label: 'Gmail / Workspace', sub: 'App password — recommended', oauth: false },
   { value: 'outlook', label: 'Outlook / Microsoft 365', sub: 'App password via SMTP', oauth: false },
   { value: 'yahoo', label: 'Yahoo Mail', sub: 'App password via SMTP', oauth: false },
   { value: 'smtp', label: 'Generic SMTP / IMAP', sub: 'Any provider', oauth: false },
@@ -77,6 +84,7 @@ const PROVIDERS: Array<{
 const SMTP_DEFAULTS: Partial<
   Record<MailboxProvider, { smtp_host: string; smtp_port: number; imap_host: string; imap_port: number }>
 > = {
+  gmail: { smtp_host: 'smtp.gmail.com', smtp_port: 587, imap_host: 'imap.gmail.com', imap_port: 993 },
   outlook: { smtp_host: 'smtp.office365.com', smtp_port: 587, imap_host: 'outlook.office365.com', imap_port: 993 },
   yahoo: { smtp_host: 'smtp.mail.yahoo.com', smtp_port: 587, imap_host: 'imap.mail.yahoo.com', imap_port: 993 },
 };
@@ -194,6 +202,10 @@ export function AddMailboxDialog({ open, onOpenChange }: AddMailboxDialogProps) 
   const [provider, setProvider] = useState<MailboxProvider>('gmail');
   const [showPw, setShowPw] = useState(false);
   const [oauthError, setOauthError] = useState<string | null>(null);
+  // Gmail-only: swap the app-password form for the Google sign-in (OAuth)
+  // box. Secondary path while Google's verification of the OAuth client is
+  // pending — the app-password form above is the default and always works.
+  const [gmailOAuth, setGmailOAuth] = useState(false);
 
   const form = useForm<SmtpForm>({
     resolver: zodResolver(smtpSchema),
@@ -240,7 +252,7 @@ export function AddMailboxDialog({ open, onOpenChange }: AddMailboxDialogProps) 
     // SMTP username defaults to the email address for every app-password
     // provider (generic SMTP, Yahoo, Outlook).
     if (
-      (provider === 'smtp' || provider === 'yahoo' || provider === 'outlook') &&
+      (provider === 'smtp' || provider === 'yahoo' || provider === 'outlook' || provider === 'gmail') &&
       emailValue &&
       !form.getValues('smtp_username')
     ) {
@@ -256,9 +268,10 @@ export function AddMailboxDialog({ open, onOpenChange }: AddMailboxDialogProps) 
   }, [wizEmail, wizForm]);
 
   // Prefill SMTP/IMAP hosts when the user picks a known app-password provider
-  // (Outlook / Yahoo). Runs only on provider change, so it never clobbers
-  // values the user has started editing within the same provider.
+  // (Gmail / Outlook / Yahoo). Runs only on provider change, so it never
+  // clobbers values the user has started editing within the same provider.
   useEffect(() => {
+    setGmailOAuth(false);
     const d = SMTP_DEFAULTS[provider];
     if (!d) return;
     form.setValue('smtp_host', d.smtp_host, { shouldValidate: false });
@@ -553,11 +566,13 @@ export function AddMailboxDialog({ open, onOpenChange }: AddMailboxDialogProps) 
             </div>
           ) : step === 1 ? (
             <div className="space-y-3">
-              {providerMeta?.oauth ? (
+              {providerMeta?.oauth || (provider === 'gmail' && gmailOAuth) ? (
                 <div className="rounded-lg border border-border-muted bg-surface-2/40 p-4">
-                  <p className="text-sm font-medium">Connect with {providerMeta.label}</p>
+                  <p className="text-sm font-medium">Connect with Google</p>
                   <p className="mt-1 text-xs text-text-dim">
-                    We request minimal read/send scopes. Tokens are Fernet-encrypted at rest.
+                    We request send + engagement scopes only. Tokens are Fernet-encrypted at rest.
+                    Google&apos;s verification of this app is still in progress — if Google shows an
+                    &quot;unverified app&quot; screen, choose Advanced → Continue.
                   </p>
                   <Button
                     type="button"
@@ -572,13 +587,13 @@ export function AddMailboxDialog({ open, onOpenChange }: AddMailboxDialogProps) 
                     <p className="mt-2 text-xs text-accent3">{oauthError}</p>
                   ) : null}
                   <p className="mt-3 text-xs text-text-dim">
-                    OAuth not available?{' '}
+                    Prefer not to use Google sign-in?{' '}
                     <button
                       type="button"
                       className="text-accent hover:underline"
-                      onClick={() => setProvider('smtp')}
+                      onClick={() => (provider === 'gmail' ? setGmailOAuth(false) : setProvider('smtp'))}
                     >
-                      Use SMTP/IMAP instead
+                      Use the app-password form instead
                     </button>
                     .
                   </p>
@@ -658,11 +673,14 @@ export function AddMailboxDialog({ open, onOpenChange }: AddMailboxDialogProps) 
                       </div>
                       <div className="mt-2">
                         <AppPasswordHelp
-                          provider={(provider === 'yahoo' ||
-                          provider === 'outlook' ||
-                          provider === 'smtp'
-                            ? provider
-                            : 'smtp') as AppPasswordProvider}
+                          provider={
+                            (provider === 'gmail' ||
+                              provider === 'yahoo' ||
+                              provider === 'outlook' ||
+                              provider === 'smtp'
+                              ? provider
+                              : 'smtp') as AppPasswordProvider
+                          }
                         />
                       </div>
                     </FormField>
@@ -699,6 +717,19 @@ export function AddMailboxDialog({ open, onOpenChange }: AddMailboxDialogProps) 
                   >
                     {create.isPending ? 'Adding…' : 'Add mailbox'}
                   </Button>
+                  {provider === 'gmail' ? (
+                    <p className="text-center text-xs text-text-dim">
+                      Prefer Google sign-in?{' '}
+                      <button
+                        type="button"
+                        className="text-accent hover:underline"
+                        onClick={() => setGmailOAuth(true)}
+                      >
+                        Connect with Google (OAuth) instead
+                      </button>
+                      .
+                    </p>
+                  ) : null}
                 </form>
               )}
             </div>

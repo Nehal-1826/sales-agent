@@ -6,9 +6,10 @@ export const api = axios.create({
   baseURL: env.VITE_API_BASE_URL,
   withCredentials: true,
   timeout: 30_000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  // No default Content-Type: axios sets application/json for object payloads
+  // by itself, and a default here would clobber multipart/form-data uploads —
+  // axios 1.x stringifies FormData to JSON when it sees a JSON content type,
+  // which the backend rejects with 422 (missing "file" field).
 });
 
 // Attach bearer token from the auth store.

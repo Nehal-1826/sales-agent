@@ -628,7 +628,7 @@ async def upload_template_logo(
     return {
         "has_logo": True,
         "logo_url": crm_template_service.logo_public_url(
-            template_id, base_url=get_settings().app_base_url
+            template_id, base_url=get_settings().public_base_url
         ),
     }
 

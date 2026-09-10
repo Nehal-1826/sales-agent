@@ -62,7 +62,7 @@ def _redact(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _redirect_uri() -> str:
     s = get_settings()
-    base = s.app_base_url.rstrip("/")
+    base = s.public_base_url
     return f"{base}{DEFAULT_REDIRECT_PATH}"
 
 

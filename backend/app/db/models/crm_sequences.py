@@ -46,5 +46,14 @@ class CrmSequence(Base):
         nullable=False,
         default=CrmSequenceStatus.active,
     )
+    # Which connected mailbox sends this sequence's mail. NULL = automatic -
+    # the tick picks the workspace's oldest active, unpaused SMTP-capable
+    # mailbox. Set explicitly when the user wants a specific identity sending
+    # (e.g. the editor mailbox for outreach). FK is SET NULL so deleting the
+    # mailbox falls the sequence back to automatic instead of breaking it.
+    sending_mailbox_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("mailboxes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = created_at_col()
     updated_at: Mapped[datetime] = updated_at_col()

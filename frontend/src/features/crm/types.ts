@@ -103,6 +103,9 @@ export interface CrmSequence {
   status: CrmSequenceStatus;
   step_count: number;
   active_enrollments: number;
+  /** Mailbox this sequence sends from; null = automatic (oldest active
+   * SMTP-capable mailbox in the workspace). */
+  sending_mailbox_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -249,11 +252,14 @@ export interface CreateActivityPayload {
 export interface CreateSequencePayload {
   campaign_id: string;
   name: string;
+  sending_mailbox_id?: string | null;
 }
 
 export interface UpdateSequencePayload {
   name?: string;
   status?: CrmSequenceStatus;
+  /** Explicit null clears the pin (back to automatic); omit to leave it. */
+  sending_mailbox_id?: string | null;
 }
 
 export interface CreateStepPayload {

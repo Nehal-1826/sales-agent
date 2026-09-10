@@ -24,7 +24,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -218,6 +218,7 @@ async def _sequence_to_out(
         status=_enum_value(sequence.status),
         step_count=step_count,
         active_enrollments=active_enrollments,
+        sending_mailbox_id=getattr(sequence, "sending_mailbox_id", None),
         created_at=sequence.created_at,
         updated_at=sequence.updated_at,
     )
@@ -251,6 +252,31 @@ def _enrollment_to_out(
         enrolled_at=enrollment.enrolled_at,
         completed_at=enrollment.completed_at,
     )
+
+
+async def _validate_sending_mailbox(
+    session: AsyncSession, *, workspace_id: uuid.UUID, mailbox_id: uuid.UUID | None
+) -> uuid.UUID | None:
+    """Validate a user-pinned sending mailbox. None/absent passes through.
+
+    Raises 404 when the id does not resolve to a mailbox in the caller's
+    workspace — a cross-workspace pin would silently send as another tenant.
+    """
+    if mailbox_id is None:
+        return None
+    from app.db.models.mailboxes import Mailbox
+
+    hit = await session.scalar(
+        select(Mailbox.id).where(
+            Mailbox.id == mailbox_id, Mailbox.workspace_id == workspace_id
+        )
+    )
+    if hit is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Sending mailbox not found in this workspace",
+        )
+    return mailbox_id
 
 
 # --------------------------------------------------------------------------- #
@@ -293,6 +319,11 @@ async def create_sequence(
         campaign_id=payload.campaign_id,
         name=payload.name,
         status=CrmSequenceStatus.active,
+        sending_mailbox_id=await _validate_sending_mailbox(
+            session,
+            workspace_id=user.workspace_id,
+            mailbox_id=payload.sending_mailbox_id,
+        ),
     )
     session.add(seq)
     await session.flush()
@@ -325,6 +356,12 @@ async def update_sequence(
         seq.name = data["name"]
     if "status" in data and data["status"] is not None:
         seq.status = CrmSequenceStatus(_enum_value(data["status"]))
+    if "sending_mailbox_id" in data:
+        seq.sending_mailbox_id = await _validate_sending_mailbox(
+            session,
+            workspace_id=user.workspace_id,
+            mailbox_id=data["sending_mailbox_id"],
+        )
 
     await session.flush()
     await _write_audit(
@@ -750,6 +787,46 @@ async def process_due_enrollments(
 
     mailbox_cache: dict[uuid.UUID, Mailbox | None] = {}
 
+    # A sequence may pin its sending mailbox (CrmSequence.sending_mailbox_id).
+    # Pinned rows are cached separately; a pinned mailbox that has gone
+    # paused/inactive/non-SMTP since being set is skipped with a log line and
+    # the automatic pick takes over, so a stale pin never silences a sequence.
+    pinned_cache: dict[uuid.UUID, Mailbox | None] = {}
+
+    async def _pinned_mailbox_for(
+        sequence_id: uuid.UUID, workspace_id: uuid.UUID
+    ) -> Mailbox | None:
+        if sequence_id not in pinned_cache:
+            pinned_id = await session.scalar(
+                select(CrmSequence.sending_mailbox_id).where(
+                    CrmSequence.id == sequence_id
+                )
+            )
+            pinned_cache[sequence_id] = None
+            if pinned_id is not None:
+                row = (
+                    await session.execute(
+                        select(Mailbox)
+                        .where(
+                            Mailbox.id == pinned_id,
+                            Mailbox.workspace_id == workspace_id,
+                            Mailbox.warmup_status == WarmupStatus.active,
+                            Mailbox.is_paused.is_(False),
+                            Mailbox.smtp_password_encrypted.is_not(None),
+                        )
+                    )
+                ).scalar_one_or_none()
+                if row is None:
+                    logger.warning(
+                        "crm sequence %s pinned sending mailbox %s is not "
+                        "usable (paused/inactive/non-SMTP); falling back to "
+                        "automatic mailbox selection",
+                        sequence_id,
+                        pinned_id,
+                    )
+                pinned_cache[sequence_id] = row
+        return pinned_cache[sequence_id]
+
     async def _sending_mailbox_for(workspace_id: uuid.UUID) -> Mailbox | None:
         if workspace_id not in mailbox_cache:
             mailbox_cache[workspace_id] = (
@@ -830,10 +907,14 @@ async def process_due_enrollments(
             continue
 
         # Resolve the sending mailbox up front so personalization can fill
-        # {{sender_name}} from it (dummy mode has no real mailbox).
-        mailbox = (
-            None if dummy_mode else await _sending_mailbox_for(enr_workspace_id)
-        )
+        # {{sender_name}} from it (dummy mode has no real mailbox). The
+        # sequence's pinned mailbox wins when usable; otherwise the automatic
+        # oldest-active-SMTP pick applies.
+        mailbox = None
+        if not dummy_mode:
+            mailbox = await _pinned_mailbox_for(enr.sequence_id, enr_workspace_id)
+            if mailbox is None:
+                mailbox = await _sending_mailbox_for(enr_workspace_id)
 
         # Personalize subject per-lead for the activity label. The body is
         # resolved per content_mode at send time below.

@@ -275,6 +275,9 @@ class SequenceOut(BaseModel):
     status: CrmSequenceStatusEnum
     step_count: int
     active_enrollments: int
+    # Mailbox the sequence sends from; None = automatic (oldest active
+    # SMTP-capable mailbox in the workspace).
+    sending_mailbox_id: uuid.UUID | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -282,6 +285,7 @@ class SequenceOut(BaseModel):
 class SequenceCreate(BaseModel):
     campaign_id: uuid.UUID
     name: str = Field(min_length=1, max_length=200)
+    sending_mailbox_id: uuid.UUID | None = None
 
 
 class SequenceUpdate(BaseModel):
@@ -289,6 +293,8 @@ class SequenceUpdate(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=200)
     status: CrmSequenceStatusEnum | None = None
+    # Explicit null clears the pin (back to automatic); unset leaves it.
+    sending_mailbox_id: uuid.UUID | None = None
 
 
 class CrmStepContentModeEnum(str, enum.Enum):

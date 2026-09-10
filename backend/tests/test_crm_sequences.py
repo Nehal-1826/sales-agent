@@ -61,6 +61,7 @@ async def _setup_db() -> tuple[async_sessionmaker[AsyncSession], object]:
     from app.db.models.crm_sequence_steps import CrmSequenceStep
     from app.db.models.crm_sequences import CrmSequence
     from app.db.models.mailboxes import Mailbox
+    from app.db.models.workspace_settings import WorkspaceSetting
     from app.db.models.plans import Plan
     from app.db.models.users import User
 
@@ -85,6 +86,7 @@ async def _setup_db() -> tuple[async_sessionmaker[AsyncSession], object]:
             CrmSequenceStep,
             CrmSequenceEnrollment,
             Mailbox,
+            WorkspaceSetting,
         )
     ]
     async with engine.begin() as conn:

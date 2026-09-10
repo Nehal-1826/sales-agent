@@ -1,7 +1,7 @@
 """crm_sequences.sending_mailbox_id — per-sequence sending mailbox
 
 Revision ID: 0044_crm_seq_send_mbx
-Revises: 0043_seed_julex_mail_addon
+Revises: 0044_self_hosted_provider
 Create Date: 2026-09-11
 
 Adds a nullable FK so a CRM sequence can pin the mailbox that sends its mail.
@@ -16,7 +16,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0044_crm_seq_send_mbx"
-down_revision: str | None = "0043_seed_julex_mail_addon"
+down_revision: str | None = "0044_self_hosted_provider"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

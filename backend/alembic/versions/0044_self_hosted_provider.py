@@ -14,7 +14,7 @@ depends_on = None
 def upgrade() -> None:
     # ALTER TYPE ... ADD VALUE cannot run inside a transaction block.
     op.execute("COMMIT")
-    op.execute("ALTER TYPE mailboxprovider ADD VALUE IF NOT EXISTS 'self_hosted'")
+    op.execute("ALTER TYPE mailbox_provider ADD VALUE IF NOT EXISTS 'self_hosted'")
 
 
 def downgrade() -> None:

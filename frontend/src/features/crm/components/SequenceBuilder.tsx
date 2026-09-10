@@ -17,6 +17,7 @@ import {
 import { Button } from '@/components/ui/Button';
 import { toast } from '@/components/ui/AppToast';
 import { confirm } from '@/components/ui/ConfirmDialog';
+import { useMailboxes } from '@/features/mailboxes/api';
 import {
   useDeleteStep,
   useSequenceEnrollments,
@@ -70,6 +71,21 @@ export function SequenceBuilder({ sequence, onBack }: SequenceBuilderProps) {
     );
   };
 
+  const setSendingMailbox = (mailboxId: string | null) => {
+    updateSequence.mutate(
+      { id: sequence.id, campaignId, payload: { sending_mailbox_id: mailboxId } },
+      {
+        onSuccess: () =>
+          toast.success(
+            mailboxId
+              ? 'Sequence will send from the selected mailbox.'
+              : 'Sequence will send from the first healthy mailbox.',
+          ),
+        onError: (err) => toast.error(extractCrmError(err, 'Could not change sending mailbox')),
+      },
+    );
+  };
+
   const openAddStep = () => {
     setEditingStep(null);
     setStepDialogOpen(true);
@@ -96,6 +112,14 @@ export function SequenceBuilder({ sequence, onBack }: SequenceBuilderProps) {
         <div className="min-w-0 flex-1">
           <SequenceNameEditor sequence={sequence} campaignId={campaignId} />
         </div>
+
+        <SendingMailboxSelect
+          sequenceId={sequence.id}
+          campaignId={campaignId}
+          value={sequence.sending_mailbox_id ?? null}
+          disabled={updateSequence.isPending}
+          onChange={setSendingMailbox}
+        />
 
         <Button
           size="sm"
@@ -543,6 +567,64 @@ function EnrollmentsTable({
         </table>
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sending-mailbox selector
+// ---------------------------------------------------------------------------
+
+/**
+ * Which connected mailbox sends this sequence's mail. "Auto" (default) uses
+ * the workspace's oldest active SMTP-capable mailbox — the historical
+ * behaviour. Picking a specific mailbox pins it on the sequence
+ * (sending_mailbox_id); a pinned mailbox that later goes paused/non-SMTP is
+ * skipped by the sender with automatic fallback, so it can never silence the
+ * sequence. OAuth/Gmail mailboxes are offered too — they send via the Gmail
+ * API path.
+ */
+function SendingMailboxSelect({
+  sequenceId: _sequenceId,
+  campaignId: _campaignId,
+  value,
+  disabled,
+  onChange,
+}: {
+  sequenceId: string;
+  campaignId: string;
+  value: string | null;
+  disabled: boolean;
+  onChange: (mailboxId: string | null) => void;
+}) {
+  const mailboxesQuery = useMailboxes({ page_size: 100 });
+  const mailboxes = mailboxesQuery.data?.items ?? [];
+  const sendable = mailboxes.filter((m) => !m.is_paused);
+
+  return (
+    <label className="flex min-w-0 flex-col gap-1 text-[11px] font-medium text-text-dim">
+      <span className="flex items-center gap-1">
+        <Mail className="h-3 w-3 text-accent" strokeWidth={2.4} />
+        Sending mailbox
+      </span>
+      <select
+        value={value ?? ''}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value || null)}
+        className="h-9 max-w-[15rem] truncate rounded-lg border border-border-muted bg-surface px-2 text-xs text-text focus-ring disabled:opacity-60"
+        title={
+          value
+            ? 'This sequence sends from the selected mailbox'
+            : 'Auto: the first healthy mailbox in the workspace sends'
+        }
+      >
+        <option value="">Auto (first healthy mailbox)</option>
+        {sendable.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.email_address}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

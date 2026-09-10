@@ -26,6 +26,21 @@ class Settings(BaseSettings):
     frontend_base_url: str = Field(default="http://localhost:5173", alias="FRONTEND_BASE_URL")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
+    @property
+    def public_base_url(self) -> str:
+        """``app_base_url`` normalised for building public absolute URLs.
+
+        Route prefixes already include ``/api`` (e.g. ``/api/crm/public/...``),
+        so an ``APP_BASE_URL`` that itself ends in ``/api`` — a common
+        nginx-style setting — must not contribute a second one, or every
+        generated link (template logos, open-tracking pixels, OAuth
+        callbacks) 404s with ``/api/api/...``.
+        """
+        base = (self.app_base_url or "").rstrip("/")
+        if base.endswith("/api"):
+            base = base[: -len("/api")]
+        return base
+
     # Live SMTP/IMAP/DNS probes are now ON by default — we want production
     # behaviour: real credential verification, real DNS resolution. Flip
     # MAILBOX_PROBES_DUMMY=true in .env only when iterating on UI against

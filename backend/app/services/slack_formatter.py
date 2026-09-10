@@ -47,7 +47,7 @@ def _app_base_url() -> str:
     try:
         from app.config import get_settings
 
-        url = (get_settings().app_base_url or "").rstrip("/")
+        url = get_settings().public_base_url
         if url.startswith("https://"):
             return url
     except Exception:  # noqa: BLE001 — never crash a webhook for config issues

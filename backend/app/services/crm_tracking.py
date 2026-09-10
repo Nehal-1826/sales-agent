@@ -100,7 +100,7 @@ def parse_open_token(token: str) -> dict | None:
 
 def open_pixel_url(token: str) -> str:
     """Absolute URL of the open-tracking pixel for ``token``."""
-    base = get_settings().app_base_url.rstrip("/")
+    base = get_settings().public_base_url
     return f"{base}/api/crm/track/open/{token}.gif"
 
 

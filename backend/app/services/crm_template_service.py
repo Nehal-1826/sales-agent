@@ -173,7 +173,7 @@ def _custom_to_dict(t: CrmEmailTemplate) -> dict[str, Any]:
 def _logo_url_for(template_id: uuid.UUID) -> str:
     from app.config import get_settings
 
-    return logo_public_url(template_id, base_url=get_settings().app_base_url)
+    return logo_public_url(template_id, base_url=get_settings().public_base_url)
 
 
 # --------------------------------------------------------------------------- #
@@ -334,7 +334,7 @@ def _logo_img_tag(template: Any | None) -> str:
         return ""
     from app.config import get_settings
 
-    url = logo_public_url(template_id, base_url=get_settings().app_base_url)
+    url = logo_public_url(template_id, base_url=get_settings().public_base_url)
     return (
         f'<img src="{url}" alt="" '
         'style="max-width:180px;height:auto;border:0;outline:none;text-decoration:none;" />'

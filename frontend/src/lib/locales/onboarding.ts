@@ -109,6 +109,29 @@ export const en: Record<string, string> = {
   'onb.prov.sub.yahoo': 'SMTP/IMAP with app password',
   'onb.prov.sub.zoho': 'SMTP/IMAP with app password',
   'onb.prov.sub.smtp': 'Any provider (Fastmail, self-hosted, …)',
+  'onb.prov.sub.self_hosted': 'Postfix, docker-mailserver, Mailcow, Mail-in-a-Box',
+
+  // Step 2b – Self-hosted server check
+  'onb.pf.desc': "Before we ask for a password, let's confirm your server is actually reachable from the outside world.",
+  'onb.pf.checking': 'Checking your server…',
+  'onb.pf.allGood': 'Your server looks reachable and correctly configured — you can continue.',
+  'onb.pf.recheck': 'Re-check',
+  'onb.pf.missing': 'Enter a host and port to run the check.',
+  'onb.pf.unavailTitle': 'Server check not available in this environment.',
+  'onb.pf.unavailDesc': "We'll verify your server automatically once your mailbox is connected.",
+  'onb.pf.host_invalid': "That's not a hostname",
+  'onb.pf.host_docker_internal': "That's an internal name",
+  'onb.pf.dns_no_record': 'That hostname does not resolve',
+  'onb.pf.dns_wildcard': 'That hostname is a wildcard match',
+  'onb.pf.cdn_proxied': 'Your DNS points at a CDN, not your server',
+  'onb.pf.port_filtered': 'A firewall is blocking the port',
+  'onb.pf.port_closed': 'Nothing is listening on that port',
+  'onb.pf.no_starttls': 'Your server has no TLS configured',
+  'onb.pf.no_auth': 'Your server has no submission service',
+  'onb.pf.tls_invalid': 'The certificate does not match',
+  'onb.pf.auth_failed': 'Those credentials were rejected',
+  'onb.pf.imap_failed': 'IMAP sign-in failed',
+  'onb.pf.spf_advice': 'Check your SPF record',
 
   // Step 3 – Credentials
   'onb.cred.oauthDesc': 'Sign in with {provider} to grant WarmPulse send + receive permissions for this mailbox. Your password never touches our servers.',
@@ -227,6 +250,7 @@ export const en: Record<string, string> = {
   'onb.confirm.provYahoo': 'Yahoo',
   'onb.confirm.provZoho': 'Zoho Mail',
   'onb.confirm.provSmtp': 'Generic SMTP / IMAP',
+  'onb.confirm.provSelfHosted': 'Self-hosted mail server',
 };
 
 export const hi: Record<string, string> = {
@@ -339,6 +363,29 @@ export const hi: Record<string, string> = {
   'onb.prov.sub.yahoo': 'ऐप पासवर्ड के साथ SMTP/IMAP',
   'onb.prov.sub.zoho': 'ऐप पासवर्ड के साथ SMTP/IMAP',
   'onb.prov.sub.smtp': 'कोई भी प्रदाता (Fastmail, स्वयं-होस्टेड, …)',
+  'onb.prov.sub.self_hosted': 'Postfix, docker-mailserver, Mailcow, Mail-in-a-Box',
+
+  // Step 2b – स्वयं-होस्टेड सर्वर जांच
+  'onb.pf.desc': 'पासवर्ड मांगने से पहले, आइए पुष्टि करें कि आपका सर्वर बाहरी दुनिया से वास्तव में पहुंच योग्य है।',
+  'onb.pf.checking': 'आपका सर्वर जांचा जा रहा है…',
+  'onb.pf.allGood': 'आपका सर्वर पहुंच योग्य और सही ढंग से कॉन्फ़िगर लग रहा है — आप आगे बढ़ सकते हैं।',
+  'onb.pf.recheck': 'पुनः जांचें',
+  'onb.pf.missing': 'जांच चलाने के लिए एक होस्ट और पोर्ट दर्ज करें।',
+  'onb.pf.unavailTitle': 'सर्वर जांच इस वातावरण में उपलब्ध नहीं है।',
+  'onb.pf.unavailDesc': 'आपका मेलबॉक्स कनेक्ट होने के बाद हम स्वचालित रूप से आपके सर्वर की पुष्टि करेंगे।',
+  'onb.pf.host_invalid': 'यह होस्टनेम नहीं है',
+  'onb.pf.host_docker_internal': 'यह एक आंतरिक नाम है',
+  'onb.pf.dns_no_record': 'वह होस्टनेम रिज़ॉल्व नहीं होता',
+  'onb.pf.dns_wildcard': 'वह होस्टनेम एक वाइल्डकार्ड मैच है',
+  'onb.pf.cdn_proxied': 'आपका DNS आपके सर्वर की बजाय एक CDN की ओर इशारा करता है',
+  'onb.pf.port_filtered': 'एक फ़ायरवॉल पोर्ट को ब्लॉक कर रहा है',
+  'onb.pf.port_closed': 'उस पोर्ट पर कुछ भी सुन नहीं रहा है',
+  'onb.pf.no_starttls': 'आपके सर्वर पर कोई TLS कॉन्फ़िगर नहीं है',
+  'onb.pf.no_auth': 'आपके सर्वर में कोई सबमिशन सेवा नहीं है',
+  'onb.pf.tls_invalid': 'प्रमाणपत्र मेल नहीं खाता',
+  'onb.pf.auth_failed': 'वे क्रेडेंशियल अस्वीकार कर दिए गए',
+  'onb.pf.imap_failed': 'IMAP साइन-इन विफल',
+  'onb.pf.spf_advice': 'अपना SPF रिकॉर्ड जांचें',
 
   // Step 3 – Credentials
   'onb.cred.oauthDesc': 'WarmPulse को इस मेलबॉक्स के लिए भेजने + प्राप्त करने की अनुमति देने के लिए {provider} से साइन इन करें। आपका पासवर्ड हमारे सर्वर पर कभी नहीं जाता।',
@@ -457,4 +504,5 @@ export const hi: Record<string, string> = {
   'onb.confirm.provYahoo': 'Yahoo',
   'onb.confirm.provZoho': 'Zoho Mail',
   'onb.confirm.provSmtp': 'Generic SMTP / IMAP',
+  'onb.confirm.provSelfHosted': 'स्वयं-होस्टेड मेल सर्वर',
 };

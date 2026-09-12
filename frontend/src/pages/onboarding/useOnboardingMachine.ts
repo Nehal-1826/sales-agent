@@ -9,7 +9,7 @@ import { useAuthStore, type OnboardingStatus } from '@/stores/auth';
 export interface OnboardingDraft {
   plan_id: string | null;
   daily_volume: number | null;
-  provider: 'gmail' | 'outlook' | 'outlook_oauth' | 'yahoo' | 'zoho' | 'smtp' | null;
+  provider: 'gmail' | 'outlook' | 'outlook_oauth' | 'yahoo' | 'zoho' | 'smtp' | 'self_hosted' | null;
   email_address: string | null;
   smtp_host: string | null;
   smtp_port: number | null;

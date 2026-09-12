@@ -110,3 +110,53 @@ export function useDnsCheck(): UseMutationResult<
     },
   });
 }
+
+/**
+ * Self-hosted server preflight. Backend runs an ordered ladder of checks
+ * (host shape, DNS, TCP reachability, TLS, AUTH, …) and stops at the first
+ * blocking failure — see app.services.mailbox_preflight on the backend.
+ *
+ * Deliberately takes host/port only, no password: the whole point of this
+ * step is to let a self-hoster fix infrastructure before they've even typed
+ * a password in. See Step2bServerCheck.
+ */
+export interface PreflightCheckResult {
+  id: string;
+  status: 'pass' | 'fail' | 'warn' | 'skipped';
+  detail: string;
+  remedy: string | null;
+  docs_anchor: string | null;
+}
+
+export interface PreflightResponse {
+  ok: boolean;
+  checks: PreflightCheckResult[];
+  blocking: PreflightCheckResult | null;
+}
+
+export interface PreflightRequestPayload {
+  smtp_host: string;
+  smtp_port: number;
+  username: string;
+  password?: string;
+  imap_host?: string;
+  imap_port?: number;
+}
+
+export function usePreflightCheck(): UseMutationResult<
+  PreflightResponse,
+  unknown,
+  PreflightRequestPayload
+> {
+  return useMutation<PreflightResponse, unknown, PreflightRequestPayload>({
+    mutationFn: async (payload) => {
+      // Same router prefix as every other workspace mailbox endpoint
+      // (see backend/app/api/routes/mailboxes.py: prefix="/api/workspace/mailboxes").
+      const res: AxiosResponse<PreflightResponse> = await api.post(
+        '/workspace/mailboxes/preflight',
+        payload,
+      );
+      return res.data;
+    },
+  });
+}

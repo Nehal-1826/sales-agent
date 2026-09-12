@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -15,27 +15,52 @@ import {
 import { useProbeCredentials } from '@/features/mailboxes/api';
 import { env } from '@/lib/env';
 import { cn } from '@/lib/cn';
-import { useT } from '@/lib/i18n';
+import { useT, type TFunc } from '@/lib/i18n';
 import type { OnboardingDraft } from '../useOnboardingMachine';
 
 type Provider = NonNullable<OnboardingDraft['provider']>;
 
-const smtpSchema = z.object({
-  email_address: z.string().email('Valid email required'),
-  smtp_host: z.string().min(3, 'SMTP host required'),
-  smtp_port: z.coerce.number().int().min(1).max(65535),
-  smtp_username: z.string().min(1, 'SMTP username required'),
-  smtp_password: z.string().min(1, 'SMTP password required'),
-  imap_host: z
-    .string()
-    .optional()
-    .transform((v) => (v && v.trim().length >= 3 ? v.trim() : undefined)),
-  imap_port: z
-    .union([z.coerce.number().int().min(1).max(65535), z.literal('').transform(() => undefined)])
-    .optional(),
-});
+// Docker/compose service names and loopback aliases a self-hoster copies out
+// of their own .env without realising WarmPulse connects from outside their
+// network — the same taxonomy the backend preflight ladder's rung 2
+// (host_docker_internal) checks. Catching it here means the user never has
+// to wait on a network round trip for a fault that's visible in the input.
+const CONTAINER_HOSTNAMES = new Set(['mail', 'mailserver', 'smtp', 'localhost']);
 
-export type SmtpFormValues = z.infer<typeof smtpSchema>;
+function isContainerLikeHost(value: string): boolean {
+  const host = value.trim().toLowerCase().replace(/\.$/, '');
+  if (!host) return false;
+  return !host.includes('.') || CONTAINER_HOSTNAMES.has(host);
+}
+
+function buildSmtpSchema(t: TFunc) {
+  const hostField = z
+    .string()
+    .min(3, 'SMTP host required')
+    .refine((v) => !isContainerLikeHost(v), {
+      message: t('onb.pf.host_docker_internal'),
+    });
+
+  return z.object({
+    email_address: z.string().email('Valid email required'),
+    smtp_host: hostField,
+    smtp_port: z.coerce.number().int().min(1).max(65535),
+    smtp_username: z.string().min(1, 'SMTP username required'),
+    smtp_password: z.string().min(1, 'SMTP password required'),
+    imap_host: z
+      .string()
+      .optional()
+      .transform((v) => (v && v.trim().length >= 3 ? v.trim() : undefined))
+      .refine((v) => !v || !isContainerLikeHost(v), {
+        message: t('onb.pf.host_docker_internal'),
+      }),
+    imap_port: z
+      .union([z.coerce.number().int().min(1).max(65535), z.literal('').transform(() => undefined)])
+      .optional(),
+  });
+}
+
+export type SmtpFormValues = z.infer<ReturnType<typeof buildSmtpSchema>>;
 
 interface Step3CredentialsProps {
   provider: Provider;
@@ -265,7 +290,7 @@ function OauthPanel({
 type ZohoRegion = 'com' | 'in' | 'eu' | 'com.au' | 'jp' | 'com.cn';
 
 function defaultsFor(
-  provider: 'yahoo' | 'zoho' | 'smtp' | 'gmail' | 'outlook',
+  provider: 'yahoo' | 'zoho' | 'smtp' | 'gmail' | 'outlook' | 'self_hosted',
   region?: ZohoRegion,
 ) {
   if (provider === 'yahoo') {
@@ -287,7 +312,7 @@ function SmtpPanel({
   onPatch,
   onValidityChange,
 }: {
-  provider: 'yahoo' | 'zoho' | 'smtp' | 'gmail' | 'outlook';
+  provider: 'yahoo' | 'zoho' | 'smtp' | 'gmail' | 'outlook' | 'self_hosted';
   draft: OnboardingDraft;
   onPatch: (p: Partial<OnboardingDraft>) => void;
   onValidityChange: (valid: boolean) => void;
@@ -295,6 +320,9 @@ function SmtpPanel({
   const t = useT();
   const [showPwd, setShowPwd] = useState(false);
   const hostDefaults = defaultsFor(provider);
+  // Rebuilt whenever the language changes so the inline host-shape error uses
+  // the same copy as the (network-backed) preflight check's remedy heading.
+  const schema = useMemo(() => buildSmtpSchema(t), [t]);
 
   const {
     register,
@@ -303,7 +331,7 @@ function SmtpPanel({
     setValue,
     formState: { errors, isValid },
   } = useForm<SmtpFormValues>({
-    resolver: zodResolver(smtpSchema),
+    resolver: zodResolver(schema),
     mode: 'onChange',
     defaultValues: {
       email_address: draft.email_address ?? '',

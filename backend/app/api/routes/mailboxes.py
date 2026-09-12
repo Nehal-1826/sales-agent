@@ -37,7 +37,9 @@ from app.schemas.mailboxes import (
     TestConnectionResponse,
 )
 from app.services import mailbox_service
+from app.services.mailbox_preflight import PreflightRequest, PreflightResult, run_preflight
 from app.services.notifications_dispatch import fire_and_forget_webhooks
+from app.services.rate_limit import check_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +125,43 @@ async def probe_mailbox_credentials(
     """
     logger.info("probe_mailbox user=%s", user.id)  # never log body — creds leak
     return await mailbox_service.probe_credentials(payload)
+
+
+# --------------------------------------------------------------------------- #
+# PREFLIGHT (ordered diagnostic ladder, used by the self-hosted onboarding    #
+# step — see app.services.mailbox_preflight)                                 #
+# --------------------------------------------------------------------------- #
+#
+# NOTE: this MUST be declared before any /{mailbox_id}/... route below, or
+# FastAPI matches "preflight" as a mailbox_id path parameter and this handler
+# never runs.
+#
+# RATE LIMITING: this endpoint opens sockets to user-supplied hosts/ports, so
+# it's capped at 10/min/workspace via app.services.rate_limit (fixed-window
+# over Redis, fails open if Redis is unreachable — see that module).
+
+PREFLIGHT_RATE_LIMIT_PER_MINUTE = 10
+PREFLIGHT_RATE_LIMIT_WINDOW_S = 60
+
+
+@router.post("/preflight", response_model=PreflightResult)
+async def preflight(
+    payload: PreflightRequest,
+    user: Annotated[User, Depends(get_current_user)],
+) -> PreflightResult:
+    """Diagnose an unsaved mailbox connection, one blocking failure at a time."""
+    logger.info("preflight user=%s", user.id)  # never log body — creds leak
+    allowed = await check_rate_limit(
+        f"mailbox:preflight:{user.workspace_id}",
+        limit=PREFLIGHT_RATE_LIMIT_PER_MINUTE,
+        window_seconds=PREFLIGHT_RATE_LIMIT_WINDOW_S,
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many preflight checks — try again in a minute.",
+        )
+    return await run_preflight(payload)
 
 
 @router.get("/detect-provider")

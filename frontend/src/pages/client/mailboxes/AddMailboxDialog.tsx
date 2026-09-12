@@ -42,7 +42,6 @@ import {
   type AppPasswordProvider,
 } from '@/features/mailboxes/AppPasswordHelp';
 import type { MailboxProvider } from '@/features/mailboxes/types';
-import { env } from '@/lib/env';
 
 interface AddMailboxDialogProps {
   open: boolean;
@@ -178,22 +177,6 @@ async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
-interface OAuthMessage {
-  type: 'warmpulse:oauth';
-  token: string;
-  email: string;
-}
-
-function isOAuthMessage(data: unknown): data is OAuthMessage {
-  return (
-    typeof data === 'object' &&
-    data !== null &&
-    (data as { type?: unknown }).type === 'warmpulse:oauth' &&
-    typeof (data as { token?: unknown }).token === 'string' &&
-    typeof (data as { email?: unknown }).email === 'string'
-  );
-}
-
 export function AddMailboxDialog({ open, onOpenChange }: AddMailboxDialogProps) {
   const qc = useQueryClient();
   const create = useCreateMailbox();
@@ -201,11 +184,6 @@ export function AddMailboxDialog({ open, onOpenChange }: AddMailboxDialogProps) 
   const [step, setStep] = useState<DialogStep>(0);
   const [provider, setProvider] = useState<MailboxProvider>('gmail');
   const [showPw, setShowPw] = useState(false);
-  const [oauthError, setOauthError] = useState<string | null>(null);
-  // Gmail-only: swap the app-password form for the Google sign-in (OAuth)
-  // box. Secondary path while Google's verification of the OAuth client is
-  // pending — the app-password form above is the default and always works.
-  const [gmailOAuth, setGmailOAuth] = useState(false);
 
   const form = useForm<SmtpForm>({
     resolver: zodResolver(smtpSchema),
@@ -271,7 +249,6 @@ export function AddMailboxDialog({ open, onOpenChange }: AddMailboxDialogProps) 
   // (Gmail / Outlook / Yahoo). Runs only on provider change, so it never
   // clobbers values the user has started editing within the same provider.
   useEffect(() => {
-    setGmailOAuth(false);
     const d = SMTP_DEFAULTS[provider];
     if (!d) return;
     form.setValue('smtp_host', d.smtp_host, { shouldValidate: false });
@@ -336,7 +313,6 @@ export function AddMailboxDialog({ open, onOpenChange }: AddMailboxDialogProps) 
     setStep(0);
     setProvider('gmail');
     setShowPw(false);
-    setOauthError(null);
     form.reset();
     create.reset();
     setDomain('');
@@ -435,51 +411,6 @@ export function AddMailboxDialog({ open, onOpenChange }: AddMailboxDialogProps) 
     );
   });
 
-  const startOAuth = () => {
-    setOauthError(null);
-    const base = env.VITE_API_BASE_URL.replace(/\/$/, '');
-    const url = `${base}/auth/google/oauth-start?intent=mailbox&provider=${provider}`;
-    const popup = window.open(url, 'warmpulse-oauth', 'width=520,height=640');
-    if (!popup) {
-      setOauthError('Popup blocked — allow popups to continue.');
-      return;
-    }
-    const listener = (evt: MessageEvent) => {
-      if (!isOAuthMessage(evt.data)) return;
-      window.removeEventListener('message', listener);
-      popup.close();
-      create.mutate(
-        {
-          provider,
-          email_address: evt.data.email,
-          daily_volume: 50,
-          content_mode: 'A',
-          oauth_token: evt.data.token,
-        },
-        {
-          onSuccess: () => {
-            toast.success('Mailbox added — warmup starting.');
-            qc.invalidateQueries({ queryKey: MAILBOXES_KEY });
-            qc.invalidateQueries({ queryKey: ['mailboxes', 'list'] });
-            close(false);
-          },
-          onError: (err) => {
-            // Surface the backend's reason (plan cap, credential probe, etc.)
-            // instead of a generic "failed" — same contract as the SMTP path.
-            const detail =
-              err instanceof AxiosError
-                ? (err.response?.data as { detail?: string } | undefined)?.detail
-                : undefined;
-            toast.error(detail ?? 'Failed to finalize OAuth mailbox');
-          },
-        },
-      );
-    };
-    window.addEventListener('message', listener);
-    // Safety timeout — stop listening after 5 min.
-    setTimeout(() => window.removeEventListener('message', listener), 5 * 60 * 1000);
-  };
-
   const onCopyFix = async (record: string, text: string) => {
     const ok = await copyToClipboard(text);
     if (ok) {
@@ -565,54 +496,20 @@ export function AddMailboxDialog({ open, onOpenChange }: AddMailboxDialogProps) 
               </button>
             </div>
           ) : step === 1 ? (
-            <div className="space-y-3">
-              {providerMeta?.oauth || (provider === 'gmail' && gmailOAuth) ? (
-                <div className="rounded-lg border border-border-muted bg-surface-2/40 p-4">
-                  <p className="text-sm font-medium">Connect with Google</p>
-                  <p className="mt-1 text-xs text-text-dim">
-                    We request send + engagement scopes only. Tokens are Fernet-encrypted at rest.
-                    Google&apos;s verification of this app is still in progress — if Google shows an
-                    &quot;unverified app&quot; screen, choose Advanced → Continue.
-                  </p>
-                  <Button
-                    type="button"
-                    className="mt-3"
-                    onClick={startOAuth}
-                    disabled={create.isPending}
-                    leftIcon={create.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined}
-                  >
-                    Connect Google
-                  </Button>
-                  {oauthError ? (
-                    <p className="mt-2 text-xs text-accent3">{oauthError}</p>
-                  ) : null}
-                  <p className="mt-3 text-xs text-text-dim">
-                    Prefer not to use Google sign-in?{' '}
-                    <button
-                      type="button"
-                      className="text-accent hover:underline"
-                      onClick={() => (provider === 'gmail' ? setGmailOAuth(false) : setProvider('smtp'))}
-                    >
-                      Use the app-password form instead
-                    </button>
-                    .
-                  </p>
-                </div>
-              ) : (
-                <form onSubmit={submitSmtp} className="space-y-3">
-                  <FormField
-                    label="Email address"
-                    htmlFor="add-email"
-                    required
-                    error={form.formState.errors.email?.message}
-                  >
-                    <Input
-                      id="add-email"
-                      type="email"
-                      placeholder="you@yourdomain.com"
-                      {...form.register('email')}
-                    />
-                  </FormField>
+            <form onSubmit={submitSmtp} className="space-y-3">
+              <FormField
+                label="Email address"
+                htmlFor="add-email"
+                required
+                error={form.formState.errors.email?.message}
+              >
+                <Input
+                  id="add-email"
+                  type="email"
+                  placeholder="you@yourdomain.com"
+                  {...form.register('email')}
+                />
+              </FormField>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <FormField
                       label="SMTP host"
@@ -717,22 +614,7 @@ export function AddMailboxDialog({ open, onOpenChange }: AddMailboxDialogProps) 
                   >
                     {create.isPending ? 'Adding…' : 'Add mailbox'}
                   </Button>
-                  {provider === 'gmail' ? (
-                    <p className="text-center text-xs text-text-dim">
-                      Prefer Google sign-in?{' '}
-                      <button
-                        type="button"
-                        className="text-accent hover:underline"
-                        onClick={() => setGmailOAuth(true)}
-                      >
-                        Connect with Google (OAuth) instead
-                      </button>
-                      .
-                    </p>
-                  ) : null}
                 </form>
-              )}
-            </div>
           ) : step === 2 ? (
             /* ----- Wizard 1/3: domain (+ one-click registrar links) ----- */
             <div className="space-y-3">

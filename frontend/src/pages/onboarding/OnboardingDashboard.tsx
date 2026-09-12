@@ -27,7 +27,6 @@ import { useAuthStore } from '@/stores/auth';
 import { useCurrency } from '@/lib/currency';
 import { usePublicPlans } from '@/features/plans/publicPlans';
 import { api } from '@/lib/api';
-import { env } from '@/lib/env';
 import { toast } from '@/components/ui/AppToast';
 import { clearOnboardingState } from '@/lib/onboardingState';
 import { useCreateMailbox, useDnsCheck, type DnsCheckResponse } from '@/features/mailboxes/useCreateMailbox';
@@ -146,18 +145,12 @@ const VOLUME_OPTIONS = [
 ];
 
 const PROVIDER_OPTIONS = [
-  { id: 'gmail', name: 'Gmail / Workspace', sub: 'One-click OAuth', tag: 'OAUTH', color: '#ea4335', recommended: true },
-  { id: 'outlook_oauth', name: 'Outlook (Microsoft OAuth)', sub: 'Beta · own-tenant testing', tag: 'OAUTH', color: '#F26522' },
+  { id: 'gmail', name: 'Gmail / Workspace', sub: 'App password · SMTP/IMAP', tag: 'SMTP', color: '#ea4335', recommended: true },
   { id: 'outlook', name: 'Outlook / Office 365', sub: 'SMTP / IMAP w/ app password', tag: 'SMTP', color: '#F26522' },
   { id: 'yahoo', name: 'Yahoo Mail', sub: 'SMTP / IMAP w/ app password', tag: 'SMTP', color: '#F26522' },
   { id: 'zoho', name: 'Zoho Mail', sub: 'SMTP / IMAP w/ app password', tag: 'SMTP', color: '#fab43e' },
   { id: 'smtp', name: 'Generic SMTP / IMAP', sub: 'Fastmail, self-hosted, …', tag: 'SMTP', color: 'var(--wp-text-dim)' },
 ];
-
-// Provider tiles that connect via OAuth (no app-password). Mailboxes connected
-// this way skip the DNS-verification onboarding stage — the provider handles
-// SPF/DKIM/DMARC authentication on its own infrastructure.
-const OAUTH_PROVIDER_IDS = ['gmail', 'outlook_oauth'];
 
 /* ----- Summary row used by the final 'start' panel ----- */
 function SummaryRow({
@@ -268,14 +261,11 @@ export function OnboardingDashboard() {
   const existingMailboxCount = mailboxesQuery.data?.items?.length ?? 0;
   const hasExistingMailbox = existingMailboxCount > 0;
 
-  // OAuth-connected mailboxes (Gmail / Outlook OAuth) authenticate through the
-  // provider's own infrastructure, so the client-facing SPF/DKIM/DMARC step
-  // doesn't apply — skip the DNS-verification stage for them entirely. We treat
-  // the connection as OAuth when either the provider the user just picked is an
-  // OAuth tile, or any connected mailbox reports is_oauth.
-  const connectedViaOauth =
-    (pendingProvider != null && OAUTH_PROVIDER_IDS.includes(pendingProvider)) ||
-    (mailboxesQuery.data?.items?.some((m) => m.is_oauth) ?? false);
+  // Legacy OAuth-connected mailboxes (connected before OAuth connect was
+  // removed) authenticate through the provider's own infrastructure, so the
+  // client-facing SPF/DKIM/DMARC step doesn't apply — skip the
+  // DNS-verification stage for them entirely.
+  const connectedViaOauth = mailboxesQuery.data?.items?.some((m) => m.is_oauth) ?? false;
 
   // Automated (Sent-folder import) CRM is a Pro Plus / Agency capability. On
   // lower plans the toggle is manual-only and the backend rejects enabling it.
@@ -1182,8 +1172,8 @@ export function OnboardingDashboard() {
                   <h4 className="onb-side__title">Pick where your mailbox lives</h4>
                 </div>
                 <p className="onb-side__help-body">
-                  OAuth providers are most secure and don't need a password. SMTP/IMAP works
-                  with any provider that supports app passwords.
+                  Connect any provider with an app password over SMTP/IMAP — the most
+                  portable and reliable way to link a mailbox.
                 </p>
                 <div className="onb-providers">
                   {PROVIDER_OPTIONS.map((p) => (
@@ -1226,10 +1216,6 @@ export function OnboardingDashboard() {
               <CredentialsPanel
                 provider={pendingProvider}
                 dailyVolume={pendingVolume ?? 50}
-                onSwitchToSmtp={() => {
-                  window.sessionStorage.setItem(PENDING_PROVIDER_KEY, 'smtp');
-                  setPendingProvider('smtp');
-                }}
                 onMailboxCreated={handleMailboxCreated}
                 onChangeProvider={handleClearProvider}
               />
@@ -1377,10 +1363,9 @@ export function OnboardingDashboard() {
 }
 
 /* ============================================================================
-   Inline credentials panel. Routes by provider:
-     - gmail / outlook_oauth → OauthConnectCard (popup-based OAuth)
-     - outlook / yahoo / zoho → AppPasswordCard (clean email + app pwd form)
-     - smtp                  → SmtpConnectForm (full host/port advanced form)
+   Inline credentials panel. Routes by provider (app-password only):
+     - gmail / outlook / yahoo / zoho → AppPasswordCard (email + app pwd form)
+     - smtp                            → SmtpConnectForm (host/port form)
 ============================================================================ */
 
 interface ProviderHelp {
@@ -1437,7 +1422,7 @@ const PROVIDER_HELP: Record<HelpKey, ProviderHelp> = {
       { text: 'Copy the generated password and paste it above.' },
     ],
     footer:
-      'Work / school Microsoft 365 tenants may have legacy SMTP AUTH disabled — if the probe fails, ask your admin to enable "Authenticated SMTP" or use the Microsoft OAuth tile instead.',
+      'Work / school Microsoft 365 tenants may have legacy SMTP AUTH disabled — if the probe fails, ask your admin to enable "Authenticated SMTP" for your account.',
   },
   yahoo: {
     label: 'Yahoo Mail',
@@ -1481,6 +1466,8 @@ const PROVIDER_HELP: Record<HelpKey, ProviderHelp> = {
 
 function defaultHosts(provider: string | null) {
   switch (provider) {
+    case 'gmail':
+      return { smtp_host: 'smtp.gmail.com', smtp_port: 587, imap_host: 'imap.gmail.com', imap_port: 993 };
     case 'yahoo':
       return { smtp_host: 'smtp.mail.yahoo.com', smtp_port: 587, imap_host: 'imap.mail.yahoo.com', imap_port: 993 };
     case 'zoho':
@@ -1573,13 +1560,11 @@ function DomainHelpLinks() {
 function CredentialsPanel({
   provider,
   dailyVolume,
-  onSwitchToSmtp,
   onMailboxCreated,
   onChangeProvider,
 }: {
   provider: string | null;
   dailyVolume: number;
-  onSwitchToSmtp: () => void;
   /** Called after a successful mailbox-create. The parent uses this to
    *  reset the DNS ack flag so a stale ack from a previous flow doesn't
    *  auto-skip the user past the DNS verification step on this new
@@ -1591,20 +1576,18 @@ function CredentialsPanel({
   onChangeProvider: () => void;
 }) {
   const navigate = useNavigate();
-  const isOauth = provider === 'gmail' || provider === 'outlook_oauth';
-  const isAppPassword = provider === 'outlook' || provider === 'yahoo' || provider === 'zoho';
+  const isAppPassword =
+    provider === 'gmail' || provider === 'outlook' || provider === 'yahoo' || provider === 'zoho';
   const providerLabel =
     provider === 'gmail'
       ? 'Google'
-      : provider === 'outlook_oauth'
-        ? 'Microsoft'
-        : provider === 'outlook'
-          ? 'Outlook / Office 365'
-          : provider === 'yahoo'
-            ? 'Yahoo'
-            : provider === 'zoho'
-              ? 'Zoho Mail'
-              : 'mailbox';
+      : provider === 'outlook'
+        ? 'Outlook / Office 365'
+        : provider === 'yahoo'
+          ? 'Yahoo'
+          : provider === 'zoho'
+            ? 'Zoho Mail'
+            : 'mailbox';
 
   const createMailbox = useCreateMailbox();
   const probe = useProbeCredentials();
@@ -1683,28 +1666,12 @@ function CredentialsPanel({
   // Suppress unused-var lint until we re-add a navigate-out branch.
   void navigate;
 
-  if (isOauth) {
-    return (
-      <>
-        <DomainHelpLinks />
-        <OauthConnectCard
-          provider={provider as 'gmail' | 'outlook_oauth'}
-          label={providerLabel}
-          dailyVolume={dailyVolume}
-          onFinish={finish}
-          onSwitchToSmtp={onSwitchToSmtp}
-          onChangeProvider={onChangeProvider}
-        />
-      </>
-    );
-  }
-
   if (isAppPassword) {
     return (
       <>
         <DomainHelpLinks />
         <AppPasswordCard
-          provider={provider as 'outlook' | 'yahoo' | 'zoho'}
+          provider={(provider as 'gmail' | 'outlook' | 'yahoo' | 'zoho')}
           label={providerLabel}
           dailyVolume={dailyVolume}
           probe={probe}
@@ -1726,329 +1693,6 @@ function CredentialsPanel({
         onChangeProvider={onChangeProvider}
       />
     </>
-  );
-}
-
-/* ----- OAuth (Gmail / Outlook) ----- */
-
-/**
- * Translate the raw `error` code that the backend's mailbox-callback
- * page postMessages back into a sentence the user can act on. Codes
- * include both Google's standard OAuth error names (`access_denied`,
- * `consent_required`, etc.) and our backend's synthetic markers
- * (`token_exchange_failed`, `no_refresh_token`, `google_unreachable`).
- */
-function mapOauthError(code: string, label: string): string {
-  const lc = (code || '').toLowerCase();
-  if (lc === 'access_denied' || lc === 'consent_required') {
-    return `You declined the ${label} permission grant. Click Connect ${label} again, or use SMTP / IMAP.`;
-  }
-  if (lc === 'no_refresh_token') {
-    return `${label} did not return a refresh token. Go to your Google Account → Security → Third-party apps, remove WarmPulse if listed, and retry — Google only emits a refresh token on the first consent.`;
-  }
-  if (lc === 'token_exchange_failed') {
-    return `${label} rejected the authorization code. Check that the OAuth client's authorized redirect URI matches http://localhost:8001/api/auth/${label === 'Google' ? 'google' : 'microsoft'}/mailbox-callback exactly.`;
-  }
-  if (lc === 'google_unreachable') {
-    return `Could not reach Google. Check your network and retry.`;
-  }
-  if (lc === 'missing_code') {
-    return `${label} returned no authorization code. If you saw an "app not verified" warning, click Advanced → Continue, then grant the permissions.`;
-  }
-  return `${label} sign-in failed (${code}). Try again, or use SMTP / IMAP.`;
-}
-
-function OauthConnectCard({
-  provider,
-  label,
-  dailyVolume,
-  onFinish,
-  onSwitchToSmtp,
-  onChangeProvider,
-}: {
-  provider: 'gmail' | 'outlook_oauth';
-  label: string;
-  dailyVolume: number;
-  onFinish: (payload: Parameters<ReturnType<typeof useCreateMailbox>['mutateAsync']>[0]) => Promise<void>;
-  onSwitchToSmtp: () => void;
-  onChangeProvider: () => void;
-}) {
-  const [state, setState] = useState<'idle' | 'pending' | 'connected' | 'error'>('idle');
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [tokenInfo, setTokenInfo] = useState<{ token: string; email: string } | null>(null);
-  const popupRef = useRef<Window | null>(null);
-  const watchdogRef = useRef<number | null>(null);
-  const timeoutRef = useRef<number | null>(null);
-  const handlerRef = useRef<((e: MessageEvent) => void) | null>(null);
-  // Storage-event listener for the same-origin localStorage delivery
-  // channel. Both the popup-done route and this opener live on
-  // localhost:5173, so the localStorage bucket is shared — this is
-  // the most robust delivery path when Chrome's COOP has invalidated
-  // `window.opener` after the popup navigated through Google.
-  const storageHandlerRef = useRef<((e: StorageEvent) => void) | null>(null);
-  const successRef = useRef(false);
-
-  // Always clean up timers + global listeners on unmount so a back/forward
-  // navigation can't leak a lingering setInterval that posts state updates
-  // into an unmounted component.
-  useEffect(() => {
-    return () => {
-      if (watchdogRef.current) window.clearInterval(watchdogRef.current);
-      if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
-      if (handlerRef.current) window.removeEventListener('message', handlerRef.current);
-      if (storageHandlerRef.current)
-        window.removeEventListener('storage', storageHandlerRef.current);
-    };
-  }, []);
-
-  const cleanupWatchers = () => {
-    if (watchdogRef.current) {
-      window.clearInterval(watchdogRef.current);
-      watchdogRef.current = null;
-    }
-    if (timeoutRef.current) {
-      window.clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
-    if (handlerRef.current) {
-      window.removeEventListener('message', handlerRef.current);
-      handlerRef.current = null;
-    }
-    if (storageHandlerRef.current) {
-      window.removeEventListener('storage', storageHandlerRef.current);
-      storageHandlerRef.current = null;
-    }
-  };
-
-  const start = () => {
-    setState('pending');
-    setErrorMsg(null);
-    successRef.current = false;
-    cleanupWatchers();
-
-    const provName = provider === 'gmail' ? 'google' : 'microsoft';
-    const url = `${env.VITE_API_BASE_URL}/auth/${provName}/oauth-start?intent=mailbox`;
-    // Same-origin localStorage key the popup-done route writes the
-    // result to. Clearing first so a stale value from a prior run
-    // can't trip our watchdog before this attempt's popup completes.
-    const LS_KEY = `warmpulse.oauthResult.${provName}`;
-    try {
-      window.localStorage.removeItem(LS_KEY);
-    } catch {
-      /* private mode — proceed; postMessage path still works */
-    }
-
-    const popup = window.open(url, 'warmpulse-oauth', 'width=520,height=640');
-    popupRef.current = popup;
-    if (!popup) {
-      setState('error');
-      setErrorMsg('Popup blocked. Allow pop-ups for localhost:5173 and try again.');
-      return;
-    }
-
-    const acceptPayload = (data: {
-      type?: string;
-      token?: string;
-      email?: string;
-      error?: string;
-    }): boolean => {
-      if (data.type !== 'warmpulse:oauth') return false;
-      if (data.token) {
-        successRef.current = true;
-        setTokenInfo({ token: data.token, email: data.email ?? '' });
-        setState('connected');
-        cleanupWatchers();
-        try {
-          window.localStorage.removeItem(LS_KEY);
-        } catch {
-          /* ignore */
-        }
-        return true;
-      }
-      if (data.error) {
-        // Backend told us the OAuth flow produced an explicit error
-        // (e.g. user clicked Cancel on Google, or token exchange failed).
-        // Surface a friendly explanation rather than waiting for the
-        // generic "timed out" path.
-        successRef.current = true; // prevent the hard timeout from overwriting
-        cleanupWatchers();
-        setState('error');
-        setErrorMsg(mapOauthError(data.error, label));
-        try {
-          window.localStorage.removeItem(LS_KEY);
-        } catch {
-          /* ignore */
-        }
-        return true;
-      }
-      return false;
-    };
-
-    const handler = (event: MessageEvent) => {
-      if (!event.data || typeof event.data !== 'object') return;
-      acceptPayload(event.data as Parameters<typeof acceptPayload>[0]);
-    };
-    handlerRef.current = handler;
-    window.addEventListener('message', handler);
-
-    // Storage-event channel — fires when ANOTHER same-origin window
-    // (the popup-done route on :5173) writes to localStorage. Note: the
-    // spec says `storage` doesn't fire in the SAME window that wrote
-    // it, so we also poll the key from the watchdog below.
-    const storageHandler = (e: StorageEvent) => {
-      if (e.key !== LS_KEY || !e.newValue) return;
-      try {
-        acceptPayload(JSON.parse(e.newValue));
-      } catch {
-        /* malformed payload */
-      }
-    };
-    storageHandlerRef.current = storageHandler;
-    window.addEventListener('storage', storageHandler);
-
-    // Watchdog: poll for popup.closed AND peek localStorage every tick
-    // so we win the race even if the `storage` event was missed.
-    watchdogRef.current = window.setInterval(() => {
-      try {
-        const raw = window.localStorage.getItem(LS_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw) as Parameters<typeof acceptPayload>[0];
-          if (acceptPayload(parsed)) return;
-        }
-      } catch {
-        /* ignore parse errors */
-      }
-      const p = popupRef.current;
-      if (!p || p.closed) {
-        // Brief grace period to let an in-flight postMessage / storage
-        // event land before we declare failure.
-        window.setTimeout(() => {
-          if (successRef.current) return;
-          cleanupWatchers();
-          setState('error');
-          setErrorMsg(
-            `${label} sign-in didn't complete. If Google showed an "app not verified" screen, click Advanced → Continue. Otherwise close any open popup and try again, or use SMTP / IMAP.`,
-          );
-        }, 800);
-      }
-    }, 600);
-
-    // Hard timeout: 5 minutes. The previous 60 s budget tripped while
-    // users were still reading Google's "Google hasn't verified this
-    // app" warning page — Google injects an extra Advanced → Continue
-    // step for any unverified OAuth client requesting Gmail scopes,
-    // which can easily eat 30–90 s of real-user time. Five minutes is
-    // generous for that read-and-click path while still bounded so a
-    // forgotten popup eventually self-resolves.
-    timeoutRef.current = window.setTimeout(() => {
-      if (successRef.current) return;
-      cleanupWatchers();
-      setState('error');
-      setErrorMsg(
-        `Timed out waiting for ${label}. Close any open popup and try again, or use SMTP / IMAP instead.`,
-      );
-      try {
-        popupRef.current?.close();
-      } catch {
-        /* ignore */
-      }
-    }, 300_000);
-  };
-
-  const save = async () => {
-    if (!tokenInfo) return;
-    await onFinish({
-      provider,
-      email_address: tokenInfo.email,
-      oauth_refresh_token: tokenInfo.token,
-      oauth_token: tokenInfo.token,
-      daily_target: dailyVolume,
-      content_mode: 'A',
-    });
-  };
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.45 }}
-      className="onb-side__card"
-    >
-      <div className="onb-side__panel-head onb-side__panel-head--with-switch">
-        <div>
-          <span className="onb-side__panel-eyebrow">Step 5 · Connect {label}</span>
-          <h4 className="onb-side__title">Grant WarmPulse permission via OAuth</h4>
-        </div>
-        <button type="button" onClick={onChangeProvider} className="onb-side__switch">
-          Switch provider
-        </button>
-      </div>
-      <p className="onb-side__help-body">
-        Sign in with {label} to grant send + receive permissions. Your password never touches our
-        servers — we store an encrypted refresh token.
-      </p>
-
-      <div className="onb-oauth">
-        <div className="onb-oauth__row">
-          <span className="onb-oauth__icon">
-            <ShieldCheck size={14} strokeWidth={2} />
-          </span>
-          <div className="onb-oauth__body">
-            <div className="onb-oauth__title">Connect {label}</div>
-            <div className="onb-oauth__sub">
-              {state === 'connected' && tokenInfo
-                ? tokenInfo.email
-                : 'Opens a secure popup window'}
-            </div>
-          </div>
-          {(state === 'idle' || state === 'error') && (
-            <button type="button" onClick={start} className="onb-side__inline-cta">
-              <ExternalLink size={13} strokeWidth={2} />
-              {state === 'error' ? 'Retry' : 'Connect'}
-            </button>
-          )}
-          {state === 'pending' && (
-            <span className="onb-oauth__status">
-              <Loader2 size={13} className="animate-spin" />
-              Waiting…
-            </span>
-          )}
-          {state === 'connected' && (
-            <span className="onb-oauth__status onb-oauth__status--ok">
-              <CheckCircle2 size={13} strokeWidth={2.4} />
-              Connected
-            </span>
-          )}
-        </div>
-      </div>
-
-      {errorMsg && <p className="onb-credentials__error">{errorMsg}</p>}
-
-      {/* Always-visible escape hatch. Critical when the popup hits the
-          "OAuth is not configured on this server" backend error — there's no
-          way to recover the postMessage flow from that path, so we offer a
-          one-click pivot to SMTP / IMAP which doesn't need backend OAuth
-          credentials at all. */}
-      <button
-        type="button"
-        onClick={onSwitchToSmtp}
-        className="onb-oauth__fallback"
-      >
-        {label} not working? Use SMTP / IMAP instead
-        <ArrowRight size={12} strokeWidth={2.2} />
-      </button>
-
-      <button
-        type="button"
-        onClick={save}
-        disabled={state !== 'connected'}
-        className="onb-side__inline-cta"
-        style={state !== 'connected' ? { opacity: 0.5, pointerEvents: 'none' } : undefined}
-      >
-        Save mailbox
-        <ArrowRight size={13} strokeWidth={2.2} />
-      </button>
-    </motion.div>
   );
 }
 
@@ -2141,7 +1785,7 @@ function SmtpConnectForm({
     }
     await onFinish({
       provider: (provider === 'yahoo' ? 'yahoo' : 'smtp') as
-        | 'gmail' | 'outlook' | 'outlook_oauth' | 'yahoo' | 'zoho' | 'smtp',
+        | 'gmail' | 'outlook' | 'yahoo' | 'zoho' | 'smtp',
       email_address: email,
       daily_target: dailyVolume,
       smtp_host: smtpHost,
@@ -2316,7 +1960,7 @@ function AppPasswordCard({
   onFinish,
   onChangeProvider,
 }: {
-  provider: 'outlook' | 'yahoo' | 'zoho';
+  provider: 'gmail' | 'outlook' | 'yahoo' | 'zoho';
   label: string;
   dailyVolume: number;
   probe: ReturnType<typeof useProbeCredentials>;
@@ -2588,7 +2232,6 @@ function spfIncludeFor(provider: string | null): string {
     case 'gmail':
       return 'include:_spf.google.com';
     case 'outlook':
-    case 'outlook_oauth':
       return 'include:spf.protection.outlook.com';
     case 'yahoo':
       return 'include:_spf.mail.yahoo.com';
@@ -2605,7 +2248,6 @@ function dkimSelectorFor(provider: string | null, domain: string): { selector: s
     case 'gmail':
       return { selector: 'google', host: `google._domainkey.${domain}` };
     case 'outlook':
-    case 'outlook_oauth':
       return { selector: 'selector1', host: `selector1._domainkey.${domain}` };
     case 'yahoo':
       return { selector: 's1', host: `s1._domainkey.${domain}` };
@@ -3153,7 +2795,7 @@ function DnsWalkthrough({
       providerHint:
         provider === 'gmail'
           ? 'Google Workspace Admin → Apps → Gmail → Authenticate email → generate a 2048-bit key with selector "google", then copy the TXT value here.'
-          : provider === 'outlook' || provider === 'outlook_oauth'
+          : provider === 'outlook'
             ? 'Microsoft Defender → Email auth → DKIM → enable signing, then publish both selector1 and selector2 CNAMEs Microsoft hands you.'
             : provider === 'zoho'
               ? 'Zoho Mail Admin → Domains → Email Configuration → DKIM → generate a key with selector "zoho", copy the public key into the TXT value.'

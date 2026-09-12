@@ -6,18 +6,15 @@ import { api } from '@/lib/api';
  * Mailbox creation payload. Mirrors the shape the backend
  * will accept at POST /api/workspace/mailboxes. Plaintext SMTP password
  * travels over TLS; backend Fernet-encrypts at rest (spec §4.1).
+ * App-password (SMTP) only — OAuth mailbox connect was removed.
  */
 export interface CreateMailboxPayload {
-  provider: 'gmail' | 'outlook' | 'outlook_oauth' | 'yahoo' | 'zoho' | 'smtp';
+  provider: 'gmail' | 'outlook' | 'yahoo' | 'zoho' | 'smtp';
   email_address: string;
   /** Kept for frontend callers — mapped to backend `daily_target`. */
   daily_volume?: number;
   daily_target?: number;
   content_mode: 'A' | 'B' | 'C' | 'D';
-  // OAuth-flavoured — backend expects `oauth_refresh_token`.
-  oauth_token?: string | null;
-  oauth_refresh_token?: string | null;
-  // SMTP/IMAP-flavoured
   smtp_host?: string | null;
   smtp_port?: number | null;
   smtp_username?: string | null;
@@ -46,35 +43,22 @@ export function useCreateMailbox(): UseMutationResult<
 > {
   return useMutation<CreateMailboxResponse, unknown, CreateMailboxPayload>({
     mutationFn: async (payload) => {
-      // The wire shape is decided by what the caller supplied, not by the
-      // tile label: SMTP credentials present → SMTP/IMAP create (provider
-      // 'gmail'/'outlook'/'zoho' app-password tiles map to wire 'smtp',
-      // matching backend MailboxCreateSmtp's Literal); otherwise → OAuth
-      // refresh-token create (backend MailboxCreateOauth).
-      const isSmtp = !!payload.smtp_password || !!payload.smtp_host;
-      const wireProvider = !isSmtp
-        ? payload.provider === 'outlook_oauth'
-          ? 'outlook'
-          : payload.provider
-        : payload.provider === 'yahoo'
-          ? 'yahoo'
-          : 'smtp';
+      // SMTP/app-password only. The wire provider matches backend
+      // MailboxCreateSmtp's Literal: yahoo keeps its own value, every other
+      // tile (gmail/outlook/zoho app-password, generic) maps to 'smtp'.
+      const wireProvider = payload.provider === 'yahoo' ? 'yahoo' : 'smtp';
       const body: Record<string, unknown> = {
         provider: wireProvider,
         email_address: payload.email_address,
         content_mode: payload.content_mode,
         daily_target: payload.daily_target ?? payload.daily_volume ?? 50,
+        smtp_host: payload.smtp_host,
+        smtp_port: payload.smtp_port ?? 587,
+        smtp_username: payload.smtp_username,
+        smtp_password: payload.smtp_password,
       };
-      if (isSmtp) {
-        body.smtp_host = payload.smtp_host;
-        body.smtp_port = payload.smtp_port ?? 587;
-        body.smtp_username = payload.smtp_username;
-        body.smtp_password = payload.smtp_password;
-        if (payload.imap_host) body.imap_host = payload.imap_host;
-        if (payload.imap_port) body.imap_port = payload.imap_port;
-      } else {
-        body.oauth_refresh_token = payload.oauth_refresh_token ?? payload.oauth_token ?? '';
-      }
+      if (payload.imap_host) body.imap_host = payload.imap_host;
+      if (payload.imap_port) body.imap_port = payload.imap_port;
       const res: AxiosResponse<CreateMailboxResponse> = await api.post(
         '/workspace/mailboxes',
         body,

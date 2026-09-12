@@ -152,11 +152,6 @@ const OnboardingWizard = lazy(() => import('@/pages/onboarding/OnboardingWizard'
 const OnboardingDashboard = lazy(() => import('@/pages/onboarding/OnboardingDashboard').then((m) => ({ default: m.OnboardingDashboard })));
 
 // Same-origin landing page for the mailbox-connect OAuth popup. The
-// backend's mailbox-callback forwards the popup here with the result
-// payload base64-encoded in the URL fragment — this route owns
-// `postMessage` to the opener and `window.close()`.
-const OauthPopupDone = lazy(() => import('@/pages/OauthPopupDone').then((m) => ({ default: m.OauthPopupDone })));
-
 // Client pages
 const DashboardPage = lazy(() => import('@/pages/client/DashboardPage').then((m) => ({ default: m.DashboardPage })));
 const MailboxesPage = lazy(() => import('@/pages/client/MailboxesPage').then((m) => ({ default: m.MailboxesPage })));
@@ -307,12 +302,6 @@ export default function App() {
         {/* Maintenance screen — public, no auth, no layout. The response
             interceptor in lib/api.ts redirects here on 503 maintenance. */}
         <Route path="/maintenance" element={<MaintenancePage />} />
-
-        {/* OAuth popup last-leg landing. Unauthenticated — the popup
-            from /onboarding races back here with the result in the URL
-            fragment. No layout chrome; the route itself owns
-            postMessage to the opener + window.close(). */}
-        <Route path="/oauth/popup-done" element={<OauthPopupDone />} />
 
         {/* Public (legal) */}
         <Route element={<PublicLayout />}>

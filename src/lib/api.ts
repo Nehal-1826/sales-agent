@@ -1,0 +1,460 @@
+/**
+ * Backend connection layer — talks to the Django backend when it is running
+ * and falls back to the bundled mock data when it is not, so the frontend
+ * always works.
+ *
+ * Backend architecture (implemented in ./backend):
+ *   PYTHON → DJANGO → DATA SCHEMA → JSON → DB (POSTGRESQL)
+ *          → API ENDPOINTS → CORS → USERS / ROLES
+ */
+
+import {
+  AGENTS,
+  DEFAULT_SETTINGS,
+  MOCK_DRAFTS,
+  MOCK_LEADS,
+  MOCK_POTENTIAL,
+  MOCK_REPLIES,
+  mockResponderReply,
+} from './mockData';
+import type {
+  AgentConfig,
+  AgentKey,
+  AgentMeta,
+  ChatMessage,
+  EmailDraft,
+  Lead,
+  Potential,
+  Reply,
+  RunFrequency,
+  SettingsState,
+} from './types';
+
+/** Base URL the Django API is served from (Vite proxies /api → 127.0.0.1:8000). */
+export const API_BASE_URL: string =
+  (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_API_BASE_URL ?? '/api';
+
+const TOKEN_KEY = 'agentic-ai:token';
+const DEMO_CREDENTIALS = { username: 'operator', password: 'operator-demo-2026' };
+
+let authToken: string | null = null;
+try {
+  authToken = localStorage.getItem(TOKEN_KEY);
+} catch {
+  /* storage unavailable */
+}
+
+/* ------------------------------------------------------------------ */
+/* Backend probe + auth                                                */
+/* ------------------------------------------------------------------ */
+
+let backendReady: Promise<boolean> | null = null;
+
+async function fetchJson<T>(path: string, init?: RequestInit, timeoutMs = 5000): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (authToken) headers.Authorization = `Token ${authToken}`;
+    const res = await fetch(`${API_BASE_URL}${path}`, {
+      ...init,
+      headers: { ...headers, ...(init?.headers as Record<string, string>) },
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    return (await res.json()) as T;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Login with the demo operator account (seeded by `manage.py seed_demo`). */
+async function loginDemo(): Promise<boolean> {
+  try {
+    const data = await fetchJson<{ token: string }>('/auth/login/', {
+      method: 'POST',
+      body: JSON.stringify(DEMO_CREDENTIALS),
+    });
+    authToken = data.token;
+    try {
+      localStorage.setItem(TOKEN_KEY, data.token);
+    } catch {
+      /* ignore */
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export interface BackendHealth {
+  live: boolean;
+  authenticated: boolean;
+  database?: string;
+  user?: { username: string; role: string };
+}
+
+/**
+ * Probe the Django backend once per session: health check + demo login.
+ * Every data getter below awaits this, then chooses live data or mock data.
+ */
+export function ensureBackend(): Promise<boolean> {
+  if (!backendReady) {
+    backendReady = (async () => {
+      try {
+        const health = await fetchJson<{ status: string; database: string }>('/health/', undefined, 2500);
+        if (health.status !== 'ok') return false;
+        if (!authToken) await loginDemo();
+        return !!authToken;
+      } catch {
+        return false;
+      }
+    })();
+  }
+  return backendReady;
+}
+
+/** Re-probe (e.g. after the user starts the backend). */
+export function reprobeBackend(): Promise<boolean> {
+  backendReady = null;
+  return ensureBackend();
+}
+
+export async function getBackendHealth(): Promise<BackendHealth> {
+  const live = await ensureBackend();
+  if (!live) return { live: false, authenticated: false };
+  try {
+    const [health, user] = await Promise.all([
+      fetchJson<{ database: string }>('/health/'),
+      fetchJson<{ username: string; role: string }>('/auth/me/'),
+    ]);
+    return { live: true, authenticated: true, database: health.database, user };
+  } catch {
+    return { live: false, authenticated: false };
+  }
+}
+
+/** User shown in the sidebar — real account when live, placeholder otherwise. */
+export async function getCurrentUser(): Promise<{ name: string; role: string; mode: string }> {
+  const live = await ensureBackend();
+  if (live) {
+    try {
+      const me = await fetchJson<{ username: string; role: string }>('/auth/me/');
+      return { name: me.username, role: me.role, mode: 'authenticated' };
+    } catch {
+      /* fall through */
+    }
+  }
+  return { name: 'Operator', role: 'Owner', mode: 'mock session' };
+}
+
+/* ------------------------------------------------------------------ */
+/* Static status (used when the backend is offline)                    */
+/* ------------------------------------------------------------------ */
+
+export const BACKEND_STATUS = {
+  api: {
+    label: 'Backend API',
+    state: 'not_connected' as const,
+    detail: 'Django — start with: cd backend && python manage.py runserver',
+  },
+  data: {
+    label: 'JSON / Data schema',
+    state: 'mock' as const,
+    detail: 'Mock JSON payloads — schema mapped for PostgreSQL',
+  },
+  database: {
+    label: 'Database',
+    state: 'not_connected' as const,
+    detail: 'PostgreSQL — not connected yet',
+  },
+  endpoints: {
+    label: 'API endpoints',
+    state: 'pending' as const,
+    detail: `${API_BASE_URL}/leads · /potential · /replies · /agents · /chat · /settings`,
+  },
+  auth: {
+    label: 'Users / roles',
+    state: 'mock' as const,
+    detail: 'Mock session — planned roles: Owner, Admin, Member',
+  },
+} as const;
+
+/* ------------------------------------------------------------------ */
+/* Data access — live Django when available, mock data otherwise       */
+/* ------------------------------------------------------------------ */
+
+export async function getLeads(): Promise<Lead[]> {
+  if (await ensureBackend()) {
+    try {
+      return await fetchJson<Lead[]>('/leads/');
+    } catch {
+      /* fall back to mock */
+    }
+  }
+  return MOCK_LEADS;
+}
+
+export async function getPotential(): Promise<Potential[]> {
+  if (await ensureBackend()) {
+    try {
+      return await fetchJson<Potential[]>('/potential/');
+    } catch {
+      /* fall back to mock */
+    }
+  }
+  return MOCK_POTENTIAL;
+}
+
+export async function getReplies(): Promise<Reply[]> {
+  if (await ensureBackend()) {
+    try {
+      return await fetchJson<Reply[]>('/replies/');
+    } catch {
+      /* fall back to mock */
+    }
+  }
+  return MOCK_REPLIES;
+}
+
+export function getAgents(): AgentMeta[] {
+  return AGENTS; // static metas; live stats come via getAgentsLive()
+}
+
+export async function getAgentsLive(): Promise<AgentMeta[]> {
+  if (await ensureBackend()) {
+    try {
+      return await fetchJson<AgentMeta[]>('/agents/');
+    } catch {
+      /* fall back to static */
+    }
+  }
+  return AGENTS;
+}
+
+/* ---------------- agents page ---------------- */
+
+export async function getAgentConfig(agent: AgentKey): Promise<AgentConfig | null> {
+  if (await ensureBackend()) {
+    try {
+      return await fetchJson<AgentConfig>(`/agents/${agent}/config/`);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export async function putAgentConfig(agent: AgentKey, config: AgentConfig): Promise<boolean> {
+  if (await ensureBackend()) {
+    try {
+      await fetchJson(`/agents/${agent}/config/`, {
+        method: 'PUT',
+        body: JSON.stringify(config),
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+/* ---------------- settings page ---------------- */
+
+export async function getSettings(): Promise<SettingsState | null> {
+  if (await ensureBackend()) {
+    try {
+      return await fetchJson<SettingsState>('/settings/');
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export async function putSettings(settings: SettingsState): Promise<boolean> {
+  if (await ensureBackend()) {
+    try {
+      await fetchJson('/settings/', { method: 'PUT', body: JSON.stringify(settings) });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+export async function changePassword(current: string, next: string, confirm: string): Promise<string | null> {
+  if (await ensureBackend()) {
+    try {
+      await fetchJson('/auth/password/', {
+        method: 'POST',
+        body: JSON.stringify({ currentPassword: current, newPassword: next, confirmPassword: confirm }),
+      });
+      return null; // success
+    } catch (e) {
+      return e instanceof Error ? e.message : 'password change failed';
+    }
+  }
+  return null; // mock mode — handled by caller
+}
+
+/* ---------------- chat ---------------- */
+
+export async function getChatHistory(): Promise<ChatMessage[] | null> {
+  if (await ensureBackend()) {
+    try {
+      return await fetchJson<ChatMessage[]>('/chat/');
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export async function sendChatMessage(text: string): Promise<{ user?: ChatMessage; reply: ChatMessage }> {
+  if (await ensureBackend()) {
+    try {
+      return await fetchJson<{ userMessage: ChatMessage; reply: ChatMessage }>('/chat/', {
+        method: 'POST',
+        body: JSON.stringify({ text }),
+      });
+    } catch {
+      /* fall back to local mock */
+    }
+  }
+  const reply: ChatMessage = {
+    id: Date.now(),
+    from: 'ai',
+    text: mockResponderReply(text, text.length),
+    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+  };
+  return { reply };
+}
+
+/* ---------------- outreach — cold-email drafts ---------------- */
+
+export async function getDrafts(): Promise<EmailDraft[]> {
+  if (await ensureBackend()) {
+    try {
+      return await fetchJson<EmailDraft[]>('/drafts/');
+    } catch {
+      /* fall back to mock */
+    }
+  }
+  return MOCK_DRAFTS;
+}
+
+export async function updateDraft(
+  id: string | number,
+  patch: { subject?: string; body?: string; toEmail?: string },
+): Promise<boolean> {
+  if (await ensureBackend()) {
+    try {
+      await fetchJson(`/drafts/${id}/`, { method: 'PUT', body: JSON.stringify(patch) });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+/** Approve → the backend sends immediately (SMTP, or console when unset). */
+export async function approveDraft(id: string | number): Promise<EmailDraft | null> {
+  if (await ensureBackend()) {
+    try {
+      return await fetchJson<EmailDraft>(`/drafts/${id}/approve/`, { method: 'POST', body: '{}' });
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export async function rejectDraft(id: string | number): Promise<EmailDraft | null> {
+  if (await ensureBackend()) {
+    try {
+      return await fetchJson<EmailDraft>(`/drafts/${id}/reject/`, { method: 'POST', body: '{}' });
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export async function sendDraft(id: string | number): Promise<EmailDraft | null> {
+  if (await ensureBackend()) {
+    try {
+      return await fetchJson<EmailDraft>(`/drafts/${id}/send/`, { method: 'POST', body: '{}' });
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/* ---------------- pipeline loop ---------------- */
+
+export interface PipelineRunResult {
+  id: number;
+  notes: string[];
+  leadsCreated: number;
+  potentialsCreated: number;
+  repliesCreated: number;
+}
+
+export async function runPipeline(): Promise<PipelineRunResult | null> {
+  if (await ensureBackend()) {
+    try {
+      // a real cycle scrapes + audits up to 6 external sites — needs minutes, not seconds
+      const data = await fetchJson<{
+        id: number;
+        leads_created: number;
+        potentials_created: number;
+        replies_created: number;
+        summary: { notes: string[] };
+      }>('/pipeline/run/', { method: 'POST', body: '{}' }, 300_000);
+      return {
+        id: data.id,
+        notes: data.summary?.notes ?? [],
+        leadsCreated: data.leads_created,
+        potentialsCreated: data.potentials_created,
+        repliesCreated: data.replies_created,
+      };
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export interface PipelineStatus {
+  running: boolean;
+  frequency: RunFrequency;
+  nextRunInMinutes: number | null;
+  lastRunNotes: string[];
+}
+
+export async function getPipelineStatus(): Promise<PipelineStatus | null> {
+  if (await ensureBackend()) {
+    try {
+      const data = await fetchJson<{
+        running: boolean;
+        frequency: RunFrequency;
+        nextRunInMinutes: number | null;
+        lastRun: { summary: { notes: string[] } } | null;
+      }>('/pipeline/status/');
+      return {
+        running: data.running,
+        frequency: data.frequency,
+        nextRunInMinutes: data.nextRunInMinutes,
+        lastRunNotes: data.lastRun?.summary?.notes ?? [],
+      };
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}

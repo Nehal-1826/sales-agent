@@ -15,6 +15,7 @@ from .health import status_of
 from .mailer import send_draft, smtp_configured
 from .models import AgentConfig, AppSettings, ChatMessage, EmailDraft, Lead, PipelineRun, Potential, Reply, User
 from .pipeline import pipeline_status, run_pipeline
+from .reports import _resolve_recipients, send_daily_report
 from .serializers import (
     AgentConfigSerializer,
     AgentMetaSerializer,
@@ -196,6 +197,22 @@ def settings_view(request):
         serializer.save()
         return Response(serializer.data)
     return Response(SettingsSerializer(obj).data)
+
+
+@api_view(['POST'])
+def report_test(request):
+    """Send the daily report right now — verifies the admin email + SMTP setup.
+
+    Delivery mirrors the 20:00 IST scheduler: real SMTP when configured,
+    console delivery (printed to the Django server log) when not.
+    """
+    recipients = _resolve_recipients()
+    report_status, subject = send_daily_report()
+    return Response({
+        'status': report_status,  # 'smtp' | 'console' | 'skipped'
+        'subject': subject,
+        'recipients': recipients,
+    })
 
 
 # ------------------------------------------------------------------

@@ -24,8 +24,8 @@ export function Dashboard({ onNavigate, live }: { onNavigate: (p: PageKey) => vo
           </button>
         </div>
         <p className="panel-note">
-          Every lead with its state + country — click a column header to sort, use the
-          dropdowns to filter state/country wise (same controls as the Django Admin).
+          Leads discovered worldwide — click a column header to sort, or combine the filters:
+          search, industry, country/state, web presence, contact availability and minimum score.
         </p>
         <LeadsGeo />
       </section>

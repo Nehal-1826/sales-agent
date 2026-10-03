@@ -79,12 +79,11 @@ export interface Reply {
   lastActivity: string;
 }
 
-/** AGENTS page — per-agent configuration (DB / API / SYSTEM PROMPTS / NEGATIVE / MODEL). */
+/** AGENTS page — per-agent configuration (API / SYSTEM PROMPTS / NEGATIVE / MODEL).
+ *  The DB is always MongoDB — fixed by the backend, nothing to set in the UI. */
 export interface AgentConfig {
   db: {
-    provider: 'postgresql' | 'mongodb';
-    name: string; // database / collection
-    connection: string; // placeholder connection string (never sent anywhere yet)
+    provider: 'mongodb';
   };
   api: {
     url: string;
@@ -123,11 +122,17 @@ export interface FrequentRuns {
   frequency: RunFrequency;
 }
 
+/** Daily report — admin email(s) the 8 PM IST report is sent to. */
+export interface ReportConfig {
+  email: string; // comma-separated allowed
+}
+
 export interface SettingsState {
   company: CompanyProfile;
   aiKey: AiKeyConfig;
   smtp: SmtpConfig;
   runs: FrequentRuns;
+  report: ReportConfig;
 }
 
 /** CHAT page. */

@@ -14,6 +14,14 @@ const COLUMNS: { key: SortKey; label: string; className?: string }[] = [
   { key: 'country', label: 'Country' },
 ];
 
+const SCORE_FILTERS = [
+  { value: '0', label: 'Any score' },
+  { value: '40', label: '40+' },
+  { value: '55', label: '55+' },
+  { value: '65', label: '65+ (potential)' },
+  { value: '80', label: '80+ (hot)' },
+];
+
 function scoreTone(score: number): 'success' | 'warn' | 'accent' {
   if (score >= 80) return 'success';
   if (score >= 65) return 'warn';
@@ -21,16 +29,22 @@ function scoreTone(score: number): 'success' | 'warn' | 'accent' {
 }
 
 /**
- * LEADS · REGION — every lead with its state + country, sortable column-wise
- * and filterable state/country wise (mirrors the Django Admin lead list).
+ * LEADS · REGION — every lead with its region + audit metadata. Sortable
+ * column-wise; filter by search text, industry, country/state, web presence,
+ * contact availability and minimum score (mirrors the Django Admin filters).
  */
 export function LeadsGeo({ refreshToken = 0 }: { refreshToken?: number }) {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>('score');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [search, setSearch] = useState('');
+  const [industry, setIndustry] = useState('');
   const [country, setCountry] = useState(''); // '' = all
   const [state, setState] = useState(''); // '' = all
+  const [presence, setPresence] = useState(''); // '' | 'website' | 'no-website'
+  const [contact, setContact] = useState(''); // '' | 'has' | 'missing'
+  const [minScore, setMinScore] = useState(0);
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -48,15 +62,59 @@ export function LeadsGeo({ refreshToken = 0 }: { refreshToken?: number }) {
     () => [...new Set(leads.map((l) => l.country).filter(Boolean))].sort(),
     [leads],
   );
+  // states scoped to the selected country (all states when no country chosen)
   const states = useMemo(
-    () => [...new Set(leads.map((l) => l.state).filter(Boolean))].sort(),
+    () => [
+      ...new Set(
+        leads
+          .filter((l) => !country || l.country === country)
+          .map((l) => l.state)
+          .filter(Boolean),
+      ),
+    ].sort(),
+    [leads, country],
+  );
+  const industries = useMemo(
+    () => [...new Set(leads.map((l) => l.industry).filter(Boolean))].sort(),
     [leads],
   );
 
+  // keep State valid when the country changes (its state list shrank)
+  useEffect(() => {
+    if (state && !states.includes(state)) setState('');
+  }, [states, state]);
+
+  const activeFilters =
+    (search ? 1 : 0) + (industry ? 1 : 0) + (country ? 1 : 0) + (state ? 1 : 0) +
+    (presence ? 1 : 0) + (contact ? 1 : 0) + (minScore > 0 ? 1 : 0);
+
+  const resetFilters = () => {
+    setSearch('');
+    setIndustry('');
+    setCountry('');
+    setState('');
+    setPresence('');
+    setContact('');
+    setMinScore(0);
+  };
+
   const visible = useMemo(() => {
-    const rows = leads.filter(
-      (l) => (!country || l.country === country) && (!state || l.state === state),
-    );
+    const q = search.trim().toLowerCase();
+    const rows = leads.filter((l) => {
+      if (country && l.country !== country) return false;
+      if (state && l.state !== state) return false;
+      if (industry && l.industry !== industry) return false;
+      if (presence === 'website' && !l.hasWebsite) return false;
+      if (presence === 'no-website' && l.hasWebsite) return false;
+      if (contact === 'has' && !l.contactEmail) return false;
+      if (contact === 'missing' && l.contactEmail) return false;
+      if (l.score < minScore) return false;
+      if (q) {
+        const hay = `${l.company} ${l.website} ${l.contactEmail} ${l.industry}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
     const dir = sortDir === 'asc' ? 1 : -1;
     return [...rows].sort((a, b) => {
       const va = (a[sortKey] ?? '').toString().toLowerCase();
@@ -68,7 +126,7 @@ export function LeadsGeo({ refreshToken = 0 }: { refreshToken?: number }) {
       if (!vb) return -1;
       return va.localeCompare(vb) * dir;
     });
-  }, [leads, country, state, sortKey, sortDir]);
+  }, [leads, search, industry, country, state, presence, contact, minScore, sortKey, sortDir]);
 
   const toggleSort = (key: SortKey) => {
     if (key === sortKey) {
@@ -84,6 +142,24 @@ export function LeadsGeo({ refreshToken = 0 }: { refreshToken?: number }) {
   return (
     <div className="leads-geo">
       <div className="leads-geo-filters">
+        <label>
+          Search
+          <input
+            className="select-sm"
+            placeholder="company, site or email…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </label>
+        <label>
+          Industry
+          <select className="input select-sm" value={industry} onChange={(e) => setIndustry(e.target.value)}>
+            <option value="">All ({industries.length})</option>
+            {industries.map((i) => (
+              <option key={i} value={i}>{i}</option>
+            ))}
+          </select>
+        </label>
         <label>
           Country
           <select className="input select-sm" value={country} onChange={(e) => setCountry(e.target.value)}>
@@ -102,6 +178,39 @@ export function LeadsGeo({ refreshToken = 0 }: { refreshToken?: number }) {
             ))}
           </select>
         </label>
+        <label>
+          Web presence
+          <select className="input select-sm" value={presence} onChange={(e) => setPresence(e.target.value)}>
+            <option value="">All</option>
+            <option value="website">Has website</option>
+            <option value="no-website">No website</option>
+          </select>
+        </label>
+        <label>
+          Contact
+          <select className="input select-sm" value={contact} onChange={(e) => setContact(e.target.value)}>
+            <option value="">All</option>
+            <option value="has">Has email</option>
+            <option value="missing">Missing email</option>
+          </select>
+        </label>
+        <label>
+          Min score
+          <select
+            className="input select-sm"
+            value={minScore}
+            onChange={(e) => setMinScore(Number(e.target.value))}
+          >
+            {SCORE_FILTERS.map((s) => (
+              <option key={s.value} value={s.value}>{s.label}</option>
+            ))}
+          </select>
+        </label>
+        {activeFilters > 0 && (
+          <button className="btn btn-ghost" onClick={resetFilters}>
+            Clear filters ({activeFilters})
+          </button>
+        )}
         <span className="leads-geo-count">
           {visible.length} of {leads.length} leads
         </span>

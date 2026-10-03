@@ -170,8 +170,8 @@ class AgentConfig(Timestamped):
         RESPONDER = 'responder', 'Responder (Chatbot)'
 
     agent = models.CharField(max_length=20, choices=Agents.choices, unique=True)
-    # DB
-    db_provider = models.CharField(max_length=20, default='postgresql')
+    # DB — MongoDB only (not editable from the UI)
+    db_provider = models.CharField(max_length=20, default='mongodb')
     db_name = models.CharField(max_length=200, blank=True)
     db_connection = models.CharField(max_length=500, blank=True)
     # API

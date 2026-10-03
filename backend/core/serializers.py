@@ -124,7 +124,7 @@ class AgentConfigSerializer(serializers.ModelSerializer):
     def update(self, instance, validated):
         db = validated.get('db') or {}
         api = validated.get('api') or {}
-        instance.db_provider = db.get('provider', instance.db_provider)
+        instance.db_provider = 'mongodb'  # the only provider — not configurable
         instance.db_name = db.get('name', instance.db_name)
         instance.db_connection = db.get('connection', instance.db_connection)
         instance.api_url = api.get('url', instance.api_url)

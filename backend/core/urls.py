@@ -27,6 +27,8 @@ urlpatterns = [
     path('agents/<str:agent_key>/config/', views.agent_config, name='agent-config'),
     # settings
     path('settings/', views.settings_view, name='settings'),
+    # daily report — send now (same delivery as the 20:00 IST scheduler)
+    path('report/test/', views.report_test, name='report-test'),
     # outreach — cold-email drafts (approve → send)
     path('drafts/', views.drafts, name='drafts'),
     path('drafts/<int:draft_id>/', views.draft_detail, name='draft-detail'),

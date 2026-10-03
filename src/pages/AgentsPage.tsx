@@ -48,8 +48,6 @@ export function AgentsPage() {
   const patch = (p: Partial<AgentConfig>) =>
     setConfigs((prev) => ({ ...prev, [agent]: { ...prev[agent], ...p } }));
 
-  const patchDb = (p: Partial<AgentConfig['db']>) =>
-    patch({ db: { ...config.db, ...p } });
   const patchApi = (p: Partial<AgentConfig['api']>) =>
     patch({ api: { ...config.api, ...p } });
 
@@ -118,24 +116,13 @@ export function AgentsPage() {
             <section className="panel config-panel">
               <SectionLabel>DB</SectionLabel>
               <Field label="Provider">
-                <select
-                  value={config.db.provider}
-                  onChange={(e) => patchDb({ provider: e.target.value as AgentConfig['db']['provider'] })}
-                >
-                  <option value="postgresql">PostgreSQL</option>
-                  <option value="mongodb">MongoDB</option>
-                </select>
+                <div className="static-input">
+                  <span className="status-dot dot-success" /> MongoDB — the only provider
+                </div>
               </Field>
-              <Field label="Database / collection">
-                <input value={config.db.name} onChange={(e) => patchDb({ name: e.target.value })} />
-              </Field>
-              <Field label="Connection string" hint="Served by the backend — nothing connects from the browser.">
-                <input
-                  className="mono"
-                  value={config.db.connection}
-                  onChange={(e) => patchDb({ connection: e.target.value })}
-                />
-              </Field>
+              <small className="inline-msg">
+                Storage is managed by the backend — there is nothing to set here.
+              </small>
             </section>
 
             <section className="panel config-panel">

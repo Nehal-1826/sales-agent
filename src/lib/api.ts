@@ -300,6 +300,21 @@ export async function changePassword(current: string, next: string, confirm: str
   return null; // mock mode — handled by caller
 }
 
+/** Send the daily report right now — verifies the admin email + SMTP setup. */
+export async function sendTestReport(): Promise<{
+  status: 'smtp' | 'console' | 'skipped';
+  recipients: string[];
+} | null> {
+  if (await ensureBackend()) {
+    try {
+      return await fetchJson('/report/test/', { method: 'POST', body: '{}' }, 60000);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 /* ---------------- chat ---------------- */
 
 export async function getChatHistory(): Promise<ChatMessage[] | null> {

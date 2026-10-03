@@ -1,11 +1,17 @@
 import { useEffect, useState } from 'react';
 import { DEFAULT_SETTINGS } from '../lib/mockData';
-import { changePassword, getSettings, putSettings } from '../lib/api';
+import { changePassword, getSettings, putSettings, sendTestReport } from '../lib/api';
 import { loadJson, saveJson } from '../lib/store';
 import { Field, PageHeader, SectionLabel, Spinner, Toggle } from '../components/ui';
 import type { RunFrequency, SettingsState } from '../lib/types';
 
 const STORE_KEY = 'settings';
+
+/** Merge stored (possibly stale) settings with defaults so new keys always exist. */
+function loadSettings(): SettingsState {
+  const stored = loadJson<Partial<SettingsState>>(STORE_KEY, {});
+  return { ...DEFAULT_SETTINGS, ...stored, report: stored.report ?? DEFAULT_SETTINGS.report };
+}
 
 const RUN_OPTIONS: { value: RunFrequency; label: string; hint: string }[] = [
   { value: '15m', label: 'Every 15 minutes', hint: 'Highest discovery cadence' },
@@ -20,13 +26,15 @@ const RUN_OPTIONS: { value: RunFrequency; label: string; hint: string }[] = [
  * Persisted on the backend when Django is live, localStorage otherwise.
  */
 export function SettingsPage() {
-  const [settings, setSettings] = useState<SettingsState>(() => loadJson(STORE_KEY, DEFAULT_SETTINGS));
+  const [settings, setSettings] = useState<SettingsState>(loadSettings);
   const [saved, setSaved] = useState(false);
   const [live, setLive] = useState(false);
   const [loading, setLoading] = useState(true);
   const [password, setPassword] = useState({ current: '', next: '', confirm: '' });
   const [passwordMsg, setPasswordMsg] = useState('');
   const [showKey, setShowKey] = useState(false);
+  const [reportMsg, setReportMsg] = useState('');
+  const [sendingReport, setSendingReport] = useState(false);
 
   useEffect(() => {
     getSettings().then((remote) => {
@@ -37,6 +45,7 @@ export function SettingsPage() {
           aiKey: remote.aiKey,
           smtp: remote.smtp ?? DEFAULT_SETTINGS.smtp,
           runs: remote.runs,
+          report: remote.report ?? DEFAULT_SETTINGS.report,
         });
       }
       setLoading(false);
@@ -80,6 +89,24 @@ export function SettingsPage() {
   };
   const removeService = (name: string) =>
     setSettings((s) => ({ ...s, company: { ...s.company, services: s.company.services.filter((x) => x !== name) } }));
+
+  const sendReportNow = async () => {
+    setSendingReport(true);
+    setReportMsg('');
+    const res = await sendTestReport();
+    setSendingReport(false);
+    if (!res) {
+      setReportMsg('Backend not reachable — start Django and try again.');
+      return;
+    }
+    if (res.status === 'smtp') {
+      setReportMsg(`Sent ✓ — emailed to ${res.recipients.join(', ')}`);
+    } else if (res.status === 'console') {
+      setReportMsg(`SMTP not configured — report printed to the Django console (recipients: ${res.recipients.join(', ') || 'none'}).`);
+    } else {
+      setReportMsg('No recipient — enter an admin email above and save first.');
+    }
+  };
 
   return (
     <div className="page">
@@ -220,7 +247,33 @@ export function SettingsPage() {
         </div>
       </section>
 
-      {/* 4 — PASSWORD */}
+      {/* 4 — DAILY REPORT (admin email) */}
+      <section className="panel settings-panel">
+        <SectionLabel>Daily Report</SectionLabel>
+        <small className="inline-msg">
+          The full pipeline report (leads scraped, potentials, cycles) is emailed here every day at
+          8:00 PM IST. Leave blank to fall back to the account&apos;s admin email. Multiple
+          addresses: separate with commas.
+        </small>
+        <div className="settings-grid">
+          <Field label="Admin Email">
+            <input
+              className="mono"
+              placeholder="admin@company.com"
+              value={settings.report.email}
+              onChange={(e) => setSettings((s) => ({ ...s, report: { email: e.target.value } }))}
+            />
+          </Field>
+        </div>
+        <div className="settings-row">
+          <button className="btn" onClick={sendReportNow} disabled={sendingReport}>
+            {sendingReport ? 'Sending…' : 'Send Test Report Now'}
+          </button>
+          {reportMsg && <small className="inline-msg">{reportMsg}</small>}
+        </div>
+      </section>
+
+      {/* 5 — PASSWORD */}
       <section className="panel settings-panel">
         <SectionLabel>Password</SectionLabel>
         <div className="settings-grid three">
@@ -254,7 +307,7 @@ export function SettingsPage() {
         </div>
       </section>
 
-      {/* 5 — FREQUENT RUNS */}
+      {/* 6 — FREQUENT RUNS */}
       <section className="panel settings-panel">
         <SectionLabel>Frequent Runs</SectionLabel>
         <div className="settings-row">

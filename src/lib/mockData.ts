@@ -332,7 +332,7 @@ export const MOCK_REPLIES: Reply[] = [
 
 export const DEFAULT_AGENT_CONFIGS: Record<AgentKey, AgentConfig> = {
   search: {
-    db: { provider: 'postgresql', name: 'agentic.leads', connection: 'postgresql://localhost:5432/agentic' },
+    db: { provider: 'mongodb' },
     api: { url: 'https://example.com/discovery-api', auth: 'Bearer ••••' },
     systemPrompt:
       'You are the Search (Scrape) agent in an autonomous marketing & sales pipeline.\n' +
@@ -346,7 +346,7 @@ export const DEFAULT_AGENT_CONFIGS: Record<AgentKey, AgentConfig> = {
     model: 'GLM-4.6',
   },
   profile: {
-    db: { provider: 'postgresql', name: 'agentic.profiles', connection: 'postgresql://localhost:5432/agentic' },
+    db: { provider: 'mongodb' },
     api: { url: 'https://example.com/enrichment-api', auth: 'Bearer ••••' },
     systemPrompt:
       'You are the Profile agent.\n' +
@@ -360,7 +360,7 @@ export const DEFAULT_AGENT_CONFIGS: Record<AgentKey, AgentConfig> = {
     model: 'GLM-4.6',
   },
   copywright: {
-    db: { provider: 'mongodb', name: 'agentic.campaigns', connection: 'mongodb://localhost:27017/agentic' },
+    db: { provider: 'mongodb' },
     api: { url: 'https://example.com/send-api', auth: 'Bearer ••••' },
     systemPrompt:
       'You are the Copywright agent.\n' +
@@ -374,7 +374,7 @@ export const DEFAULT_AGENT_CONFIGS: Record<AgentKey, AgentConfig> = {
     model: 'GLM-4.6',
   },
   responder: {
-    db: { provider: 'mongodb', name: 'agentic.conversations', connection: 'mongodb://localhost:27017/agentic' },
+    db: { provider: 'mongodb' },
     api: { url: 'https://example.com/inbound-api', auth: 'Bearer ••••' },
     systemPrompt:
       'You are the Responder (Chatbot) agent.\n' +
@@ -407,6 +407,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   aiKey: { provider: 'OpenAI', apiKey: '' },
   smtp: { host: '', port: '587', user: '', password: '', from: '' },
   runs: { enabled: true, frequency: '1h' },
+  report: { email: '' },
 };
 
 /* ------------------------------------------------------------------ */

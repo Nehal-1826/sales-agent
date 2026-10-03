@@ -38,6 +38,27 @@ BLOCKED_DOMAINS = {
     'microsoft.com', 'britannica.com', 'quora.com', 'pinterest.com', 'tiktok.com',
     'crunchbase.com', 'bloomberg.com', 'forbes.com', 'indeed.com', 'glassdoor.com',
     'booking.com', 'expedia.com', 'trustpilot.com', 'justdial.com',
+    # messaging / comms platforms that surface in agency & SaaS SERPs
+    'whatsapp.com', 'telegram.org', 'signal.org', 'discord.com', 'slack.com',
+    'zoom.us', 'teams.microsoft.com', 'wechat.com', 'qq.com', 'line.me',
+    'kakao.com', 'naver.com', 'baidu.com', 'yandex.com', 'yandex.ru', 'mail.ru',
+    # AI / productivity platforms — not prospects
+    'openai.com', 'chatgpt.com', 'anthropic.com', 'claude.ai', 'deepseek.com',
+    'perplexity.ai', 'x.ai', 'grok.com', 'mistral.ai', 'meta.com', 'threads.net',
+    'notion.so', 'canva.com', 'figma.com', 'webflow.com', 'miro.com',
+    # agencies-of-aggregators: lead directories dressed as agencies
+    'sortlist.com', 'toptal.com', 'topagency.com', 'upcity.com', 'promotify.com',
+    # portfolio / creative communities — not company homepages
+    'behance.net', 'dribbble.com', 'artstation.com', 'deviantart.com',
+    # freelance marketplaces
+    'freelancer.com', 'peopleperhour.com', 'thumbtack.com', 'guru.com',
+    # SEO / ranking directories
+    '10seos.com', 'goodfirms.co', 'topseos.com', 'themanifest.com',
+    'semrush.com', 'ahrefs.com', 'moz.com', 'similarweb.com',
+    # AI site/presentation builders
+    'gamma.app', 'tome.app', 'beautiful.ai', 'framer.com', 'wixstudio.com',
+    # hosting / infra
+    'godaddy.com', 'namecheap.com', 'hostinger.com', 'cloudflare.com', 'dynadot.com',
     # e-commerce / site platforms
     'shopify.com', 'woocommerce.com', 'wix.com', 'squarespace.com', 'wordpress.com',
     'wordpress.org', 'bigcommerce.com', 'etsy.com', 'ebay.com', 'alibaba.com',
@@ -60,52 +81,219 @@ BLOCKED_DOMAINS = {
     'zalando.com', 'aboutyou.com', 'otto.de', 'aldi.com', 'lidl.com', 'rewe.de',
 }
 
-# Worldwide rotation: industries × regions, one slice per pipeline cycle.
+# Worldwide rotation — 120 countries across all six inhabited continents,
+# plus flagship metros (metro queries give state/region granularity via
+# GLOBAL_CITY_STATE below).  One slice per cycle-step, n regions per cycle.
+REGIONS = [
+    # Europe (38)
+    'Germany', 'United Kingdom', 'France', 'Netherlands', 'Spain', 'Italy',
+    'Ireland', 'Portugal', 'Belgium', 'Switzerland', 'Austria', 'Sweden',
+    'Norway', 'Denmark', 'Finland', 'Iceland', 'Poland', 'Czech Republic',
+    'Slovakia', 'Hungary', 'Romania', 'Bulgaria', 'Greece', 'Croatia',
+    'Slovenia', 'Serbia', 'Ukraine', 'Estonia', 'Latvia', 'Lithuania',
+    'Luxembourg', 'Malta', 'Cyprus', 'Albania', 'North Macedonia',
+    'Bosnia and Herzegovina', 'Moldova', 'Montenegro',
+    # North America (13)
+    'United States', 'Canada', 'Mexico', 'Costa Rica', 'Panama', 'Guatemala',
+    'Honduras', 'El Salvador', 'Nicaragua', 'Dominican Republic', 'Jamaica',
+    'Trinidad and Tobago', 'Puerto Rico',
+    # South America (10)
+    'Brazil', 'Argentina', 'Chile', 'Colombia', 'Peru', 'Ecuador', 'Uruguay',
+    'Paraguay', 'Bolivia', 'Venezuela',
+    # Asia (30)
+    'India', 'China', 'Japan', 'South Korea', 'Taiwan', 'Hong Kong',
+    'Singapore', 'Malaysia', 'Thailand', 'Vietnam', 'Philippines',
+    'Indonesia', 'Pakistan', 'Bangladesh', 'Sri Lanka', 'Nepal', 'Cambodia',
+    'Myanmar', 'Mongolia', 'Kazakhstan', 'Uzbekistan', 'Azerbaijan',
+    'Israel', 'UAE', 'Saudi Arabia', 'Qatar', 'Kuwait', 'Bahrain', 'Oman',
+    'Jordan', 'Lebanon', 'Turkey',
+    # Africa (24)
+    'South Africa', 'Nigeria', 'Kenya', 'Egypt', 'Morocco', 'Ghana',
+    'Tanzania', 'Uganda', 'Ethiopia', 'Rwanda', 'Zambia', 'Zimbabwe',
+    'Botswana', 'Namibia', 'Mozambique', 'Senegal', 'Ivory Coast',
+    'Cameroon', 'Tunisia', 'Algeria', 'Mauritius', 'Angola', 'Malawi',
+    'Libya',
+    # Oceania (4)
+    'Australia', 'New Zealand', 'Fiji', 'Papua New Guinea',
+    # Metro queries — state/region-level leads in the biggest markets
+    # (every city here is in GLOBAL_CITY_STATE so the lead gets its state).
+    'New York, USA', 'Austin, USA', 'Chicago, USA', 'Los Angeles, USA',
+    'San Francisco, USA', 'London, UK', 'Manchester, UK', 'Toronto, Canada',
+    'Mexico City, Mexico', 'Sao Paulo, Brazil', 'Buenos Aires, Argentina',
+    'Santiago, Chile', 'Lima, Peru', 'Bogota, Colombia',
+    'Berlin, Germany', 'Munich, Germany', 'Paris, France', 'Barcelona, Spain',
+    'Milan, Italy', 'Amsterdam, Netherlands', 'Brussels, Belgium',
+    'Zurich, Switzerland', 'Vienna, Austria', 'Stockholm, Sweden',
+    'Warsaw, Poland', 'Istanbul, Turkey', 'Mumbai, India', 'Dubai, UAE',
+    'Riyadh, Saudi Arabia', 'Doha, Qatar', 'Tokyo, Japan', 'Seoul, South Korea',
+    'Kuala Lumpur, Malaysia', 'Bangkok, Thailand', 'Jakarta, Indonesia',
+    'Manila, Philippines', 'Ho Chi Minh City, Vietnam', 'Lagos, Nigeria',
+    'Nairobi, Kenya', 'Cairo, Egypt', 'Casablanca, Morocco',
+    'Johannesburg, South Africa', 'Cape Town, South Africa',
+    'Sydney, Australia', 'Melbourne, Australia', 'Brisbane, Australia',
+    'Auckland, New Zealand',
+]
+
+# Worldwide rotation: industries × regions, one slice per pipeline step.
 INDUSTRY_QUERIES = [
     'web design agency', 'digital marketing agency', 'SaaS startup',
     'e-commerce brand', 'boutique law firm', 'dental clinic', 'real estate agency',
     'construction company', 'boutique hotel', 'fitness studio', 'IT consulting firm',
     'restaurant group', 'logistics company', 'architecture studio',
 ]
-REGIONS = ['Germany', 'United Kingdom', 'United States', 'India', 'Netherlands',
-           'Canada', 'Australia', 'Singapore', 'UAE', 'South Africa', 'Ireland', 'Spain']
+
+# Region detection — state + country for each lead, from the discovery query
+# (e.g. 'dental clinic Salem Tamil Nadu' or 'hotels in Austin, USA') with the
+# site TLD as fallback.
+GLOBAL_CITY_STATE = {
+    # India
+    'salem': ('Tamil Nadu', 'India'), 'chennai': ('Tamil Nadu', 'India'),
+    'coimbatore': ('Tamil Nadu', 'India'), 'madurai': ('Tamil Nadu', 'India'),
+    'trichy': ('Tamil Nadu', 'India'), 'erode': ('Tamil Nadu', 'India'),
+    'mumbai': ('Maharashtra', 'India'), 'pune': ('Maharashtra', 'India'),
+    'nagpur': ('Maharashtra', 'India'), 'bengaluru': ('Karnataka', 'India'),
+    'bangalore': ('Karnataka', 'India'), 'mysuru': ('Karnataka', 'India'),
+    'hyderabad': ('Telangana', 'India'), 'delhi': ('Delhi', 'India'),
+    'noida': ('Uttar Pradesh', 'India'), 'ahmedabad': ('Gujarat', 'India'),
+    'surat': ('Gujarat', 'India'), 'jaipur': ('Rajasthan', 'India'),
+    'kolkata': ('West Bengal', 'India'), 'kochi': ('Kerala', 'India'),
+    'visakhapatnam': ('Andhra Pradesh', 'India'),
+    # United States + Canada
+    'new york': ('New York', 'United States'), 'san francisco': ('California', 'United States'),
+    'los angeles': ('California', 'United States'), 'san diego': ('California', 'United States'),
+    'chicago': ('Illinois', 'United States'), 'austin': ('Texas', 'United States'),
+    'dallas': ('Texas', 'United States'), 'houston': ('Texas', 'United States'),
+    'seattle': ('Washington', 'United States'), 'boston': ('Massachusetts', 'United States'),
+    'miami': ('Florida', 'United States'), 'atlanta': ('Georgia', 'United States'),
+    'denver': ('Colorado', 'United States'), 'phoenix': ('Arizona', 'United States'),
+    'philadelphia': ('Pennsylvania', 'United States'),
+    'toronto': ('Ontario', 'Canada'), 'vancouver': ('British Columbia', 'Canada'),
+    'montreal': ('Quebec', 'Canada'), 'calgary': ('Alberta', 'Canada'),
+    # United Kingdom + Ireland
+    'london': ('England', 'United Kingdom'), 'manchester': ('England', 'United Kingdom'),
+    'birmingham': ('England', 'United Kingdom'), 'glasgow': ('Scotland', 'United Kingdom'),
+    'edinburgh': ('Scotland', 'United Kingdom'), 'dublin': ('Leinster', 'Ireland'),
+    # Europe
+    'berlin': ('Berlin', 'Germany'), 'munich': ('Bavaria', 'Germany'),
+    'münchen': ('Bavaria', 'Germany'), 'munchen': ('Bavaria', 'Germany'),
+    'hamburg': ('Hamburg', 'Germany'), 'frankfurt': ('Hesse', 'Germany'),
+    'stuttgart': ('Baden-Württemberg', 'Germany'), 'cologne': ('North Rhine-Westphalia', 'Germany'),
+    'amsterdam': ('North Holland', 'Netherlands'), 'rotterdam': ('South Holland', 'Netherlands'),
+    'paris': ('Île-de-France', 'France'), 'madrid': ('Madrid', 'Spain'),
+    'barcelona': ('Catalonia', 'Spain'), 'lisbon': ('Lisbon', 'Portugal'),
+    'rome': ('Lazio', 'Italy'), 'milan': ('Lombardy', 'Italy'),
+    'zurich': ('Zurich', 'Switzerland'), 'vienna': ('Vienna', 'Austria'),
+    'stockholm': ('Stockholm', 'Sweden'), 'copenhagen': ('Capital Region', 'Denmark'),
+    'oslo': ('Oslo', 'Norway'), 'helsinki': ('Uusimaa', 'Finland'),
+    'warsaw': ('Masovia', 'Poland'), 'prague': ('Prague', 'Czech Republic'),
+    'bucharest': ('Bucharest', 'Romania'), 'athens': ('Attica', 'Greece'),
+    # Middle East + Asia
+    'dubai': ('Dubai', 'UAE'), 'abu dhabi': ('Abu Dhabi', 'UAE'),
+    'riyadh': ('Riyadh', 'Saudi Arabia'), 'doha': ('Doha', 'Qatar'),
+    'istanbul': ('Istanbul', 'Turkey'), 'tel aviv': ('Tel Aviv', 'Israel'),
+    'tokyo': ('Tokyo', 'Japan'), 'osaka': ('Osaka', 'Japan'),
+    'seoul': ('Seoul', 'South Korea'), 'beijing': ('Beijing', 'China'),
+    'shanghai': ('Shanghai', 'China'), 'hong kong': ('Hong Kong', 'Hong Kong'),
+    'jakarta': ('Jakarta', 'Indonesia'), 'kuala lumpur': ('Selangor', 'Malaysia'),
+    'bangkok': ('Bangkok', 'Thailand'), 'ho chi minh': ('Ho Chi Minh City', 'Vietnam'),
+    'manila': ('Metro Manila', 'Philippines'), 'karachi': ('Sindh', 'Pakistan'),
+    'dhaka': ('Dhaka', 'Bangladesh'),
+    # Africa
+    'cape town': ('Western Cape', 'South Africa'), 'johannesburg': ('Gauteng', 'South Africa'),
+    'durban': ('KwaZulu-Natal', 'South Africa'), 'lagos': ('Lagos', 'Nigeria'),
+    'nairobi': ('Nairobi', 'Kenya'), 'cairo': ('Cairo', 'Egypt'),
+    'casablanca': ('Casablanca-Settat', 'Morocco'), 'accra': ('Greater Accra', 'Ghana'),
+    # South America + Oceania
+    'sao paulo': ('São Paulo', 'Brazil'), 'são paulo': ('São Paulo', 'Brazil'),
+    'rio de janeiro': ('Rio de Janeiro', 'Brazil'), 'buenos aires': ('Buenos Aires', 'Argentina'),
+    'santiago': ('Santiago', 'Chile'), 'bogota': ('Bogotá', 'Colombia'),
+    'mexico city': ('Mexico City', 'Mexico'),
+    'sydney': ('New South Wales', 'Australia'), 'melbourne': ('Victoria', 'Australia'),
+    'brisbane': ('Queensland', 'Australia'), 'perth': ('Western Australia', 'Australia'),
+    'adelaide': ('South Australia', 'Australia'), 'auckland': ('Auckland', 'New Zealand'),
+    'brussels': ('Brussels', 'Belgium'), 'lima': ('Lima', 'Peru'),
+}
+CITY_RE = {c: re.compile(rf'\b{re.escape(c)}\b') for c in GLOBAL_CITY_STATE}
+
+# Unambiguous ccTLDs for the last-resort country guess.  Deliberately excluded:
+# .co/.io/.ai/.tv/.me (commercial tech domains that would mislabel leads).
+TLD_COUNTRY = {
+    # Europe
+    '.in': 'India', '.de': 'Germany', '.uk': 'United Kingdom', '.us': 'United States',
+    '.au': 'Australia', '.ca': 'Canada', '.nl': 'Netherlands', '.sg': 'Singapore',
+    '.ae': 'UAE', '.ie': 'Ireland', '.es': 'Spain', '.za': 'South Africa',
+    '.fr': 'France', '.it': 'Italy', '.pt': 'Portugal', '.be': 'Belgium',
+    '.ch': 'Switzerland', '.at': 'Austria', '.se': 'Sweden', '.no': 'Norway',
+    '.dk': 'Denmark', '.fi': 'Finland', '.pl': 'Poland', '.cz': 'Czech Republic',
+    '.ro': 'Romania', '.gr': 'Greece', '.is': 'Iceland', '.sk': 'Slovakia',
+    '.hu': 'Hungary', '.bg': 'Bulgaria', '.hr': 'Croatia', '.si': 'Slovenia',
+    '.rs': 'Serbia', '.ua': 'Ukraine', '.ee': 'Estonia', '.lv': 'Latvia',
+    '.lt': 'Lithuania', '.lu': 'Luxembourg', '.mt': 'Malta', '.cy': 'Cyprus',
+    '.al': 'Albania', '.mk': 'North Macedonia', '.ba': 'Bosnia and Herzegovina',
+    '.md': 'Moldova',
+    # Americas
+    '.mx': 'Mexico', '.br': 'Brazil', '.ar': 'Argentina', '.cl': 'Chile',
+    '.pe': 'Peru', '.uy': 'Uruguay', '.py': 'Paraguay', '.bo': 'Bolivia',
+    '.ec': 'Ecuador', '.ve': 'Venezuela', '.cr': 'Costa Rica', '.pa': 'Panama',
+    '.gt': 'Guatemala', '.hn': 'Honduras', '.ni': 'Nicaragua', '.sv': 'El Salvador',
+    '.do': 'Dominican Republic', '.jm': 'Jamaica', '.tt': 'Trinidad and Tobago',
+    '.pr': 'Puerto Rico',
+    # Asia
+    '.cn': 'China', '.jp': 'Japan', '.kr': 'South Korea', '.tw': 'Taiwan',
+    '.hk': 'Hong Kong', '.my': 'Malaysia', '.th': 'Thailand', '.vn': 'Vietnam',
+    '.ph': 'Philippines', '.id': 'Indonesia', '.pk': 'Pakistan', '.bd': 'Bangladesh',
+    '.lk': 'Sri Lanka', '.np': 'Nepal', '.kh': 'Cambodia', '.mm': 'Myanmar',
+    '.mn': 'Mongolia', '.kz': 'Kazakhstan', '.uz': 'Uzbekistan', '.az': 'Azerbaijan',
+    '.il': 'Israel', '.tr': 'Turkey', '.qa': 'Qatar', '.sa': 'Saudi Arabia',
+    '.kw': 'Kuwait', '.bh': 'Bahrain', '.om': 'Oman', '.jo': 'Jordan',
+    '.lb': 'Lebanon',
+    # Africa + Oceania
+    '.ng': 'Nigeria', '.ke': 'Kenya', '.eg': 'Egypt', '.ma': 'Morocco',
+    '.gh': 'Ghana', '.tz': 'Tanzania', '.ug': 'Uganda', '.et': 'Ethiopia',
+    '.rw': 'Rwanda', '.zm': 'Zambia', '.zw': 'Zimbabwe', '.bw': 'Botswana',
+    '.na': 'Namibia', '.mz': 'Mozambique', '.sn': 'Senegal', '.cm': 'Cameroon',
+    '.tn': 'Tunisia', '.dz': 'Algeria', '.mu': 'Mauritius', '.ao': 'Angola',
+    '.mw': 'Malawi', '.fj': 'Fiji', '.pg': 'Papua New Guinea', '.nz': 'New Zealand',
+}
 
 EMAIL_RE = re.compile(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}')
 EMAIL_JUNK = re.compile(r'\.(png|jpg|jpeg|gif|webp|svg|css|js)$', re.I)
 
 
-def search_query_for_cycle(cycle_index):
-    """Industry × region pair for the Nth cycle, worldwide rotation."""
-    industry = INDUSTRY_QUERIES[cycle_index % len(INDUSTRY_QUERIES)]
-    region = REGIONS[(cycle_index // len(INDUSTRY_QUERIES)) % len(REGIONS)]
+REGIONS_PER_CYCLE = 3  # regions searched per pipeline cycle (world sweep /3 faster)
+
+
+def _cycle_slice(step_index):
+    """(query, industry) for the Nth worldwide rotation step.
+
+    The region advances EVERY step (one full world sweep per len(REGIONS)
+    steps) and the industry advances after each sweep — so consecutive steps
+    always discover companies in new countries instead of drilling into one.
+    """
+    region = REGIONS[step_index % len(REGIONS)]
+    industry = INDUSTRY_QUERIES[(step_index // len(REGIONS)) % len(INDUSTRY_QUERIES)]
     return f'{industry} in {region}', industry
 
 
-# Region detection — state + country for each lead, from the discovery query
-# (e.g. 'dental clinic Salem Tamil Nadu') with the site TLD as fallback.
-CITY_STATE = {
-    'salem': 'Tamil Nadu', 'chennai': 'Tamil Nadu', 'coimbatore': 'Tamil Nadu',
-    'madurai': 'Tamil Nadu', 'trichy': 'Tamil Nadu', 'erode': 'Tamil Nadu',
-    'mumbai': 'Maharashtra', 'pune': 'Maharashtra', 'nagpur': 'Maharashtra',
-    'bengaluru': 'Karnataka', 'bangalore': 'Karnataka', 'mysuru': 'Karnataka',
-    'hyderabad': 'Telangana', 'delhi': 'Delhi', 'noida': 'Uttar Pradesh',
-    'ahmedabad': 'Gujarat', 'surat': 'Gujarat', 'jaipur': 'Rajasthan',
-    'kolkata': 'West Bengal', 'kochi': 'Kerala', 'visakhapatnam': 'Andhra Pradesh',
-}
-TLD_COUNTRY = {
-    '.in': 'India', '.de': 'Germany', '.uk': 'United Kingdom', '.us': 'United States',
-    '.au': 'Australia', '.ca': 'Canada', '.nl': 'Netherlands', '.sg': 'Singapore',
-    '.ae': 'UAE', '.ie': 'Ireland', '.es': 'Spain', '.za': 'South Africa',
-}
+def search_query_for_cycle(cycle_index):
+    """First query of the cycle — kept for one-off scripts and tests."""
+    return _cycle_slice(cycle_index)
+
+
+def search_queries_for_cycle(cycle_index, n=REGIONS_PER_CYCLE):
+    """n consecutive region slices for one cycle — each cycle now spreads
+    discovery over n different countries instead of a single one."""
+    start = cycle_index * n
+    return [_cycle_slice(start + k) for k in range(n)]
 
 
 def region_from_query(query, website=''):
     """Guess (state, country) from the discovery query, falling back to the site TLD."""
     q = (query or '').lower()
     state = country = ''
-    for city, st in CITY_STATE.items():
-        if city in q:
-            state, country = st, 'India'
+    for city, (st, ctry) in GLOBAL_CITY_STATE.items():
+        if CITY_RE[city].search(q):
+            state, country = st, ctry
             break
     if not country:
         for region in REGIONS:
@@ -121,6 +309,28 @@ def region_from_query(query, website=''):
     return state, country
 
 
+def region_from_text(text, prefer_country=''):
+    """Detect (state, country) from a company's own page content.
+
+    City names in the address/footer/contact block are the strongest signal a
+    lead's site gives about where it actually is.  When several countries'
+    cities appear, `prefer_country` (the discovery-query guess) wins; otherwise
+    the country with the most distinct city mentions does.
+    """
+    t = (text or '').lower()
+    hits = {}  # country -> (state, distinct city count)
+    for city, (st, ctry) in GLOBAL_CITY_STATE.items():
+        if CITY_RE[city].search(t):
+            prev = hits.get(ctry)
+            hits[ctry] = (st, prev[1] + 1 if prev else 1)
+    if not hits:
+        return '', ''
+    if prefer_country and prefer_country in hits:
+        return hits[prefer_country][0], prefer_country
+    best = max(hits.items(), key=lambda kv: kv[1][1])
+    return best[1][0], best[0]
+
+
 def name_from_domain(domain):
     """'mabya.com' → 'Mabya' — clean fallback when the result title is garbage."""
     base = domain.split('.')[0]
@@ -130,6 +340,8 @@ def name_from_domain(domain):
 def _plausible_company_name(name, domain):
     """Reject garbled SERP titles ('Buy or acquire E', sentences, one-liners)."""
     if not name or len(name) < 4 or len(name) > 60:
+        return False
+    if '/' in name or name.lower().startswith('http'):  # 'wsp.com/en' — a URL, not a brand
         return False
     if any(len(w) == 1 for w in name.split() if w.lower() not in ('a', '&')):  # '…acquire E'
         return False
@@ -252,14 +464,17 @@ def _finding(area, severity, weight, issue, recommendation):
             'issue': issue, 'recommendation': recommendation}
 
 
-def analyze_website(name, website):
+def analyze_website(name, website, prefer_country=''):
     """Full audit of one company's web presence.
 
-    Returns {has_website, score, contact_email, findings, analysis} where
-    score (40–98) is sales potential: more fixable flaws → higher score.
+    Returns {has_website, score, contact_email, findings, analysis, state, country}
+    where score (40–98) is sales potential: more fixable flaws → higher score.
+    state/country come from the site's own content when it names a city we know
+    (empty otherwise — the caller keeps its discovery-query guess).
     """
     analysis = {'checked_url': website or '', 'pages_fetched': 0}
     findings = []
+    found_state = found_country = ''
 
     if not website:
         findings.append(_finding(
@@ -267,7 +482,8 @@ def analyze_website(name, website):
             f'{name} has no website at all.',
             'Pitch an end-to-end website: domain, landing pages, SEO setup and a booking/contact funnel.'))
         return {'has_website': False, 'score': 95, 'contact_email': '',
-                'findings': findings, 'analysis': analysis}
+                'findings': findings, 'analysis': analysis,
+                'state': found_state, 'country': found_country}
 
     page = scrape_company(website)
     if not page['ok']:
@@ -276,17 +492,48 @@ def analyze_website(name, website):
             page = scrape_company('https://www.' + website)
     analysis['checked_url'] = page['final_url']
     if not page['ok']:
+        # 403/429/503 = bot protection, not a dead site. The company exists —
+        # claiming "no website" in outreach would be false, so record the
+        # block honestly and let the pipeline hold these for human review.
+        if page['status'] in (403, 429, 503):
+            findings.append(_finding(
+                'Web presence', 'info', 0,
+                f'Website blocked automated access (HTTP {page["status"]}) — '
+                f'site is live but could not be audited.',
+                'Manually review this site before any outreach.'))
+            analysis['blocked'] = True
+            return {'has_website': True, 'score': 40, 'contact_email': '',
+                    'findings': findings, 'analysis': analysis,
+                    'state': found_state, 'country': found_country}
         findings.append(_finding(
             'Web presence', 'high', 45,
             f'Website unreachable ({page["error"] or "HTTP %d" % page["status"]}).',
             'Their web presence is broken or missing — pitch a rebuild with reliable hosting.'))
         return {'has_website': False, 'score': 92, 'contact_email': '',
-                'findings': findings, 'analysis': analysis}
+                'findings': findings, 'analysis': analysis,
+                'state': found_state, 'country': found_country}
 
     analysis['pages_fetched'] = 1
     analysis.update({'http_status': page['status'], 'https': page['https'],
                      'load_ms': page['load_ms'], 'bytes': len(page['html'])})
     soup = BeautifulSoup(page['html'], 'lxml')
+
+    # parked/for-sale landing pages — the domain resolves but there is no real
+    # site behind it, which for our purposes means "no working website"
+    page_title = (soup.title.string or '').strip() if soup.title and soup.title.string else ''
+    if re.search(r'parked domain|domain (is )?(parked|for sale)|buy this domain|sedoparking', page_title, re.I):
+        findings.append(_finding(
+            'Web presence', 'high', 45,
+            f'Domain is parked ({page_title[:60]}) — no real website is live.',
+            'Pitch an end-to-end website: their domain is wasting the traffic it gets.'))
+        return {'has_website': False, 'score': 92, 'contact_email': '',
+                'findings': findings, 'analysis': analysis,
+                'state': found_state, 'country': found_country}
+
+    # one text extraction reused for the region scan and the content check —
+    # the address/footer usually names the company's city
+    page_text = soup.get_text(' ', strip=True)
+    found_state, found_country = region_from_text(page_text, prefer_country)
 
     # real brand name from the site itself (og:site_name / title) — fixes
     # garbled SERP titles from the discovery step
@@ -341,7 +588,7 @@ def analyze_website(name, website):
                                      f'{missing_alt}/{len(images)} images have no alt text.',
                                      'Accessibility + image-SEO pass on all media.'))
 
-    text_len = len(soup.get_text(' ', strip=True))
+    text_len = len(page_text)
     analysis['text_length'] = text_len
     if text_len < 400:
         score_weight += 6
@@ -369,4 +616,5 @@ def analyze_website(name, website):
 
     score = min(98, 40 + score_weight)
     return {'has_website': True, 'score': score, 'contact_email': contact_email,
-            'findings': findings, 'analysis': analysis}
+            'findings': findings, 'analysis': analysis,
+            'state': found_state, 'country': found_country}

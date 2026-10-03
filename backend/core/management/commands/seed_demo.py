@@ -21,7 +21,7 @@ DEMO_PASSWORD = 'operator-demo-2026'
 
 AGENT_DEFAULTS = {
     'search': {
-        'db_provider': 'postgresql', 'db_name': 'agentic.leads', 'db_connection': 'postgresql://localhost:5432/agentic',
+        'db_provider': 'mongodb', 'db_name': '', 'db_connection': '',
         'api_url': 'https://example.com/discovery-api', 'api_auth': 'Bearer ••••',
         'system_prompt': (
             'You are the Search (Scrape) agent in an autonomous marketing & sales pipeline.\n'
@@ -36,7 +36,7 @@ AGENT_DEFAULTS = {
         ),
     },
     'profile': {
-        'db_provider': 'postgresql', 'db_name': 'agentic.profiles', 'db_connection': 'postgresql://localhost:5432/agentic',
+        'db_provider': 'mongodb', 'db_name': '', 'db_connection': '',
         'api_url': 'https://example.com/enrichment-api', 'api_auth': 'Bearer ••••',
         'system_prompt': (
             'You are the Profile agent.\n'
@@ -51,7 +51,7 @@ AGENT_DEFAULTS = {
         ),
     },
     'copywright': {
-        'db_provider': 'postgresql', 'db_name': 'agentic.campaigns', 'db_connection': 'postgresql://localhost:5432/agentic',
+        'db_provider': 'mongodb', 'db_name': '', 'db_connection': '',
         'api_url': 'https://example.com/send-api', 'api_auth': 'Bearer ••••',
         'system_prompt': (
             'You are the Copywright agent.\n'
@@ -66,7 +66,7 @@ AGENT_DEFAULTS = {
         ),
     },
     'responder': {
-        'db_provider': 'postgresql', 'db_name': 'agentic.conversations', 'db_connection': 'postgresql://localhost:5432/agentic',
+        'db_provider': 'mongodb', 'db_name': '', 'db_connection': '',
         'api_url': 'https://example.com/inbound-api', 'api_auth': 'Bearer ••••',
         'system_prompt': (
             'You are the Responder (Chatbot) agent.\n'

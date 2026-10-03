@@ -21,11 +21,17 @@ from django.utils import timezone
 
 from .ai import llm_available, llm_complete
 from .models import AgentConfig, AppSettings, EmailDraft, Lead, PipelineRun, Potential
-from .scraper import analyze_website, region_from_query, search_companies, search_query_for_cycle
+from .scraper import (
+    analyze_website,
+    region_from_query,
+    search_companies,
+    search_queries_for_cycle,
+)
+from .scraper import search_query_for_cycle  # noqa: F401 — re-exported for scripts/tests
 
 log = logging.getLogger(__name__)
 
-MAX_LEADS_PER_CYCLE = 3      # new companies discovered per cycle
+MAX_LEADS_PER_CYCLE = 6      # new companies discovered per cycle (across all region queries)
 MAX_PROFILE_PER_CYCLE = 3    # sites scraped+audited per cycle
 MAX_DRAFTS_PER_CYCLE = 2     # cold emails drafted per cycle
 
@@ -36,6 +42,18 @@ POTENTIAL_THRESHOLD = 65
 def _copywright_config():
     cfg = AgentConfig.objects.filter(agent='copywright').first()
     return cfg
+
+
+def _norm_domain(website):
+    """Normalize a website to a comparable domain (no scheme, www or path)."""
+    d = (website or '').strip().lower()
+    for prefix in ('https://', 'http://'):
+        if d.startswith(prefix):
+            d = d[len(prefix):]
+    d = d.split('/', 1)[0]
+    if d.startswith('www.'):
+        d = d[4:]
+    return d
 
 
 def _draft_email(lead):
@@ -119,28 +137,40 @@ def run_pipeline(triggered_by='manual'):
     cycle = PipelineRun.objects.count()
 
     # --- SEARCH (SCRAPE): real DuckDuckGo discovery, skip known companies --
-    query, industry = search_query_for_cycle(cycle)
-    summary['query'] = query
-    results = search_companies(query, n=10)
-    summary['notes'].append(f'Search: “{query}” → {len(results)} candidates')
+    # Every cycle searches REGIONS_PER_CYCLE different countries, so the CRM
+    # spreads across the world instead of one region at a time.
+    queries = search_queries_for_cycle(cycle)
+    results, query_labels = [], []
+    for query, industry in queries:
+        found = search_companies(query, n=6)
+        results.extend({'industry': industry, 'query_label': query, **r} for r in found)
+        query_labels.append(query)
+        summary['notes'].append(f'Search: “{query}” → {len(found)} candidates')
+    summary['query'] = ' | '.join(query_labels)
 
-    known = {w.lower() for w in Lead.objects.exclude(website='').values_list('website', flat=True)}
+    known = {_norm_domain(w) for w in Lead.objects.exclude(website='').values_list('website', flat=True)}
     known |= {c.lower() for c in Lead.objects.values_list('company', flat=True)}
     new_leads = []
     seen_domains = set()
+    per_region_cap = max(2, MAX_LEADS_PER_CYCLE // len(queries))  # spread across regions
+    taken_per_query = {}
     for r in results:
         if len(new_leads) >= MAX_LEADS_PER_CYCLE:
             break
-        domain = r['website'].lower()
-        if domain in seen_domains or domain in known or r['name'].lower() in known:
+        domain = _norm_domain(r['website'])
+        if not domain or domain in seen_domains or domain in known or r['name'].lower() in known:
             continue
         seen_domains.add(domain)
-        state, country = region_from_query(query, r['website'])
+        query_label = r['query_label']
+        if taken_per_query.get(query_label, 0) >= per_region_cap:
+            continue  # don't let one region swallow the whole cycle
+        taken_per_query[query_label] = taken_per_query.get(query_label, 0) + 1
+        state, country = region_from_query(query_label, r['website'])
         lead = Lead.objects.create(
             company=r['name'],
-            industry=industry,
+            industry=r['industry'],
             website=r['website'],
-            source=f'Search · DuckDuckGo · {query}',
+            source=f'Search · DuckDuckGo · {query_label}',
             state=state,
             country=country,
             score=random.randint(45, 60),  # provisional, Profile replaces it
@@ -152,12 +182,16 @@ def run_pipeline(triggered_by='manual'):
     potentials_created = 0
     to_profile = list(Lead.objects.filter(profiled=False)[:MAX_PROFILE_PER_CYCLE])
     for lead in to_profile:
-        audit = analyze_website(lead.company, lead.website)
+        audit = analyze_website(lead.company, lead.website, prefer_country=lead.country)
         lead.has_website = audit['has_website']
         lead.contact_email = audit['contact_email']
         lead.findings = audit['findings']
         lead.analysis = audit['analysis']
         lead.score = audit['score']
+        # the site's own content names its city — that beats the query guess
+        if audit.get('country'):
+            lead.state = audit.get('state') or lead.state
+            lead.country = audit['country']
         site_name = audit['analysis'].get('site_name')
         if site_name:
             lead.company = site_name[:200]
@@ -195,6 +229,10 @@ def run_pipeline(triggered_by='manual'):
     for lead in profiled:
         if drafts_created >= MAX_DRAFTS_PER_CYCLE:
             break
+        if (lead.analysis or {}).get('blocked'):
+            summary['notes'].append(
+                f'Copywright skipped {lead.company} — site blocks bots, needs human review')
+            continue
         if lead.drafts.exclude(status=EmailDraft.Statuses.REJECTED).exists():
             continue
         subject, body, used_llm = _draft_email(lead)

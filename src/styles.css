@@ -1,5 +1,5 @@
 /* ================================================================
-   Marketing & Sales Agentic AI — dark professional theme
+   Shailog Technologies - Marketing & Sales AI — dark professional theme
    Black / charcoal · white text · gray secondary · one accent
    ================================================================ */
 
@@ -106,6 +106,437 @@ button {
   color: var(--accent);
   background: var(--accent-soft);
   border: 1px solid var(--accent-border);
+}
+
+.brand-logo {
+  display: block;
+  height: 42px;
+  width: auto;
+  border-radius: 8px;
+}
+
+/* settings — sticky save bar (always visible at the bottom of the screen) */
+.save-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  margin: 16px -18px -48px;
+  background: var(--bg);
+  border-top: 1px solid var(--border-soft);
+  box-shadow: 0 -10px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* settings — email templates */
+.tpl-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.tpl-row + .tpl-row {
+  margin-top: 8px;
+}
+.tpl-row strong {
+  display: block;
+  font-size: 13.5px;
+}
+.tpl-row small {
+  display: block;
+  color: var(--text-3);
+  font-size: 12px;
+  margin-top: 2px;
+}
+.tpl-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+.tpl-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+.tpl-editor {
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  display: grid;
+  gap: 12px;
+}
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+/* ---------------- login (product entry) ---------------- */
+
+.login-wrap {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(1200px 600px at 80% -10%, rgba(124, 140, 255, 0.08), transparent 60%),
+    radial-gradient(900px 500px at 10% 110%, rgba(232, 114, 12, 0.06), transparent 60%),
+    var(--bg);
+}
+
+.login-card {
+  width: min(400px, 100%);
+  display: grid;
+  gap: 14px;
+  padding: 34px 30px;
+  border-radius: 16px;
+}
+
+.login-logo {
+  justify-self: center;
+  height: 56px;
+  width: auto;
+  border-radius: 10px;
+}
+
+.login-title {
+  text-align: center;
+  display: grid;
+  gap: 3px;
+  margin-bottom: 6px;
+}
+.login-title strong {
+  font-size: 16px;
+  letter-spacing: -0.01em;
+}
+.login-title small {
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+
+.login-field {
+  display: grid;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.login-error {
+  color: #ff7a6c;
+  font-size: 12.5px;
+  text-align: center;
+}
+
+.login-submit {
+  justify-self: stretch;
+  padding: 11px;
+  font-size: 14px;
+}
+
+.login-footnote {
+  text-align: center;
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+
+.side-logout {
+  width: 100%;
+  font-size: 12px;
+  padding: 7px 10px;
+  margin-top: 4px;
+}
+
+/* ---------------- AI guide widget ---------------- */
+
+.guide-fab {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 60;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 1px solid var(--accent-border);
+  background: var(--accent);
+  color: #fff;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(124, 140, 255, 0.35);
+  transition: transform 0.15s ease;
+}
+.guide-fab:hover {
+  transform: scale(1.07);
+}
+.guide-fab.hide {
+  display: none;
+}
+
+.guide-panel {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 61;
+  width: min(380px, calc(100vw - 32px));
+  max-height: min(560px, calc(100vh - 44px));
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+}
+
+.guide-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.guide-head strong {
+  display: block;
+  font-size: 13px;
+}
+.guide-head small {
+  display: block;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.guide-close {
+  margin-left: auto;
+  font-size: 13px;
+  padding: 4px 8px;
+}
+
+.guide-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 180px;
+}
+
+.guide-suggest {
+  display: grid;
+  gap: 8px;
+}
+.guide-suggest small {
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+.guide-suggest .btn {
+  text-align: left;
+  font-size: 12.5px;
+}
+
+.guide-msg p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+.guide-msg.user {
+  align-self: flex-end;
+  max-width: 85%;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  color: var(--text-1);
+  padding: 9px 12px;
+  border-radius: 12px 12px 3px 12px;
+}
+.guide-msg.ai {
+  align-self: flex-start;
+  max-width: 92%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+  border-radius: 12px 12px 12px 3px;
+}
+.guide-msg.typing {
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.guide-input {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border-soft);
+}
+.guide-input input {
+  flex: 1;
+}
+
+/* ---------------- leads & reports page ---------------- */
+
+.leads-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0;
+}
+.leads-toolbar input {
+  flex: 1;
+  min-width: 220px;
+}
+.leads-toolbar select {
+  flex: none;
+}
+
+.leads-scroll {
+  overflow-x: auto;
+}
+.leads-desc {
+  max-width: 380px;
+}
+.d-block {
+  display: block;
+}
+
+.report-preview {
+  width: 100%;
+  height: 480px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #f3f4f6;
+  margin-top: 8px;
+}
+
+/* ---------------- AI autopilot ---------------- */
+
+.autopilot-panel {
+  margin-top: 18px;
+  display: grid;
+  gap: 14px;
+}
+
+.autopilot-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.autopilot-head strong {
+  display: block;
+  font-size: 14px;
+}
+.autopilot-head small {
+  display: block;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.autopilot-head .chip {
+  margin-left: auto;
+}
+.autopilot-icon {
+  font-size: 18px;
+}
+
+.autopilot-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.autopilot-meter {
+  display: grid;
+  gap: 6px;
+}
+.autopilot-meter small {
+  color: var(--text-3);
+  font-size: 12px;
+}
+.autopilot-meter-bar {
+  height: 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+.autopilot-meter-fill {
+  height: 100%;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--accent), #e8720c);
+  transition: width 0.4s ease;
+}
+
+.autopilot-log {
+  display: grid;
+  gap: 6px;
+}
+.autopilot-log-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12.5px;
+}
+.autopilot-log-row small {
+  margin-left: auto;
+  color: var(--text-3);
+  flex: none;
+}
+.autopilot-tag {
+  flex: none;
+  font-size: 10.5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  text-transform: capitalize;
+}
+.tag-email_sent {
+  color: #6ee7a0;
+  border-color: rgba(110, 231, 160, 0.35);
+}
+.tag-send_failed {
+  color: #ff7a6c;
+  border-color: rgba(255, 122, 108, 0.35);
+}
+.tag-autopilot_on,
+.tag-autopilot_off {
+  color: var(--accent);
+  border-color: var(--accent-border);
+}
+
+.autopilot-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(0, 0, 0, 0.6);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+.autopilot-modal {
+  width: min(560px, 100%);
+  display: grid;
+  gap: 12px;
+  padding: 24px;
+  border-radius: 14px;
+}
+.autopilot-modal ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-2);
 }
 
 .brand-text {
@@ -1085,6 +1516,11 @@ textarea {
   gap: 12px;
   padding: 14px 16px;
   border-bottom: 1px solid var(--border-soft);
+}
+.chat-clear {
+  margin-left: auto;
+  font-size: 12px;
+  padding: 6px 10px;
 }
 .chat-head strong {
   display: block;

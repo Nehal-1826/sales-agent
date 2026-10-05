@@ -30,8 +30,16 @@ python manage.py migrate --noinput
 echo "[entrypoint] collecting static files…"
 python manage.py collectstatic --noinput
 
-echo "[entrypoint] seeding demo data (skips if already seeded)…"
-python manage.py seed_demo
+# SEED_DEMO=1 → demo experience (operator account + sample CRM data).
+# Default (production): only the workspace owner from ADMIN_* env vars —
+# no demo users, no demo leads, no known passwords.
+if [ "$SEED_DEMO" = "1" ]; then
+    echo "[entrypoint] seeding DEMO data (SEED_DEMO=1)…"
+    python manage.py seed_demo
+else
+    echo "[entrypoint] bootstrapping workspace owner (set SEED_DEMO=1 for demo data)…"
+    python manage.py bootstrap_admin
+fi
 
 if [ "$ROLE" = "worker" ]; then
     echo "[entrypoint] starting agent worker…"

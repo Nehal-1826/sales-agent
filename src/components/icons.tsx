@@ -101,6 +101,15 @@ export const IconUser = ({ size, className }: IconProps) => (
   </svg>
 );
 
+export const IconList = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M8.5 6h12M8.5 12h12M8.5 18h12" />
+    <circle cx="4.3" cy="6" r="1" />
+    <circle cx="4.3" cy="12" r="1" />
+    <circle cx="4.3" cy="18" r="1" />
+  </svg>
+);
+
 export const IconOrchestrator = ({ size, className }: IconProps) => (
   <svg {...base(size, className)}>
     <circle cx="12" cy="5.5" r="2.5" />

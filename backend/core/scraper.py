@@ -534,6 +534,8 @@ def analyze_website(name, website, prefer_country=''):
     # the address/footer usually names the company's city
     page_text = soup.get_text(' ', strip=True)
     found_state, found_country = region_from_text(page_text, prefer_country)
+    # visible-text excerpt for the AI (Gemini) description step in the pipeline
+    analysis['text_excerpt'] = page_text[:4000]
 
     # real brand name from the site itself (og:site_name / title) — fixes
     # garbled SERP titles from the discovery step

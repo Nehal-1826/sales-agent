@@ -1,7 +1,6 @@
-# Marketing & Sales Agentic AI
+# Shailog Technologies — Marketing & Sales AI
 
-Full-stack implementation of the autonomous marketing & sales agent system,
-built exactly around the handwritten architecture:
+Full-stack autonomous marketing & sales agent product:
 
 ```
 USER → ORCHESTRATOR → SEARCH (SCRAPE) → PROFILE → COPYWRIGHT → RESPONDER (CHATBOT)
@@ -9,11 +8,24 @@ USER → ORCHESTRATOR → SEARCH (SCRAPE) → PROFILE → COPYWRIGHT → RESPOND
                         └────────────── continuous LOOP ◄──────────────┘
 ```
 
-- **Frontend** (`/`) — React + TypeScript + Vite, dark SaaS theme
-- **Backend** (`/backend`) — Django + DRF + PostgreSQL; real pipeline:
-  live DuckDuckGo discovery → website/no-website categorization → site audit
-  (flaws + potential score) → cold-email drafts → human **Approve & send**
-  via SMTP (console fallback)
+- **Frontend (`/`)** — React + TypeScript + Vite, dark SaaS theme, branded
+  login (no shipped credentials)
+- **Backend (`/backend`)** — Django + DRF + PostgreSQL; real pipeline:
+  live DuckDuckGo discovery → Gemini reads each site and writes the company
+  description → site audit (flaws + potential score) → cold-email drafts from
+  your template (Settings → Email Templates) → human **Approve & send** via
+  SMTP with the branded designer email layout
+
+## Product mode vs demo mode
+
+| | Product (default) | Demo (`SEED_DEMO=1`) |
+|---|---|---|
+| First boot | creates ONE owner from `ADMIN_USERNAME`/`ADMIN_EMAIL`/`ADMIN_PASSWORD` (auto-generates + prints a strong password if blank — see `docker compose logs api`) | seeds `operator` / `operator-demo-2026` + sample CRM data |
+| Login | your own credentials | demo credentials |
+| Data | clean CRM | sample leads/drafts |
+
+Production refuses to boot with insecure defaults: `DJANGO_DEBUG=0` requires
+`DJANGO_SECRET_KEY` and a real `ALLOWED_HOSTS` (see `backend/agentic/settings.py`).
 
 ## Run the full stack
 

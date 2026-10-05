@@ -14,15 +14,23 @@ import os
 from pathlib import Path
 
 import dj_database_url
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+DEBUG = os.environ.get('DJANGO_DEBUG', '1') == '1'
+
+if not DEBUG:
+    # fail fast in production instead of silently running insecure defaults
+    if not os.environ.get('DJANGO_SECRET_KEY'):
+        raise ImproperlyConfigured('DJANGO_SECRET_KEY is required when DJANGO_DEBUG=0')
+    if not os.environ.get('ALLOWED_HOSTS'):
+        raise ImproperlyConfigured('ALLOWED_HOSTS is required when DJANGO_DEBUG=0')
 
 SECRET_KEY = os.environ.get(
     'DJANGO_SECRET_KEY',
     'dev-only-insecure-key-change-me',
 )
-
-DEBUG = os.environ.get('DJANGO_DEBUG', '1') == '1'
 
 # Comma-separated list via env on a VPS: ALLOWED_HOSTS=example.com,www.example.com
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get('ALLOWED_HOSTS', '*').split(',') if h.strip()]
@@ -132,3 +140,17 @@ USE_TZ = True
 STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# ------------------------------------------------------------------
+# Production hardening (DEBUG=0) — TLS terminates at Caddy/nginx, so
+# SSL redirect is opt-in for installs served over HTTPS.
+# ------------------------------------------------------------------
+
+if not DEBUG:
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    if os.environ.get('SECURE_SSL_REDIRECT', '') == '1':
+        SECURE_SSL_REDIRECT = True
+        SECURE_HSTS_SECONDS = 31536000
+        SECURE_HSTS_INCLUDE_SUBDOMAINS = True

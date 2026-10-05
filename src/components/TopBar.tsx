@@ -8,7 +8,7 @@ export function TopBar({ onMenu, live }: { onMenu: () => void; live: boolean | n
           <path d="M4 6h16M4 12h16M4 18h16" />
         </svg>
       </button>
-      <div className="topbar-title">Marketing &amp; Sales Agentic AI</div>
+      <div className="topbar-title">Shailog Technologies · Marketing &amp; Sales AI</div>
       <div className="topbar-status">
         <span className="chip chip-success">
           <StatusDot tone="success" pulse />

@@ -3,7 +3,7 @@
 from django.utils import timezone
 from rest_framework import serializers
 
-from .models import AgentConfig, AppSettings, ChatMessage, EmailDraft, Lead, PipelineRun, Potential, Reply
+from .models import AgentConfig, AppSettings, ChatMessage, EmailDraft, EmailTemplate, Lead, PipelineRun, Potential, Reply
 
 
 def rel_time(dt):
@@ -31,22 +31,36 @@ class LeadSerializer(serializers.ModelSerializer):
     class Meta:
         model = Lead
         fields = ['id', 'company', 'industry', 'website', 'score', 'source', 'profiled',
-                  'state', 'country', 'hasWebsite', 'contactEmail', 'findings', 'discovered']
+                  'state', 'country', 'hasWebsite', 'contactEmail', 'findings', 'description',
+                  'discovered']
 
     def get_discovered(self, obj):
         return rel_time(obj.created_at)
 
 
+class EmailTemplateSerializer(serializers.ModelSerializer):
+    """{ id, name, subject, body, isDefault } — cold-email templates (Settings)."""
+    isDefault = serializers.BooleanField(source='is_default', required=False)
+
+    class Meta:
+        model = EmailTemplate
+        fields = ['id', 'name', 'subject', 'body', 'isDefault']
+
+
 class EmailDraftSerializer(serializers.ModelSerializer):
     toEmail = serializers.CharField(source='to_email', required=False, allow_blank=True)
     sentVia = serializers.CharField(source='sent_via', read_only=True)
+    status = serializers.SerializerMethodField()  # display form ('Draft') — matches the frontend type
     lastActivity = serializers.SerializerMethodField()
 
     class Meta:
         model = EmailDraft
         fields = ['id', 'company', 'toEmail', 'subject', 'body', 'findings',
                   'status', 'sentVia', 'error', 'lastActivity']
-        read_only_fields = ['status', 'error']
+        read_only_fields = ['error']
+
+    def get_status(self, obj):
+        return obj.get_status_display()
 
     def get_lastActivity(self, obj):
         return rel_time(obj.updated_at)

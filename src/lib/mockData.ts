@@ -4,6 +4,7 @@ import type {
   AgentMeta,
   ChatMessage,
   EmailDraft,
+  EmailTemplate,
   Finding,
   Lead,
   Potential,
@@ -89,6 +90,7 @@ const F_NO_SITE: Finding = {
 export const MOCK_LEADS: Lead[] = [
   {
     id: 'lead-1',
+    description: 'Builds autonomous palletizing and pick-and-place robotic cells for mid-size factories, with retrofit kits for older production lines.',
     company: 'Acme Robotics',
     industry: 'Industrial automation',
     website: 'acmerobotics.io',
@@ -103,6 +105,7 @@ export const MOCK_LEADS: Lead[] = [
   },
   {
     id: 'lead-2',
+    description: 'Digital lender offering working-capital loans to small businesses, underwriting from bank and commerce data in 24 hours.',
     company: 'BlueRiver Finance',
     industry: 'Fintech lending',
     website: 'blueriver.finance',
@@ -117,6 +120,7 @@ export const MOCK_LEADS: Lead[] = [
   },
   {
     id: 'lead-3',
+    description: 'Regional freight broker coordinating FTL and LTL shipments across the Midwest with a small dispatch team.',
     company: 'Northwind Logistics',
     industry: 'Supply chain & freight',
     website: 'northwindlogistics.com',
@@ -131,6 +135,7 @@ export const MOCK_LEADS: Lead[] = [
   },
   {
     id: 'lead-4',
+    description: 'SaaS platform for clinics to automate patient follow-ups and no-show recovery via SMS and email.',
     company: 'Orbit Health',
     industry: 'HealthTech SaaS',
     website: 'orbithealth.ai',
@@ -145,6 +150,7 @@ export const MOCK_LEADS: Lead[] = [
   },
   {
     id: 'lead-5',
+    description: '',
     company: 'Harbor & Co Catering',
     industry: 'Food & catering',
     website: '',
@@ -159,6 +165,7 @@ export const MOCK_LEADS: Lead[] = [
   },
   {
     id: 'lead-6',
+    description: 'Runs a chain of boutique online stores, fulfilling from two warehouses with an in-house operations team.',
     company: 'Vantage Retail Group',
     industry: 'E-commerce operations',
     website: 'vantage-retail.com',
@@ -173,6 +180,7 @@ export const MOCK_LEADS: Lead[] = [
   },
   {
     id: 'lead-7',
+    description: 'Precision CNC machining shop supplying aerospace-grade parts on contract, quoting by email.',
     company: 'Kestrel Manufacturing',
     industry: 'Precision parts',
     website: 'kestrel-mfg.com',
@@ -199,7 +207,7 @@ export const MOCK_DRAFTS: EmailDraft[] = [
       'a couple of things stood out:\n\n' +
       '• Not mobile-friendly (no viewport meta) → Mobile-first redesign offer\n' +
       '• Homepage loads slowly (4.2s) → performance audit: images, caching, CDN\n\n' +
-      'We help teams fix exactly this. Worth a 15-minute call next week?\n\nBest,\nNorthstar Growth Partners',
+      'We help teams fix exactly this. Worth a 15-minute call next week?\n\nBest,\nShailog Technologies',
     findings: [F_MOBILE, F_SLOW],
     status: 'Draft',
     sentVia: '',
@@ -214,7 +222,7 @@ export const MOCK_DRAFTS: EmailDraft[] = [
     body:
       'Hi Harbor & Co team,\n\nI couldn\'t find a working website for Harbor & Co Catering — which usually ' +
       'means customers searching for you end up with competitors instead.\n\nWe build fast, search-ready ' +
-      'sites for catering businesses. Would a 15-minute call next week be useful?\n\nBest,\nNorthstar Growth Partners',
+      'sites for catering businesses. Would a 15-minute call next week be useful?\n\nBest,\nShailog Technologies',
     findings: [F_NO_SITE],
     status: 'Draft',
     sentVia: '',
@@ -390,7 +398,17 @@ export const DEFAULT_AGENT_CONFIGS: Record<AgentKey, AgentConfig> = {
   },
 };
 
-export const MODEL_OPTIONS = ['GLM-4.6', 'GPT-4o', 'Claude Sonnet 4.5', 'Gemini 2.5 Pro', 'Llama 3.3 70B', 'Custom'];
+// Model ids sent as-is to the provider API (Gemini OpenAI-compatible endpoint).
+// Keep the currently-stored agent model first so the select shows the live value.
+export const MODEL_OPTIONS = [
+  'gemini-flash-lite-latest', // free tier — reliable default
+  'gemini-flash-latest',      // paid tier — better quality
+  'gemini-3.8-flash',
+  'gemini-2.5-pro',
+  'gpt-4o-mini',
+  'llama-3.3-70b-versatile',
+  'Custom',
+];
 
 /* ------------------------------------------------------------------ */
 /* Settings — defaults                                                 */
@@ -398,17 +416,38 @@ export const MODEL_OPTIONS = ['GLM-4.6', 'GPT-4o', 'Claude Sonnet 4.5', 'Gemini 
 
 export const DEFAULT_SETTINGS: SettingsState = {
   company: {
-    name: 'Northstar Growth Partners',
-    website: 'https://northstaargrowth.example.com',
+    name: 'Shailog Technologies',
+    website: 'https://shailog.com',
     description:
-      'B2B growth partner helping mid-market companies build predictable, AI-assisted outbound revenue engines.',
+      'SaaS development studio building autonomous, AI-assisted marketing & sales products.',
     services: ['Lead generation', 'Outbound copywriting', 'Sales automation', 'Pipeline consulting'],
   },
-  aiKey: { provider: 'OpenAI', apiKey: '' },
+  aiKey: { provider: 'Google AI', apiKey: '' },
   smtp: { host: '', port: '587', user: '', password: '', from: '' },
   runs: { enabled: true, frequency: '1h' },
   report: { email: '' },
 };
+
+/* ------------------------------------------------------------------ */
+/* Email templates — starter + mock fallback                           */
+/* ------------------------------------------------------------------ */
+
+export const STARTER_TEMPLATE: Omit<EmailTemplate, 'id'> = {
+  name: 'Shailog - Value-First Audit',
+  subject: 'quick question about {{company}}’s website',
+  body:
+    'Hi {{company}} team,\n\n' +
+    'Came across {{company}} while researching {{industry}} — {{description}}\n\n' +
+    'While looking at {{website}}, a few things caught my eye:\n\n' +
+    '{{findings}}\n\n' +
+    'Nothing dramatic on their own, but together they quietly cost you leads every week. ' +
+    'This is exactly what we fix at {{sender_name}} ({{services}}).\n\n' +
+    'Worth a 15-minute call next week? Either way, happy to send over the full audit — free, no strings.\n\n' +
+    'Best,\n{{sender_name}}\n{{sender_website}}',
+  isDefault: true,
+};
+
+export const MOCK_TEMPLATES: EmailTemplate[] = [{ id: 'tpl-1', ...STARTER_TEMPLATE }];
 
 /* ------------------------------------------------------------------ */
 /* Chat — mock Responder behaviour (no LLM)                            */

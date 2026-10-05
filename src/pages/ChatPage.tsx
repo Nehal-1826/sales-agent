@@ -1,9 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
-import { getChatHistory, sendChatMessage } from '../lib/api';
+import { clearChat, getChatHistory, sendChatMessage } from '../lib/api';
 import { CHAT_INITIAL } from '../lib/mockData';
 import { IconBot, IconSend, IconUser } from '../components/icons';
 import { Spinner } from '../components/ui';
 import type { ChatMessage } from '../lib/types';
+
+const WELCOME: ChatMessage = {
+  id: 0,
+  from: 'ai',
+  text: 'Vanakkam! 👋 Fresh chat — ask me anything about your leads, drafts or the pipeline.',
+  time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+};
 
 function now(): string {
   return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -52,6 +59,11 @@ export function ChatPage() {
     setMessages((m) => [...m, reply]);
   };
 
+  const clear = async () => {
+    await clearChat();
+    setMessages([{ ...WELCOME, time: now() }]);
+  };
+
   return (
     <div className="page chat-page">
       <div className="chat-shell panel">
@@ -64,6 +76,9 @@ export function ChatPage() {
             <small>Handles responses in the autonomous pipeline</small>
           </div>
           <span className="chip">Responder agent</span>
+          <button className="btn btn-ghost chat-clear" onClick={clear} title="Clear the conversation">
+            🗑 Clear
+          </button>
         </header>
 
         {loading ? (

@@ -11,9 +11,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .chat import responder_reply
+from .guide import guide_answer
 from .health import status_of
 from .mailer import send_draft, smtp_configured
-from .models import AgentConfig, AppSettings, ChatMessage, EmailDraft, Lead, PipelineRun, Potential, Reply, User
+from .models import AgentConfig, AppSettings, ChatMessage, EmailDraft, EmailTemplate, Lead, PipelineRun, Potential, Reply, User
 from .pipeline import pipeline_status, run_pipeline
 from .reports import _resolve_recipients, send_daily_report
 from .serializers import (
@@ -21,6 +22,7 @@ from .serializers import (
     AgentMetaSerializer,
     ChatMessageSerializer,
     EmailDraftSerializer,
+    EmailTemplateSerializer,
     LeadSerializer,
     PipelineRunSerializer,
     PotentialSerializer,
@@ -216,17 +218,159 @@ def report_test(request):
 
 
 # ------------------------------------------------------------------
-# CHAT — Responder (Chatbot)
+# AI AUTOPILOT — consent, status and revoke
 # ------------------------------------------------------------------
 
 @api_view(['GET', 'POST'])
+def autopilot(request):
+    """GET → {enabled, sentToday, dailyLimit, activity[]}. POST {enabled, dailyLimit?}
+    → toggle after the user's explicit accept/revoke."""
+    from .autopilot import autopilot_status, set_autopilot
+
+    if request.method == 'POST':
+        if 'enabled' not in request.data:
+            return Response({'detail': 'enabled is required'}, status=400)
+        return Response(set_autopilot(bool(request.data.get('enabled')),
+                                      request.data.get('dailyLimit')))
+    return Response(autopilot_status())
+
+
+# ------------------------------------------------------------------
+# LEADS & REPORTS — full lead list export + on-demand report generation
+# ------------------------------------------------------------------
+
+@api_view(['GET'])
+def leads_export(request):
+    """All leads as a CSV download (Leads & Reports page)."""
+    import csv
+    from django.http import HttpResponse
+
+    response = HttpResponse(content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = 'attachment; filename="leads.csv"'
+    writer = csv.writer(response)
+    writer.writerow(['Company', 'Industry', 'Website', 'Country', 'State', 'Score',
+                     'Contact email', 'Has website', 'Flaws', 'AI description', 'Source', 'Discovered'])
+    for l in Lead.objects.order_by('-created_at'):
+        writer.writerow([
+            l.company, l.industry, l.website, l.country, l.state, l.score,
+            l.contact_email, 'yes' if l.has_website else 'no', len(l.findings or []),
+            (l.description or '').replace('\n', ' '), l.source,
+            l.created_at.strftime('%Y-%m-%d %H:%M'),
+        ])
+    return response
+
+
+@api_view(['POST'])
+def report_generate(request):
+    """Build the branded lead report on demand (Leads & Reports page).
+    body: {scope: 'today' | 'all', email: bool} — returns subject/text/html;
+    email=true also delivers it to the configured report recipient."""
+    import datetime as dt
+
+    from .mailer import branded_email_html, text_to_email_html
+    from .reports import build_daily_report, now_ist, send_daily_report
+
+    scope = (request.data.get('scope') or 'today').lower()
+    day = now_ist().date() if scope != 'all' else None
+    subject, text = build_daily_report(day)
+    emailed = False
+    if request.data.get('email'):
+        status, _ = send_daily_report(day)
+        emailed = status == 'smtp'
+    return Response({
+        'subject': subject,
+        'text': text,
+        'html': branded_email_html(text_to_email_html(text)),
+        'emailed': emailed,
+    })
+
+
+# ------------------------------------------------------------------
+# TEMPLATES — user cold-email templates (Settings → Email Templates)
+# ------------------------------------------------------------------
+
+def _get_template(template_id):
+    try:
+        return EmailTemplate.objects.get(id=template_id)
+    except EmailTemplate.DoesNotExist:
+        return None
+
+
+def _ensure_single_default(tpl):
+    """Keep exactly one default: when `tpl` is flagged (or no other default
+    exists) clear the rest so the pipeline always has an unambiguous pick."""
+    others = EmailTemplate.objects.exclude(pk=tpl.pk)
+    if tpl.is_default or not others.filter(is_default=True).exists():
+        others.update(is_default=False)
+        if not tpl.is_default:
+            tpl.is_default = True
+            tpl.save(update_fields=['is_default', 'updated_at'])
+
+
+@api_view(['GET', 'POST'])
+def templates(request):
+    if request.method == 'POST':
+        serializer = EmailTemplateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        tpl = serializer.save()
+        _ensure_single_default(tpl)
+        return Response(EmailTemplateSerializer(tpl).data, status=status.HTTP_201_CREATED)
+    return Response(EmailTemplateSerializer(EmailTemplate.objects.all(), many=True).data)
+
+
+@api_view(['PUT', 'DELETE'])
+def template_detail(request, template_id):
+    tpl = _get_template(template_id)
+    if tpl is None:
+        return Response({'detail': 'template not found'}, status=404)
+    if request.method == 'DELETE':
+        was_default = tpl.is_default
+        tpl.delete()
+        if was_default:  # promote the newest remaining template to default
+            next_default = EmailTemplate.objects.first()
+            if next_default:
+                next_default.is_default = True
+                next_default.save(update_fields=['is_default', 'updated_at'])
+        return Response({'deleted': True})
+    serializer = EmailTemplateSerializer(tpl, data=request.data, partial=True)
+    serializer.is_valid(raise_exception=True)
+    tpl = serializer.save()
+    _ensure_single_default(tpl)
+    return Response(EmailTemplateSerializer(tpl).data)
+
+
+# ------------------------------------------------------------------
+# GUIDE — in-product AI assistant ("how do I use this?")
+# ------------------------------------------------------------------
+
+@api_view(['POST'])
+def guide(request):
+    """Gemini-powered product guide: answers usage questions grounded in the
+    product knowledge base + the workspace's live state — and executes
+    commands ("run a cycle", "do it yourself") for real."""
+    text = (request.data.get('text') or '').strip()
+    if not text:
+        return Response({'detail': 'text is required'}, status=400)
+    history = [h for h in (request.data.get('history') or [])
+               if isinstance(h, dict) and isinstance(h.get('text'), str)][:8]
+    return Response({'answer': guide_answer(text, history)})
+
+
+# ------------------------------------------------------------------
+# CHAT — Responder (Chatbot)
+# ------------------------------------------------------------------
+
+@api_view(['GET', 'POST', 'DELETE'])
 def chat(request):
+    if request.method == 'DELETE':
+        deleted, _ = ChatMessage.objects.filter(user=request.user).delete()
+        return Response({'cleared': True, 'deleted': deleted})
     if request.method == 'POST':
         text = (request.data.get('text') or '').strip()
         if not text:
             return Response({'detail': 'text is required'}, status=400)
         user_msg = ChatMessage.objects.create(user=request.user, role='user', text=text)
-        reply_text = responder_reply(text, turn=user_msg.id)
+        reply_text = responder_reply(text, turn=user_msg.id, username=request.user.username)
         ai_msg = ChatMessage.objects.create(user=request.user, role='ai', text=reply_text)
         return Response({
             'userMessage': ChatMessageSerializer(user_msg).data,

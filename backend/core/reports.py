@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 from django.utils import timezone
 
-from .mailer import send_email_message, smtp_configured
+from .mailer import branded_email_html, send_email_message, smtp_configured, text_to_email_html
 from .models import AppSettings, Lead, PipelineRun, Potential, User
 
 log = logging.getLogger(__name__)
@@ -50,26 +50,30 @@ def _resolve_recipients():
 
 
 def build_daily_report(day=None):
-    """(subject, body) — brief summary of one IST day: leads scraped, potentials, cycles."""
-    day = day or now_ist().date()
-    start = datetime.combine(day, dtime.min, tzinfo=IST)
-    end = start + timedelta(days=1)
-    start_aware, end_aware = start, end
-
-    leads = list(Lead.objects.filter(created_at__gte=start_aware, created_at__lt=end_aware)
-                 .order_by('-score'))
-    potentials = list(Potential.objects.filter(created_at__gte=start_aware, created_at__lt=end_aware)
-                      .order_by('-value'))
-    runs = list(PipelineRun.objects.filter(started_at__gte=start_aware, started_at__lt=end_aware))
+    """(subject, body) — brief summary of one IST day: leads scraped, potentials, cycles.
+    day=None → ALL TIME (for on-demand reports from the Leads & Reports page)."""
+    if day:
+        start = datetime.combine(day, dtime.min, tzinfo=IST)
+        end = start + timedelta(days=1)
+        leads = list(Lead.objects.filter(created_at__gte=start, created_at__lt=end).order_by('-score'))
+        potentials = list(Potential.objects.filter(created_at__gte=start, created_at__lt=end).order_by('-value'))
+        runs = list(PipelineRun.objects.filter(started_at__gte=start, started_at__lt=end))
+        label = day.strftime('%d %b %Y')
+    else:
+        leads = list(Lead.objects.order_by('-score'))
+        potentials = list(Potential.objects.order_by('-created_at'))
+        runs = list(PipelineRun.objects.all())
+        label = 'all time'
+    start_aware, end_aware = None, None  # kept for clarity — filters applied above
 
     def where(l):
         return ', '.join(p for p in (l.state, l.country) if p) or '—'
 
     lines = [
-        f'Daily lead report — {day.strftime("%d %b %Y")} (IST)',
+        f'Lead report — {label}' + (' (IST)' if day else ''),
         '=' * 52,
         '',
-        f'LEADS SCRAPED TODAY: {len(leads)}',
+        f'LEADS {"SCRAPED TODAY" if day else "IN CRM"}: {len(leads)}',
     ]
     for l in leads[:15]:
         flag = 'no website' if not l.has_website else f'{len(l.findings)} flaw(s)'
@@ -77,25 +81,26 @@ def build_daily_report(day=None):
     if len(leads) > 15:
         lines.append(f'  … and {len(leads) - 15} more')
 
-    lines += ['', f'NEW POTENTIALS TODAY: {len(potentials)}']
+    lines += ['', f'{"NEW POTENTIALS TODAY" if day else "POTENTIALS"}: {len(potentials)}']
     for p in potentials[:10]:
         lines.append(f'  • {p.company} — {p.opportunity} | {p.stage} | {p.value}')
     if len(potentials) > 10:
         lines.append(f'  … and {len(potentials) - 10} more')
     if not potentials:
-        lines.append('  (none crossed the opportunity threshold today)')
+        lines.append('  (none crossed the opportunity threshold)')
 
-    lines += ['', f'PIPELINE CYCLES TODAY: {len(runs)}']
+    lines += ['', f'PIPELINE CYCLES {"TODAY" if day else "TOTAL"}: {len(runs)}']
     for r in runs:
         lines.append(
             f'  • Run #{r.id} ({r.triggered_by}): {r.leads_created} lead(s), '
             f'{r.potentials_created} potential(s)')
 
     totals = (Lead.objects.count(), Potential.objects.count())
+    brand = (AppSettings.load().company_name or 'Shailog Technologies').strip()
     lines += ['', f'TOTALS: {totals[0]} leads · {totals[1]} potentials in CRM',
-              '', '— Agentic AI (Search · Profile · Copywright · Responder)']
+              '', f'— {brand} · Marketing & Sales AI (Search · Profile · Copywright · Responder)']
 
-    subject = f'[Agentic AI] Daily lead report — {day.strftime("%d %b %Y")}'
+    subject = f'[{brand.split()[0]}] Lead report — {label}'
     return subject, '\n'.join(lines)
 
 
@@ -112,7 +117,10 @@ def send_daily_report(day=None):
     from_email = s.from_email or s.smtp_user or 'reports@agentic-ai.local'
 
     if smtp_configured(s):
-        send_email_message(subject, body, recipients, s)
+        send_email_message(
+            subject, body, recipients, s,
+            html=branded_email_html(text_to_email_html(body), s),
+        )
         log.info('Daily report emailed to %s', ', '.join(recipients))
         return 'smtp', subject
 

@@ -7,7 +7,7 @@
 
 export type AgentKey = 'search' | 'profile' | 'copywright' | 'responder';
 
-export type PageKey = 'dashboard' | 'pipeline' | 'agents' | 'crm' | 'chat' | 'settings';
+export type PageKey = 'dashboard' | 'pipeline' | 'agents' | 'crm' | 'chat' | 'settings' | 'leads';
 
 export interface AgentMeta {
   key: AgentKey;
@@ -42,6 +42,7 @@ export interface Lead {
   hasWebsite: boolean; // website / no-website categorization
   contactEmail: string; // scraped from their site ('' when none found)
   findings: Finding[]; // website flaws + improvement recommendations
+  description: string; // AI (Gemini) summary of what the company does — read from its site
 }
 
 /** CRM — OUTREACH: cold email drafted by Copywright, approved + sent by the user. */
@@ -56,6 +57,17 @@ export interface EmailDraft {
   sentVia: string; // 'smtp' | 'console' | ''
   error: string;
   lastActivity: string;
+}
+
+/** SETTINGS — user cold-email template (written manually or uploaded).
+ *  Placeholders like {{company}} are filled per lead; with an AI key set,
+ *  Gemini personalizes the whole template per lead. */
+export interface EmailTemplate {
+  id: string;
+  name: string;
+  subject: string;
+  body: string;
+  isDefault: boolean;
 }
 
 /** CRM — POTENTIAL: opportunities identified by the system. */

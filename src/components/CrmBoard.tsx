@@ -90,6 +90,11 @@ export function CrmBoard({ compact = false, refreshToken = 0 }: { compact?: bool
               <span className="crm-line">
                 {lead.industry} · {lead.website || 'no website'}
               </span>
+              {lead.description && (
+                <span className="crm-line" title={lead.description}>
+                  {lead.description}
+                </span>
+              )}
               <div className="crm-card-foot" style={{ gap: 6 }}>
                 <Chip tone={lead.hasWebsite ? 'neutral' : 'warn'}>
                   {lead.hasWebsite ? 'Website' : 'No website'}

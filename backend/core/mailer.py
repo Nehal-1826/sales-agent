@@ -9,11 +9,14 @@ helper therefore tries: default verify → Windows cert store → unverified
 (dev machines only, loudly logged).
 """
 
+import html as html_lib
 import logging
+import re
 import smtplib
 import ssl
 from email.message import EmailMessage
-from email.utils import formatdate
+from email.utils import formataddr, formatdate
+from pathlib import Path
 
 from django.utils import timezone
 
@@ -22,6 +25,17 @@ from .models import AppSettings, EmailDraft
 log = logging.getLogger(__name__)
 
 SMTP_TIMEOUT = 30
+
+# Inline logo attached to every HTML email (referenced as cid:agentic-logo).
+LOGO_PATH = Path(__file__).resolve().parent / 'assets' / 'logo.png'
+LOGO_CID = '<agentic-logo>'
+
+
+def _logo_bytes():
+    try:
+        return LOGO_PATH.read_bytes()
+    except OSError:
+        return None
 
 
 def smtp_configured(s=None):
@@ -67,19 +81,144 @@ def _open_smtp(s):
     raise last_error
 
 
-def send_email_message(subject, body, recipients, s=None):
-    """Send one plain-text email via the configured SMTP. Returns True on success."""
+def send_email_message(subject, body, recipients, s=None, html=None):
+    """Send one email via the configured SMTP — plain text, plus an optional
+    branded HTML part (logo header) with the logo attached inline. True on success."""
     s = s or AppSettings.load()
     from_email = s.from_email or s.smtp_user or 'outreach@agentic-ai.local'
+    sender_name = s.company_name or 'Agentic AI'
     msg = EmailMessage()
-    msg['From'] = from_email
+    msg['From'] = formataddr((sender_name, from_email))
     msg['To'] = ', '.join(recipients)
     msg['Subject'] = subject
     msg['Date'] = formatdate(localtime=True)
     msg.set_content(body)
+    if html:
+        msg.add_alternative(html, subtype='html')
+        logo = _logo_bytes()
+        if logo:
+            msg.get_payload()[1].add_related(logo, 'image', 'png', cid=LOGO_CID)
     with _open_smtp(s) as server:
         server.send_message(msg)
     return True
+
+
+# ------------------------------------------------------------------
+# Branded HTML wrappers — inline styles only (email clients strip CSS)
+# ------------------------------------------------------------------
+
+def branded_email_html(content_html, s=None):
+    """Logo header bar + content + footer, ready for send_email_message(html=…)."""
+    s = s or AppSettings.load()
+    name = s.company_name or 'Agentic AI'
+    logo = _logo_bytes()
+    if logo:
+        brand = (
+            f'<img src="cid:{LOGO_CID[1:-1]}" alt="{html_lib.escape(name)}" width="120" height="48" '
+            'style="display:block;width:120px;height:48px;border:0">'
+        )
+    else:  # no logo file — fall back to a text wordmark so the header still brands
+        brand = (f'<span style="font-family:Arial,Helvetica,sans-serif;font-size:18px;'
+                 f'font-weight:bold;color:#ffffff;letter-spacing:2px">{html_lib.escape(name).upper()}</span>')
+    company = html_lib.escape(s.company_name) if s.company_name else 'Shailog Technologies'
+    return (
+        '<div style="margin:0;padding:24px 8px;background:#f3f4f6">'
+        '<div style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:8px;overflow:hidden">'
+        f'<div style="background:#0b0f19;padding:18px 28px">{brand}</div>'
+        '<div style="padding:24px 28px;font-family:Arial,Helvetica,sans-serif;font-size:14px;'
+        f'line-height:1.65;color:#1f2937">{content_html}</div>'
+        '<div style="padding:14px 28px;border-top:1px solid #e5e7eb;font-family:Arial,Helvetica,sans-serif;'
+        f'font-size:12px;color:#6b7280">A {company} product · autonomous sales pipeline</div>'
+        '</div></div>'
+    )
+
+
+def text_to_email_html(text):
+    """Plain text (cold-email body, report) as an HTML block that keeps line breaks."""
+    return f'<div style="white-space:pre-wrap">{html_lib.escape(text)}</div>'
+
+
+# ------------------------------------------------------------------
+# Designer cold-email layout — parses the plain draft into paragraphs,
+# finding cards and a signature, rendered with warm editorial styling
+# (orange accent matches the Shailog logo).
+# ------------------------------------------------------------------
+
+ACCENT = '#e8720c'
+
+_SIGN_OFF = re.compile(
+    r'^(best|regards|kind regards|warm regards|cheers|thanks|thank you|warmly|sincerely)[,.!?]?$', re.I)
+
+
+def _esc(t):
+    return html_lib.escape(t)
+
+
+def _body_blocks(text):
+    """Split a plain email body into ('para'|'list'|'lead', content) blocks."""
+    blocks = []
+    for raw in re.split(r'\n\s*\n', text.strip()):
+        lines = [l.strip() for l in raw.split('\n') if l.strip()]
+        if not lines:
+            continue
+        if all(re.match(r'^[•\-\*]\s+', l) for l in lines):
+            blocks.append(('list', [re.sub(r'^[•\-\*]\s+', '', l) for l in lines]))
+        elif len(lines) == 1 and lines[0].endswith(':'):
+            blocks.append(('lead', lines[0]))
+        else:
+            blocks.append(('para', lines))
+    return blocks
+
+
+def designed_email_html(text, s=None):
+    """Designer layout for one cold-email body: serif paragraphs, accent
+    finding-cards for • lines, and a signature block with a CTA button.
+    Drops into the same branded header/footer as send_email_message()."""
+    s = s or AppSettings.load()
+    lines_all = [l.strip() for l in (text or '').split('\n') if l.strip()]
+
+    sign_idx = next((i for i, l in enumerate(lines_all) if _SIGN_OFF.match(l)), None)
+    body_text = '\n'.join(lines_all[:sign_idx]) if sign_idx is not None else '\n'.join(lines_all)
+    sign_lines = lines_all[sign_idx:] if sign_idx is not None else []
+
+    parts = []
+    for kind, content in _body_blocks(body_text):
+        if kind == 'list':
+            for item in content:
+                parts.append(
+                    f'<div style="background:#faf8f4;border-left:3px solid {ACCENT};'
+                    f'border-radius:8px;padding:11px 14px;margin:0 0 8px;'
+                    f'font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.55;'
+                    f'color:#3d3a35">{_esc(item)}</div>')
+        elif kind == 'lead':
+            parts.append(
+                f'<p style="margin:0 0 10px;font-family:Arial,Helvetica,sans-serif;'
+                f'font-size:13.5px;font-weight:700;color:#1c1917">{_esc(content[:-1])}</p>')
+        else:
+            parts.append(
+                '<p style="margin:0 0 14px;font-family:Georgia,\'Times New Roman\',serif;'
+                f'font-size:15.5px;line-height:1.7;color:#2d2a26">{_esc(" ".join(content))}</p>')
+
+    if sign_lines:
+        site = next((l for l in sign_lines[1:]
+                     if re.match(r'^(https?://|www\.)|[a-z0-9.-]+\.[a-z]{2,}', l, re.I)), '')
+        site_clean = re.sub(r'^https?://', '', site).rstrip('/')
+        site_href = site if site.startswith('http') else f'https://{site}'
+        name = next((l for l in sign_lines[1:] if l != site), s.company_name or 'Our team')
+        button = (
+            f'<a href="{_esc(site_href)}" style="display:inline-block;margin-top:10px;'
+            f'background:{ACCENT};color:#ffffff;font-family:Arial,Helvetica,sans-serif;'
+            f'font-size:13px;font-weight:600;text-decoration:none;padding:11px 20px;'
+            f'border-radius:8px">See our work &#8594;</a>' if site_clean else '')
+        parts.append(
+            '<div style="margin-top:22px;padding-top:16px;border-top:1px solid #ece5db">'
+            f'<p style="margin:0 0 8px;font-family:Georgia,serif;font-size:14px;color:#8a8578">'
+            f'{_esc(sign_lines[0].rstrip(",.!"))},</p>'
+            f'<div style="font-family:Georgia,serif;font-weight:700;font-size:17px;'
+            f'color:#14110e">{_esc(name)}</div>'
+            f'{button}</div>')
+
+    return ''.join(parts)
 
 
 def _log_console_delivery(draft, from_email):
@@ -118,7 +257,10 @@ def send_draft(draft):
         draft.error = ''
     else:
         try:
-            send_email_message(draft.subject, draft.body, [draft.to_email], s)
+            send_email_message(
+                draft.subject, draft.body, [draft.to_email], s,
+                html=branded_email_html(designed_email_html(draft.body, s), s),
+            )
             draft.status = EmailDraft.Statuses.SENT
             draft.sent_via = EmailDraft.Via.SMTP
             draft.sent_at = timezone.now()

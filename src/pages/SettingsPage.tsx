@@ -1,9 +1,18 @@
 import { useEffect, useState } from 'react';
-import { DEFAULT_SETTINGS } from '../lib/mockData';
-import { changePassword, getSettings, putSettings, sendTestReport } from '../lib/api';
+import { DEFAULT_SETTINGS, MOCK_TEMPLATES } from '../lib/mockData';
+import {
+  changePassword,
+  createTemplate,
+  deleteTemplate,
+  getSettings,
+  getTemplates,
+  putSettings,
+  sendTestReport,
+  updateTemplate,
+} from '../lib/api';
 import { loadJson, saveJson } from '../lib/store';
 import { Field, PageHeader, SectionLabel, Spinner, Toggle } from '../components/ui';
-import type { RunFrequency, SettingsState } from '../lib/types';
+import type { EmailTemplate, RunFrequency, SettingsState } from '../lib/types';
 
 const STORE_KEY = 'settings';
 
@@ -35,6 +44,10 @@ export function SettingsPage() {
   const [showKey, setShowKey] = useState(false);
   const [reportMsg, setReportMsg] = useState('');
   const [sendingReport, setSendingReport] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [templates, setTemplates] = useState<EmailTemplate[]>([]);
+  const [editing, setEditing] = useState<Partial<EmailTemplate> | null>(null);
+  const [tplMsg, setTplMsg] = useState('');
 
   useEffect(() => {
     getSettings().then((remote) => {
@@ -50,7 +63,69 @@ export function SettingsPage() {
       }
       setLoading(false);
     });
+    getTemplates().then((list) => setTemplates(list ?? MOCK_TEMPLATES));
   }, []);
+
+  const refreshTemplates = async () => {
+    const list = await getTemplates();
+    setTemplates(list ?? MOCK_TEMPLATES);
+  };
+
+  const saveTemplate = async () => {
+    if (!editing || !editing.name?.trim()) {
+      setTplMsg('Give the template a name first.');
+      return;
+    }
+    const payload = {
+      name: editing.name.trim(),
+      subject: editing.subject ?? '',
+      body: editing.body ?? '',
+      isDefault: editing.isDefault ?? false,
+    };
+    const saved = editing.id ? await updateTemplate(editing.id, payload) : await createTemplate(payload);
+    if (!saved) {
+      setTplMsg('Save failed — the backend rejected the template.');
+      return;
+    }
+    setTplMsg(`Template saved${saved.isDefault ? ' — now the default' : ''}.`);
+    setEditing(null);
+    await refreshTemplates();
+  };
+
+  const removeTemplate = async (id: string) => {
+    const ok = await deleteTemplate(id);
+    setTplMsg(ok ? 'Template deleted.' : 'Delete failed — is the backend running?');
+    if (editing?.id === id) setEditing(null);
+    await refreshTemplates();
+  };
+
+  const makeDefault = async (id: string) => {
+    const ok = await updateTemplate(id, { isDefault: true });
+    if (!ok) setTplMsg('Could not set the default — is the backend running?');
+    await refreshTemplates();
+  };
+
+  const onUploadFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result ?? '');
+      let subject = '';
+      let body = text;
+      const m = text.match(/^\s*subject:\s*(.+)\r?\n/i);
+      if (m) {
+        subject = m[1].trim();
+        body = text.slice(m[0].length);
+      }
+      setEditing({
+        name: file.name.replace(/\.[^.]+$/, ''),
+        subject,
+        body: body.trim(),
+        isDefault: templates.length === 0,
+      });
+      setTplMsg(`Loaded “${file.name}” — review and save.`);
+    };
+    reader.readAsText(file);
+  };
 
   useEffect(() => {
     if (!saved) return;
@@ -60,8 +135,11 @@ export function SettingsPage() {
 
   const save = async () => {
     saveJson(STORE_KEY, settings); // offline copy
-    await putSettings(settings);
-    setSaved(true);
+    const ok = live ? await putSettings(settings) : true;
+    setSaved(ok);
+    setSaveError(
+      ok ? '' : 'Save failed — the backend rejected the update. Check the Django server and try again.'
+    );
   };
 
   const updatePassword = async () => {
@@ -119,6 +197,8 @@ export function SettingsPage() {
           </button>
         }
       />
+
+      {saveError && <small className="inline-msg">{saveError}</small>}
 
       {loading ? (
         <Spinner label="Loading settings…" />
@@ -247,6 +327,115 @@ export function SettingsPage() {
         </div>
       </section>
 
+      {/* 3.5 — EMAIL TEMPLATES (mail template creator) */}
+      <section className="panel settings-panel">
+        <SectionLabel>Email Templates</SectionLabel>
+        <small className="inline-msg">
+          The default template is the base for every cold email the Copywright agent drafts — Gemini
+          personalizes it per lead using the AI-read company description and audit findings. Write
+          one manually or upload a .txt / .md / .html file.
+        </small>
+        {templates.map((t) => (
+          <div className="tpl-row" key={t.id}>
+            <div>
+              <strong>
+                {t.name}
+                {t.isDefault && <span className="tag" style={{ marginLeft: 8 }}>default</span>}
+              </strong>
+              <small className="mono">{t.subject}</small>
+            </div>
+            <div className="tpl-actions">
+              {!t.isDefault && (
+                <button className="btn btn-ghost" onClick={() => makeDefault(t.id)}>
+                  Make default
+                </button>
+              )}
+              <button className="btn btn-ghost" onClick={() => setEditing({ ...t })}>
+                Edit
+              </button>
+              <button className="btn btn-ghost" onClick={() => removeTemplate(t.id)}>
+                Delete
+              </button>
+            </div>
+          </div>
+        ))}
+        {templates.length === 0 && (
+          <small className="inline-msg">No templates yet — the built-in fallback email is used.</small>
+        )}
+        <div className="tpl-toolbar">
+          <button
+            className="btn btn-ghost"
+            onClick={() => setEditing({ name: '', subject: '', body: '', isDefault: templates.length === 0 })}
+          >
+            + New template
+          </button>
+          <label className="btn btn-ghost" style={{ display: 'inline-flex', alignItems: 'center' }}>
+            ⬆ Upload file
+            <input
+              type="file"
+              accept=".txt,.md,.html,.htm"
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (file) onUploadFile(file);
+              }}
+            />
+          </label>
+        </div>
+
+        {editing && (
+          <div className="tpl-editor">
+            <div className="settings-grid">
+              <Field label="Template name">
+                <input
+                  value={editing.name}
+                  placeholder="e.g. Website Audit Intro"
+                  onChange={(e) => setEditing((t) => ({ ...t!, name: e.target.value }))}
+                />
+              </Field>
+              <Field label="Subject line">
+                <input
+                  className="mono"
+                  value={editing.subject}
+                  placeholder="Quick idea for {{company}}"
+                  onChange={(e) => setEditing((t) => ({ ...t!, subject: e.target.value }))}
+                />
+              </Field>
+            </div>
+            <Field label="Body" hint="First line of an uploaded file starting with “Subject:” becomes the subject.">
+              <textarea
+                className="mono"
+                rows={10}
+                value={editing.body}
+                placeholder={'Hi {{company}} team,\n\n…'}
+                onChange={(e) => setEditing((t) => ({ ...t!, body: e.target.value }))}
+              />
+            </Field>
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={editing.isDefault ?? false}
+                onChange={(e) => setEditing((t) => ({ ...t!, isDefault: e.target.checked }))}
+              />
+              Use as the default template
+            </label>
+            <div className="tpl-toolbar">
+              <button className="btn btn-primary" onClick={saveTemplate}>
+                Save template
+              </button>
+              <button className="btn btn-ghost" onClick={() => setEditing(null)}>
+                Cancel
+              </button>
+              {tplMsg && <small className="inline-msg">{tplMsg}</small>}
+            </div>
+          </div>
+        )}
+        <small className="inline-msg mono">
+          {'Placeholders: {{company}} {{industry}} {{website}} {{description}} {{findings}} {{sender_name}} {{sender_website}} {{services}}'}
+        </small>
+      </section>
+
       {/* 4 — DAILY REPORT (admin email) */}
       <section className="panel settings-panel">
         <SectionLabel>Daily Report</SectionLabel>
@@ -344,6 +533,17 @@ export function SettingsPage() {
             : 'Frontend control only — start the backend to persist the schedule.'}
         </small>
       </section>
+
+      <div className="save-bar">
+        <button className="btn btn-primary" onClick={save}>
+          {saved ? 'Saved ✓' : 'Save Changes'}
+        </button>
+        {saveError ? (
+          <small className="inline-msg">{saveError}</small>
+        ) : (
+          saved && <small className="inline-msg">Settings saved{live ? ' to the backend' : ' locally'}.</small>
+        )}
+      </div>
       </>
       )}
     </div>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { IconAgents, IconChat, IconCrm, IconDashboard, IconLoop, IconSettings } from './icons';
+import { IconAgents, IconChat, IconCrm, IconDashboard, IconList, IconLoop, IconSettings } from './icons';
 import { getCurrentUser } from '../lib/api';
 import { StatusDot } from './ui';
 import type { PageKey } from '../lib/types';
@@ -9,6 +9,7 @@ const NAV: { key: PageKey; label: string; icon: (p: { size?: number }) => JSX.El
   { key: 'pipeline', label: 'Pipeline', icon: IconLoop },
   { key: 'agents', label: 'Agents', icon: IconAgents },
   { key: 'crm', label: 'CRM', icon: IconCrm },
+  { key: 'leads', label: 'Leads & Reports', icon: IconList },
   { key: 'chat', label: 'Chat', icon: IconChat },
   { key: 'settings', label: 'Settings', icon: IconSettings },
 ];
@@ -19,12 +20,14 @@ export function Sidebar({
   open,
   onClose,
   live,
+  onLogout,
 }: {
   page: PageKey;
   onNavigate: (p: PageKey) => void;
   open: boolean;
   onClose: () => void;
   live: boolean | null;
+  onLogout?: () => void;
 }) {
   const [user, setUser] = useState<{ name: string; role: string; mode: string } | null>(null);
 
@@ -35,18 +38,7 @@ export function Sidebar({
   return (
     <aside className={`sidebar${open ? ' open' : ''}`}>
       <div className="sidebar-brand" onClick={() => onNavigate('dashboard')}>
-        <span className="brand-mark" aria-hidden>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-            <circle cx="12" cy="5" r="2.6" fill="currentColor" />
-            <circle cx="5" cy="19" r="2.6" fill="#3a3f52" />
-            <circle cx="19" cy="19" r="2.6" fill="#3a3f52" />
-            <path d="M12 7.6v4.2M12 11.8l-7 7.2M12 11.8l7 7.2" stroke="#525a75" strokeWidth="1.4" />
-          </svg>
-        </span>
-        <span className="brand-text">
-          <strong>Agentic AI</strong>
-          <small>Marketing &amp; Sales</small>
-        </span>
+        <img src="/logo.png" alt="Shailog Technologies" className="brand-logo" />
       </div>
 
       <nav className="side-nav" aria-label="Main">
@@ -85,6 +77,11 @@ export function Sidebar({
             </small>
           </div>
         </div>
+        {onLogout && (
+          <button className="btn btn-ghost side-logout" onClick={onLogout}>
+            ⎋ Sign out
+          </button>
+        )}
       </div>
     </aside>
   );

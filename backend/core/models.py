@@ -71,6 +71,8 @@ class Lead(Timestamped):
     contact_email = models.CharField(max_length=200, blank=True)  # found on their site
     findings = models.JSONField(default=list, blank=True)  # [{area, issue, recommendation, severity}]
     analysis = models.JSONField(default=dict, blank=True)  # raw scrape metrics
+    # AI (Gemini) summary of what the company does, written from its own site text
+    description = models.TextField(blank=True)
 
     class Meta:
         ordering = ['-created_at']
@@ -103,12 +105,50 @@ class EmailDraft(Timestamped):
     sent_via = models.CharField(max_length=20, choices=Via.choices, blank=True)
     sent_at = models.DateTimeField(null=True, blank=True)
     error = models.CharField(max_length=500, blank=True)
+    auto_sent = models.BooleanField(default=False)  # approved+sent by AI Autopilot
 
     class Meta:
         ordering = ['-updated_at']
 
     def __str__(self):
         return f'{self.company} — {self.get_status_display()}'
+
+
+class ActivityLog(models.Model):
+    """Audit trail of everything AI Autopilot does — shown live in the UI so
+    the human can always see what the machine is doing on their behalf."""
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    actor = models.CharField(max_length=20, default='autopilot')
+    action = models.CharField(max_length=60)   # e.g. 'email_sent', 'skipped', 'cycle'
+    detail = models.CharField(max_length=500, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'[{self.actor}] {self.action}: {self.detail[:60]}'
+
+
+class EmailTemplate(Timestamped):
+    """Outreach — reusable cold-email base created by the user (written
+    manually or uploaded). Copywright personalizes it per lead with Gemini;
+    {{placeholders}} are substituted when no AI key is set.
+
+    At most one template is the default; the pipeline falls back to the
+    newest template when no default is flagged.
+    """
+
+    name = models.CharField(max_length=200)
+    subject = models.CharField(max_length=300, blank=True)
+    body = models.TextField(blank=True)
+    is_default = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['-is_default', '-updated_at']
+
+    def __str__(self):
+        return f'{self.name}{" (default)" if self.is_default else ""}'
 
 
 class Potential(Timestamped):
@@ -215,6 +255,11 @@ class AppSettings(Timestamped):
     smtp_user = models.CharField(max_length=200, blank=True)
     smtp_password = models.CharField(max_length=500, blank=True)
     from_email = models.CharField(max_length=200, blank=True)
+
+    # AI Autopilot — after explicit user consent, the orchestrator runs the
+    # whole product: cycles + auto-approval + sending (with daily caps).
+    autopilot_enabled = models.BooleanField(default=False)
+    autopilot_daily_limit = models.PositiveSmallIntegerField(default=10)  # auto-sends per day
 
     # Daily report — recipient of the 8 PM IST lead report (comma-separated allowed;
     # falls back to superuser/staff emails when blank)

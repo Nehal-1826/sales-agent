@@ -130,12 +130,12 @@ class Command(BaseCommand):
 
         # --- settings -----------------------------------------------------
         AppSettings.objects.get_or_create(pk=1, defaults={
-            'company_name': 'Northstar Growth Partners',
-            'company_website': 'https://northstargrowth.example.com',
-            'company_description': 'B2B growth partner helping mid-market companies build predictable, '
-                                   'AI-assisted outbound revenue engines.',
+            'company_name': 'Shailog Technologies',
+            'company_website': 'https://shailog.com',
+            'company_description': 'SaaS development studio building autonomous, AI-assisted '
+                                   'marketing & sales products.',
             'services': ['Lead generation', 'Outbound copywriting', 'Sales automation', 'Pipeline consulting'],
-            'ai_provider': 'OpenAI',
+            'ai_provider': 'Google AI',
             'runs_enabled': True,
             'run_frequency': '1h',
         })

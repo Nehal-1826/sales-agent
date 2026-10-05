@@ -23,6 +23,7 @@ import type {
   AgentMeta,
   ChatMessage,
   EmailDraft,
+  EmailTemplate,
   Lead,
   Potential,
   Reply,
@@ -35,7 +36,6 @@ export const API_BASE_URL: string =
   (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_API_BASE_URL ?? '/api';
 
 const TOKEN_KEY = 'agentic-ai:token';
-const DEMO_CREDENTIALS = { username: 'operator', password: 'operator-demo-2026' };
 
 let authToken: string | null = null;
 try {
@@ -68,12 +68,18 @@ async function fetchJson<T>(path: string, init?: RequestInit, timeoutMs = 5000):
   }
 }
 
-/** Login with the demo operator account (seeded by `manage.py seed_demo`). */
-async function loginDemo(): Promise<boolean> {
+/* ------------------------------------------------------------------ */
+/* Auth — real login (no shipped credentials)                         */
+/* ------------------------------------------------------------------ */
+
+export async function login(
+  username: string,
+  password: string,
+): Promise<{ ok: boolean; error?: string }> {
   try {
     const data = await fetchJson<{ token: string }>('/auth/login/', {
       method: 'POST',
-      body: JSON.stringify(DEMO_CREDENTIALS),
+      body: JSON.stringify({ username, password }),
     });
     authToken = data.token;
     try {
@@ -81,9 +87,36 @@ async function loginDemo(): Promise<boolean> {
     } catch {
       /* ignore */
     }
-    return true;
+    return { ok: true };
   } catch {
-    return false;
+    return { ok: false, error: 'Login failed — check your username and password.' };
+  }
+}
+
+export function logout(): void {
+  authToken = null;
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export type AuthState = 'live' | 'mock' | 'unauthenticated';
+
+/**
+ * Session gate: 'live' (backend up + valid token), 'unauthenticated'
+ * (backend up, login required) or 'mock' (backend down — offline demo).
+ */
+export async function checkAuth(): Promise<AuthState> {
+  const up = await ensureBackend();
+  if (!up) return 'mock';
+  if (!authToken) return 'unauthenticated';
+  try {
+    await fetchJson('/auth/me/');
+    return 'live';
+  } catch {
+    return 'unauthenticated';
   }
 }
 
@@ -95,7 +128,7 @@ export interface BackendHealth {
 }
 
 /**
- * Probe the Django backend once per session: health check + demo login.
+ * Probe the Django backend once per session (health only).
  * Every data getter below awaits this, then chooses live data or mock data.
  */
 export function ensureBackend(): Promise<boolean> {
@@ -103,9 +136,7 @@ export function ensureBackend(): Promise<boolean> {
     backendReady = (async () => {
       try {
         const health = await fetchJson<{ status: string; database: string }>('/health/', undefined, 2500);
-        if (health.status !== 'ok') return false;
-        if (!authToken) await loginDemo();
-        return !!authToken;
+        return health.status === 'ok';
       } catch {
         return false;
       }
@@ -285,6 +316,53 @@ export async function putSettings(settings: SettingsState): Promise<boolean> {
   return false;
 }
 
+/* ---------------- email templates ---------------- */
+
+export async function getTemplates(): Promise<EmailTemplate[] | null> {
+  if (await ensureBackend()) {
+    try {
+      return await fetchJson<EmailTemplate[]>('/templates/');
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export async function createTemplate(tpl: Omit<EmailTemplate, 'id'>): Promise<EmailTemplate | null> {
+  if (await ensureBackend()) {
+    try {
+      return await fetchJson<EmailTemplate>('/templates/', { method: 'POST', body: JSON.stringify(tpl) });
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export async function updateTemplate(id: string, tpl: Partial<EmailTemplate>): Promise<EmailTemplate | null> {
+  if (await ensureBackend()) {
+    try {
+      return await fetchJson<EmailTemplate>(`/templates/${id}/`, { method: 'PUT', body: JSON.stringify(tpl) });
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export async function deleteTemplate(id: string): Promise<boolean> {
+  if (await ensureBackend()) {
+    try {
+      await fetchJson(`/templates/${id}/`, { method: 'DELETE' });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
 export async function changePassword(current: string, next: string, confirm: string): Promise<string | null> {
   if (await ensureBackend()) {
     try {
@@ -334,7 +412,7 @@ export async function sendChatMessage(text: string): Promise<{ user?: ChatMessag
       return await fetchJson<{ userMessage: ChatMessage; reply: ChatMessage }>('/chat/', {
         method: 'POST',
         body: JSON.stringify({ text }),
-      });
+      }, 60000); // actions (approve/send, report) can take longer than the default probe timeout
     } catch {
       /* fall back to local mock */
     }
@@ -346,6 +424,118 @@ export async function sendChatMessage(text: string): Promise<{ user?: ChatMessag
     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
   };
   return { reply };
+}
+
+export async function clearChat(): Promise<boolean> {
+  if (await ensureBackend()) {
+    try {
+      await fetchJson('/chat/', { method: 'DELETE' });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+/* ---------------- leads & reports ---------------- */
+
+export interface GeneratedReport {
+  subject: string;
+  text: string;
+  html: string;
+  emailed: boolean;
+}
+
+export async function generateReport(scope: 'today' | 'all', email = false): Promise<GeneratedReport | null> {
+  if (await ensureBackend()) {
+    try {
+      return await fetchJson<GeneratedReport>('/report/generate/', {
+        method: 'POST',
+        body: JSON.stringify({ scope, email }),
+      }, 30000);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export async function downloadLeadsCsv(): Promise<boolean> {
+  if (await ensureBackend()) {
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (authToken) headers.Authorization = `Token ${authToken}`;
+      const res = await fetch(`${API_BASE_URL}/leads/export/`, { headers });
+      if (!res.ok) return false;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `leads-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+/* ---------------- AI autopilot ---------------- */
+
+export interface AutopilotState {
+  enabled: boolean;
+  sentToday: number;
+  dailyLimit: number;
+  activity: { time: string; action: string; detail: string }[];
+}
+
+export async function getAutopilot(): Promise<AutopilotState | null> {
+  if (await ensureBackend()) {
+    try {
+      return await fetchJson<AutopilotState>('/autopilot/');
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export async function setAutopilot(enabled: boolean, dailyLimit?: number): Promise<AutopilotState | null> {
+  if (await ensureBackend()) {
+    try {
+      return await fetchJson<AutopilotState>('/autopilot/', {
+        method: 'POST',
+        body: JSON.stringify({ enabled, dailyLimit }),
+      });
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/* ---------------- AI guide (in-product assistant) ---------------- */
+
+export async function askGuide(text: string, history: { from: string; text: string }[] = []): Promise<string> {
+  if (await ensureBackend()) {
+    try {
+      const r = await fetchJson<{ answer: string }>('/guide/', {
+        method: 'POST',
+        body: JSON.stringify({ text, history: history.slice(-8) }),
+      }, 60000);
+      return r.answer;
+    } catch {
+      /* fall back to the static tour below */
+    }
+  }
+  return (
+    'Quick tour: Pipeline → Run cycle discovers new leads. CRM → OUTREACH shows drafted ' +
+    'cold emails — review, edit, then Approve & send. Settings configures your AI key, SMTP, ' +
+    'email templates, the daily report and run frequency.'
+  );
 }
 
 /* ---------------- outreach — cold-email drafts ---------------- */

@@ -20,13 +20,18 @@ urlpatterns = [
     path('auth/token/', obtain_auth_token, name='token'),  # DRF default username/password token
     path('auth/me/', views.me, name='me'),
     path('auth/password/', views.change_password, name='change-password'),
-    # CRM
+    # CRM — custom lead routes BEFORE the router (else 'export' is treated as a pk)
+    path('leads/export/', views.leads_export, name='leads-export'),
+    path('report/generate/', views.report_generate, name='report-generate'),
     path('', include(router.urls)),
     # agents
     path('agents/', views.agents, name='agents'),
     path('agents/<str:agent_key>/config/', views.agent_config, name='agent-config'),
     # settings
     path('settings/', views.settings_view, name='settings'),
+    # outreach templates (Settings → Email Templates)
+    path('templates/', views.templates, name='templates'),
+    path('templates/<int:template_id>/', views.template_detail, name='template-detail'),
     # daily report — send now (same delivery as the 20:00 IST scheduler)
     path('report/test/', views.report_test, name='report-test'),
     # outreach — cold-email drafts (approve → send)
@@ -38,8 +43,12 @@ urlpatterns = [
     path('outreach/status/', views.outreach_status, name='outreach-status'),
     # chat
     path('chat/', views.chat, name='chat'),
+    # in-product AI guide
+    path('guide/', views.guide, name='guide'),
     # pipeline loop
     path('pipeline/status/', views.pipeline_status_view, name='pipeline-status'),
+    # AI autopilot (consent + status + revoke)
+    path('autopilot/', views.autopilot, name='autopilot'),
     path('pipeline/run/', views.pipeline_run, name='pipeline-run'),
     path('pipeline/runs/', views.pipeline_runs, name='pipeline-runs'),
 ]

@@ -16,6 +16,8 @@ Real implementation:
 import json
 import logging
 import random
+import re
+import time
 
 from django.utils import timezone
 
@@ -56,27 +58,56 @@ def _norm_domain(website):
     return d
 
 
-def _ai_describe(lead, audit):
-    """Gemini reads the lead's own site text and writes a 2-3 sentence
-    description of what the company actually does. Returns '' without an
-    AI key or on failure — callers keep the heuristic fallback."""
+def _looks_like_company(name):
+    """Guard for og:site_name renames — never rename a lead to a challenge
+    page title or a sentence like 'One moment, please…'."""
+    return not re.search(
+        r'one moment|just a moment|attention required|checking your browser|'
+        r'verify you are human|index of|not found|40[34]|enable javascript',
+        name or '', re.I)
+
+
+def _ai_review(lead, audit):
+    """Gemini reads the lead's own site text and answers two questions in one
+    call: is this an actual, relevant business — and what does it do?
+
+    Returns (relevant, description).  relevant=True when the site belongs to a
+    real operating company that plausibly matches the discovery industry;
+    blogs, directories, personal pages and keyword-landing pages are rejected
+    so only genuine, relevant leads reach the CRM.  Without an AI key the
+    fallback is (True, '') — keep everything, describe nothing."""
     excerpt = (audit.get('analysis') or {}).get('text_excerpt', '')
     if not excerpt or not llm_available():
-        return ''
+        return True, ''
     prompt = (
-        f'Below is the visible text scraped from the homepage of '
-        f'"{lead.company}" ({lead.industry or "unknown industry"}), website: {lead.website}.\n\n'
+        f'You are vetting a sales-prospect lead discovered while searching for a '
+        f'"{lead.industry or "business"}" (website: {lead.website}).\n\n'
         f'--- SITE TEXT ---\n{excerpt}\n--- END SITE TEXT ---\n\n'
-        f'In 2-3 plain sentences: what does this company do, who are its customers, '
-        f'and what is its main offer or positioning? Use only what the text shows. '
-        f'No headings, no lists, no markdown — just the sentences.'
+        f'Answer in EXACTLY this format:\n'
+        f'RELEVANT: yes|no\n'
+        f'DESCRIPTION: <2-3 plain sentences: what does this company do, who are its '
+        f'customers, what is its main offer>\n\n'
+        f'Rules for RELEVANT: "no" only when the site is clearly NOT a real operating '
+        f'business (blog post, news article, directory/listing, personal portfolio, '
+        f'parked page, product of a huge corporation) OR is completely unrelated to '
+        f'{lead.industry or "the industry we searched"}. A real small/mid company in a '
+        f'closely related field is "yes". Use only what the text shows. No markdown.'
     )
     try:
-        return (llm_complete(prompt, system='You summarize companies accurately from their website text.')
-                or '').strip()
+        text = llm_complete(
+            prompt,
+            system='You vet sales leads accurately and conservatively from website text.',
+            temperature=0)  # deterministic verdicts — no creative randomness
+        if not text:
+            return True, ''
+        relevant = not re.search(r'RELEVANT:\s*no', text, re.I)
+        m = re.search(r'DESCRIPTION:\s*(.+)', text, re.S)
+        description = (m.group(1).strip().split('---')[0].strip() if m else '')
+        description = ' '.join(description.split())[:600]
+        return relevant, description
     except Exception as exc:
-        log.warning('AI description failed for %s: %s', lead.company, exc)
-        return ''
+        log.warning('AI review failed for %s: %s', lead.company, exc)
+        return True, ''
 
 
 def _default_template():
@@ -213,7 +244,9 @@ def run_pipeline(triggered_by='manual'):
     # spreads across the world instead of one region at a time.
     queries = search_queries_for_cycle(cycle)
     results, query_labels = [], []
-    for query, industry in queries:
+    for i, (query, industry) in enumerate(queries):
+        if i:
+            time.sleep(8)  # DDG rate-limits back-to-back queries — pace the sweep
         found = search_companies(query, n=6)
         results.extend({'industry': industry, 'query_label': query, **r} for r in found)
         query_labels.append(query)
@@ -252,22 +285,34 @@ def run_pipeline(triggered_by='manual'):
 
     # --- PROFILE: scrape + audit up to N unprofiled leads ------------------
     potentials_created = 0
+    rejected = 0
     to_profile = list(Lead.objects.filter(profiled=False)[:MAX_PROFILE_PER_CYCLE])
     for lead in to_profile:
+        if lead != to_profile[0]:
+            time.sleep(1)  # politeness pause between site fetches
         audit = analyze_website(lead.company, lead.website, prefer_country=lead.country)
         lead.has_website = audit['has_website']
         lead.contact_email = audit['contact_email']
         lead.findings = audit['findings']
         lead.analysis = audit['analysis']
         lead.score = audit['score']
-        # Gemini reads the site's own text → a real description of the company
-        lead.description = _ai_describe(lead, audit) or lead.description
+        # Gemini reads the site's own text → relevance gate + real description
+        relevant, description = _ai_review(lead, audit)
+        if not relevant:
+            # only genuine, industry-relevant businesses stay in the CRM
+            summary['notes'].append(
+                f'Profile rejected {lead.company} ({lead.website}) — AI review: '
+                f'not a relevant {lead.industry or "industry"} business')
+            lead.delete()
+            rejected += 1
+            continue
+        lead.description = description or lead.description
         # the site's own content names its city — that beats the query guess
         if audit.get('country'):
             lead.state = audit.get('state') or lead.state
             lead.country = audit['country']
         site_name = audit['analysis'].get('site_name')
-        if site_name:
+        if site_name and _looks_like_company(site_name):
             lead.company = site_name[:200]
         lead.profiled = True
         lead.save()
@@ -296,6 +341,11 @@ def run_pipeline(triggered_by='manual'):
             )
             potentials_created += 1
             summary['notes'].append(f'Profile flagged {lead.company} as POTENTIAL ({opportunity})')
+
+    if rejected:
+        summary['notes'].append(
+            f'Profile: {rejected} discovery result(s) removed — AI review found them not '
+            f'relevant businesses (kept the CRM strictly relevant)')
 
     # --- COPYWRIGHT: draft cold emails for profiled leads ------------------
     drafts_created = 0

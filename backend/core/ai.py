@@ -60,8 +60,10 @@ def llm_available():
     return bool(AppSettings.load().ai_key)
 
 
-def llm_complete(prompt, system='', model='', timeout=45):
-    """One chat completion. Returns the text, or None when unavailable/failed."""
+def llm_complete(prompt, system='', model='', timeout=45, temperature=0.7):
+    """One chat completion. Returns the text, or None when unavailable/failed.
+    Vetting/classification callers should pass temperature=0 so verdicts are
+    deterministic instead of creative."""
     settings = AppSettings.load()
     if not settings.ai_key:
         return None
@@ -71,7 +73,7 @@ def llm_complete(prompt, system='', model='', timeout=45):
         'model': model or DEFAULT_MODELS[provider],
         'messages': ([{'role': 'system', 'content': system}] if system else [])
         + [{'role': 'user', 'content': prompt}],
-        'temperature': 0.7,
+        'temperature': temperature,
         'max_tokens': 700,
     }
     # Gemini's free tier intermittently answers 429/503 under load — retry once.

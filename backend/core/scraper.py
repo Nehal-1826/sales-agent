@@ -38,10 +38,32 @@ BLOCKED_DOMAINS = {
     'microsoft.com', 'britannica.com', 'quora.com', 'pinterest.com', 'tiktok.com',
     'crunchbase.com', 'bloomberg.com', 'forbes.com', 'indeed.com', 'glassdoor.com',
     'booking.com', 'expedia.com', 'trustpilot.com', 'justdial.com',
+    # Google product microsites & properties that are NOT google.com subdomains
+    # (stitch.withgoogle.com, developers.googleblog.com, …) — they used to
+    # slip through the blocklist and show up as fake "companies"
+    'withgoogle.com', 'googleblog.com', 'googleusercontent.com', 'gstatic.com',
+    'googleapis.com', 'googlesource.com', 'doubleclick.net', 'googletagmanager.com',
+    'googleadservices.com', 'googlesyndication.com', 'appspot.com', 'firebaseapp.com',
+    'firebaseio.com', 'web.app', 'blogspot.com', 'blogs.google.com', 'deepmind.com',
+    'waymo.com', 'alphabet.com', 'abc.xyz',
+    # free hosting / dev-deploy subdomains — platform pages, not company sites
+    'vercel.app', 'netlify.app', 'pages.dev', 'github.io', 'gitlab.io',
+    'herokuapp.com', 'onrender.com', 'fly.dev', 'railway.app', 'replit.dev',
+    'glitch.me', 'stackblitz.io', 'codepen.io', 'replit.com',
+    # link-in-bio / one-page builders and free subdomain hosts
+    'linktr.ee', 'beacons.ai', 'carrd.co', 'notion.site', 'substack.com',
+    'hashnode.dev', 'dev.to', 'weebly.com', 'yolasite.com', 'jimdofree.com',
+    'mystrikingly.com', 'godaddysites.com', 'business.site', 'webnode.com',
     # messaging / comms platforms that surface in agency & SaaS SERPs
     'whatsapp.com', 'telegram.org', 'signal.org', 'discord.com', 'slack.com',
     'zoom.us', 'teams.microsoft.com', 'wechat.com', 'qq.com', 'line.me',
     'kakao.com', 'naver.com', 'baidu.com', 'yandex.com', 'yandex.ru', 'mail.ru',
+    # link shorteners & chat deep links — never a company homepage
+    # (a 'wa.me/<number>' SERP hit once became a fake lead with "no website")
+    'wa.me', 't.me', 'telegram.me', 'm.me', 'messenger.com', 'bit.ly',
+    'tinyurl.com', 'is.gd', 'cutt.ly', 'rebrand.ly', 'tiny.cc', 'shorte.st',
+    'ow.ly', 'buff.ly', 'shorturl.at', 's.id', 'lnkd.in', 'forms.gle',
+    'calendly.com', 'heylink.me', 'solo.to', 'bio.link', 'taplink.cc',
     # AI / productivity platforms — not prospects
     'openai.com', 'chatgpt.com', 'anthropic.com', 'claude.ai', 'deepseek.com',
     'perplexity.ai', 'x.ai', 'grok.com', 'mistral.ai', 'meta.com', 'threads.net',
@@ -55,6 +77,21 @@ BLOCKED_DOMAINS = {
     # SEO / ranking directories
     '10seos.com', 'goodfirms.co', 'topseos.com', 'themanifest.com',
     'semrush.com', 'ahrefs.com', 'moz.com', 'similarweb.com',
+    'awwwards.com', 'cssdesignawards.com', 'siteinspire.com', 'land-book.com',
+    'lapa.ninja', 'godly.website', 'dark.mode', 'onepagelove.com',
+    # traffic-stats / WHOIS / domain-info directories (their subdomains wrap
+    # real companies' names — e.g. designagency.gr.siteindices.com)
+    'siteindices.com', 'webwiki.com', 'whois.com', 'who.is', 'builtwith.com',
+    'w3snoop.com', 'statscrop.com', 'webstatsdomain.com', 'pagestat.com',
+    'siteworthtraffic.com', 'urlmetrix.com', 'webtraffic24.com',
+    # standards bodies / consortia — organizations, never prospects
+    'w3.org', 'whatwg.org', 'ietf.org', 'iso.org', 'ansi.org', 'khronos.org',
+    'oasis-open.org', 'ecma-international.org', 'ietf.org',
+    # reference / documentation sites that answer "what is X" queries
+    'web.dev', 'developer.mozilla.org', 'mozilla.org', 'stackoverflow.com',
+    'merriam-webster.com', 'dictionary.com', 'cambridge.org', 'wiktionary.org',
+    'vocabulary.com', 'investopedia.com', 'w3schools.com', 'geeksforgeeks.org',
+    'techtarget.com', 'browsehub.co', 'thoughtco.com', 'livescience.com',
     # AI site/presentation builders
     'gamma.app', 'tome.app', 'beautiful.ai', 'framer.com', 'wixstudio.com',
     # hosting / infra
@@ -73,6 +110,13 @@ BLOCKED_DOMAINS = {
     'capterra.com', 'yellowpages.com', 'gelbeseiten.de',
     '11880.com', 'dasoertliche.de', 'hotfrog.com', 'brownbook.net',
     'builtin.com', 'wellfound.com', 'angellist.com', 'layoffdata.com',
+    # booking / review directories that answer "X near me" queries
+    'whatclinic.com', 'practo.com', 'healthgrades.com', 'zocdoc.com',
+    'booksy.com', 'fresha.com', 'opentable.com', 'classpass.com',
+    'mindbodyonline.com', 'threebestrated.com', 'threebestrated.ca',
+    'threebestrated.co.uk', 'threebestrated.in', 'atlaq.com',
+    'indiamart.com', 'sulekha.com', 'tradeindia.com', 'exportersindia.com',
+    'appointy.com', 'vcita.com', 'simplybook.it', 'setmore.com',
     # giant enterprises — never prospects
     'salesforce.com', 'hubspot.com', 'adobe.com', 'ibm.com', 'oracle.com', 'sap.com',
     'deloitte.com', 'pwc.com', 'ey.com', 'kpmg.com', 'accenture.com', 'mckinsey.com',
@@ -262,6 +306,40 @@ EMAIL_JUNK = re.compile(r'\.(png|jpg|jpeg|gif|webp|svg|css|js)$', re.I)
 
 REGIONS_PER_CYCLE = 3  # regions searched per pipeline cycle (world sweep /3 faster)
 
+# ------------------------------------------------------------------
+# Authorised scraping — robots.txt
+# Every fetch the agents make (homepage, contact pages) is checked against
+# the site's robots.txt first.  Missing/unreachable robots.txt means allowed
+# (standard crawler practice); a disallow means we do not touch the site and
+# hold the lead for human review instead.
+# ------------------------------------------------------------------
+_robots_cache = {}
+
+
+def robots_allows(url):
+    """True when robots.txt permits fetching this URL with our user agent."""
+    from urllib.parse import urlparse as _urlparse
+    from urllib.robotparser import RobotFileParser
+
+    p = _urlparse(url if url.startswith('http') else 'https://' + url)
+    base = f'{p.scheme}://{p.netloc}'
+    rp = _robots_cache.get(base)
+    if rp is None:
+        rp = RobotFileParser()
+        try:
+            r = requests.get(base + '/robots.txt', headers={'User-Agent': USER_AGENT}, timeout=5)
+            if r.status_code == 200 and r.text.strip():
+                rp.parse(r.text.splitlines())
+            else:
+                rp.allow_all = True
+        except requests.RequestException:
+            rp.allow_all = True
+        _robots_cache[base] = rp
+    try:
+        return rp.can_fetch(USER_AGENT, url)
+    except Exception:
+        return True
+
 
 def _cycle_slice(step_index):
     """(query, industry) for the Nth worldwide rotation step.
@@ -347,48 +425,91 @@ def _plausible_company_name(name, domain):
         return False
     if re.search(r'\b(acquire|buy|sale|for sale|jobs?|career|hiring|review|best|top \d+)\b', name, re.I):
         return False
+    if re.match(r'^(build|get|create|learn|how to|what (is|are)|discover|explore|the (best|top|ultimate))\b',
+                name, re.I):
+        return False  # 'Build a Website or Web App With AI' — a headline, not a company
+    if re.search(r'one moment|just a moment|attention required|checking your browser|'
+                 r'verify you are human|enable javascript', name, re.I):
+        return False  # bot-challenge page title ('One moment, please…') — not a name
     return True
 
 
+def _generic_serp_title(name, query):
+    """True when the SERP title is just the query echoed back ('Web Design
+    Agency in Germany') — an SEO landing page or directory, not a brand."""
+    norm = lambda s: re.sub(r'[^a-z0-9]', '', s.lower())
+    industry = query.split(' in ')[0] if ' in ' in query else query
+    title, phrase = norm(name), norm(industry)
+    return bool(phrase) and (title == phrase or title == norm(query))
+
+
 def search_companies(query, n=8):
-    """Real DuckDuckGo search → [{name, website, snippet}] for company homepages."""
+    """Real DuckDuckGo search → [{name, website, snippet}] for company homepages.
+
+    DDG rate-limits rapid consecutive queries (they return 0 results, not an
+    error), so an empty first response is retried once after a short pause.
+    """
     from ddgs import DDGS
 
-    results = []
-    try:
-        with DDGS() as ddgs:
-            for r in ddgs.text(query, max_results=n * 4):
-                url = (r.get('href') or r.get('url') or '').strip()
-                if not url:
-                    continue
-                parsed = urlparse(url)
-                domain = parsed.netloc.lower()
-                domain = domain[4:] if domain.startswith('www.') else domain
-                if not domain or any(domain == b or domain.endswith('.' + b) for b in BLOCKED_DOMAINS):
-                    continue
-                if domain.endswith(('.gov', '.gov.uk', '.mil', '.edu', '.ac.uk')):  # institutions
-                    continue
-                path = parsed.path or '/'
-                # deep links are job listings / articles, not company homepages
-                if len(path) > 40 or path.count('/') > 2 or '?' in url:
-                    continue
-                title = (r.get('title') or '').strip()
-                # 'Company Name | Services…' / 'Company Name — Home' → keep the brand part
-                name = re.split(r'\s*[|–—·-]\s*', title)[0].strip()
-                if not _plausible_company_name(name, domain):
-                    name = name_from_domain(domain)
-                results.append({'name': name, 'website': domain, 'snippet': r.get('body', '')[:200]})
-                if len(results) >= n:
-                    break
-    except Exception as exc:  # network hiccup, rate limit — never kill a cycle
-        log.warning('DDG search failed for %r: %s', query, exc)
+    def _run_once():
+        results = []
+        try:
+            with DDGS() as ddgs:
+                for r in ddgs.text(query, max_results=n * 4):
+                    url = (r.get('href') or r.get('url') or '').strip()
+                    if not url:
+                        continue
+                    parsed = urlparse(url)
+                    domain = parsed.netloc.lower()
+                    domain = domain.split(':')[0]  # strip :port — 'awwwards.com:8080'
+                    domain = domain[4:] if domain.startswith('www.') else domain
+                    if not domain or any(domain == b or domain.endswith('.' + b) for b in BLOCKED_DOMAINS):
+                        continue
+                    if domain == 'google' or domain.endswith('.google'):  # Google's own .google TLD
+                        continue
+                    if domain.endswith(('.gov', '.gov.uk', '.mil', '.edu', '.ac.uk')):  # institutions
+                        continue
+                    # deep subdomains of a .com/.net/.org parent (x.y.z.com) are
+                    # directory/stats pages, never a company homepage
+                    if (domain.count('.') >= 3
+                            and domain.split('.')[-1] in ('com', 'net', 'org')):
+                        continue
+                    path = parsed.path or '/'
+                    # deep links are job listings / articles, not company homepages
+                    if len(path) > 40 or path.count('/') > 2 or '?' in url:
+                        continue
+                    title = (r.get('title') or '').strip()
+                    # 'Company Name | Services…' / 'Company Name — Home' → keep the brand part
+                    name = re.split(r'\s*[|–—·-]\s*', title)[0].strip()
+                    if _generic_serp_title(name, query):
+                        continue  # SEO landing page echoing the query — not a company
+                    if not _plausible_company_name(name, domain):
+                        name = name_from_domain(domain)
+                    results.append({'name': name, 'website': domain, 'snippet': r.get('body', '')[:200]})
+                    if len(results) >= n:
+                        break
+        except Exception as exc:  # network hiccup, rate limit — never kill a cycle
+            log.warning('DDG search failed for %r: %s', query, exc)
+        return results
+
+    results = _run_once()
+    if not results:
+        time.sleep(6)  # rate-limited — one patient retry before giving up
+        results = _run_once()
     return results
 
 
 def scrape_company(url):
-    """Fetch a page. Returns {ok, status, final_url, https, load_ms, html, error}."""
+    """Fetch a page. Returns {ok, status, final_url, https, load_ms, html, error}.
+    Fetches disallowed by the site's robots.txt are never attempted."""
     if not url.startswith('http'):
         url = 'https://' + url
+    if not robots_allows(url):
+        return {
+            'ok': False, 'status': 0, 'final_url': url,
+            'https': url.startswith('https://'), 'load_ms': 0,
+            'html': '', 'error': 'disallowed by robots.txt', 'robots_blocked': True,
+        }
     t0 = time.time()
     try:
         resp = requests.get(
@@ -486,6 +607,17 @@ def analyze_website(name, website, prefer_country=''):
                 'state': found_state, 'country': found_country}
 
     page = scrape_company(website)
+    if not page['ok'] and page.get('robots_blocked'):
+        # the site asks crawlers to keep out — we honour that and hold the
+        # lead for human review instead of silently scraping it anyway
+        findings.append(_finding(
+            'Web presence', 'info', 0,
+            f'Scraping is disallowed by {website}\'s robots.txt — not audited, out of respect for the site\'s policy.',
+            'Manually review this lead before any outreach.'))
+        analysis['blocked'] = True
+        return {'has_website': True, 'score': 40, 'contact_email': '',
+                'findings': findings, 'analysis': analysis,
+                'state': found_state, 'country': found_country}
     if not page['ok']:
         # retry with www. before declaring the site dead
         if not website.startswith('www.') and ' ' not in website:
@@ -527,6 +659,20 @@ def analyze_website(name, website, prefer_country=''):
             f'Domain is parked ({page_title[:60]}) — no real website is live.',
             'Pitch an end-to-end website: their domain is wasting the traffic it gets.'))
         return {'has_website': False, 'score': 92, 'contact_email': '',
+                'findings': findings, 'analysis': analysis,
+                'state': found_state, 'country': found_country}
+
+    # bot-challenge interstitials (Cloudflare 'One moment, please…', 'Just a
+    # moment…') — the site is live but the audit would be reading the challenge
+    # page, not the company's content
+    if re.search(r'one moment|just a moment|attention required|checking your browser|'
+                 r'verify you are human', page_title, re.I):
+        findings.append(_finding(
+            'Web presence', 'info', 0,
+            'Website protected by a bot challenge — it is live but could not be audited.',
+            'Manually review this site before any outreach.'))
+        analysis['blocked'] = True
+        return {'has_website': True, 'score': 40, 'contact_email': '',
                 'findings': findings, 'analysis': analysis,
                 'state': found_state, 'country': found_country}
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { IconAgents, IconChat, IconCrm, IconDashboard, IconList, IconLoop, IconSettings } from './icons';
+import { IconDashboard, IconLoop, IconSettings } from './icons';
 import { getCurrentUser } from '../lib/api';
 import { StatusDot } from './ui';
 import type { PageKey } from '../lib/types';
@@ -7,10 +7,6 @@ import type { PageKey } from '../lib/types';
 const NAV: { key: PageKey; label: string; icon: (p: { size?: number }) => JSX.Element }[] = [
   { key: 'dashboard', label: 'Dashboard', icon: IconDashboard },
   { key: 'pipeline', label: 'Pipeline', icon: IconLoop },
-  { key: 'agents', label: 'Agents', icon: IconAgents },
-  { key: 'crm', label: 'CRM', icon: IconCrm },
-  { key: 'leads', label: 'Leads & Reports', icon: IconList },
-  { key: 'chat', label: 'Chat', icon: IconChat },
   { key: 'settings', label: 'Settings', icon: IconSettings },
 ];
 

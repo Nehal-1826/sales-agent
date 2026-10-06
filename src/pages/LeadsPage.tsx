@@ -190,7 +190,7 @@ function ReportSection() {
           <iframe
             title="Report preview"
             className="report-preview"
-            srcDoc={`<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#f3f4f6">${report.html}</body></html>`}
+              srcDoc={`<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#ffffff">${report.html}</body></html>`}
             sandbox=""
           />
         </>

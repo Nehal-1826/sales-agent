@@ -186,7 +186,7 @@ export function CrmBoard({ compact = false, refreshToken = 0 }: { compact?: bool
                   <span className="crm-line dim">
                     {d.body.length > 140 ? `${d.body.slice(0, 140)}…` : d.body}
                   </span>
-                  {d.error && <span className="crm-line" style={{ color: 'var(--warn, #e0a030)' }}>{d.error}</span>}
+                  {d.error && <span className="crm-line" style={{ color: 'var(--warn)' }}>{d.error}</span>}
                 </>
               )}
               <div className="crm-card-foot">

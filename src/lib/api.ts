@@ -77,10 +77,16 @@ export async function login(
   password: string,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    const data = await fetchJson<{ token: string }>('/auth/login/', {
+    // bare fetch: never send a (possibly stale) token on login — DRF would
+    // reject the whole request with 401 before credentials are checked
+    const res = await fetch(`${API_BASE_URL}/auth/login/`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password }),
+      signal: AbortSignal.timeout(8000),
     });
+    if (!res.ok) return { ok: false, error: 'Login failed — check your username and password.' };
+    const data = (await res.json()) as { token: string };
     authToken = data.token;
     try {
       localStorage.setItem(TOKEN_KEY, data.token);
@@ -89,7 +95,7 @@ export async function login(
     }
     return { ok: true };
   } catch {
-    return { ok: false, error: 'Login failed — check your username and password.' };
+    return { ok: false, error: 'Login failed — the backend is not reachable.' };
   }
 }
 
@@ -135,7 +141,13 @@ export function ensureBackend(): Promise<boolean> {
   if (!backendReady) {
     backendReady = (async () => {
       try {
-        const health = await fetchJson<{ status: string; database: string }>('/health/', undefined, 2500);
+        // bare fetch on purpose: a stale auth token must never turn the
+        // unauthenticated health probe into a 401 (DRF rejects bad tokens
+        // even on AllowAny views)
+        const res = await fetch(`${API_BASE_URL}/health/`, {
+          signal: AbortSignal.timeout(2500),
+        });
+        const health = (await res.json()) as { status: string };
         return health.status === 'ok';
       } catch {
         return false;

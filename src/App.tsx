@@ -3,10 +3,6 @@ import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { Dashboard } from './pages/Dashboard';
 import { PipelinePage } from './pages/PipelinePage';
-import { AgentsPage } from './pages/AgentsPage';
-import { CrmPage } from './pages/CrmPage';
-import { LeadsPage } from './pages/LeadsPage';
-import { ChatPage } from './pages/ChatPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { LoginPage } from './pages/LoginPage';
 import { GuideWidget } from './components/GuideWidget';
@@ -16,10 +12,6 @@ import type { PageKey } from './lib/types';
 const PAGES: Record<PageKey, (props: { onNavigate: (p: PageKey) => void; live: boolean }) => JSX.Element> = {
   dashboard: Dashboard,
   pipeline: ({ live }) => <PipelinePage live={live} />,
-  agents: () => <AgentsPage />,
-  crm: () => <CrmPage />,
-  leads: () => <LeadsPage />,
-  chat: () => <ChatPage />,
   settings: () => <SettingsPage />,
 };
 

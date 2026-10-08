@@ -78,6 +78,8 @@ def build_daily_report(day=None):
     for l in leads[:15]:
         flag = 'no website' if not l.has_website else f'{len(l.findings)} flaw(s)'
         lines.append(f'  • {l.company} — {l.industry or "?"} | {where(l)} | score {l.score}/100 | {flag}')
+        # contact details on their own line — email and phone as separate fields
+        lines.append(f'      email: {l.contact_email or "—"} | phone: {l.contact_phone or "—"}')
     if len(leads) > 15:
         lines.append(f'  … and {len(leads) - 15} more')
 

@@ -22,7 +22,9 @@ import time
 from django.utils import timezone
 
 from .ai import llm_available, llm_complete
+from .enrichment import apollo_enrich_domain
 from .models import AgentConfig, AppSettings, EmailDraft, EmailTemplate, Lead, PipelineRun, Potential
+from .scalelist import scalelist_phone_find
 from .scraper import (
     analyze_website,
     region_from_query,
@@ -34,8 +36,9 @@ from .scraper import search_query_for_cycle  # noqa: F401 — re-exported for sc
 log = logging.getLogger(__name__)
 
 MAX_LEADS_PER_CYCLE = 6      # new companies discovered per cycle (across all region queries)
-MAX_PROFILE_PER_CYCLE = 3    # sites scraped+audited per cycle
-MAX_DRAFTS_PER_CYCLE = 2     # cold emails drafted per cycle
+MAX_PROFILE_PER_CYCLE = 6    # sites scraped+audited per cycle
+MAX_DRAFTS_PER_CYCLE = 3     # cold emails drafted per cycle
+APOLLO_SWEEP_PER_CYCLE = 5   # phone-enrichment retries per cycle (quota-friendly)
 
 # Score at which Profile flags a POTENTIAL opportunity.
 POTENTIAL_THRESHOLD = 65
@@ -71,11 +74,15 @@ def _ai_review(lead, audit):
     """Gemini reads the lead's own site text and answers two questions in one
     call: is this an actual, relevant business — and what does it do?
 
-    Returns (relevant, description).  relevant=True when the site belongs to a
-    real operating company that plausibly matches the discovery industry;
-    blogs, directories, personal pages and keyword-landing pages are rejected
-    so only genuine, relevant leads reach the CRM.  Without an AI key the
-    fallback is (True, '') — keep everything, describe nothing."""
+    Returns (relevant, description).  relevant is:
+      True   → genuine, industry-relevant business — keep it
+      False  → blog/directory/landing-page junk — the caller deletes the lead
+      None   → the AI was configured but could not answer right now (throttle,
+               network, bad key) — the caller HOLDS the lead unprofiled so the
+               next cycle re-vets it.  Strict mode: an unreviewed site never
+               enters the CRM, because unvetted discoveries are where fake
+               leads come from.  Without an AI key the fallback is (True, '')
+               — keep everything, describe nothing (keyless demo mode)."""
     excerpt = (audit.get('analysis') or {}).get('text_excerpt', '')
     if not excerpt or not llm_available():
         return True, ''
@@ -99,7 +106,7 @@ def _ai_review(lead, audit):
             system='You vet sales leads accurately and conservatively from website text.',
             temperature=0)  # deterministic verdicts — no creative randomness
         if not text:
-            return True, ''
+            return None, ''  # strict: hold for re-vetting instead of passing unvetted
         relevant = not re.search(r'RELEVANT:\s*no', text, re.I)
         m = re.search(r'DESCRIPTION:\s*(.+)', text, re.S)
         description = (m.group(1).strip().split('---')[0].strip() if m else '')
@@ -107,7 +114,7 @@ def _ai_review(lead, audit):
         return relevant, description
     except Exception as exc:
         log.warning('AI review failed for %s: %s', lead.company, exc)
-        return True, ''
+        return None, ''
 
 
 def _default_template():
@@ -159,6 +166,7 @@ def _draft_email(lead):
 
     subject = ''
     body = ''
+    used_llm = False
     if llm_available():
         system = (cfg.system_prompt if cfg and cfg.system_prompt else
                   'You are an expert B2B cold-email copywriter. Be concise, specific, human. '
@@ -191,6 +199,7 @@ def _draft_email(lead):
         )
         text = llm_complete(prompt, system=system, model=(cfg.model if cfg else ''))
         if text:
+            used_llm = True
             m = text.split('SUBJECT:', 1)
             if len(m) == 2:
                 rest = m[1].strip().split('\n', 1)
@@ -230,7 +239,7 @@ def _draft_email(lead):
                 f'({services}). Would a 15-minute call next week be useful?\n\n'
                 f'Best,\n{our_name}\n{our_site}'
             ).strip()
-    return subject, body, bool(subject and llm_available())
+    return subject, body, used_llm
 
 
 def run_pipeline(triggered_by='manual'):
@@ -255,6 +264,10 @@ def run_pipeline(triggered_by='manual'):
 
     known = {_norm_domain(w) for w in Lead.objects.exclude(website='').values_list('website', flat=True)}
     known |= {c.lower() for c in Lead.objects.values_list('company', flat=True)}
+    # strict no-fake-data memory: once the AI has rejected a domain, it never
+    # gets discovered again — verdicts can flip between runs, memory can't
+    settings = AppSettings.load()
+    known |= {d.lower() for d in (settings.rejected_domains or [])}
     new_leads = []
     seen_domains = set()
     per_region_cap = max(2, MAX_LEADS_PER_CYCLE // len(queries))  # spread across regions
@@ -293,16 +306,52 @@ def run_pipeline(triggered_by='manual'):
         audit = analyze_website(lead.company, lead.website, prefer_country=lead.country)
         lead.has_website = audit['has_website']
         lead.contact_email = audit['contact_email']
+        lead.contact_phone = audit.get('contact_phone', '')
         lead.findings = audit['findings']
         lead.analysis = audit['analysis']
         lead.score = audit['score']
+        # Phone enrichment for THIS lead (matched by its own DB id — the loop
+        # variable is the lead row itself, never a positional lookup):
+        # 1) Scalelist person/company phone find — uses the scraped work email,
+        #    else the company name + domain we just audited
+        # 2) Apollo.io company database — fallback when Scalelist comes up empty
+        # Either source only fills an EMPTY phone; a scraped number always wins.
+        if not lead.contact_phone:
+            scalelist_phone = scalelist_phone_find(
+                email=lead.contact_email,
+                company=lead.company,
+                domain=lead.website,
+            )
+            if scalelist_phone:
+                lead.contact_phone = scalelist_phone
+                lead.analysis['phone_source'] = 'scalelist'
+        if not lead.contact_phone:
+            apollo = apollo_enrich_domain(lead.website)
+            if apollo.get('phone'):
+                lead.contact_phone = apollo['phone']
+                lead.analysis['phone_source'] = 'apollo.io'
+            if apollo.get('employees'):
+                lead.analysis['employees'] = apollo['employees']
         # Gemini reads the site's own text → relevance gate + real description
         relevant, description = _ai_review(lead, audit)
+        if relevant is None:
+            # strict fake-data gate: the AI couldn't review this lead right now
+            # (throttle / network) — leave it unprofiled (nothing persisted) so
+            # the next cycle re-scrapes and re-vets it.  Unverified sites never
+            # enter the CRM.
+            summary['notes'].append(
+                f'Profile held {lead.company} — AI review unavailable, retries next cycle')
+            continue
         if not relevant:
-            # only genuine, industry-relevant businesses stay in the CRM
+            # only genuine, industry-relevant businesses stay in the CRM — and
+            # the domain is remembered so later cycles can't re-admit it
+            domain = _norm_domain(lead.website)
+            if domain and domain not in (settings.rejected_domains or []):
+                settings.rejected_domains = list(settings.rejected_domains or []) + [domain]
+                settings.save(update_fields=['rejected_domains'])
             summary['notes'].append(
                 f'Profile rejected {lead.company} ({lead.website}) — AI review: '
-                f'not a relevant {lead.industry or "industry"} business')
+                f'not a relevant {lead.industry or "industry"} business (domain blacklisted)')
             lead.delete()
             rejected += 1
             continue
@@ -347,12 +396,52 @@ def run_pipeline(triggered_by='manual'):
             f'Profile: {rejected} discovery result(s) removed — AI review found them not '
             f'relevant businesses (kept the CRM strictly relevant)')
 
+    # --- ENRICH: Scalelist + Apollo phone sweep (every cycle) ---------------
+    # Profiled leads whose phone field is still empty are retried every cycle
+    # against Scalelist (work email / company + domain) and then Apollo's
+    # company database — until a number shows up or candidates run out.
+    # Sequential, capped calls: rate-limit friendly, never blocks discovery.
+    enriched = 0
+    sweep = (Lead.objects.filter(profiled=True)
+             .exclude(website='').filter(contact_phone='')
+             .order_by('-score')[:APOLLO_SWEEP_PER_CYCLE])
+    for lead in sweep:
+        phone = scalelist_phone_find(
+            email=lead.contact_email, company=lead.company, domain=lead.website)
+        source = 'scalelist' if phone else ''
+        if not phone:
+            apollo = apollo_enrich_domain(lead.website)
+            if apollo.get('phone'):
+                phone = apollo['phone']
+                source = 'apollo.io'
+                lead.analysis = {**(lead.analysis or {}), 'employees': apollo['employees']} \
+                    if apollo.get('employees') else (lead.analysis or {})
+        if phone:
+            lead.contact_phone = phone
+            lead.analysis = {**(lead.analysis or {}), 'phone_source': source}
+            lead.save()
+            enriched += 1
+            summary['notes'].append(
+                f'Enrichment: {lead.company} phone via {source} ({phone})')
+    if sweep:
+        summary['notes'].append(
+            f'Enrichment sweep: {enriched}/{len(sweep)} phone(s) recovered')
+
     # --- COPYWRIGHT: draft cold emails for profiled leads ------------------
+    # Strict contact-first policy: drafts are only written for leads we can
+    # actually reach — a real scraped contact email is required, highest
+    # potential first.  Leads without an email stay in the CRM for manual /
+    # phone follow-up instead of getting a draft addressed to nobody.
     drafts_created = 0
-    profiled = [l for l in Lead.objects.filter(profiled=True) if l.findings]
-    for lead in profiled:
+    candidates = [l for l in Lead.objects.filter(profiled=True) if l.findings]
+    candidates.sort(key=lambda l: (not bool(l.contact_email), -l.score))
+    no_email = 0
+    for lead in candidates:
         if drafts_created >= MAX_DRAFTS_PER_CYCLE:
             break
+        if not lead.contact_email:
+            no_email += 1
+            continue
         if (lead.analysis or {}).get('blocked'):
             summary['notes'].append(
                 f'Copywright skipped {lead.company} — site blocks bots, needs human review')
@@ -372,6 +461,10 @@ def run_pipeline(triggered_by='manual'):
         drafts_created += 1
         via = 'LLM' if used_llm else 'template'
         summary['notes'].append(f'Copywright drafted cold email for {lead.company} ({via})')
+    if no_email:
+        summary['notes'].append(
+            f'Copywright: {no_email} lead(s) without a contact email held for manual outreach — '
+            f'no draft is written to a missing address')
 
     # --- RESPONDER: report the outreach queue ------------------------------
     queue = EmailDraft.objects.filter(status=EmailDraft.Statuses.DRAFT).count()

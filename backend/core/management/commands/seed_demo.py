@@ -111,7 +111,14 @@ REPLIES = [
 
 
 class Command(BaseCommand):
-    help = 'Seed the database with the demo dataset (idempotent)'
+    help = ('Seed the demo user + agent configs (idempotent).  The sample CRM '
+            'data (FAKE companies/contacts) is only inserted with --demo-crm — '
+            'production/real-use databases must never contain it.')
+
+    def add_arguments(self, parser):
+        parser.add_argument(
+            '--demo-crm', action='store_true',
+            help='Also insert the sample CRM dataset (fake companies — dev UI preview only)')
 
     def handle(self, *args, **options):
         # --- demo user (owner) -------------------------------------------
@@ -141,7 +148,7 @@ class Command(BaseCommand):
         })
 
         # --- CRM ----------------------------------------------------------
-        if not Lead.objects.exists():
+        if options.get('demo_crm') and not Lead.objects.exists():
             for company, industry, website, score, source, profiled in LEADS:
                 Lead.objects.create(
                     company=company, industry=industry, website=website,

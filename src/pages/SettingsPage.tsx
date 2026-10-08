@@ -42,6 +42,10 @@ export function SettingsPage() {
   const [password, setPassword] = useState({ current: '', next: '', confirm: '' });
   const [passwordMsg, setPasswordMsg] = useState('');
   const [showKey, setShowKey] = useState(false);
+  // masked form of the key stored server-side ('' when none) — shown as a hint,
+  // NEVER placed inside the input: typing over dots would garble the value
+  const [storedKeyMask, setStoredKeyMask] = useState('');
+  const [storedApolloMask, setStoredApolloMask] = useState('');
   const [reportMsg, setReportMsg] = useState('');
   const [sendingReport, setSendingReport] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -53,10 +57,14 @@ export function SettingsPage() {
     getSettings().then((remote) => {
       if (remote) {
         setLive(true);
+        setStoredKeyMask(remote.aiKey.apiKey || '');
+        setStoredApolloMask(remote.aiKey.apolloApiKey || '');
         setSettings({
           company: remote.company,
-          aiKey: remote.aiKey,
-          smtp: remote.smtp ?? DEFAULT_SETTINGS.smtp,
+          // the input stays empty — the stored key never comes back in full,
+          // so its masked form must not look like an editable value
+          aiKey: { ...remote.aiKey, apiKey: '', apolloApiKey: '' },
+          smtp: { ...(remote.smtp ?? DEFAULT_SETTINGS.smtp), password: '' },
           runs: remote.runs,
           report: remote.report ?? DEFAULT_SETTINGS.report,
         });
@@ -136,6 +144,14 @@ export function SettingsPage() {
   const save = async () => {
     saveJson(STORE_KEY, settings); // offline copy
     const ok = live ? await putSettings(settings) : true;
+    if (ok && live) {
+      // a freshly typed key was accepted — reflect it as the stored mask and
+      // clear the input, so the UI always shows what the server actually holds
+      const remote = await getSettings();
+      setStoredKeyMask(remote?.aiKey.apiKey || '');
+      setStoredApolloMask(remote?.aiKey.apolloApiKey || '');
+      setSettings((s) => ({ ...s, aiKey: { ...s.aiKey, apiKey: '', apolloApiKey: '' } }));
+    }
     setSaved(ok);
     setSaveError(
       ok ? '' : 'Save failed — the backend rejected the update. Check the Django server and try again.'
@@ -250,19 +266,25 @@ export function SettingsPage() {
               value={settings.aiKey.provider}
               onChange={(e) => setSettings((s) => ({ ...s, aiKey: { ...s.aiKey, provider: e.target.value } }))}
             >
-              {['OpenAI', 'Anthropic', 'Google AI', 'Zhipu (GLM)', 'Other'].map((p) => (
+              {['OpenAI', 'Anthropic', 'Gemini', 'Google AI', 'Zhipu (GLM)', 'DeepSeek', 'Groq', 'Ollama', 'Other'].map((p) => (
                 <option key={p}>{p}</option>
               ))}
             </select>
           </Field>
           <Field
             label="API Key"
-            hint={live ? 'Stored server-side by Django — never returned in full.' : 'Stored locally — backend not running.'}
+            hint={
+              storedKeyMask
+                ? `Saved on the server: ${storedKeyMask} ✓ — leave blank to keep it, type a new key to replace it.`
+                : live
+                  ? 'No key stored yet — paste yours and press Save.'
+                  : 'Stored locally — backend not running.'
+            }
           >
             <div className="input-with-action">
               <input
                 type={showKey ? 'text' : 'password'}
-                placeholder="sk-…"
+                placeholder={storedKeyMask ? 'type a new key to replace the saved one' : 'sk-…'}
                 className="mono"
                 value={settings.aiKey.apiKey}
                 onChange={(e) => setSettings((s) => ({ ...s, aiKey: { ...s.aiKey, apiKey: e.target.value } }))}
@@ -270,6 +292,24 @@ export function SettingsPage() {
               <button className="btn btn-ghost" onClick={() => setShowKey((v) => !v)}>
                 {showKey ? 'Hide' : 'Show'}
               </button>
+            </div>
+          </Field>
+          <Field
+            label="Apollo.io Key (lead phone enrichment)"
+            hint={
+              storedApolloMask
+                ? `Saved on the server: ${storedApolloMask} ✓ — leave blank to keep it.`
+                : 'Optional — enriches leads with verified phone numbers when their site hides them.'
+            }
+          >
+            <div className="input-with-action">
+              <input
+                type="password"
+                placeholder={storedApolloMask ? 'type a new key to replace the saved one' : 'Apollo.io API key…'}
+                className="mono"
+                value={settings.aiKey.apolloApiKey || ''}
+                onChange={(e) => setSettings((s) => ({ ...s, aiKey: { ...s.aiKey, apolloApiKey: e.target.value } }))}
+              />
             </div>
           </Field>
         </div>

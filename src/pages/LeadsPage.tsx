@@ -90,6 +90,7 @@ export function LeadsPage() {
                   <th>Score</th>
                   <th>Region</th>
                   <th>Contact</th>
+                  <th>Phone</th>
                   <th>AI description</th>
                 </tr>
               </thead>
@@ -106,6 +107,7 @@ export function LeadsPage() {
                     </td>
                     <td>{[l.state, l.country].filter(Boolean).join(', ') || '—'}</td>
                     <td>{l.contactEmail || <em>missing</em>}</td>
+                    <td className="mono">{l.contactPhone || <em>missing</em>}</td>
                     <td className="leads-desc">
                       {(l.description || '').slice(0, 160) || <em>not profiled yet</em>}
                     </td>
@@ -113,7 +115,7 @@ export function LeadsPage() {
                 ))}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={6}>
+                    <td colSpan={7}>
                       No leads match — run a cycle from the Pipeline page (or ask the AI guide).
                     </td>
                   </tr>

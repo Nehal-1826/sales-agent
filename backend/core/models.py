@@ -69,6 +69,7 @@ class Lead(Timestamped):
     # Real scraped data (Profile agent)
     has_website = models.BooleanField(default=False)  # website / no-website categorization
     contact_email = models.CharField(max_length=200, blank=True)  # found on their site
+    contact_phone = models.CharField(max_length=40, blank=True)   # found on their site
     findings = models.JSONField(default=list, blank=True)  # [{area, issue, recommendation, severity}]
     analysis = models.JSONField(default=dict, blank=True)  # raw scrape metrics
     # AI (Gemini) summary of what the company does, written from its own site text
@@ -249,6 +250,10 @@ class AppSettings(Timestamped):
     ai_provider = models.CharField(max_length=50, default='OpenAI')
     ai_key = models.CharField(max_length=500, blank=True)
 
+    # Apollo.io — B2B data-enrichment API: real phone numbers for leads whose
+    # sites hide contact details behind bot protection / robots.txt
+    apollo_api_key = models.CharField(max_length=200, blank=True)
+
     # SMTP — outbound cold email (password never returned in full by the API)
     smtp_host = models.CharField(max_length=200, blank=True)
     smtp_port = models.PositiveIntegerField(null=True, blank=True)
@@ -268,6 +273,10 @@ class AppSettings(Timestamped):
     # Frequent Runs
     runs_enabled = models.BooleanField(default=True)
     run_frequency = models.CharField(max_length=10, choices=Frequencies.choices, default=Frequencies.EVERY_1H)
+
+    # Strict fake-data gate memory — domains the AI review has rejected are
+    # never re-admitted on a later cycle (AI verdicts can flip; memory can't)
+    rejected_domains = models.JSONField(default=list, blank=True)
 
     def save(self, *args, **kwargs):
         self.pk = 1  # singleton
@@ -291,6 +300,7 @@ class AppSettings(Timestamped):
             'report_email': 'REPORT_EMAIL',
             'ai_provider': 'AI_PROVIDER',
             'ai_key': 'AI_KEY',
+            'apollo_api_key': 'APOLLO_API_KEY',
         }
         dirty = False
         for field, env_name in env_map.items():

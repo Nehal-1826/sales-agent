@@ -27,12 +27,13 @@ class LeadSerializer(serializers.ModelSerializer):
     discovered = serializers.SerializerMethodField()
     hasWebsite = serializers.BooleanField(source='has_website')
     contactEmail = serializers.CharField(source='contact_email', required=False, allow_blank=True)
+    contactPhone = serializers.CharField(source='contact_phone', required=False, allow_blank=True)
 
     class Meta:
         model = Lead
         fields = ['id', 'company', 'industry', 'website', 'score', 'source', 'profiled',
-                  'state', 'country', 'hasWebsite', 'contactEmail', 'findings', 'description',
-                  'discovered']
+                  'state', 'country', 'hasWebsite', 'contactEmail', 'contactPhone', 'findings',
+                  'description', 'discovered']
 
     def get_discovered(self, obj):
         return rel_time(obj.created_at)
@@ -175,6 +176,7 @@ class SettingsSerializer(serializers.ModelSerializer):
                 'provider': instance.ai_provider,
                 # never echo the full key back; empty means "unchanged" on write
                 'apiKey': '••••' + instance.ai_key[-4:] if instance.ai_key else '',
+                'apolloApiKey': '••••' + instance.apollo_api_key[-4:] if instance.apollo_api_key else '',
             },
             'smtp': {
                 'host': instance.smtp_host,
@@ -203,6 +205,9 @@ class SettingsSerializer(serializers.ModelSerializer):
         # ignore masked / empty values so we never overwrite the stored key
         if incoming_key and not incoming_key.startswith('••••'):
             instance.ai_key = incoming_key
+        incoming_apollo = ai_key.get('apolloApiKey')
+        if incoming_apollo and not incoming_apollo.startswith('••••'):
+            instance.apollo_api_key = incoming_apollo
         instance.smtp_host = smtp.get('host', instance.smtp_host)
         if smtp.get('port') not in (None, ''):
             instance.smtp_port = int(smtp['port'] or 0) or None

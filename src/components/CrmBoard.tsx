@@ -100,8 +100,17 @@ export function CrmBoard({ compact = false, refreshToken = 0 }: { compact?: bool
                   {lead.hasWebsite ? 'Website' : 'No website'}
                 </Chip>
                 {lead.findings.length > 0 && <small>{lead.findings.length} flaw(s)</small>}
-                {lead.contactEmail && <small>✉ {lead.contactEmail}</small>}
               </div>
+              {lead.contactEmail && (
+                <div className="crm-card-foot">
+                  <small>✉ {lead.contactEmail}</small>
+                </div>
+              )}
+              {lead.contactPhone && (
+                <div className="crm-card-foot">
+                  <small>☎ {lead.contactPhone}</small>
+                </div>
+              )}
               <div className="crm-card-foot">
                 <small>{lead.source}</small>
                 <small>{lead.discovered}</small>

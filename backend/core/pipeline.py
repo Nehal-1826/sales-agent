@@ -22,6 +22,8 @@ import time
 from django.utils import timezone
 
 from .ai import llm_available, llm_complete
+from .apify_maps import apify_available as apify_maps_available
+from .apify_maps import enrich_leads_via_apify
 from .enrichment import apollo_enrich_domain
 from .models import AgentConfig, AppSettings, EmailDraft, EmailTemplate, Lead, PipelineRun, Potential
 from .scalelist import scalelist_phone_find
@@ -396,10 +398,12 @@ def run_pipeline(triggered_by='manual'):
             f'Profile: {rejected} discovery result(s) removed — AI review found them not '
             f'relevant businesses (kept the CRM strictly relevant)')
 
-    # --- ENRICH: Scalelist + Apollo phone sweep (every cycle) ---------------
-    # Profiled leads whose phone field is still empty are retried every cycle
-    # against Scalelist (work email / company + domain) and then Apollo's
-    # company database — until a number shows up or candidates run out.
+    # --- ENRICH: Scalelist + Apollo + Google Maps phone sweep (every cycle) -
+    # Profiled leads whose phone field is still empty are retried every cycle:
+    # 1) Scalelist person/company phone find (work email / company + domain)
+    # 2) Apollo.io company database
+    # 3) Apify Google Maps extractor — location-aware, strongest for India —
+    #    matched to each lead by website domain, never by result position.
     # Sequential, capped calls: rate-limit friendly, never blocks discovery.
     enriched = 0
     sweep = (Lead.objects.filter(profiled=True)
@@ -426,6 +430,17 @@ def run_pipeline(triggered_by='manual'):
     if sweep:
         summary['notes'].append(
             f'Enrichment sweep: {enriched}/{len(sweep)} phone(s) recovered')
+
+    # Google Maps round — one batched actor run for whatever is still missing
+    if apify_maps_available():
+        maps_still_missing = [l for l in Lead.objects.filter(profiled=True)
+                              .exclude(website='').filter(contact_phone='')]
+        if maps_still_missing:
+            mapped = enrich_leads_via_apify(maps_still_missing[:APOLLO_SWEEP_PER_CYCLE])
+            for lead in mapped:
+                enriched += 1
+                summary['notes'].append(
+                    f'Enrichment: {lead.company} phone via Google Maps ({lead.contact_phone})')
 
     # --- COPYWRIGHT: draft cold emails for profiled leads ------------------
     # Strict contact-first policy: drafts are only written for leads we can

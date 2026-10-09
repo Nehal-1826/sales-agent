@@ -187,6 +187,17 @@ INDUSTRY_QUERIES = [
     'restaurant group', 'logistics company', 'architecture studio',
 ]
 
+# India priority market — every cycle dedicates its first query to an Indian
+# metro (metro × industry both rotate), so roughly 1/3 of all discovery is
+# India-focused while the remaining slices keep sweeping the world.
+# Every metro here is in GLOBAL_CITY_STATE, so leads get their Indian state.
+INDIA_PRIORITY_REGIONS = [
+    'Mumbai, India', 'Delhi, India', 'Bengaluru, India', 'Hyderabad, India',
+    'Chennai, India', 'Pune, India', 'Ahmedabad, India', 'Jaipur, India',
+    'Kolkata, India', 'Kochi, India', 'Noida, India', 'Surat, India',
+    'Nagpur, India', 'Visakhapatnam, India', 'Indore, India', 'Lucknow, India',
+]
+
 # Region detection — state + country for each lead, from the discovery query
 # (e.g. 'dental clinic Salem Tamil Nadu' or 'hotels in Austin, USA') with the
 # site TLD as fallback.
@@ -203,6 +214,7 @@ GLOBAL_CITY_STATE = {
     'surat': ('Gujarat', 'India'), 'jaipur': ('Rajasthan', 'India'),
     'kolkata': ('West Bengal', 'India'), 'kochi': ('Kerala', 'India'),
     'visakhapatnam': ('Andhra Pradesh', 'India'),
+    'indore': ('Madhya Pradesh', 'India'), 'lucknow': ('Uttar Pradesh', 'India'),
     # United States + Canada
     'new york': ('New York', 'United States'), 'san francisco': ('California', 'United States'),
     'los angeles': ('California', 'United States'), 'san diego': ('California', 'United States'),
@@ -367,10 +379,15 @@ def search_query_for_cycle(cycle_index):
 
 
 def search_queries_for_cycle(cycle_index, n=REGIONS_PER_CYCLE):
-    """n consecutive region slices for one cycle — each cycle now spreads
-    discovery over n different countries instead of a single one."""
+    """n region slices for one cycle — slice #0 is always an Indian metro
+    (rotating metro × industry) so discovery tilts toward the priority market
+    while the remaining slices continue the worldwide sweep."""
     start = cycle_index * n
-    return [_cycle_slice(start + k) for k in range(n)]
+    slices = [_cycle_slice(start + k) for k in range(n)]
+    industry = INDUSTRY_QUERIES[(cycle_index * 7) % len(INDUSTRY_QUERIES)]
+    region = INDIA_PRIORITY_REGIONS[cycle_index % len(INDIA_PRIORITY_REGIONS)]
+    slices[0] = (f'{industry} in {region}', industry)
+    return slices
 
 
 def region_from_query(query, website=''):

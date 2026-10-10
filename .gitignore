@@ -11,3 +11,14 @@ tools/
 .env
 staticfiles/
 venv/
+
+# logs & caches
+*.log
+.pytest_cache/
+.coverage
+htmlcov/
+
+# editors
+.idea/
+.vscode/
+*.swp

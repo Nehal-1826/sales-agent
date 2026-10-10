@@ -46,6 +46,7 @@ export interface Lead {
   country: string; // e.g. 'India' — derived from the discovery query / TLD
   hasWebsite: boolean; // website / no-website categorization
   contactEmail: string; // scraped from their site ('' when none found)
+  contactPhone?: string; // scraped from their site (missing when none found)
   findings: Finding[]; // website flaws + improvement recommendations
   description: string; // AI (Gemini) summary of what the company does — read from its site
 }
@@ -122,6 +123,7 @@ export interface CompanyProfile {
 export interface AiKeyConfig {
   provider: string;
   apiKey: string;
+  apolloApiKey?: string; // Apollo.io — lead phone/company enrichment (masked on read)
 }
 
 export interface SmtpConfig {

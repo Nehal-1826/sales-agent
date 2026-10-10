@@ -35,7 +35,7 @@ python manage.py collectstatic --noinput
 # no demo users, no demo leads, no known passwords.
 if [ "$SEED_DEMO" = "1" ]; then
     echo "[entrypoint] seeding DEMO data (SEED_DEMO=1)…"
-    python manage.py seed_demo
+    python manage.py seed_demo --demo-crm
 else
     echo "[entrypoint] bootstrapping workspace owner (set SEED_DEMO=1 for demo data)…"
     python manage.py bootstrap_admin

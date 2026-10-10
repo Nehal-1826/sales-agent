@@ -16,13 +16,51 @@ USER → ORCHESTRATOR → SEARCH (SCRAPE) → PROFILE → COPYWRIGHT → RESPOND
   your template (Settings → Email Templates) → human **Approve & send** via
   SMTP with the branded designer email layout
 
+## Real-data guarantees (strict mode)
+
+- **AI relevance gate, fail-closed** — Gemini reads every discovered site's own
+  text; junk (directories, keyword landing pages, blogs) is deleted and the
+  domain is **permanently blacklisted** (`AppSettings.rejected_domains`). If the
+  AI can't review a lead (throttle/network), the lead is held unprofiled and
+  retried next cycle — unvetted sites never enter the CRM.
+- **Contact-first outreach** — Copywright drafts only for leads with a real
+  scraped email; placeholder addresses (`you@company.com`, `noreply@…`) are
+  blocklisted at extraction.
+- **Demo data is opt-in** — `python manage.py seed_demo` no longer inserts the
+  fake sample CRM; pass `--demo-crm` explicitly (docker entrypoint does).
+
+## Phone enrichment — 4 sources per lead
+
+Every cycle, leads with an empty phone are retried down this chain
+(each source only fills an EMPTY phone — scraped numbers always win;
+every phone records its source in `analysis.phone_source`):
+
+```
+1. site scrape        tel: links + contact/about/impressum pages found in the nav
+2. Scalelist          person/company phone find (work email, else name + domain)
+3. Apollo.io          organization enrich (phone, employee count)
+4. Google Maps        Apify `compass/google-maps-extractor` — batched actor run,
+                      places matched to leads by WEBSITE DOMAIN (never position);
+                      India leads are searched first
+```
+
+Configure with `SCALELIST_API_KEY`, `APOLLO_API_KEY`, `APIFY_API_KEY` —
+all optional, each source is skipped when blank (see `.env.example`).
+
+## India-priority discovery
+
+Slice #0 of every cycle targets an Indian metro (16 metros × 14 industries,
+rotating — Mumbai, Delhi, Bengaluru, Hyderabad, Chennai, Pune, …), so roughly
+⅓ of new leads are Indian with correct state tagging (`GLOBAL_CITY_STATE`);
+the remaining slices keep the 120-region worldwide sweep running.
+
 ## Product mode vs demo mode
 
 | | Product (default) | Demo (`SEED_DEMO=1`) |
 |---|---|---|
 | First boot | creates ONE owner from `ADMIN_USERNAME`/`ADMIN_EMAIL`/`ADMIN_PASSWORD` (auto-generates + prints a strong password if blank — see `docker compose logs api`) | seeds `operator` / `operator-demo-2026` + sample CRM data |
 | Login | your own credentials | demo credentials |
-| Data | clean CRM | sample leads/drafts |
+| Data | clean CRM (real scraped leads only) | sample leads/drafts |
 
 Production refuses to boot with insecure defaults: `DJANGO_DEBUG=0` requires
 `DJANGO_SECRET_KEY` and a real `ALLOWED_HOSTS` (see `backend/agentic/settings.py`).

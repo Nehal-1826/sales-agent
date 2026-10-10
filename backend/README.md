@@ -12,15 +12,28 @@ The agent pipeline (`USER → ORCHESTRATOR → SEARCH (SCRAPE) → PROFILE →
 COPYWRIGHT → RESPONDER (CHATBOT) → LOOP`) is **real** (`core/pipeline.py`):
 
 - **SEARCH** — live DuckDuckGo discovery (`ddgs`), worldwide industry × region
-  rotation, platform/job-board/directory blocklist, deep-link filtering
+  rotation **with an India-priority slice every cycle** (16 metros × 14
+  industries), platform/job-board/directory blocklist, deep-link filtering
 - **PROFILE** — scrapes each lead's site (`requests` + `bs4`), categorizes
-  **website / no website**, extracts contact emails, audits HTTPS, speed,
-  SEO, mobile, content, contact reachability → flaw findings + potential
-  score (more fixable flaws = higher potential; no website ≈ 90–95)
+  **website / no website**, extracts contact emails **and phone numbers**
+  (tel: links + contact/about/impressum pages found in the site's own nav),
+  audits HTTPS, speed, SEO, mobile, content, contact reachability → flaw
+  findings + potential score (more fixable flaws = higher potential;
+  no website ≈ 90–95). Gemini vets every lead against its own site text —
+  junk is deleted and its domain permanently blacklisted; unreviewable
+  leads are held and retried next cycle (fail-closed)
+- **PHONE ENRICHMENT** — leads still missing a phone are retried down a
+  4-source chain (`core/scalelist.py`, `core/enrichment.py`,
+  `core/apify_maps.py`): Scalelist → Apollo.io → Apify Google Maps
+  (places matched to leads by website domain, India leads first). Capped
+  per cycle, env-keyed (`SCALELIST_API_KEY`, `APOLLO_API_KEY`,
+  `APIFY_API_KEY`), never overwrites a scraped number — the source is
+  recorded in `analysis.phone_source`
 - **COPYWRIGHT** — drafts a personalized cold email per lead from the real
   audit findings; uses the LLM when an AI key is set in Settings
-  (`core/ai.py`, OpenAI-compatible: OpenAI/GLM/DeepSeek/Groq/Ollama),
-  strong template otherwise
+  (`core/ai.py`, OpenAI-compatible: OpenAI/Gemini/GLM/DeepSeek/Groq/Ollama),
+  strong template otherwise. Only leads with a real scraped email get a
+  draft — nothing is written to a missing address
 - **OUTREACH** — drafts wait in the CRM OUTREACH column; **Approve & send**
   delivers immediately via the SMTP account from Settings (`core/mailer.py`),
   or prints to the server console when SMTP is not configured

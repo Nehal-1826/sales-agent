@@ -27,7 +27,8 @@ USER_AGENT = (
 )
 FETCH_TIMEOUT = 12          # seconds per page
 MAX_HTML = 900_000          # cap page size we parse
-CONTACT_PATHS = ['/contact', '/contact-us', '/about', '/impressum']
+CONTACT_PATHS = ['/contact', '/contact-us', '/about', '/impressum',
+                 '/contact.html', '/privacy', '/legal', '/kontakt']
 
 # Domains that are directories/socials/platforms/job boards, never the
 # small-to-mid company we're hunting for.
@@ -186,6 +187,17 @@ INDUSTRY_QUERIES = [
     'restaurant group', 'logistics company', 'architecture studio',
 ]
 
+# India priority market — every cycle dedicates its first query to an Indian
+# metro (metro × industry both rotate), so roughly 1/3 of all discovery is
+# India-focused while the remaining slices keep sweeping the world.
+# Every metro here is in GLOBAL_CITY_STATE, so leads get their Indian state.
+INDIA_PRIORITY_REGIONS = [
+    'Mumbai, India', 'Delhi, India', 'Bengaluru, India', 'Hyderabad, India',
+    'Chennai, India', 'Pune, India', 'Ahmedabad, India', 'Jaipur, India',
+    'Kolkata, India', 'Kochi, India', 'Noida, India', 'Surat, India',
+    'Nagpur, India', 'Visakhapatnam, India', 'Indore, India', 'Lucknow, India',
+]
+
 # Region detection — state + country for each lead, from the discovery query
 # (e.g. 'dental clinic Salem Tamil Nadu' or 'hotels in Austin, USA') with the
 # site TLD as fallback.
@@ -202,6 +214,7 @@ GLOBAL_CITY_STATE = {
     'surat': ('Gujarat', 'India'), 'jaipur': ('Rajasthan', 'India'),
     'kolkata': ('West Bengal', 'India'), 'kochi': ('Kerala', 'India'),
     'visakhapatnam': ('Andhra Pradesh', 'India'),
+    'indore': ('Madhya Pradesh', 'India'), 'lucknow': ('Uttar Pradesh', 'India'),
     # United States + Canada
     'new york': ('New York', 'United States'), 'san francisco': ('California', 'United States'),
     'los angeles': ('California', 'United States'), 'san diego': ('California', 'United States'),
@@ -302,6 +315,13 @@ TLD_COUNTRY = {
 
 EMAIL_RE = re.compile(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}')
 EMAIL_JUNK = re.compile(r'\.(png|jpg|jpeg|gif|webp|svg|css|js)$', re.I)
+# tel: links carry the cleanest phone numbers; PHONE_RE is the fallback for
+# international-format numbers printed in the text (footer / address block)
+TEL_HREF_RE = re.compile(r'href=["\']tel:([^"\']+)["\']', re.I)
+PHONE_RE = re.compile(r'\+\d{1,3}[\s().-]?(?:\d[\s().-]?){6,14}\d')
+# nav/footer labels + hrefs that lead to the page where contact details live
+CONTACT_LINK_RE = re.compile(
+    r'contact|kontakt|contacto|contato|contatti|impressum|about|reach[- ]?us|connect', re.I)
 
 
 REGIONS_PER_CYCLE = 3  # regions searched per pipeline cycle (world sweep /3 faster)
@@ -370,12 +390,20 @@ def _region_pool(regions):
 
 
 def search_queries_for_cycle(cycle_index, n=REGIONS_PER_CYCLE, regions=None):
-    """n consecutive region slices for one cycle — each cycle spreads
-    discovery over n different countries instead of a single one.
-    regions restricts the sweep to the user's target countries."""
-    pool = _region_pool(regions) or REGIONS
+    """n region slices for one cycle. User-set target countries (Settings →
+    Lead Targeting) restrict the sweep to those only. Otherwise slice #0 is
+    always an Indian metro (rotating metro × industry) so discovery tilts
+    toward the priority market while the remaining slices continue the
+    worldwide sweep."""
     start = cycle_index * n
-    return [_cycle_slice(start + k, pool) for k in range(n)]
+    pool = _region_pool(regions)
+    if pool:
+        return [_cycle_slice(start + k, pool) for k in range(n)]
+    slices = [_cycle_slice(start + k) for k in range(n)]
+    industry = INDUSTRY_QUERIES[(cycle_index * 7) % len(INDUSTRY_QUERIES)]
+    region = INDIA_PRIORITY_REGIONS[cycle_index % len(INDIA_PRIORITY_REGIONS)]
+    slices[0] = (f'{industry} in {region}', industry)
+    return slices
 
 
 def region_from_query(query, website=''):
@@ -555,7 +583,13 @@ def _clean_email(candidate):
     candidate = candidate.strip().strip('.').lower()
     if EMAIL_JUNK.search(candidate):
         return ''
-    if any(b in candidate for b in ('example.com', 'sentry.io', 'wixpress', '@2x', 'domain.com')):
+    # asset/placeholder addresses — templates ship 'you@company.com'-style
+    # strings that would otherwise be stored as a real contact detail
+    if any(b in candidate for b in ('example.com', 'sentry.io', 'wixpress', '@2x', 'domain.com',
+                                    'you@company', 'youremail', 'your-email', 'yourname@',
+                                    'name@company', 'name@domain', 'user@domain',
+                                    'email@example', 'email@address', 'john.doe', 'jane.doe',
+                                    'test@test', '@sentry', 'no-reply@', 'noreply@')):
         return ''
     return candidate
 
@@ -579,18 +613,87 @@ def extract_contact_email(html, base_url, soup=None):
     return own[0]
 
 
-def find_contact_email(home_html, home_url, soup=None):
-    """Homepage first, then up to two standard contact pages."""
-    email = extract_contact_email(home_html, home_url)
-    if email:
-        return email
-    for path in CONTACT_PATHS[:2]:
-        page = scrape_company(urljoin(home_url if home_url.startswith('http') else 'https://' + home_url, path))
-        if page['ok']:
-            email = extract_contact_email(page['html'], page['final_url'])
-            if email:
-                return email
+def _clean_phone(raw):
+    """Normalize a phone candidate; '' when it can't be a real number."""
+    digits = re.sub(r'\D', '', raw)
+    if not (7 <= len(digits) <= 15) or digits in ('1234567890', '0123456789'):
+        return ''
+    return raw.strip()
+
+
+def extract_contact_phone(html, soup=None):
+    """tel: links first (cleanest signal), then international-format numbers
+    in the page text.  Empty string when nothing credible found."""
+    if not html:
+        return ''
+    for m in TEL_HREF_RE.finditer(html):
+        number = _clean_phone(m.group(1))
+        if number:
+            return number
+    text = soup.get_text(' ', strip=True) if soup is not None else re.sub(r'<[^>]+>', ' ', html)
+    for m in PHONE_RE.finditer(text):
+        number = _clean_phone(m.group(0))
+        if number:
+            return number
     return ''
+
+
+def _contact_page_links(home_html, base_url):
+    """Same-domain nav/footer links that look like contact/about pages —
+    where the real contact details usually live.  Off-site links (LinkedIn,
+    WhatsApp, …) are ignored."""
+    links = []
+    try:
+        soup = BeautifulSoup(home_html, 'lxml')
+        own = urlparse(base_url).netloc.lower().removeprefix('www.')
+        for a in soup.find_all('a', href=True):
+            href = (a.get('href') or '').strip()
+            if not href or href.startswith(('mailto:', 'tel:', '#', 'javascript:', 'data:')):
+                continue
+            label = a.get_text(' ', strip=True) or ''
+            if not (CONTACT_LINK_RE.search(href) or CONTACT_LINK_RE.search(label)):
+                continue
+            full = urljoin(base_url, href)
+            parsed = urlparse(full)
+            if parsed.scheme not in ('http', 'https'):
+                continue
+            if parsed.netloc.lower().removeprefix('www.') != own:
+                continue
+            if full not in links:
+                links.append(full)
+            if len(links) >= 4:
+                break
+    except Exception:  # a malformed nav must never kill the audit
+        pass
+    return links
+
+
+def find_contact_details(home_html, home_url, soup=None):
+    """Homepage first, then the contact/about pages the nav links to, then
+    the standard contact paths.  Returns (email, phone)."""
+    base = home_url if home_url.startswith('http') else 'https://' + home_url
+    email = extract_contact_email(home_html, base)
+    phone = extract_contact_phone(home_html, soup)
+    if email and phone:
+        return email, phone
+    candidates = _contact_page_links(home_html, base)
+    candidates += [urljoin(base, path) for path in CONTACT_PATHS]
+    tried = set()
+    for candidate in candidates[:5]:  # politeness cap: 5 extra fetches per site
+        if candidate in tried:
+            continue
+        tried.add(candidate)
+        page = scrape_company(candidate)
+        if not page['ok']:
+            continue
+        page_soup = BeautifulSoup(page['html'], 'lxml')
+        if not email:
+            email = extract_contact_email(page['html'], page['final_url'])
+        if not phone:
+            phone = extract_contact_phone(page['html'], page_soup)
+        if email and phone:
+            break
+    return email, phone
 
 
 def _finding(area, severity, weight, issue, recommendation):
@@ -615,7 +718,7 @@ def analyze_website(name, website, prefer_country=''):
             'Web presence', 'high', 50,
             f'{name} has no website at all.',
             'Pitch an end-to-end website: domain, landing pages, SEO setup and a booking/contact funnel.'))
-        return {'has_website': False, 'score': 95, 'contact_email': '',
+        return {'has_website': False, 'score': 95, 'contact_email': '', 'contact_phone': '',
                 'findings': findings, 'analysis': analysis,
                 'state': found_state, 'country': found_country}
 
@@ -628,7 +731,7 @@ def analyze_website(name, website, prefer_country=''):
             f'Scraping is disallowed by {website}\'s robots.txt — not audited, out of respect for the site\'s policy.',
             'Manually review this lead before any outreach.'))
         analysis['blocked'] = True
-        return {'has_website': True, 'score': 40, 'contact_email': '',
+        return {'has_website': True, 'score': 40, 'contact_email': '', 'contact_phone': '',
                 'findings': findings, 'analysis': analysis,
                 'state': found_state, 'country': found_country}
     if not page['ok']:
@@ -647,14 +750,14 @@ def analyze_website(name, website, prefer_country=''):
                 f'site is live but could not be audited.',
                 'Manually review this site before any outreach.'))
             analysis['blocked'] = True
-            return {'has_website': True, 'score': 40, 'contact_email': '',
+            return {'has_website': True, 'score': 40, 'contact_email': '', 'contact_phone': '',
                     'findings': findings, 'analysis': analysis,
                     'state': found_state, 'country': found_country}
         findings.append(_finding(
             'Web presence', 'high', 45,
             f'Website unreachable ({page["error"] or "HTTP %d" % page["status"]}).',
             'Their web presence is broken or missing — pitch a rebuild with reliable hosting.'))
-        return {'has_website': False, 'score': 92, 'contact_email': '',
+        return {'has_website': False, 'score': 92, 'contact_email': '', 'contact_phone': '',
                 'findings': findings, 'analysis': analysis,
                 'state': found_state, 'country': found_country}
 
@@ -671,7 +774,7 @@ def analyze_website(name, website, prefer_country=''):
             'Web presence', 'high', 45,
             f'Domain is parked ({page_title[:60]}) — no real website is live.',
             'Pitch an end-to-end website: their domain is wasting the traffic it gets.'))
-        return {'has_website': False, 'score': 92, 'contact_email': '',
+        return {'has_website': False, 'score': 92, 'contact_email': '', 'contact_phone': '',
                 'findings': findings, 'analysis': analysis,
                 'state': found_state, 'country': found_country}
 
@@ -685,7 +788,7 @@ def analyze_website(name, website, prefer_country=''):
             'Website protected by a bot challenge — it is live but could not be audited.',
             'Manually review this site before any outreach.'))
         analysis['blocked'] = True
-        return {'has_website': True, 'score': 40, 'contact_email': '',
+        return {'has_website': True, 'score': 40, 'contact_email': '', 'contact_phone': '',
                 'findings': findings, 'analysis': analysis,
                 'state': found_state, 'country': found_country}
 
@@ -757,12 +860,19 @@ def analyze_website(name, website, prefer_country=''):
                                  f'Thin homepage content (~{text_len} characters).',
                                  'Content marketing package: service pages that rank and convert.'))
 
-    contact_email = find_contact_email(page['html'], page['final_url'], soup)
+    contact_email, contact_phone = find_contact_details(page['html'], page['final_url'], soup)
     analysis['contact_email'] = contact_email
+    analysis['contact_phone'] = contact_phone
     if not contact_email:
         score_weight += 6
         findings.append(_finding('Contact', 'medium', 6, 'No contact email anywhere obvious.',
                                  'Offer a conversion audit — hard-to-find contact details lose leads.'))
+    # reachability IS sales potential: a lead we can actually email/call beats an
+    # equally flawed but unreachable one
+    if contact_email:
+        score_weight += 4
+    if contact_phone:
+        score_weight += 2
 
     socials = soup.find_all('a', href=re.compile(r'(facebook|linkedin|instagram|twitter|x)\.com', re.I))
     if not socials:
@@ -777,5 +887,6 @@ def analyze_website(name, website, prefer_country=''):
 
     score = min(98, 40 + score_weight)
     return {'has_website': True, 'score': score, 'contact_email': contact_email,
+            'contact_phone': contact_phone,
             'findings': findings, 'analysis': analysis,
             'state': found_state, 'country': found_country}

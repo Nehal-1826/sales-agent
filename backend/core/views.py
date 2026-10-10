@@ -231,11 +231,13 @@ def leads_export(request):
     response['Content-Disposition'] = 'attachment; filename="leads.csv"'
     writer = csv.writer(response)
     writer.writerow(['Company', 'Industry', 'Website', 'Country', 'State', 'Score',
-                     'Contact email', 'Has website', 'Flaws', 'AI description', 'Source', 'Discovered'])
+                     'Contact email', 'Contact phone', 'Has website', 'Flaws',
+                     'AI description', 'Source', 'Discovered'])
     for l in Lead.objects.order_by('-created_at'):
         writer.writerow([
             l.company, l.industry, l.website, l.country, l.state, l.score,
-            l.contact_email, 'yes' if l.has_website else 'no', len(l.findings or []),
+            l.contact_email, l.contact_phone, 'yes' if l.has_website else 'no',
+            len(l.findings or []),
             (l.description or '').replace('\n', ' '), l.source,
             l.created_at.strftime('%Y-%m-%d %H:%M'),
         ])

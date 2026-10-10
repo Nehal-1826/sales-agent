@@ -241,8 +241,12 @@ def run_pipeline(triggered_by='manual'):
 
     # --- SEARCH (SCRAPE): real DuckDuckGo discovery, skip known companies --
     # Every cycle searches REGIONS_PER_CYCLE different countries, so the CRM
-    # spreads across the world instead of one region at a time.
-    queries = search_queries_for_cycle(cycle)
+    # spreads across the world instead of one region at a time — unless the
+    # user set target countries (Settings → Lead Targeting), then only those.
+    queries = search_queries_for_cycle(
+        cycle,
+        regions=[c.strip() for c in AppSettings.load().target_countries.split(',') if c.strip()],
+    )
     results, query_labels = [], []
     for i, (query, industry) in enumerate(queries):
         if i:
@@ -380,12 +384,6 @@ def run_pipeline(triggered_by='manual'):
     summary['notes'].append(
         f'Responder: {queue} draft(s) awaiting approval, '
         f'{awaiting_contact} lead(s) still missing a contact email')
-
-    # --- AI AUTOPILOT: when the user has accepted control, send on its own --
-    from .autopilot import autopilot_tick  # late import — avoids a cycle
-    auto_sent = autopilot_tick()
-    if auto_sent:
-        summary['notes'].append(f'Autopilot: approved and sent {auto_sent} email(s) automatically')
 
     run = PipelineRun.objects.create(
         triggered_by=triggered_by,

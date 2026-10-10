@@ -410,6 +410,10 @@ export const MODEL_OPTIONS = [
   'Custom',
 ];
 
+/* Countries the lead-discovery sweep can target (mirrors core/scraper.py REGIONS). */
+export const TARGET_COUNTRY_OPTIONS =
+  'Germany|United Kingdom|France|Netherlands|Spain|Italy|Ireland|Portugal|Belgium|Switzerland|Austria|Sweden|Norway|Denmark|Finland|Iceland|Poland|Czech Republic|Slovakia|Hungary|Romania|Bulgaria|Greece|Croatia|Slovenia|Serbia|Ukraine|Estonia|Latvia|Lithuania|Luxembourg|Malta|Cyprus|Albania|North Macedonia|Bosnia and Herzegovina|Moldova|Montenegro|United States|Canada|Mexico|Costa Rica|Panama|Guatemala|Honduras|El Salvador|Nicaragua|Dominican Republic|Jamaica|Trinidad and Tobago|Puerto Rico|Brazil|Argentina|Chile|Colombia|Peru|Ecuador|Uruguay|Paraguay|Bolivia|Venezuela|India|China|Japan|South Korea|Taiwan|Hong Kong|Singapore|Malaysia|Thailand|Vietnam|Philippines|Indonesia|Pakistan|Bangladesh|Sri Lanka|Nepal|Cambodia|Myanmar|Mongolia|Kazakhstan|Uzbekistan|Azerbaijan|Israel|UAE|Saudi Arabia|Qatar|Kuwait|Bahrain|Oman|Jordan|Lebanon|Turkey|South Africa|Nigeria|Kenya|Egypt|Morocco|Ghana|Tanzania|Uganda|Ethiopia|Rwanda|Zambia|Zimbabwe|Botswana|Namibia|Mozambique|Senegal|Ivory Coast|Cameroon|Tunisia|Algeria|Mauritius|Angola|Malawi|Libya|Australia|New Zealand|Fiji|Papua New Guinea|New York, USA|Austin, USA|Chicago, USA|Los Angeles, USA|San Francisco, USA|London, UK|Manchester, UK|Toronto, Canada|Mexico City, Mexico|Sao Paulo, Brazil|Buenos Aires, Argentina|Santiago, Chile|Lima, Peru|Bogota, Colombia|Berlin, Germany|Munich, Germany|Paris, France|Barcelona, Spain|Milan, Italy|Amsterdam, Netherlands|Brussels, Belgium|Zurich, Switzerland|Vienna, Austria|Stockholm, Sweden|Warsaw, Poland|Istanbul, Turkey|Mumbai, India|Dubai, UAE|Riyadh, Saudi Arabia|Doha, Qatar|Tokyo, Japan|Seoul, South Korea|Kuala Lumpur, Malaysia|Bangkok, Thailand|Jakarta, Indonesia|Manila, Philippines|Ho Chi Minh City, Vietnam|Lagos, Nigeria|Nairobi, Kenya|Cairo, Egypt|Casablanca, Morocco|Johannesburg, South Africa|Cape Town, South Africa|Sydney, Australia|Melbourne, Australia|Brisbane, Australia|Auckland, New Zealand'.split('|');
+
 /* ------------------------------------------------------------------ */
 /* Settings — defaults                                                 */
 /* ------------------------------------------------------------------ */
@@ -426,6 +430,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   smtp: { host: '', port: '587', user: '', password: '', from: '' },
   runs: { enabled: true, frequency: '1h' },
   report: { email: '' },
+  targeting: { countries: [] },
 };
 
 /* ------------------------------------------------------------------ */

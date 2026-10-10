@@ -158,10 +158,11 @@ class SettingsSerializer(serializers.ModelSerializer):
     smtp = serializers.DictField(required=False)
     runs = serializers.DictField(required=False)
     report = serializers.DictField(required=False)
+    targeting = serializers.DictField(required=False)
 
     class Meta:
         model = AppSettings
-        fields = ['company', 'aiKey', 'smtp', 'runs', 'report']
+        fields = ['company', 'aiKey', 'smtp', 'runs', 'report', 'targeting']
 
     def to_representation(self, instance):
         return {
@@ -186,6 +187,9 @@ class SettingsSerializer(serializers.ModelSerializer):
             },
             'runs': {'enabled': instance.runs_enabled, 'frequency': instance.run_frequency},
             'report': {'email': instance.report_email},
+            'targeting': {
+                'countries': [c.strip() for c in instance.target_countries.split(',') if c.strip()],
+            },
         }
 
     def update(self, instance, validated):
@@ -215,6 +219,11 @@ class SettingsSerializer(serializers.ModelSerializer):
         instance.run_frequency = runs.get('frequency', instance.run_frequency)
         report = validated.get('report') or {}
         instance.report_email = report.get('email', instance.report_email)
+        targeting = validated.get('targeting') or {}
+        if 'countries' in targeting:
+            # store as comma-separated; unknown countries are dropped by the scraper
+            instance.target_countries = ', '.join(
+                str(c).strip() for c in (targeting.get('countries') or []) if str(c).strip())
         instance.save()
         return instance
 

@@ -23,7 +23,7 @@ from .reports import send_daily_report
 log = logging.getLogger(__name__)
 
 ACTION_NAMES = ('run_pipeline', 'approve_draft', 'reject_draft', 'delete_lead',
-                'set_frequency', 'send_report', 'set_autopilot', 'none')
+                'set_frequency', 'send_report', 'none')
 
 
 # ------------------------------------------------------------------
@@ -41,10 +41,6 @@ _FREQ_PATTERNS = [
 def detect_action_regex(text):
     """Fast keyword path — returns an action spec or None (let the LLM try)."""
     q = text.lower()
-    if re.search(r'\b(pause|stop|disable|turn off|revoke)\b.*\bautopilot|autopilot.*\b(off|disable|stop)\b', q):
-        return {'action': 'set_autopilot', 'frequency': 'off'}
-    if re.search(r'\b(enable|accept|activate|turn on|give)\b.*\bautopilot|autopilot.*\b(on|enable)\b|let .* ai .* control', q):
-        return {'action': 'set_autopilot', 'frequency': 'on'}
     if re.search(r'\b(pause|stop|disable)\b.*\brun|stop\s*the\s*loop', q):
         return {'action': 'set_frequency', 'frequency': 'pause'}
     if re.search(r'\b(resume|enable)\b.*\brun|start\s*the\s*loop', q):
@@ -205,16 +201,6 @@ def execute(spec, username='chat'):
             label = {'15m': '15 minutes', '1h': 'hour', '6h': '6 hours', 'daily': 'day'}[freq]
             return f'Pipeline now runs automatically every {label}.'
         return 'Which cadence? Say 15 minutes, hourly, 6 hours or daily.'
-
-    if action == 'set_autopilot':
-        from .autopilot import set_autopilot
-        on = (spec.get('frequency') or '').lower() == 'on'
-        set_autopilot(on)
-        if on:
-            return ('AI Autopilot is now ON: the orchestrator runs cycles and automatically '
-                    'approves + sends emails whose recipients were genuinely scraped from '
-                    'lead sites, within the daily cap. Revoke anytime here or on the Pipeline page.')
-        return 'AI Autopilot is OFF — you approve every email yourself again.'
 
     if action == 'send_report':
         status, subject = send_daily_report()

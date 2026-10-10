@@ -341,28 +341,41 @@ def robots_allows(url):
         return True
 
 
-def _cycle_slice(step_index):
-    """(query, industry) for the Nth worldwide rotation step.
+def _cycle_slice(step_index, pool=None):
+    """(query, industry) for the Nth rotation step.
 
-    The region advances EVERY step (one full world sweep per len(REGIONS)
-    steps) and the industry advances after each sweep — so consecutive steps
-    always discover companies in new countries instead of drilling into one.
+    The region advances EVERY step (one full sweep per len(pool) steps) and
+    the industry advances after each sweep — so consecutive steps always
+    discover companies in new countries instead of drilling into one.
+    pool = the regions to sweep (REGIONS worldwide, or the user's targets).
     """
-    region = REGIONS[step_index % len(REGIONS)]
-    industry = INDUSTRY_QUERIES[(step_index // len(REGIONS)) % len(INDUSTRY_QUERIES)]
+    pool = pool or REGIONS
+    region = pool[step_index % len(pool)]
+    industry = INDUSTRY_QUERIES[(step_index // len(pool)) % len(INDUSTRY_QUERIES)]
     return f'{industry} in {region}', industry
 
 
-def search_query_for_cycle(cycle_index):
+def search_query_for_cycle(cycle_index, regions=None):
     """First query of the cycle — kept for one-off scripts and tests."""
-    return _cycle_slice(cycle_index)
+    return _cycle_slice(cycle_index, _region_pool(regions))
 
 
-def search_queries_for_cycle(cycle_index, n=REGIONS_PER_CYCLE):
-    """n consecutive region slices for one cycle — each cycle now spreads
-    discovery over n different countries instead of a single one."""
+def _region_pool(regions):
+    """Restrict discovery to the given countries (Settings → Lead Targeting);
+    anything unrecognized is dropped, empty → worldwide sweep."""
+    if not regions:
+        return None
+    known = {r.lower(): r for r in REGIONS}
+    return [known[r.lower()] for r in regions if r.lower() in known] or None
+
+
+def search_queries_for_cycle(cycle_index, n=REGIONS_PER_CYCLE, regions=None):
+    """n consecutive region slices for one cycle — each cycle spreads
+    discovery over n different countries instead of a single one.
+    regions restricts the sweep to the user's target countries."""
+    pool = _region_pool(regions) or REGIONS
     start = cycle_index * n
-    return [_cycle_slice(start + k) for k in range(n)]
+    return [_cycle_slice(start + k, pool) for k in range(n)]
 
 
 def region_from_query(query, website=''):

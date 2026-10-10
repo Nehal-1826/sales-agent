@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   approveDraft,
-  getAutopilot,
   getDrafts,
   getLeads,
   getPipelineStatus,
@@ -269,26 +268,18 @@ function DraftsApproval({
   );
 }
 
-/** Live system status: backend, orchestrator cadence, autopilot. */
+/** Live system status: backend, orchestrator cadence. */
 function SystemPanel({ live, onNavigate }: { live: boolean; onNavigate: (p: PageKey) => void }) {
   const [status, setStatus] = useState<{
     running: boolean;
     frequency: string;
     nextRunInMinutes: number | null;
   } | null>(null);
-  const [autopilot, setAutopilot] = useState<{
-    enabled: boolean;
-    sentToday: number;
-    dailyLimit: number;
-  } | null>(null);
 
   useEffect(() => {
     if (!live) return;
     getPipelineStatus().then((s) => {
       if (s) setStatus({ running: s.running, frequency: s.frequency, nextRunInMinutes: s.nextRunInMinutes });
-    });
-    getAutopilot().then((a) => {
-      if (a) setAutopilot({ enabled: a.enabled, sentToday: a.sentToday, dailyLimit: a.dailyLimit });
     });
   }, [live]);
 
@@ -325,19 +316,6 @@ function SystemPanel({ live, onNavigate }: { live: boolean; onNavigate: (p: Page
           <StatusDot tone={status ? 'success' : 'gray'} />
           <span>Cadence</span>
           <strong>{live ? (status ? status.frequency : '—') : '—'}</strong>
-        </div>
-        <div className="system-row">
-          <StatusDot tone={autopilot?.enabled ? 'success' : 'gray'} />
-          <span>AI Autopilot</span>
-          <strong>
-            {!live
-              ? '—'
-              : !autopilot
-                ? 'Checking…'
-                : autopilot.enabled
-                  ? `On · ${autopilot.sentToday}/${autopilot.dailyLimit} sent today`
-                  : 'Off — manual runs'}
-          </strong>
         </div>
       </div>
     </section>

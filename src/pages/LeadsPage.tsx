@@ -4,7 +4,7 @@ import { MOCK_LEADS } from '../lib/mockData';
 import { PageHeader, SectionLabel, Spinner } from '../components/ui';
 import type { Lead } from '../lib/types';
 
-type SortKey = 'company' | 'score' | 'discovered';
+type SortKey = 'company' | 'score' | 'discovered' | 'industry' | 'country' | 'contact' | 'website';
 
 /**
  * LEADS & REPORTS — the full workspace lead list (search, sort, CSV export)
@@ -36,13 +36,24 @@ export function LeadsPage() {
           l.country.toLowerCase().includes(q) ||
           (l.description || '').toLowerCase().includes(q)),
     );
-    out.sort((a, b) =>
-      sort === 'score'
-        ? b.score - a.score
-        : sort === 'company'
-          ? a.company.localeCompare(b.company)
-          : Date.parse(b.discovered) - Date.parse(a.discovered) || 0,
-    );
+    out.sort((a, b) => {
+      switch (sort) {
+        case 'score':
+          return b.score - a.score;
+        case 'company':
+          return a.company.localeCompare(b.company);
+        case 'industry':
+          return a.industry.localeCompare(b.industry) || b.score - a.score;
+        case 'country':
+          return (a.country || 'zz').localeCompare(b.country || 'zz') || b.score - a.score;
+        case 'contact':
+          return Number(Boolean(b.contactEmail)) - Number(Boolean(a.contactEmail)) || b.score - a.score;
+        case 'website':
+          return Number(Boolean(b.hasWebsite)) - Number(Boolean(a.hasWebsite)) || b.score - a.score;
+        default:
+          return Date.parse(b.discovered) - Date.parse(a.discovered) || 0;
+      }
+    });
     return out;
   }, [leads, search, minScore, sort]);
 
@@ -73,6 +84,10 @@ export function LeadsPage() {
               <option value="score">Sort: score</option>
               <option value="company">Sort: company A→Z</option>
               <option value="discovered">Sort: newest</option>
+              <option value="industry">Sort: industry A→Z</option>
+              <option value="country">Sort: country A→Z</option>
+              <option value="contact">Sort: has contact first</option>
+              <option value="website">Sort: needs website first</option>
             </select>
             <select value={minScore} onChange={(e) => setMinScore(Number(e.target.value))}>
               <option value={0}>Any score</option>

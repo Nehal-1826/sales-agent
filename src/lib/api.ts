@@ -495,40 +495,6 @@ export async function downloadLeadsCsv(): Promise<boolean> {
   return false;
 }
 
-/* ---------------- AI autopilot ---------------- */
-
-export interface AutopilotState {
-  enabled: boolean;
-  sentToday: number;
-  dailyLimit: number;
-  activity: { time: string; action: string; detail: string }[];
-}
-
-export async function getAutopilot(): Promise<AutopilotState | null> {
-  if (await ensureBackend()) {
-    try {
-      return await fetchJson<AutopilotState>('/autopilot/');
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-
-export async function setAutopilot(enabled: boolean, dailyLimit?: number): Promise<AutopilotState | null> {
-  if (await ensureBackend()) {
-    try {
-      return await fetchJson<AutopilotState>('/autopilot/', {
-        method: 'POST',
-        body: JSON.stringify({ enabled, dailyLimit }),
-      });
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-
 /* ---------------- AI guide (in-product assistant) ---------------- */
 
 export async function askGuide(text: string, history: { from: string; text: string }[] = []): Promise<string> {

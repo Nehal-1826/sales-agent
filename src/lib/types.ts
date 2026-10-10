@@ -150,6 +150,7 @@ export interface SettingsState {
   smtp: SmtpConfig;
   runs: FrequentRuns;
   report: ReportConfig;
+  targeting: { countries: string[] }; // [] = worldwide lead discovery sweep
 }
 
 /** CHAT page. */

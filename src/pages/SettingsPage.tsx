@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { DEFAULT_SETTINGS, MOCK_TEMPLATES } from '../lib/mockData';
+import { DEFAULT_SETTINGS, MOCK_TEMPLATES, TARGET_COUNTRY_OPTIONS } from '../lib/mockData';
 import {
   changePassword,
   createTemplate,
@@ -19,7 +19,12 @@ const STORE_KEY = 'settings';
 /** Merge stored (possibly stale) settings with defaults so new keys always exist. */
 function loadSettings(): SettingsState {
   const stored = loadJson<Partial<SettingsState>>(STORE_KEY, {});
-  return { ...DEFAULT_SETTINGS, ...stored, report: stored.report ?? DEFAULT_SETTINGS.report };
+  return {
+    ...DEFAULT_SETTINGS,
+    ...stored,
+    report: stored.report ?? DEFAULT_SETTINGS.report,
+    targeting: stored.targeting ?? DEFAULT_SETTINGS.targeting,
+  };
 }
 
 const RUN_OPTIONS: { value: RunFrequency; label: string; hint: string }[] = [
@@ -59,6 +64,7 @@ export function SettingsPage() {
           smtp: remote.smtp ?? DEFAULT_SETTINGS.smtp,
           runs: remote.runs,
           report: remote.report ?? DEFAULT_SETTINGS.report,
+          targeting: remote.targeting ?? DEFAULT_SETTINGS.targeting,
         });
       }
       setLoading(false);
@@ -239,6 +245,39 @@ export function SettingsPage() {
         <Field label="Services">
           <ServiceTags services={settings.company.services} onAdd={addService} onRemove={removeService} />
         </Field>
+      </section>
+
+      {/* 1.5 — LEAD TARGETING (country picker) */}
+      <section className="panel settings-panel">
+        <SectionLabel>Lead Targeting</SectionLabel>
+        <small className="inline-msg">
+          Pick the countries your leads should come from — leave empty to keep discovering worldwide.
+          Targeted sweeps rotate industries across only your chosen countries.
+        </small>
+        <Field label="Target countries">
+          <CountryTags
+            countries={settings.targeting.countries}
+            onAdd={(c) =>
+              setSettings((s) =>
+                s.targeting.countries.includes(c)
+                  ? s
+                  : { ...s, targeting: { countries: [...s.targeting.countries, c] } },
+              )
+            }
+            onRemove={(c) =>
+              setSettings((s) => ({
+                ...s,
+                targeting: { countries: s.targeting.countries.filter((x) => x !== c) },
+              }))
+            }
+          />
+        </Field>
+        {settings.targeting.countries.length > 0 && (
+          <small className="inline-msg">
+            {settings.targeting.countries.length} target country/countries — save to apply; the next
+            cycles only search these.
+          </small>
+        )}
       </section>
 
       {/* 2 — AI KEY */}
@@ -594,6 +633,65 @@ function ServiceTags({
           </span>
         ))}
         {services.length === 0 && <small>No services yet.</small>}
+      </div>
+    </div>
+  );
+}
+
+function CountryTags({
+  countries,
+  onAdd,
+  onRemove,
+}: {
+  countries: string[];
+  onAdd: (c: string) => void;
+  onRemove: (c: string) => void;
+}) {
+  const [draft, setDraft] = useState('');
+
+  const add = (value: string) => {
+    const name = value.trim();
+    if (!name) return;
+    onAdd(name);
+    setDraft('');
+  };
+
+  return (
+    <div className="tags-field">
+      <div className="input-with-action">
+        <input
+          list="target-country-options"
+          className="mono"
+          placeholder="e.g. India, UAE, Germany…"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              add(draft);
+            }
+          }}
+        />
+        <datalist id="target-country-options">
+          {TARGET_COUNTRY_OPTIONS.map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
+        <button className="btn btn-ghost" onClick={() => add(draft)}>
+          Add
+        </button>
+      </div>
+      <div className="tags">
+        {countries.map((c) => (
+          <span className="tag" key={c}>
+            {c}
+            <button onClick={() => onRemove(c)} aria-label={`Remove ${c}`}>
+              ×
+            </button>
+          </span>
+        ))}
+        {countries.length === 0 && (
+          <small>Worldwide — discovery sweeps the whole rotation (168 regions).</small>
+        )}
       </div>
     </div>
   );

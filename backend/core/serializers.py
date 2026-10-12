@@ -191,6 +191,7 @@ class SettingsSerializer(serializers.ModelSerializer):
             'report': {'email': instance.report_email},
             'targeting': {
                 'countries': [c.strip() for c in instance.target_countries.split(',') if c.strip()],
+                'industries': [i.strip() for i in instance.target_industries.split(',') if i.strip()],
             },
         }
 
@@ -229,6 +230,11 @@ class SettingsSerializer(serializers.ModelSerializer):
             # store as comma-separated; unknown countries are dropped by the scraper
             instance.target_countries = ', '.join(
                 str(c).strip() for c in (targeting.get('countries') or []) if str(c).strip())
+        if 'industries' in targeting:
+            # buyer industries to search; empty = ICP auto-targeting (core.icp).
+            # Peer/agency terms are dropped at read time by the ICP engine.
+            instance.target_industries = ', '.join(
+                str(i).strip() for i in (targeting.get('industries') or []) if str(i).strip())
         instance.save()
         return instance
 

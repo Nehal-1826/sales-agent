@@ -113,6 +113,7 @@ BLOCKED_DOMAINS = {
     'builtin.com', 'wellfound.com', 'angellist.com', 'layoffdata.com',
     # booking / review directories that answer "X near me" queries
     'whatclinic.com', 'practo.com', 'healthgrades.com', 'zocdoc.com',
+    'urbancompany.com',
     'booksy.com', 'fresha.com', 'opentable.com', 'classpass.com',
     'mindbodyonline.com', 'threebestrated.com', 'threebestrated.ca',
     'threebestrated.co.uk', 'threebestrated.in', 'atlaq.com',
@@ -361,30 +362,50 @@ def robots_allows(url):
         return True
 
 
-def _cycle_slice(step_index):
-    """(query, industry) for the Nth worldwide rotation step.
+def _cycle_slice(step_index, pool=None, industries=None):
+    """(query, industry) for the Nth rotation step.
 
-    The region advances EVERY step (one full world sweep per len(REGIONS)
-    steps) and the industry advances after each sweep — so consecutive steps
-    always discover companies in new countries instead of drilling into one.
+    The region advances EVERY step (one full sweep per len(pool) steps) and
+    the industry advances after each sweep — so consecutive steps always
+    discover companies in new countries instead of drilling into one.
+    pool = the regions to sweep (REGIONS worldwide, or the user's targets);
+    industries = ICP buyer industries (core.icp) — defaults to the legacy list.
     """
-    region = REGIONS[step_index % len(REGIONS)]
-    industry = INDUSTRY_QUERIES[(step_index // len(REGIONS)) % len(INDUSTRY_QUERIES)]
+    pool = pool or REGIONS
+    industries = industries or INDUSTRY_QUERIES
+    region = pool[step_index % len(pool)]
+    industry = industries[(step_index // len(pool)) % len(industries)]
     return f'{industry} in {region}', industry
 
 
-def search_query_for_cycle(cycle_index):
+def search_query_for_cycle(cycle_index, regions=None, industries=None):
     """First query of the cycle — kept for one-off scripts and tests."""
-    return _cycle_slice(cycle_index)
+    return _cycle_slice(cycle_index, _region_pool(regions), industries)
 
 
-def search_queries_for_cycle(cycle_index, n=REGIONS_PER_CYCLE):
-    """n region slices for one cycle — slice #0 is always an Indian metro
-    (rotating metro × industry) so discovery tilts toward the priority market
-    while the remaining slices continue the worldwide sweep."""
+def _region_pool(regions):
+    """Restrict discovery to the given countries (Settings → Lead Targeting);
+    anything unrecognized is dropped, empty → worldwide sweep."""
+    if not regions:
+        return None
+    known = {r.lower(): r for r in REGIONS}
+    return [known[r.lower()] for r in regions if r.lower() in known] or None
+
+
+def search_queries_for_cycle(cycle_index, n=REGIONS_PER_CYCLE, regions=None, industries=None):
+    """n region slices for one cycle. User-set target countries (Settings →
+    Lead Targeting) restrict the sweep to those only. Otherwise slice #0 is
+    always an Indian metro (rotating metro × industry) so discovery tilts
+    toward the priority market while the remaining slices continue the
+    worldwide sweep. industries = ICP buyer list (core.icp) — who to search
+    for; the legacy INDUSTRY_QUERIES only remain as the fallback."""
     start = cycle_index * n
-    slices = [_cycle_slice(start + k) for k in range(n)]
-    industry = INDUSTRY_QUERIES[(cycle_index * 7) % len(INDUSTRY_QUERIES)]
+    pool = _region_pool(regions)
+    if pool:
+        return [_cycle_slice(start + k, pool, industries) for k in range(n)]
+    slices = [_cycle_slice(start + k, None, industries) for k in range(n)]
+    inds = industries or INDUSTRY_QUERIES
+    industry = inds[(cycle_index * 7) % len(inds)]
     region = INDIA_PRIORITY_REGIONS[cycle_index % len(INDIA_PRIORITY_REGIONS)]
     slices[0] = (f'{industry} in {region}', industry)
     return slices
@@ -450,6 +471,12 @@ def _plausible_company_name(name, domain):
         return False
     if re.search(r'\b(acquire|buy|sale|for sale|jobs?|career|hiring|review|best|top \d+)\b', name, re.I):
         return False
+    if re.search(r'\bupto\s+\d|%\s*off\b|\boff\b.*\bpercent|complete\s+\w+\s+guide|\bexpat\b|'
+                 r'\b\d+\s+(clinics|companies|agencies|results|listings)\b|&\s*cost\b|'
+                 r'\bdirectory\b|\blisting[s]?\b|\btop\s+\d+\s+(best\s+)?\w+', name, re.I):
+        return False  # deal/coupon/listicle titles — SERP junk, not companies
+    if re.search(r'\(\s*20\d\d\s*\)$', name.strip()):
+        return False  # 'Dental treatment in Austria: … (2026)' — an article title
     if re.match(r'^(build|get|create|learn|how to|what (is|are)|discover|explore|the (best|top|ultimate))\b',
                 name, re.I):
         return False  # 'Build a Website or Web App With AI' — a headline, not a company

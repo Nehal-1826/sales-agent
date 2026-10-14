@@ -17,7 +17,7 @@ class KeywordReplyTests(TestCase):
 
     def test_greeting(self):
         reply = _keyword_reply('hello')
-        self.assertIn('Hello', reply)
+        self.assertIn("Pipeline's running", reply)
         self.assertIn('leads', reply)
 
     def test_lead_query_no_data(self):
@@ -46,7 +46,7 @@ class KeywordReplyTests(TestCase):
     def test_schedule_query(self):
         AppSettings.load()  # ensure settings exist
         reply = _keyword_reply('when is the next run')
-        self.assertIn('orchestrator', reply)
+        self.assertIn('pipeline', reply)
 
     def test_potential_query_no_data(self):
         reply = _keyword_reply('what potential deals')
@@ -84,7 +84,7 @@ class ResponderReplyIntegrationTests(TestCase):
     def test_falls_back_to_keyword_when_no_key(self):
         """Without an AI key, keyword logic is used."""
         reply = responder_reply('hello', turn=0)
-        self.assertIn('Hello', reply)
+        self.assertIn("Pipeline's running", reply)
 
     @patch('core.chat.llm_available', return_value=True)
     @patch('core.chat._llm_reply', return_value='LLM says hello')
@@ -97,10 +97,10 @@ class ResponderReplyIntegrationTests(TestCase):
     @patch('core.chat._llm_reply', return_value=None)
     def test_falls_back_when_llm_returns_none(self, mock_llm, mock_avail):
         reply = responder_reply('hello', turn=0)
-        self.assertIn('Hello', reply)  # keyword fallback
+        self.assertIn("Pipeline's running", reply)  # keyword fallback
 
     @patch('core.chat.llm_available', return_value=True)
     @patch('core.chat._llm_reply', side_effect=Exception('API error'))
     def test_falls_back_on_llm_exception(self, mock_llm, mock_avail):
         reply = responder_reply('hello', turn=0)
-        self.assertIn('Hello', reply)  # keyword fallback
+        self.assertIn("Pipeline's running", reply)  # keyword fallback

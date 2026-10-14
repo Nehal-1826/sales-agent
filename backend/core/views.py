@@ -218,24 +218,6 @@ def report_test(request):
 
 
 # ------------------------------------------------------------------
-# AI AUTOPILOT — consent, status and revoke
-# ------------------------------------------------------------------
-
-@api_view(['GET', 'POST'])
-def autopilot(request):
-    """GET → {enabled, sentToday, dailyLimit, activity[]}. POST {enabled, dailyLimit?}
-    → toggle after the user's explicit accept/revoke."""
-    from .autopilot import autopilot_status, set_autopilot
-
-    if request.method == 'POST':
-        if 'enabled' not in request.data:
-            return Response({'detail': 'enabled is required'}, status=400)
-        return Response(set_autopilot(bool(request.data.get('enabled')),
-                                      request.data.get('dailyLimit')))
-    return Response(autopilot_status())
-
-
-# ------------------------------------------------------------------
 # LEADS & REPORTS — full lead list export + on-demand report generation
 # ------------------------------------------------------------------
 

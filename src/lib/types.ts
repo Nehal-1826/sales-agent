@@ -152,6 +152,7 @@ export interface SettingsState {
   smtp: SmtpConfig;
   runs: FrequentRuns;
   report: ReportConfig;
+  targeting: { countries: string[]; industries: string[] }; // [] countries = worldwide sweep; [] industries = ICP auto-targeting
 }
 
 /** CHAT page. */

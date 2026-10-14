@@ -47,8 +47,6 @@ urlpatterns = [
     path('guide/', views.guide, name='guide'),
     # pipeline loop
     path('pipeline/status/', views.pipeline_status_view, name='pipeline-status'),
-    # AI autopilot (consent + status + revoke)
-    path('autopilot/', views.autopilot, name='autopilot'),
     path('pipeline/run/', views.pipeline_run, name='pipeline-run'),
     path('pipeline/runs/', views.pipeline_runs, name='pipeline-runs'),
 ]

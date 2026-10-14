@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { PipelineFlow } from '../components/PipelineFlow';
 import { StatusStrip } from '../components/StatusStrip';
-import { AutopilotPanel } from '../components/AutopilotPanel';
 import { AgentsPage } from './AgentsPage';
 import { CrmPage } from './CrmPage';
 import { LeadsPage } from './LeadsPage';
@@ -51,7 +50,6 @@ export function PipelinePage({ live }: { live: boolean }) {
         <>
           <PipelineFlow live={live} />
           <StatusStrip live={live} />
-          <AutopilotPanel />
         </>
       )}
       {tab === 'agents' && <AgentsPage />}

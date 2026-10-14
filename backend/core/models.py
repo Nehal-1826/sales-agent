@@ -247,6 +247,11 @@ class AppSettings(Timestamped):
     # Lead targeting — comma-separated country names; empty = worldwide sweep
     target_countries = models.TextField(blank=True)
 
+    # Lead targeting — comma-separated BUYER industries; empty = the ICP engine
+    # (core.icp) auto-picks businesses that buy what we sell.  Peer/agency
+    # terms are always dropped so competitors can't be re-introduced here.
+    target_industries = models.TextField(blank=True)
+
     # Daily report — recipient of the 8 PM IST lead report (comma-separated allowed;
     # falls back to superuser/staff emails when blank)
     report_email = models.CharField(max_length=300, blank=True)

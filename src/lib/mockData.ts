@@ -430,7 +430,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   smtp: { host: '', port: '587', user: '', password: '', from: '' },
   runs: { enabled: true, frequency: '1h' },
   report: { email: '' },
-  targeting: { countries: [] },
+  targeting: { countries: [], industries: [] },
 };
 
 /* ------------------------------------------------------------------ */

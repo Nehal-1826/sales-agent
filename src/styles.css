@@ -190,6 +190,8 @@ button {
   display: grid;
   place-items: center;
   padding: 24px;
+  position: relative;
+
   background:
     radial-gradient(1200px 600px at 80% -10%, rgba(234, 88, 12, 0.08), transparent 60%),
     radial-gradient(900px 500px at 10% 110%, rgba(249, 115, 22, 0.1), transparent 60%),
@@ -206,15 +208,28 @@ button {
 
 .login-logo {
   justify-self: center;
-  height: 56px;
-  width: auto;
-  border-radius: 10px;
-  /* white logo needs the orange plate on the white login card */
-  background: linear-gradient(180deg, #f97316, #ea580c);
-  padding: 12px 18px;
-  border: 1px solid #c2410c;
-  box-shadow: 0 6px 18px rgba(234, 88, 12, 0.25);
+  height: 64px;
+  width: auto; /* transparent logo, no chip */
 }
+
+/* back-to-home — returns to the marketing landing page */
+.login-home {
+  position: absolute;
+  top: 22px;
+  left: 24px;
+  font: inherit;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--accent-strong);
+  background: #fff;
+  border: 1.5px solid var(--accent-border);
+  border-radius: 999px;
+  padding: 9px 18px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(234, 88, 12, 0.12);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.login-home:hover { transform: translateY(-1px); background: var(--accent-soft); }
 
 .login-title {
   text-align: center;
@@ -229,6 +244,45 @@ button {
 .login-title small {
   color: var(--text-3);
   font-size: 12.5px;
+}
+
+/* sign in / create account option tabs */
+.login-tabs {
+  display: flex;
+  gap: 6px;
+  background: var(--panel-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  padding: 4px;
+  margin-bottom: 14px;
+}
+.login-tab {
+  flex: 1;
+  font: inherit;
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--text-3);
+  background: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.login-tab.active {
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(234, 88, 12, 0.25);
+}
+.login-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  color: var(--accent-strong);
+  text-decoration: underline;
 }
 
 .login-field {
@@ -2271,4 +2325,475 @@ textarea {
     animation-iteration-count: 1 !important;
     transition-duration: 0.001s !important;
   }
+}
+
+/* ==========================================================
+   LANDING PAGE — orange & white, front-end only
+   ========================================================== */
+.lp {
+  min-height: 100vh;
+  /* sunrise skin-tone shade falling from above — warm peach at the very top,
+     melted into pure white before the hero media zone so the video blends clean */
+  background:
+    radial-gradient(120% 34% at 50% -12%,
+      #ffd9b8 0%,
+      #ffe7d3 38%,
+      #fff6ee 68%,
+      #ffffff 100%)
+    no-repeat,
+    #ffffff;
+  color: var(--text);
+  /* Arial Rounded MT Bold — rounded, bold, approachable (Baloo 2 is the
+     web fallback for machines without the Arial Rounded family) */
+  font-family: 'Arial Rounded MT Bold', 'Baloo 2', 'Arial Rounded', Arial, sans-serif;
+}
+
+/* ---------- navbar ---------- */
+.lp-nav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: transparent; /* lets the sunrise shade blend straight through */
+  border-bottom: 1px solid transparent;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+/* only when scrolled does it get a whisper of white so links stay readable */
+.lp-nav-scrolled {
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(10px);
+  border-bottom-color: var(--border-soft);
+  box-shadow: 0 6px 24px rgba(234, 88, 12, 0.06);
+}
+.lp-nav-inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 14px 24px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr; /* brand left · links dead-center · CTA right */
+  align-items: center;
+  gap: 26px;
+}
+.lp-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-size: 21px;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: -0.02em;
+  justify-self: start;
+}
+.lp-brand img { height: 46px; width: auto; }  /* transparent logo, no chip */
+
+.lp-brand em { color: var(--accent); font-style: normal; }
+.lp-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  grid-column: 2;
+}
+.lp-links button {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  font-size: 17px;
+  color: var(--text-2);
+  padding: 9px 16px;
+  border-radius: 999px;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.lp-links button:hover { color: var(--accent-strong); background: var(--accent-soft); }
+
+/* ---------- buttons ---------- */
+.lp-cta {
+  font: inherit;
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+  border-radius: 999px;
+  padding: 12px 24px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  white-space: nowrap;
+}
+.lp-cta:hover { transform: translateY(-1px); }
+.lp-cta-solid {
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  color: #fff;
+  border: 0;
+  box-shadow: 0 8px 20px rgba(234, 88, 12, 0.28);
+}
+.lp-cta-solid:hover { box-shadow: 0 10px 26px rgba(234, 88, 12, 0.36); }
+.lp-cta-ghost {
+  background: #fff;
+  color: var(--accent-strong);
+  border: 2px solid var(--accent-border);
+}
+.lp-cta-ghost:hover { background: var(--accent-soft); }
+
+/* ---------- hero (copy left · animation right, fits one desktop screen) --- */
+.lp-hero {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 12px 24px 20px;
+  min-height: calc(100vh - 64px); /* navbar + hero = exactly one viewport */
+  display: grid;
+  grid-template-columns: 1fr 1.05fr;
+  align-items: center;
+  gap: 44px;
+  /* no own background — lets the sunrise shade from .lp show through */
+}
+.lp-hero-media {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.lp-hero-video {
+  max-width: 100%;
+  max-height: calc(100vh - 150px); /* never pushes the hero past the fold */
+  width: auto;
+  /* the mp4 has a white studio background — multiply melts it into the
+     sunrise gradient so no white box shows (content keeps its colors) */
+  mix-blend-mode: multiply;
+  object-fit: contain;
+}
+.lp-badge {
+  display: inline-block;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  border: 1px solid var(--accent-border);
+  font-weight: 700;
+  font-size: 12.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 6px 14px;
+  border-radius: 999px;
+  margin-bottom: 14px;
+}
+.lp-hero-copy h1 {
+  font-size: clamp(30px, 3.5vw, 46px);
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  margin: 0 0 14px;
+  color: var(--text);
+}
+.lp-hero-line {
+  font-size: clamp(38px, 4.6vw, 62px) !important;
+  line-height: 1.14 !important;
+  margin: 0 0 30px !important;
+}
+.lp-accent { color: var(--accent); }
+.lp-sub {
+  font-size: 16.5px;
+  line-height: 1.55;
+  color: var(--text-2);
+  margin: 0 0 20px;
+  max-width: 50ch;
+}
+.lp-sub strong { color: var(--accent-strong); }
+.lp-desc {
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--text-2);
+  margin: 0 0 22px;
+  max-width: 46ch;
+}
+.lp-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.lp-actions .lp-cta { padding: 11px 22px; font-size: 14.5px; }
+.lp-trust { color: var(--text-3); font-size: 13.5px; margin: 0; }
+
+/* ---------- sections ---------- */
+.lp-section {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 72px 24px;
+}
+.lp-section h2 {
+  text-align: center;
+  font-size: clamp(26px, 3vw, 36px);
+  letter-spacing: -0.02em;
+  margin: 0 0 10px;
+}
+.lp-section-sub {
+  text-align: center;
+  color: var(--text-2);
+  margin: 0 auto 40px;
+  max-width: 60ch;
+}
+.lp-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 18px;
+}
+.lp-step {
+  background: var(--panel);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  padding: 26px 22px;
+  box-shadow: var(--shadow);
+}
+.lp-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  color: #fff;
+  font-weight: 800;
+  margin-bottom: 14px;
+}
+.lp-step h3 { margin: 0 0 8px; font-size: 17px; }
+.lp-step p { margin: 0; color: var(--text-2); font-size: 14.5px; line-height: 1.55; }
+
+/* ---------- contact ---------- */
+/* simple & neat: no panel, sits flat on the page background */
+.lp-contact { background: none; border-radius: 0; }
+.lp-contact-card {
+  max-width: 520px;
+  margin: 0 auto;
+  display: grid;
+  gap: 12px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 26px;
+  box-shadow: var(--shadow);
+}
+.lp-contact-card input {
+  font: inherit;
+  padding: 13px 16px;
+  border-radius: 12px;
+  border: 1.5px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text);
+  outline: none;
+}
+.lp-contact-card input:focus { border-color: var(--accent); }
+.lp-contact-card .lp-cta { justify-self: start; }
+.lp-contact-done { color: var(--accent-strong); font-weight: 600; }
+
+/* ---------- footer ---------- */
+.lp-footer {
+  margin-top: 40px;
+  background: linear-gradient(150deg, var(--accent), var(--accent-strong));
+  color: #fff;
+}
+.lp-footer-inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 46px 24px 30px;
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 36px;
+}
+.lp-footer-brand { display: grid; gap: 10px; justify-items: start; }
+.lp-footer-brand img { height: 54px; width: auto; background: #fff; border-radius: 12px; padding: 6px 12px; }
+.lp-footer-brand strong { font-size: 21px; letter-spacing: -0.01em; }
+.lp-footer-brand p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 14px;
+  line-height: 1.6;
+  max-width: 34ch;
+}
+.lp-footer-col { display: grid; gap: 10px; align-content: start; }
+.lp-footer-col h4 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.75);
+}
+.lp-footer-col a,
+.lp-footer-col button {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: #fff;
+  text-align: left;
+  width: fit-content;
+  opacity: 0.95;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.lp-footer-col a:hover,
+.lp-footer-col button:hover { opacity: 1; transform: translateX(3px); }
+.lp-footer-bar {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 16px 24px 26px;
+  border-top: 1px solid rgba(255, 255, 255, 0.28);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.85);
+}
+.lp-footer-bar button {
+  background: #fff;
+  color: var(--accent-strong);
+  border: 0;
+  border-radius: 999px;
+  padding: 9px 18px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  transition: transform 0.15s ease;
+}
+.lp-footer-bar button:hover { transform: translateY(-1px); }
+
+/* ==========================================================
+   HOW IT WORKS — scroll-triggered horizontal card carousel
+   ========================================================== */
+/* tall wrapper: gives the vertical scroll room that drives the slide.
+   The whole composition (title + tagline + cards) freezes in the viewport;
+   continued scrolling only drives the horizontal card slide. */
+.lp-hiw-tall { position: relative; height: 320vh; }
+.lp-hiw-sticky {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 34px;
+  padding-top: 70px; /* clears the sticky navbar */
+  overflow: hidden;
+  background: #ffffff;
+}
+.lp-hiw-pin { text-align: center; }
+.lp-hiw-pin h2 {
+  font-size: clamp(28px, 3.2vw, 40px);
+  letter-spacing: -0.02em;
+  margin: 0 0 10px;
+}
+.lp-hiw-pin p { color: var(--text-2); margin: 0; font-size: 16px; }
+.lp-hiw-track {
+  display: flex;
+  align-items: stretch;
+  gap: 14px; /* cards sit close together */
+  padding-left: max(24px, calc(50vw - 590px));
+  will-change: transform;
+}
+
+/* cards */
+.lp-card {
+  position: relative;
+  flex: 0 0 auto;
+  width: min(380px, 74vw);
+  height: 300px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  background: #ffffff;
+  border: 1.5px solid var(--accent-border);
+  border-radius: 22px;
+  padding: 30px 32px;
+  box-shadow: 0 18px 44px rgba(234, 88, 12, 0.12);
+}
+.lp-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+}
+.lp-card h3 {
+  font-size: clamp(26px, 2.4vw, 34px);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  margin: 0;
+  color: var(--accent);
+}
+.lp-card p { margin: 0; color: var(--text-2); font-size: 15.5px; line-height: 1.6; }
+
+.lp-card-cta {
+  justify-content: center;
+  text-align: center;
+  align-items: center;
+  background: #fff;
+  border-style: dashed;
+  box-shadow: none;
+}
+.lp-card-cta h3 { color: var(--accent-strong); }
+
+/* ==========================================================
+   DEMO BOOKING — live agent console + form
+   ========================================================== */
+.lp-contact-head { text-align: center; margin-bottom: 34px; }
+.lp-contact-head h2 {
+  font-size: clamp(28px, 3.2vw, 40px);
+  letter-spacing: -0.02em;
+  margin: 0 0 10px;
+}
+
+.lp-demo-wrap {
+  max-width: 520px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: #ffffff;
+  border: 1.5px solid var(--accent-border);
+  border-radius: 20px;
+  padding: 34px 38px 28px;
+  box-shadow: 0 16px 40px rgba(234, 88, 12, 0.1);
+}
+
+/* ---- live agent console (dark warm panel for contrast) ---- */
+/* ---- form card ---- */
+/* no card chrome — content only, aligned with the console panel */
+.lp-demo-card {
+  padding: 10px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.lp-demo-card h3 { margin: 0; font-size: 23px; color: var(--text); letter-spacing: -0.01em; }
+.lp-demo-card > p { margin: 0; color: var(--text-2); font-size: 14.5px; line-height: 1.55; }
+.lp-demo-card form { display: grid; gap: 11px; margin-top: 4px; }
+.lp-demo-card input {
+  font: inherit;
+  padding: 13px 16px;
+  border-radius: 12px;
+  border: 1.5px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text);
+  outline: none;
+}
+.lp-demo-card input:focus { border-color: var(--accent); }
+.lp-demo-submit { justify-self: start; }
+.lp-demo-done { color: var(--accent-strong); font-weight: 700; }
+.lp-demo-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; }
+.lp-demo-chips span {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  padding: 6px 12px;
+  border-radius: 999px;
+}
+
+@media (max-width: 920px) {
+  .lp-demo-grid { grid-template-columns: 1fr; }
 }

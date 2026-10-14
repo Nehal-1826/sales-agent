@@ -108,6 +108,44 @@ export function logout(): void {
   }
 }
 
+/**
+ * Create a new workspace account (POST /auth/register/). On success the
+ * returned token is stored exactly like a login — the user is signed in.
+ * Requires an 8+ character password (enforced server-side too).
+ */
+export async function register(
+  username: string,
+  password: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/auth/register/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) {
+      let detail = 'Registration failed — try a different username.';
+      try {
+        detail = (await res.json()).detail ?? detail;
+      } catch {
+        /* ignore */
+      }
+      return { ok: false, error: detail };
+    }
+    const data = (await res.json()) as { token: string };
+    authToken = data.token;
+    try {
+      localStorage.setItem(TOKEN_KEY, data.token);
+    } catch {
+      /* ignore */
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, error: 'Registration failed — the backend is not reachable.' };
+  }
+}
+
 export type AuthState = 'live' | 'mock' | 'unauthenticated';
 
 /**

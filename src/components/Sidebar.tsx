@@ -17,6 +17,7 @@ export function Sidebar({
   onClose,
   live,
   onLogout,
+  onHome,
 }: {
   page: PageKey;
   onNavigate: (p: PageKey) => void;
@@ -24,6 +25,7 @@ export function Sidebar({
   onClose: () => void;
   live: boolean | null;
   onLogout?: () => void;
+  onHome?: () => void;
 }) {
   const [user, setUser] = useState<{ name: string; role: string; mode: string } | null>(null);
 
@@ -34,10 +36,22 @@ export function Sidebar({
   return (
     <aside className={`sidebar${open ? ' open' : ''}`}>
       <div className="sidebar-brand" onClick={() => onNavigate('dashboard')}>
-        <img src="/logo.png" alt="Shailog Technologies" className="brand-logo" />
+        <img src="/shailog-logo.png" alt="Shailog Technologies" className="brand-logo" />
       </div>
 
       <nav className="side-nav" aria-label="Main">
+        {onHome && (
+          <button
+            className="nav-item"
+            onClick={() => {
+              onHome();
+              onClose();
+            }}
+          >
+            <span aria-hidden style={{ width: 17, textAlign: 'center' }}>⌂</span>
+            <span>Home</span>
+          </button>
+        )}
         {NAV.map(({ key, label, icon: Icon }) => (
           <button
             key={key}

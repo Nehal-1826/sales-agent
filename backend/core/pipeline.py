@@ -25,6 +25,8 @@ from .ai import llm_available, llm_complete
 from .apify_maps import apify_available as apify_maps_available
 from .apify_maps import enrich_leads_via_apify
 from .enrichment import apollo_enrich_domain
+from .gmaps import discover_no_website_places, enrich_leads_via_gmaps, gmaps_available
+from .icp import buyer_industries, looks_like_competitor, our_services_text, vertical
 from .models import AgentConfig, AppSettings, EmailDraft, EmailTemplate, Lead, PipelineRun, Potential
 from .scalelist import scalelist_phone_find
 from .scraper import (
@@ -41,6 +43,7 @@ MAX_LEADS_PER_CYCLE = 6      # new companies discovered per cycle (across all re
 MAX_PROFILE_PER_CYCLE = 6    # sites scraped+audited per cycle
 MAX_DRAFTS_PER_CYCLE = 3     # cold emails drafted per cycle
 APOLLO_SWEEP_PER_CYCLE = 5   # phone-enrichment retries per cycle (quota-friendly)
+MAPS_LEADS_PER_CYCLE = 3     # no-website leads from the free Google Maps scraper
 
 # Score at which Profile flags a POTENTIAL opportunity.
 POTENTIAL_THRESHOLD = 65
@@ -72,7 +75,7 @@ def _looks_like_company(name):
         name or '', re.I)
 
 
-def _ai_review(lead, audit):
+def _ai_review(lead, audit, our_services=''):
     """Gemini reads the lead's own site text and answers two questions in one
     call: is this an actual, relevant business — and what does it do?
 
@@ -84,13 +87,20 @@ def _ai_review(lead, audit):
                next cycle re-vets it.  Strict mode: an unreviewed site never
                enters the CRM, because unvetted discoveries are where fake
                leads come from.  Without an AI key the fallback is (True, '')
-               — keep everything, describe nothing (keyless demo mode)."""
+               — keep everything, describe nothing (keyless demo mode; the
+               heuristic ICP gate in run_pipeline still filters competitors)."""
     excerpt = (audit.get('analysis') or {}).get('text_excerpt', '')
     if not excerpt or not llm_available():
         return True, ''
+    competitor_rule = ''
+    if our_services:
+        competitor_rule = (
+            f' OR the company itself SELLS {our_services} — that is a competitor '
+            f'/ peer provider to us, NOT a prospective buyer')
     prompt = (
         f'You are vetting a sales-prospect lead discovered while searching for a '
-        f'"{lead.industry or "business"}" (website: {lead.website}).\n\n'
+        f'"{lead.industry or "business"}" (website: {lead.website}). We sell '
+        f'{our_services or "business services"} and are looking for BUYERS.\n\n'
         f'--- SITE TEXT ---\n{excerpt}\n--- END SITE TEXT ---\n\n'
         f'Answer in EXACTLY this format:\n'
         f'RELEVANT: yes|no\n'
@@ -99,8 +109,9 @@ def _ai_review(lead, audit):
         f'Rules for RELEVANT: "no" only when the site is clearly NOT a real operating '
         f'business (blog post, news article, directory/listing, personal portfolio, '
         f'parked page, product of a huge corporation) OR is completely unrelated to '
-        f'{lead.industry or "the industry we searched"}. A real small/mid company in a '
-        f'closely related field is "yes". Use only what the text shows. No markdown.'
+        f'{lead.industry or "the industry we searched"}{competitor_rule}. '
+        f'A real small/mid company in a closely related field is "yes". '
+        f'Use only what the text shows. No markdown.'
     )
     try:
         text = llm_complete(
@@ -254,9 +265,19 @@ def run_pipeline(triggered_by='manual'):
     # Every cycle searches REGIONS_PER_CYCLE different countries, so the CRM
     # spreads across the world instead of one region at a time — unless the
     # user set target countries (Settings → Lead Targeting), then only those.
+    # ICP targeting (core.icp): the industries searched are BUSINESSES THAT
+    # BUY what we sell — never our own vertical.  The legacy agency-heavy
+    # list used to fill the CRM with the user's own competitors.
+    settings = AppSettings.load()
+    icp_industries = buyer_industries(settings)
+    if not getattr(settings, 'target_industries', ''):
+        summary['notes'].append(
+            'Search: ICP buyer-targeting on — searching businesses that BUY '
+            f'{our_services_text(settings)}; peer/competitor agencies are filtered out')
     queries = search_queries_for_cycle(
         cycle,
-        regions=[c.strip() for c in AppSettings.load().target_countries.split(',') if c.strip()],
+        regions=[c.strip() for c in settings.target_countries.split(',') if c.strip()],
+        industries=icp_industries,
     )
     results, query_labels = [], []
     for i, (query, industry) in enumerate(queries):
@@ -272,7 +293,6 @@ def run_pipeline(triggered_by='manual'):
     known |= {c.lower() for c in Lead.objects.values_list('company', flat=True)}
     # strict no-fake-data memory: once the AI has rejected a domain, it never
     # gets discovered again — verdicts can flip between runs, memory can't
-    settings = AppSettings.load()
     known |= {d.lower() for d in (settings.rejected_domains or [])}
     new_leads = []
     seen_domains = set()
@@ -298,9 +318,50 @@ def run_pipeline(triggered_by='manual'):
             state=state,
             country=country,
             score=random.randint(45, 60),  # provisional, Profile replaces it
+            # the SERP snippet feeds the ICP competitor heuristic in Profile
+            analysis={'serp_snippet': r.get('snippet', '')},
         )
         new_leads.append(lead)
         summary['notes'].append(f'Search discovered {lead.company} ({lead.website})')
+
+    # --- SEARCH (GOOGLE MAPS): no-website local businesses — top leads -----
+    # Free keyless Maps scraper (core.gmaps).  A business listed on Maps with
+    # no real website is the highest-potential lead for a web-services seller:
+    # phone + address from the listing, nothing to audit, everything to build.
+    if gmaps_available():
+        maps_query, maps_industry = queries[0]
+        try:
+            no_site_places = discover_no_website_places(maps_query, limit=MAPS_LEADS_PER_CYCLE)
+        except Exception as exc:  # never let Maps kill the cycle
+            log.warning('Google Maps discovery failed for %r: %s', maps_query, exc)
+            no_site_places = []
+        for place in no_site_places:
+            name_l = place['name'].lower()
+            if name_l in known:
+                continue
+            if Lead.objects.filter(contact_phone=place['phone']).exists():
+                continue
+            known.add(name_l)
+            state, country = region_from_query(maps_query)
+            desc = ', '.join(filter(None, [place.get('category'), place.get('address')]))[:600]
+            lead = Lead.objects.create(
+                company=place['name'][:200],
+                industry=maps_industry,
+                website='',
+                contact_phone=place['phone'],
+                description=desc,
+                source=f'Search · Google Maps · {maps_query}',
+                state=state,
+                country=country,
+                score=95,  # no website at all — Profile re-audits and confirms
+                analysis={'phone_source': 'google-maps',
+                          'gmaps_address': place.get('address', ''),
+                          'gmaps_rating': place.get('rating'),
+                          'gmaps_reviews': place.get('reviews')},
+            )
+            new_leads.append(lead)
+            summary['notes'].append(
+                f'Search (Google Maps): {lead.company} — no website, phone {place["phone"]}')
 
     # --- PROFILE: scrape + audit up to N unprofiled leads ------------------
     potentials_created = 0
@@ -311,10 +372,15 @@ def run_pipeline(triggered_by='manual'):
             time.sleep(1)  # politeness pause between site fetches
         audit = analyze_website(lead.company, lead.website, prefer_country=lead.country)
         lead.has_website = audit['has_website']
-        lead.contact_email = audit['contact_email']
-        lead.contact_phone = audit.get('contact_phone', '')
+        # only overwrite when the audit actually found something — a Maps lead
+        # arrives with a phone from its listing and no website to scrape
+        if audit.get('contact_email'):
+            lead.contact_email = audit['contact_email']
+        if audit.get('contact_phone'):
+            lead.contact_phone = audit['contact_phone']
         lead.findings = audit['findings']
-        lead.analysis = audit['analysis']
+        # merge — audit keys win, but Maps/SERP metadata survives the audit
+        lead.analysis = {**(lead.analysis or {}), **(audit['analysis'] or {})}
         lead.score = audit['score']
         # Phone enrichment for THIS lead (matched by its own DB id — the loop
         # variable is the lead row itself, never a positional lookup):
@@ -338,8 +404,23 @@ def run_pipeline(triggered_by='manual'):
                 lead.analysis['phone_source'] = 'apollo.io'
             if apollo.get('employees'):
                 lead.analysis['employees'] = apollo['employees']
+        # ICP gate (core.icp) — competitor agencies never enter the CRM, even
+        # in keyless mode: heuristic fingerprints over name / industry /
+        # description / SERP snippet.  Same strict treatment as the AI gate:
+        # domain blacklisted so it is never re-discovered.
+        if looks_like_competitor(lead, settings):
+            domain = _norm_domain(lead.website)
+            if domain and domain not in (settings.rejected_domains or []):
+                settings.rejected_domains = list(settings.rejected_domains or []) + [domain]
+                settings.save(update_fields=['rejected_domains'])
+            summary['notes'].append(
+                f'Profile rejected {lead.company} ({lead.website or "no website"}) — '
+                f'competitor/peer of ours, not a buyer (ICP filter, domain blacklisted)')
+            lead.delete()
+            rejected += 1
+            continue
         # Gemini reads the site's own text → relevance gate + real description
-        relevant, description = _ai_review(lead, audit)
+        relevant, description = _ai_review(lead, audit, our_services=our_services_text(settings))
         if relevant is None:
             # strict fake-data gate: the AI couldn't review this lead right now
             # (throttle / network) — leave it unprofiled (nothing persisted) so
@@ -435,7 +516,19 @@ def run_pipeline(triggered_by='manual'):
         summary['notes'].append(
             f'Enrichment sweep: {enriched}/{len(sweep)} phone(s) recovered')
 
-    # Google Maps round — one batched actor run for whatever is still missing
+    # Free Google Maps round (core.gmaps keyless scraper) — whatever is still
+    # missing gets one Maps lookup per lead, matched by domain then by name.
+    # Runs BEFORE Apify so the paid actor is strictly the last resort.
+    if gmaps_available():
+        still_missing = [l for l in sweep if not l.contact_phone]
+        if still_missing:
+            gmaps_hits = enrich_leads_via_gmaps(still_missing[:APOLLO_SWEEP_PER_CYCLE])
+            for lead in gmaps_hits:
+                enriched += 1
+                summary['notes'].append(
+                    f'Enrichment: {lead.company} phone via Google Maps ({lead.contact_phone})')
+
+    # Apify Google Maps round — one batched actor run for whatever is still missing
     if apify_maps_available():
         maps_still_missing = [l for l in Lead.objects.filter(profiled=True)
                               .exclude(website='').filter(contact_phone='')]
@@ -503,7 +596,7 @@ def run_pipeline(triggered_by='manual'):
             'query': summary.get('query', ''),
             'drafts_created': drafts_created,
             'agents': [
-                {'agent': 'search', 'action': f'{len(new_leads)} new lead(s) via DuckDuckGo'},
+                {'agent': 'search', 'action': f'{len(new_leads)} new lead(s) via DuckDuckGo + Google Maps (ICP buyer targeting)'},
                 {'agent': 'profile', 'action': f'{len(to_profile)} site(s) audited'},
                 {'agent': 'copywright', 'action': f'{drafts_created} draft(s) created'},
                 {'agent': 'responder', 'action': f'{queue} draft(s) awaiting approval'},

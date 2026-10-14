@@ -23,7 +23,10 @@ function loadSettings(): SettingsState {
     ...DEFAULT_SETTINGS,
     ...stored,
     report: stored.report ?? DEFAULT_SETTINGS.report,
-    targeting: stored.targeting ?? DEFAULT_SETTINGS.targeting,
+    targeting: {
+      countries: stored.targeting?.countries ?? DEFAULT_SETTINGS.targeting.countries,
+      industries: stored.targeting?.industries ?? DEFAULT_SETTINGS.targeting.industries,
+    },
   };
 }
 
@@ -72,7 +75,10 @@ export function SettingsPage() {
           smtp: { ...(remote.smtp ?? DEFAULT_SETTINGS.smtp), password: '' },
           runs: remote.runs,
           report: remote.report ?? DEFAULT_SETTINGS.report,
-          targeting: remote.targeting ?? DEFAULT_SETTINGS.targeting,
+          targeting: {
+            countries: remote.targeting?.countries ?? [],
+            industries: remote.targeting?.industries ?? [],
+          },
         });
       }
       setLoading(false);
@@ -263,7 +269,7 @@ export function SettingsPage() {
         </Field>
       </section>
 
-      {/* 1.5 — LEAD TARGETING (country picker) */}
+      {/* 1.5 — LEAD TARGETING (country picker + buyer industries) */}
       <section className="panel settings-panel">
         <SectionLabel>Lead Targeting</SectionLabel>
         <small className="inline-msg">
@@ -277,13 +283,13 @@ export function SettingsPage() {
               setSettings((s) =>
                 s.targeting.countries.includes(c)
                   ? s
-                  : { ...s, targeting: { countries: [...s.targeting.countries, c] } },
+                  : { ...s, targeting: { ...s.targeting, countries: [...s.targeting.countries, c] } },
               )
             }
             onRemove={(c) =>
               setSettings((s) => ({
                 ...s,
-                targeting: { countries: s.targeting.countries.filter((x) => x !== c) },
+                targeting: { ...s.targeting, countries: s.targeting.countries.filter((x) => x !== c) },
               }))
             }
           />
@@ -294,6 +300,31 @@ export function SettingsPage() {
             cycles only search these.
           </small>
         )}
+        <Field
+          label="Target industries (buyers only)"
+          hint={
+            settings.targeting.industries.length === 0
+              ? 'Empty = auto ICP targeting: the agent searches businesses that BUY your services (clinics, hotels, gyms…) and filters out competitor agencies.'
+              : 'Your buyer list is used verbatim — agency/peer terms are still dropped automatically so competitors never sneak back in.'
+          }
+        >
+          <IndustryTags
+            industries={settings.targeting.industries}
+            onAdd={(i) =>
+              setSettings((s) =>
+                s.targeting.industries.includes(i)
+                  ? s
+                  : { ...s, targeting: { ...s.targeting, industries: [...s.targeting.industries, i] } },
+              )
+            }
+            onRemove={(i) =>
+              setSettings((s) => ({
+                ...s,
+                targeting: { ...s.targeting, industries: s.targeting.industries.filter((x) => x !== i) },
+              }))
+            }
+          />
+        </Field>
       </section>
 
       {/* 2 — AI KEY */}
@@ -673,6 +704,75 @@ function ServiceTags({
           </span>
         ))}
         {services.length === 0 && <small>No services yet.</small>}
+      </div>
+    </div>
+  );
+}
+
+const INDUSTRY_SUGGESTIONS = [
+  'dental clinic', 'medical clinic', 'boutique hotel', 'fitness studio', 'gym',
+  'restaurant', 'cafe', 'bakery', 'catering service', 'boutique law firm',
+  'accounting firm', 'insurance agency', 'real estate agency', 'construction company',
+  'architecture studio', 'interior design studio', 'driving school', 'coaching center',
+  'beauty salon', 'spa', 'photography studio', 'event management company',
+  'travel agency', 'car dealership', 'auto repair shop', 'furniture store',
+  'jewellery store', 'pharmacy', 'logistics company', 'import export company',
+];
+
+function IndustryTags({
+  industries,
+  onAdd,
+  onRemove,
+}: {
+  industries: string[];
+  onAdd: (i: string) => void;
+  onRemove: (i: string) => void;
+}) {
+  const [draft, setDraft] = useState('');
+
+  const add = (value: string) => {
+    const name = value.trim();
+    if (!name) return;
+    onAdd(name);
+    setDraft('');
+  };
+
+  return (
+    <div className="tags-field">
+      <div className="input-with-action">
+        <input
+          list="target-industry-options"
+          className="mono"
+          placeholder="e.g. dental clinic, boutique hotel, gym…"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              add(draft);
+            }
+          }}
+        />
+        <datalist id="target-industry-options">
+          {INDUSTRY_SUGGESTIONS.map((i) => (
+            <option key={i} value={i} />
+          ))}
+        </datalist>
+        <button className="btn btn-ghost" onClick={() => add(draft)}>
+          Add
+        </button>
+      </div>
+      <div className="tags">
+        {industries.map((i) => (
+          <span className="tag" key={i}>
+            {i}
+            <button onClick={() => onRemove(i)} aria-label={`Remove ${i}`}>
+              ×
+            </button>
+          </span>
+        ))}
+        {industries.length === 0 && (
+          <small>Auto ICP — buyer industries chosen from your services; competitors filtered.</small>
+        )}
       </div>
     </div>
   );

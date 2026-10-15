@@ -3,14 +3,12 @@ import { PipelineFlow } from '../components/PipelineFlow';
 import { StatusStrip } from '../components/StatusStrip';
 import { AgentsPage } from './AgentsPage';
 import { CrmPage } from './CrmPage';
-import { LeadsPage } from './LeadsPage';
 import { ChatPage } from './ChatPage';
 import type { PipelineTab } from '../lib/types';
 
 const TABS: { key: PipelineTab; label: string }[] = [
   { key: 'flow', label: 'Orchestrator Flow' },
   { key: 'agents', label: 'Agents' },
-  { key: 'leads', label: 'Leads & Reports' },
   { key: 'crm', label: 'CRM' },
   { key: 'chat', label: 'Chat' },
 ];
@@ -53,7 +51,6 @@ export function PipelinePage({ live }: { live: boolean }) {
         </>
       )}
       {tab === 'agents' && <AgentsPage />}
-      {tab === 'leads' && <LeadsPage />}
       {tab === 'crm' && <CrmPage />}
       {tab === 'chat' && <ChatPage />}
     </div>

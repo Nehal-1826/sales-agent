@@ -9,10 +9,10 @@ export type AgentKey = 'search' | 'profile' | 'copywright' | 'responder';
 
 /** Top-level menus — Dashboard · Pipeline · Settings.
  *  Agents, CRM, Leads, Reports and Chat live as tabs inside Pipeline. */
-export type PageKey = 'dashboard' | 'pipeline' | 'settings';
+export type PageKey = 'dashboard' | 'leads' | 'pipeline' | 'settings';
 
 /** Sub-tabs inside the Pipeline page. */
-export type PipelineTab = 'flow' | 'agents' | 'leads' | 'crm' | 'chat';
+export type PipelineTab = 'flow' | 'agents' | 'crm' | 'chat';
 
 export interface AgentMeta {
   key: AgentKey;

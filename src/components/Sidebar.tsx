@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { IconDashboard, IconLoop, IconSettings } from './icons';
+import { IconCrm, IconDashboard, IconHome, IconLoop, IconSettings } from './icons';
 import { getCurrentUser } from '../lib/api';
 import { StatusDot } from './ui';
 import type { PageKey } from '../lib/types';
 
 const NAV: { key: PageKey; label: string; icon: (p: { size?: number }) => JSX.Element }[] = [
   { key: 'dashboard', label: 'Dashboard', icon: IconDashboard },
+  { key: 'leads', label: 'Report', icon: IconCrm },
   { key: 'pipeline', label: 'Pipeline', icon: IconLoop },
   { key: 'settings', label: 'Settings', icon: IconSettings },
 ];
@@ -18,6 +19,7 @@ export function Sidebar({
   live,
   onLogout,
   onHome,
+  minimal = false,
 }: {
   page: PageKey;
   onNavigate: (p: PageKey) => void;
@@ -26,6 +28,7 @@ export function Sidebar({
   live: boolean | null;
   onLogout?: () => void;
   onHome?: () => void;
+  minimal?: boolean;
 }) {
   const [user, setUser] = useState<{ name: string; role: string; mode: string } | null>(null);
 
@@ -34,9 +37,9 @@ export function Sidebar({
   }, [live]);
 
   return (
-    <aside className={`sidebar${open ? ' open' : ''}`}>
+    <aside className={`sidebar${open ? ' open' : ''}${minimal ? ' minimal' : ''}`}>
       <div className="sidebar-brand" onClick={() => onNavigate('dashboard')}>
-        <img src="/shailog-logo.png" alt="Shailog Technologies" className="brand-logo" />
+        <img src="/shailog-mark.png" alt="Shailog" className="brand-logo" />
       </div>
 
       <nav className="side-nav" aria-label="Main">
@@ -48,8 +51,8 @@ export function Sidebar({
               onClose();
             }}
           >
-            <span aria-hidden style={{ width: 17, textAlign: 'center' }}>⌂</span>
-            <span>Home</span>
+            <IconHome size={24} />
+            <span className="nav-tip">Home</span>
           </button>
         )}
         {NAV.map(({ key, label, icon: Icon }) => (
@@ -62,12 +65,13 @@ export function Sidebar({
             }}
             aria-current={page === key ? 'page' : undefined}
           >
-            <Icon size={17} />
-            <span>{label}</span>
+            <Icon size={24} />
+            <span className="nav-tip">{label}</span>
           </button>
         ))}
       </nav>
 
+      {!minimal && (
       <div className="sidebar-foot">
         <div className="sidebar-system">
           <StatusDot tone="success" pulse />
@@ -93,6 +97,7 @@ export function Sidebar({
           </button>
         )}
       </div>
+      )}
     </aside>
   );
 }

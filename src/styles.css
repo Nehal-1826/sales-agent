@@ -83,7 +83,7 @@ button {
 .sidebar {
   position: fixed;
   inset: 0 auto 0 0;
-  width: 236px;
+  width: 70px;
   display: flex;
   flex-direction: column;
   border-right: 1px solid #c2410c;
@@ -93,9 +93,8 @@ button {
 
 .sidebar-brand {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 18px 16px 14px;
+  justify-content: center;
+  padding: 16px 0 12px;
   cursor: pointer;
 }
 
@@ -114,7 +113,6 @@ button {
   display: block;
   height: 42px;
   width: auto;
-  border-radius: 8px;
 }
 
 /* settings — sticky save bar (always visible at the bottom of the screen) */
@@ -505,18 +503,42 @@ button {
 }
 
 .nav-item {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 11px;
-  padding: 10px 12px;
-  border-radius: var(--radius-sm);
+  justify-content: center;
+  width: 50px;
+  height: 50px;
+  margin: 0 auto;
+  border-radius: 14px;
   border: none;
   background: none;
-  color: rgba(255, 255, 255, 0.88);
-  font-size: 13.5px;
-  font-weight: 500;
-  text-align: left;
+  color: rgba(255, 255, 255, 0.92);
   transition: background 0.15s, color 0.15s;
+}
+/* name revealed on touch / hover */
+.nav-tip {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translate(-50%, -6px);
+  background: var(--text);
+  color: #ffffff;
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  padding: 6px 12px;
+  border-radius: 9px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 80;
+}
+.nav-item:hover .nav-tip,
+.nav-item:focus-visible .nav-tip,
+.nav-item:active .nav-tip {
+  opacity: 1;
+  transform: translate(-50%, 0);
 }
 .nav-item:hover {
   background: rgba(255, 255, 255, 0.14);
@@ -534,7 +556,7 @@ button {
 
 .sidebar-foot {
   margin-top: auto;
-  padding: 14px 16px 16px;
+  padding: 12px 8px 14px;
   border-top: 1px solid rgba(255, 255, 255, 0.28);
   display: flex;
   flex-direction: column;
@@ -543,8 +565,10 @@ button {
 
 .sidebar-system {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 5px;
+  text-align: center;
 }
 .sidebar-system strong {
   display: block;
@@ -592,7 +616,7 @@ button {
 }
 
 .main {
-  margin-left: 236px;
+  margin-left: 70px;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -2594,7 +2618,7 @@ textarea {
   gap: 36px;
 }
 .lp-footer-brand { display: grid; gap: 10px; justify-items: start; }
-.lp-footer-brand img { height: 54px; width: auto; background: #fff; border-radius: 12px; padding: 6px 12px; }
+.lp-footer-brand img { height: 48px; width: auto; }
 .lp-footer-brand strong { font-size: 21px; letter-spacing: -0.01em; }
 .lp-footer-brand p {
   margin: 0;
@@ -2797,3 +2821,101 @@ textarea {
 @media (max-width: 920px) {
   .lp-demo-grid { grid-template-columns: 1fr; }
 }
+
+
+
+/* ==========================================================
+   MINIMAL ICON RAIL — dashboard only: four icons, spaced out
+   ========================================================== */
+.sidebar.minimal .side-nav {
+  flex: 1;
+  justify-content: flex-start;
+  gap: 34px;          /* generous space between the four menu icons */
+  padding-top: 62px;  /* icons lifted up, snug under the logo */
+}
+/* names always shown under each icon (Catalyst-style reveal) */
+.sidebar.minimal .nav-item {
+  width: 100%;
+  height: auto;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 0 7px;
+  border-radius: 0;
+}
+.sidebar.minimal .nav-tip {
+  display: block;
+  position: static;
+  transform: none;
+  opacity: 1;
+  background: none;
+  padding: 0;
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+/* Catalyst reveal: the active (or hovered) icon becomes a white rounded
+   tile that PROTRUDES past the rail into the page, with smooth concave
+   S-curve fillets where it meets the rail edge — like the reference. */
+.sidebar.minimal .nav-item.active,
+.sidebar.minimal .nav-item:hover {
+  width: 84px;              /* rail is 70px → protrudes 14px into the page */
+  margin-right: -14px;
+  padding-right: 14px;      /* icon stays centred in the visible part */
+  background: #ffffff;
+  border-radius: 14px;
+  color: var(--accent-strong);
+  z-index: 5;
+}
+.sidebar.minimal .nav-item.active .nav-tip,
+.sidebar.minimal .nav-item:hover .nav-tip { color: var(--accent-strong); }
+
+/* concave S-curve fillets above and below the protruding tile */
+.sidebar.minimal .nav-item.active::before,
+.sidebar.minimal .nav-item:hover::before {
+  content: '';
+  position: absolute;
+  top: -14px;
+  right: 0;
+  width: 14px;
+  height: 14px;
+  background: radial-gradient(circle at 0 100%, transparent 0 13.5px, #ffffff 14px);
+}
+.sidebar.minimal .nav-item.active::after,
+.sidebar.minimal .nav-item:hover::after {
+  content: '';
+  position: absolute;
+  bottom: -14px;
+  right: 0;
+  width: 14px;
+  height: 14px;
+  background: radial-gradient(circle at 0 0, transparent 0 13.5px, #ffffff 14px);
+}
+
+/* user profile pinned top-right on the dashboard */
+.dash-profile {
+  position: fixed;
+  top: 14px;
+  right: 22px;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: #ffffff;
+  border: 1.5px solid var(--accent-border);
+  border-radius: 999px;
+  padding: 6px 16px 6px 8px;
+  box-shadow: 0 6px 18px rgba(234, 88, 12, 0.12);
+}
+.dash-profile .avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+}
+.dash-profile strong { font-size: 13.5px; color: var(--text); }

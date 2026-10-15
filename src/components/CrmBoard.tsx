@@ -79,7 +79,6 @@ export function CrmBoard({ compact = false, refreshToken = 0 }: { compact?: bool
           <h3>LEADS</h3>
           <span className="count">{leads.length}</span>
         </header>
-        <p className="crm-col-sub">Companies discovered by the Search agent</p>
         <div className="crm-cards">
           {leads.slice(0, limit).map((lead) => (
             <article className="crm-card" key={lead.id}>
@@ -126,7 +125,6 @@ export function CrmBoard({ compact = false, refreshToken = 0 }: { compact?: bool
           <h3>POTENTIAL</h3>
           <span className="count">{potential.length}</span>
         </header>
-        <p className="crm-col-sub">Opportunities identified by the system</p>
         <div className="crm-cards">
           {potential.slice(0, limit).map((p) => (
             <article className="crm-card" key={p.id}>
@@ -150,7 +148,6 @@ export function CrmBoard({ compact = false, refreshToken = 0 }: { compact?: bool
           <h3>OUTREACH</h3>
           <span className="count">{drafts.length}</span>
         </header>
-        <p className="crm-col-sub">Cold emails drafted by Copywright — approve to send</p>
         <div className="crm-cards">
           {drafts.slice(0, limit).map((d) => (
             <article className="crm-card" key={d.id}>
@@ -244,7 +241,6 @@ export function CrmBoard({ compact = false, refreshToken = 0 }: { compact?: bool
           <h3>REPLY</h3>
           <span className="count">{replies.length}</span>
         </header>
-        <p className="crm-col-sub">Responses handled by the Responder (Chatbot)</p>
         <div className="crm-cards">
           {replies.slice(0, limit).map((r) => (
             <article className="crm-card" key={r.id}>

@@ -51,23 +51,15 @@ export function Dashboard({ onNavigate, live }: { onNavigate: (p: PageKey) => vo
 
   return (
     <div className="page">
-      <PageHeader
-        title="Dashboard"
-        subtitle="Everything that needs your attention — approvals first, then the numbers behind the pipeline."
-        actions={
-          <button className="btn btn-primary" onClick={() => onNavigate('pipeline')}>
-            Open Pipeline →
-          </button>
-        }
-      />
+      <PageHeader title="Dashboard" />
 
       {/* ---- today's numbers ---- */}
       <div className="stat-row">
-        <StatCard label="Leads" value={leads.length} note="discovered by Search" />
-        <StatCard label="Potential" value={potential.length} note="opportunities identified" />
-        <StatCard label="Awaiting approval" value={pending.length} note="cold-email drafts" highlight={pending.length > 0} />
-        <StatCard label="Sent" value={sent.length} note={failed.length ? `${failed.length} failed — retry in CRM` : 'via SMTP'} />
-        <StatCard label="Replies" value={replies.length} note="handled by Responder" />
+        <StatCard label="Leads" value={leads.length} />
+        <StatCard label="Potential" value={potential.length} />
+        <StatCard label="Awaiting approval" value={pending.length} highlight={pending.length > 0} />
+        <StatCard label="Sent" value={sent.length} />
+        <StatCard label="Replies" value={replies.length} />
       </div>
 
       {/* ---- mail drafts & approvals ---- */}
@@ -102,9 +94,6 @@ export function Dashboard({ onNavigate, live }: { onNavigate: (p: PageKey) => vo
               <IconSend size={15} />
             </div>
           </div>
-          <p className="panel-note">
-            The chatbot replies to inbound lead questions — full conversation history lives in Pipeline → Chat.
-          </p>
         </section>
       </div>
     </div>
@@ -120,19 +109,16 @@ function jumpToPipelineTab(onNavigate: (p: PageKey) => void, tab: PipelineTab) {
 function StatCard({
   label,
   value,
-  note,
   highlight = false,
 }: {
   label: string;
   value: number;
-  note: string;
   highlight?: boolean;
 }) {
   return (
     <div className={`stat-card${highlight ? ' highlight' : ''}`}>
       <span className="stat-value">{value}</span>
       <span className="stat-label">{label}</span>
-      <small className="stat-note">{note}</small>
     </div>
   );
 }
@@ -195,17 +181,10 @@ function DraftsApproval({
           <Chip tone="success">All clear</Chip>
         )}
       </div>
-      <p className="panel-note" style={{ margin: '0 0 12px' }}>
-        Cold emails drafted by the Copywright agent. Nothing is sent until you approve it here
-        (or in Pipeline → CRM → Outreach).
-      </p>
-
       {msg && <p className="inline-msg" style={{ margin: '0 0 10px' }}>{msg}</p>}
 
       {queue.length === 0 ? (
-        <p className="inline-msg">
-          No drafts waiting. Run a cycle from the Pipeline page to discover leads and draft new outreach.
-        </p>
+        <p className="inline-msg">No drafts waiting.</p>
       ) : (
         <div className="approval-list">
           {queue.map((d) => (

@@ -138,6 +138,23 @@ export const IconSend = ({ size, className }: IconProps) => (
   </svg>
 );
 
+export const IconHome = ({ size, className }: IconProps) => (
+  <svg
+    width={size ?? 17}
+    height={size ?? 17}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.9"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+  >
+    <path d="m3 10 9-7 9 7v10a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 20Z" />
+    <path d="M9 21v-8h6v8" />
+  </svg>
+);
+
 export const iconForAgent: Record<string, (p: IconProps) => JSX.Element> = {
   search: IconSearch,
   profile: IconProfile,

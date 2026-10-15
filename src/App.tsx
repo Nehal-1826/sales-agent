@@ -1,17 +1,21 @@
 import { useEffect, useState } from 'react';
 import { Sidebar } from './components/Sidebar';
-import { TopBar } from './components/TopBar';
 import { Dashboard } from './pages/Dashboard';
 import { PipelinePage } from './pages/PipelinePage';
 import { SettingsPage } from './pages/SettingsPage';
 import { LoginPage } from './pages/LoginPage';
 import { LandingPage } from './pages/LandingPage';
+import { LeadsPage } from './pages/LeadsPage';
 import { GuideWidget } from './components/GuideWidget';
-import { checkAuth, logout } from './lib/api';
+import { checkAuth, getCurrentUser, logout } from './lib/api';
 import type { PageKey } from './lib/types';
 
-const PAGES: Record<PageKey, (props: { onNavigate: (p: PageKey) => void; live: boolean }) => JSX.Element> = {
-  dashboard: Dashboard,
+const PAGES: Record<
+  PageKey,
+  (props: { onNavigate: (p: PageKey) => void; live: boolean; onHome?: () => void }) => JSX.Element
+> = {
+  dashboard: (props) => <Dashboard {...props} />,
+  leads: () => <LeadsPage />,
   pipeline: ({ live }) => <PipelinePage live={live} />,
   settings: () => <SettingsPage />,
 };
@@ -55,6 +59,18 @@ export default function App() {
     );
   }
 
+  // dashboard shows the user profile pinned at the top right
+  const DashProfile = () => {
+    const [user, setUser] = useState<{ name: string } | null>(null);
+    useEffect(() => { getCurrentUser().then((u) => setUser(u ? { name: u.name } : null)); }, []);
+    return (
+      <div className="dash-profile">
+        <span className="avatar" aria-hidden>{(user?.name ?? 'OP').slice(0, 2).toUpperCase()}</span>
+        <strong>{user?.name ?? 'operator'}</strong>
+      </div>
+    );
+  };
+
   if (auth === 'login') {
     return (
       <LoginPage
@@ -72,10 +88,10 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <Sidebar page={page} onNavigate={setPage} open={menuOpen} onClose={() => setMenuOpen(false)} live={live} onLogout={signOut} onHome={() => setLanding(true)} />
+      <Sidebar page={page} onNavigate={setPage} open={menuOpen} onClose={() => setMenuOpen(false)} live={live} onLogout={signOut} onHome={() => setLanding(true)} minimal />
       {menuOpen && <div className="scrim" onClick={() => setMenuOpen(false)} aria-hidden />}
       <div className="main">
-        <TopBar onMenu={() => setMenuOpen(true)} live={live} />
+        <DashProfile />
         <main className="content">
           <Page onNavigate={setPage} live={live === true} />
         </main>

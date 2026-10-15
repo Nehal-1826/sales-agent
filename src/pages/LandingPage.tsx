@@ -105,7 +105,7 @@ export function LandingPage({ onEnterDashboard }: { onEnterDashboard: () => void
           <div className="lp-footer-col">
             <h4>Contact</h4>
             <a href="mailto:shailog@gmail.com">✉ shailog@gmail.com</a>
-            <a href="tel:+919876543210">☎ +91 98765 43210</a>
+            <a href="tel:+917010663166">☎ +91 70106 63166</a>
             <a href="https://shailog.com" target="_blank" rel="noreferrer">🌐 shailog.com</a>
           </div>
 

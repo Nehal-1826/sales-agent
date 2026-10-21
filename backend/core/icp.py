@@ -167,10 +167,20 @@ def looks_like_competitor(lead, settings):
     patterns = competitor_regexes(settings)
     if not patterns:
         return False
-    # our own domain/company must never end up in the CRM as a "lead"
-    own_domain = (getattr(settings, 'company_website', '') or '').lower()
+    # our own domain/company must never end up in the CRM as a "lead" —
+    # normalize both sides to bare domains first: the lead's website can
+    # arrive with scheme/path ('https://www.shailog.com/about')
+    def _bare_domain(url):
+        d = (url or '').strip().lower()
+        for prefix in ('https://', 'http://'):
+            if d.startswith(prefix):
+                d = d[len(prefix):]
+        d = d.split('/', 1)[0]
+        return d[4:] if d.startswith('www.') else d
+    own_domain = _bare_domain(getattr(settings, 'company_website', ''))
     own_name = (getattr(settings, 'company_name', '') or '').lower()
-    website = ((lead.get('website') if isinstance(lead, dict) else getattr(lead, 'website', '')) or '').lower()
+    website = _bare_domain(
+        lead.get('website') if isinstance(lead, dict) else getattr(lead, 'website', ''))
     name = ((lead.get('company') if isinstance(lead, dict) else getattr(lead, 'company', '')) or '').strip()
     if own_domain and website and (website == own_domain
                                    or own_domain.endswith('.' + website)

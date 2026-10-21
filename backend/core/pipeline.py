@@ -416,6 +416,9 @@ def run_pipeline(triggered_by='manual'):
             summary['notes'].append(
                 f'Profile rejected {lead.company} ({lead.website or "no website"}) — '
                 f'competitor/peer of ours, not a buyer (ICP filter, domain blacklisted)')
+            # a rejected lead leaves the CRM immediately — it must not stay in
+            # this cycle's leads_created count either
+            new_leads = [nl for nl in new_leads if nl.pk != lead.pk]
             lead.delete()
             rejected += 1
             continue
@@ -439,6 +442,7 @@ def run_pipeline(triggered_by='manual'):
             summary['notes'].append(
                 f'Profile rejected {lead.company} ({lead.website}) — AI review: '
                 f'not a relevant {lead.industry or "industry"} business (domain blacklisted)')
+            new_leads = [nl for nl in new_leads if nl.pk != lead.pk]
             lead.delete()
             rejected += 1
             continue

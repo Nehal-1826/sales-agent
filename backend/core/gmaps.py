@@ -180,8 +180,15 @@ def _first_num(path_list, *indexes):
 
 def _parse_places(body):
     """Parse the tbm=map JSON body into place dicts (gosom layout:
-    data[0][1][i] → entry; entry[14] → the business record)."""
-    data = json.loads(body)
+    data[0][1][i] → entry; entry[14] → the business record).  Tolerates the
+    anti-hijacking junk line ('while(1);', ')]}'' …) some variants prepend."""
+    text = (body or '').lstrip()
+    if not text.startswith('['):
+        idx = text.find('[')          # payload always starts at the first '['
+        if idx == -1:
+            raise ValueError('no JSON payload in body')
+        text = text[idx:]
+    data = json.loads(text)
     container = data[0]
     items = container[1]
     places, seen = [], set()

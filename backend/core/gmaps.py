@@ -324,11 +324,28 @@ def discover_no_website_places(query, limit=3):
             if not has_real_website(p) and p.get('phone')][:limit]
 
 
+_NAME_STOPWORDS = {'pvt', 'pvt.', 'ltd', 'ltd.', 'llp', 'private', 'limited',
+                   'the', 'and', 'co', 'co.', 'company', 'inc', 'india'}
+
+
+def _name_matches(lead_name, place_name):
+    """Token-overlap name match — Maps titles differ from site titles
+    ('Yours Perfect Eventz Management' vs 'Yours Perfect Eventz - Salem').
+    True when ≥70% of the lead's significant tokens appear in the place name
+    (or an exact match, checked by the caller first)."""
+    a = {t for t in re.findall(r'\w+', (lead_name or '').lower()) if t not in _NAME_STOPWORDS}
+    b = {t for t in re.findall(r'\w+', (place_name or '').lower()) if t not in _NAME_STOPWORDS}
+    if not a or not b:
+        return False
+    return len(a & b) / len(a) >= 0.7
+
+
 def enrich_leads_via_gmaps(leads, delay=2.5):
     """Fill empty lead phones from Google Maps listings.  A lead matches a
-    place by normalized website domain, else by exact lowercased name.
-    Only EMPTY phone fields are filled; every match records its source in
-    analysis.phone_source.  Returns the leads that got a number."""
+    place by normalized website domain, else by exact lowercased name, else by
+    token-overlap name match (≥70% of tokens).  Only EMPTY phone fields are
+    filled; every match records its source in analysis.phone_source.
+    Returns the leads that got a number."""
     enriched = []
     for lead in leads:
         region = ' '.join(filter(None, [getattr(lead, 'state', ''), getattr(lead, 'country', '')]))
@@ -347,7 +364,12 @@ def enrich_leads_via_gmaps(leads, delay=2.5):
         if match is None:
             lname = (lead.company or '').strip().lower()
             for p in places:
-                if p['name'].strip().lower() == lname and p.get('phone'):
+                if p.get('phone') and p['name'].strip().lower() == lname:
+                    match = p
+                    break
+        if match is None:
+            for p in places:
+                if p.get('phone') and _name_matches(lead.company, p['name']):
                     match = p
                     break
         if match and match.get('phone'):

@@ -156,6 +156,30 @@ class ViewportTests(SimpleTestCase):
         self.assertEqual(zoom, 12)
 
 
+class NameMatchTests(SimpleTestCase):
+    def test_exact(self):
+        self.assertTrue(gmaps._name_matches('Yours Perfect Eventz Management',
+                                            'Yours Perfect Eventz Management'))
+
+    def test_place_suffix_added(self):
+        self.assertTrue(gmaps._name_matches('Yours Perfect Eventz Management',
+                                            'Yours Perfect Eventz - Salem'))
+
+    def test_legal_suffixes_ignored(self):
+        self.assertTrue(gmaps._name_matches('Apex Constructions Pvt Ltd',
+                                            'Apex Constructions'))
+
+    def test_different_company_is_not_a_match(self):
+        self.assertFalse(gmaps._name_matches('Yours Perfect Eventz Management',
+                                             'Zenith Events Management Chennai'))
+        self.assertFalse(gmaps._name_matches('Apex Constructions',
+                                             'Skyline Builders and Promoters'))
+
+    def test_empty_names(self):
+        self.assertFalse(gmaps._name_matches('', 'Anything'))
+        self.assertFalse(gmaps._name_matches('Anything', ''))
+
+
 class NormTests(SimpleTestCase):
     def test_domain_normalization(self):
         cases = {

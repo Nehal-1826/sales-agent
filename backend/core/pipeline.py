@@ -462,6 +462,18 @@ def run_pipeline(triggered_by='manual'):
             lead.company = site_name[:200]
         lead.profiled = True
         lead.save()
+        # Phone rescue — a lead without a number is unusable for outreach.
+        # Scalelist/Apollo need keys; Google Maps is free, so every freshly
+        # profiled lead gets ONE immediate Maps lookup (matched by domain,
+        # then name).  The later sweep retries whatever is still missing.
+        if not lead.contact_phone and gmaps_available():
+            try:
+                if enrich_leads_via_gmaps([lead], delay=0):
+                    summary['notes'].append(
+                        f'Enrichment: {lead.company} phone via Google Maps '
+                        f'({lead.contact_phone})')
+            except Exception as exc:      # never let a lookup kill the audit
+                log.warning('gmaps phone rescue failed for %s: %s', lead.company, exc)
         kind = 'website' if lead.has_website else 'NO website'
         summary['notes'].append(
             f'Profile audited {lead.company} ({kind}) → potential {lead.score}/100, '

@@ -31,6 +31,70 @@ def lead(company='', industry='', website='', description='', snippet=''):
             'description': description, 'analysis': {'serp_snippet': snippet}}
 
 
+def gifting_seller(**kw):
+    base = dict(company_name='Shri Fragrance', company_website='shrifragrance.in',
+                services=['Customized Corporate Gifting with Company Logos',
+                          'Bulk Orders & Festive Gift Hampers',
+                          'Employee Joining & Client Welcome Kits',
+                          'Event Return Gifts & Souvenirs',
+                          'Private Labeling & Custom Fragrance'])
+    base.update(kw)
+    return Settings(**base)
+
+
+class GiftingVerticalTests(SimpleTestCase):
+    """Shri Fragrance-style profile: corporate gifting / fragrance seller."""
+
+    def test_vertical_detected_from_gifting_services(self):
+        self.assertEqual(icp.vertical(gifting_seller()), 'corporate_gifting')
+
+    def test_web_signals_do_not_shadow_gifting(self):
+        # a gifting seller whose description mentions their website — still gifting
+        s = gifting_seller(company_description='Order via our website shrifragrance.in')
+        self.assertEqual(icp.vertical(s), 'corporate_gifting')
+
+    def test_buyers_are_event_and_corporate_industries(self):
+        buyers = icp.buyer_industries(gifting_seller())
+        self.assertIn('event management company', buyers)
+        self.assertIn('real estate builder', buyers)
+        self.assertIn('IT company', buyers)
+        for industry in buyers:
+            self.assertFalse(icp.NEVER_SEARCH_INDUSTRIES.search(industry),
+                             msg=f'{industry} is a web-agency term')
+            for p in icp.GIFTING_COMPETITOR_PATTERNS:
+                self.assertFalse(p.search(industry),
+                                 msg=f'{industry} is a gifting competitor term')
+
+    def test_gift_shops_and_fragrance_brands_are_competitors(self):
+        s = gifting_seller()
+        for name in ('Ferns N Petals Gifts', 'Giftsmatica Corporate Gifting',
+                     'Aroma Attars & Fragrances', 'Diwali Hamper Hub',
+                     'Sacred Souvenirs', 'Pooja Essentials Store',
+                     'Scent & Serenity Candles'):
+            self.assertTrue(icp.looks_like_competitor(lead(company=name), s),
+                            msg=f'{name} is a gifting competitor')
+
+    def test_corporate_buyers_are_not_flagged(self):
+        s = gifting_seller()
+        for name in ('Zenith Events Pvt Ltd', 'Skyline Constructions',
+                     'TechNova IT Services', 'Grand Hyatt Residency',
+                     'Kumar Wedding Planners', 'Aptech Coaching Center'):
+            self.assertFalse(icp.looks_like_competitor(lead(company=name), s),
+                             msg=f'{name} is a gifting buyer')
+
+    def test_override_drops_gift_shop_terms(self):
+        s = gifting_seller(target_industries='IT company, gift shop, wedding planner, perfume store')
+        self.assertEqual(icp.buyer_industries(s), ['IT company', 'wedding planner'])
+
+    def test_gift_mention_in_buyer_description_is_not_competitor(self):
+        # an event company that hands out gifts at events is a BUYER
+        s = gifting_seller()
+        l = lead(company='Zenith Events', industry='event management company',
+                 description='We organize corporate events and source gifts '
+                             ' and hampers for attendees.')
+        self.assertFalse(icp.looks_like_competitor(l, s))
+
+
 class VerticalTests(SimpleTestCase):
     def test_empty_profile_defaults_to_web_seller(self):
         self.assertEqual(icp.vertical(Settings()), 'web_services')

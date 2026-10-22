@@ -38,6 +38,17 @@ WEB_SELLER_SIGNALS = re.compile(
     r'\bwordpress\b|\bshopify\b|\bhosting\b|\bui/?ux\b',
     re.I)
 
+# Signals that the user SELLS corporate gifting / hampers / fragrances —
+# buyers are companies that GIFT (events, real estate, hotels, offices),
+# competitors are other gift shops & fragrance brands.  Checked before the
+# web signals: gifting is the more specific vertical.
+GIFTING_SELLER_SIGNALS = re.compile(
+    r'\bgift(s|ing|ed)?\b|\bcorporate gifting\b|\bhamper[s]?\b|'
+    r'\breturn gift[s]?\b|\bfestive gift[s]?\b|\bwelcome kit[s]?\b|'
+    r'\bsouvenir[s]?\b|\bfragrance[s]?\b|\bperfume[s]?\b|\battar\b|'
+    r'\baroma\b|\bdiwali\b|\bpooja\b',
+    re.I)
+
 # --- Competitor fingerprints -------------------------------------------------
 # Matched against a lead's company NAME, industry and AI description.  A hit
 # in the NAME or industry is decisive; description hits need two distinct
@@ -93,6 +104,33 @@ BUYER_INDUSTRIES = [
     'organic farm', 'nursery and garden center', 'pet grooming service',
 ]
 
+# Companies that BUY corporate gifts / hampers / welcome kits — the buyers of
+# a gifting & fragrance seller (onboarding kits, festive hampers, event
+# return gifts, client welcome gifts).
+GIFTING_BUYER_INDUSTRIES = [
+    'event management company', 'wedding planner', 'corporate event planner',
+    'real estate builder', 'real estate agency', 'interior design studio',
+    'boutique hotel', 'resort', 'club house', 'serviced apartments',
+    'IT company', 'software company', 'co-working space',
+    'corporate training company', 'HR consultancy', 'recruitment agency',
+    'school', 'coaching center', 'playschool',
+    'private hospital', 'diagnostic center', 'multispeciality clinic',
+    'travel agency', 'tour operator', 'visa consultancy',
+    'insurance agency', 'cooperative bank', 'financial advisory firm',
+    'restaurant', 'banquet hall', 'catering service',
+    'car dealership', 'jewellery store', 'furniture store',
+]
+
+# Gift shops / fragrance brands are the gifting seller's COMPETITORS, never
+# their leads.  Buyer industries above must never contain gift terms.
+GIFTING_COMPETITOR_PATTERNS = [re.compile(p, re.I) for p in (
+    r'\bgift(s|ing)?\b', r'\bhamper[s]?\b', r'\bfragrance[s]?\b',
+    r'\bperfume[s]?\b', r'\battar\b', r'\bsouvenir[s]?\b',
+    r'\breturn gift[s]?\b', r'\baromatherapy\b', r'\bcandle[s]?\b',
+    r'\bessential oil[s]?\b', r'\bincense\b|\bagarbatti\b|\bdhoop\b',
+    r'\bdiwali (gift|hamper)', r'\bpooja\b|\bagarbatti\b|\bdhoop\b',
+)]
+
 # Agencies/peers must never be searched even when the user overrides the
 # industry list — a manual override of "web design agency" would reintroduce
 # the exact bug this module fixes.
@@ -105,9 +143,9 @@ NEVER_SEARCH_INDUSTRIES = re.compile(
 
 
 def vertical(settings):
-    """'web_services' when the user's profile says they sell web / marketing /
-    software; 'generic' otherwise.  Empty profile → web_services (this
-    product's default seller persona)."""
+    """'corporate_gifting' / 'web_services' / 'generic' — what the user sells.
+    Gifting is checked first (more specific); empty profile → web_services
+    (this product's default seller persona)."""
     hay = ' '.join(filter(None, [
         getattr(settings, 'company_name', '') or '',
         ' '.join(settings.services or []),
@@ -115,14 +153,20 @@ def vertical(settings):
     ]))
     if not hay.strip():
         return 'web_services'
+    if GIFTING_SELLER_SIGNALS.search(hay):
+        return 'corporate_gifting'
     return 'web_services' if WEB_SELLER_SIGNALS.search(hay) else 'generic'
 
 
 def competitor_regexes(settings):
-    """Competitor fingerprints for this user.  Web sellers use the agency
-    patterns; generic sellers only reject their own industry peers."""
-    if vertical(settings) == 'web_services':
+    """Competitor fingerprints for this user.  Web sellers reject peer
+    agencies, gifting sellers reject other gift/fragrance sellers, generic
+    sellers only reject their own industry peers."""
+    v = vertical(settings)
+    if v == 'web_services':
         return COMPETITOR_PATTERNS
+    if v == 'corporate_gifting':
+        return GIFTING_COMPETITOR_PATTERNS
     mine = (getattr(settings, 'company_name', '') or '').strip().lower()
     if not mine:
         return []
@@ -130,21 +174,33 @@ def competitor_regexes(settings):
     return [re.compile(re.escape(mine), re.I)]
 
 
+def _never_search_regexes(settings):
+    """Override-guard: industry terms that would search for OUR OWN kind of
+    business.  Gifting sellers must not search gift shops; web sellers must
+    not search agencies."""
+    if vertical(settings) == 'corporate_gifting':
+        return GIFTING_COMPETITOR_PATTERNS + [NEVER_SEARCH_INDUSTRIES]
+    return [NEVER_SEARCH_INDUSTRIES]
+
+
 def buyer_industries(settings):
     """Industries the discovery sweep searches, in priority order.
 
     1. user override (Settings → Lead Targeting → target industries), minus
-       agency/peer terms that would reintroduce competitors;
+       peer/competitor terms that would reintroduce competitors;
     2. otherwise the built-in buyer list for our vertical."""
+    v = vertical(settings)
+    default = GIFTING_BUYER_INDUSTRIES if v == 'corporate_gifting' else BUYER_INDUSTRIES
     raw = (getattr(settings, 'target_industries', '') or '').strip()
     if raw:
         picked = [i.strip() for i in re.split(r'[,\n]', raw) if i.strip()]
-        safe = [i for i in picked if not NEVER_SEARCH_INDUSTRIES.search(i)]
+        guards = _never_search_regexes(settings)
+        safe = [i for i in picked if not any(g.search(i) for g in guards)]
         dropped = len(picked) - len(safe)
         if dropped:
-            log.info('ICP: dropped %d user industry override(s) as peer/agency terms', dropped)
-        return safe or BUYER_INDUSTRIES
-    return BUYER_INDUSTRIES
+            log.info('ICP: dropped %d user industry override(s) as peer/competitor terms', dropped)
+        return safe or default
+    return default
 
 
 def our_services_text(settings):
@@ -204,6 +260,10 @@ def looks_like_competitor(lead, settings):
         for p in patterns:
             if p.search(industry):
                 return True
+    # free-text signals: gifting terms cluster when a BUYER describes what it
+    # sources ("we arrange gifts and hampers for events"), so the gifting
+    # vertical needs one more distinct signal than web/marketing terms do
+    threshold = 3 if vertical(settings) == 'corporate_gifting' else 2
     free_text_hits = {p.pattern for p in patterns
                       if (desc and p.search(desc)) or (snippet and p.search(snippet))}
-    return len(free_text_hits) >= 2
+    return len(free_text_hits) >= threshold

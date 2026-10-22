@@ -26,6 +26,7 @@ function loadSettings(): SettingsState {
     targeting: {
       countries: stored.targeting?.countries ?? DEFAULT_SETTINGS.targeting.countries,
       industries: stored.targeting?.industries ?? DEFAULT_SETTINGS.targeting.industries,
+      cities: stored.targeting?.cities ?? DEFAULT_SETTINGS.targeting.cities,
     },
   };
 }
@@ -78,6 +79,7 @@ export function SettingsPage() {
           targeting: {
             countries: remote.targeting?.countries ?? [],
             industries: remote.targeting?.industries ?? [],
+            cities: remote.targeting?.cities ?? [],
           },
         });
       }
@@ -269,12 +271,38 @@ export function SettingsPage() {
         </Field>
       </section>
 
-      {/* 1.5 — LEAD TARGETING (country picker + buyer industries) */}
+      {/* 1.5 — LEAD TARGETING (cities/districts + countries + buyer industries) */}
       <section className="panel settings-panel">
         <SectionLabel>Lead Targeting</SectionLabel>
+        <Field
+          label="Target cities / districts"
+          hint={
+            settings.targeting.cities.length === 0
+              ? 'Leave empty for country-level discovery. Add your towns (Salem, Omalur, Mettur…) — every cycle then sweeps only these places, Google Maps included. Cities take priority over countries.'
+              : 'Discovery sweeps ONLY these places — Google Maps zooms into each town for local businesses with phones.'
+          }
+        >
+          <CityTags
+            cities={settings.targeting.cities}
+            onAdd={(c) =>
+              setSettings((s) =>
+                s.targeting.cities.includes(c)
+                  ? s
+                  : { ...s, targeting: { ...s.targeting, cities: [...s.targeting.cities, c] } },
+              )
+            }
+            onRemove={(c) =>
+              setSettings((s) => ({
+                ...s,
+                targeting: { ...s.targeting, cities: s.targeting.cities.filter((x) => x !== c) },
+              }))
+            }
+          />
+        </Field>
         <small className="inline-msg">
           Pick the countries your leads should come from — leave empty to keep discovering worldwide.
-          Targeted sweeps rotate industries across only your chosen countries.
+          Targeted sweeps rotate industries across only your chosen countries. Ignored while target
+          cities are set.
         </small>
         <Field label="Target countries">
           <CountryTags
@@ -704,6 +732,71 @@ function ServiceTags({
           </span>
         ))}
         {services.length === 0 && <small>No services yet.</small>}
+      </div>
+    </div>
+  );
+}
+
+const CITY_SUGGESTIONS = [
+  'Salem', 'Omalur', 'Mettur', 'Attur', 'Sankari', 'Edappadi', 'Gangavalli',
+  'Namakkal', 'Tiruchengode', 'Rasipuram', 'Erode', 'Bhavani', 'Coimbatore',
+  'Chennai', 'Bengaluru', 'Madurai', 'Trichy', 'Hosur', 'Vellore', 'Puducherry',
+];
+
+function CityTags({
+  cities,
+  onAdd,
+  onRemove,
+}: {
+  cities: string[];
+  onAdd: (c: string) => void;
+  onRemove: (c: string) => void;
+}) {
+  const [draft, setDraft] = useState('');
+
+  const add = (value: string) => {
+    const name = value.trim();
+    if (!name) return;
+    onAdd(name);
+    setDraft('');
+  };
+
+  return (
+    <div className="tags-field">
+      <div className="input-with-action">
+        <input
+          list="target-city-options"
+          className="mono"
+          placeholder="e.g. Salem, Omalur, Mettur…"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              add(draft);
+            }
+          }}
+        />
+        <datalist id="target-city-options">
+          {CITY_SUGGESTIONS.map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
+        <button className="btn btn-ghost" onClick={() => add(draft)}>
+          Add
+        </button>
+      </div>
+      <div className="tags">
+        {cities.map((c) => (
+          <span className="tag" key={c}>
+            {c}
+            <button onClick={() => onRemove(c)} aria-label={`Remove ${c}`}>
+              ×
+            </button>
+          </span>
+        ))}
+        {cities.length === 0 && (
+          <small>Country-level — add your district towns for local lead discovery.</small>
+        )}
       </div>
     </div>
   );

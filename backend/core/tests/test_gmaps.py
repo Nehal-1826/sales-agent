@@ -126,8 +126,29 @@ class ViewportTests(SimpleTestCase):
         self.assertEqual(zoom, 12)
 
     def test_unknown_region_falls_back_to_world(self):
-        self.assertEqual(gmaps._viewport_for('gym in Reykjavik'),
-                         gmaps.WORLD_FALLBACK)
+        # seed a negative geocode result (already-tried marker) — no network
+        gmaps._geo_cache['reykjavik'] = None
+        try:
+            self.assertEqual(gmaps._viewport_for('gym in Reykjavik'),
+                             gmaps.WORLD_FALLBACK)
+        finally:
+            gmaps._geo_cache.pop('reykjavik', None)
+
+    def test_salem_district_towns_resolve_locally(self):
+        # no network — the towns ship in the coords table
+        lat, lon, zoom = gmaps._viewport_for('catering service in Omalur')
+        self.assertAlmostEqual(lat, 11.7940, places=2)
+        self.assertAlmostEqual(lon, 78.0631, places=2)
+        self.assertEqual(zoom, 13)
+        lat, lon, _ = gmaps._viewport_for('gym in Mettur')
+        self.assertAlmostEqual(lat, 11.79, places=2)
+
+    def test_geocode_fallback_used_for_unknown_towns(self):
+        # seeded cache entry simulates a Nominatim result — no network
+        gmaps._geo_cache['some tiny town'] = (10.123, 78.456)
+        lat, lon, zoom = gmaps._viewport_for('spa in Some Tiny Town')
+        self.assertEqual((lat, lon, zoom), (10.123, 78.456, 13))
+        gmaps._geo_cache.pop('some tiny town', None)
 
     def test_country_word_inside_longer_region_still_resolves(self):
         # 'New Zealand' contains 'new' but must resolve as a whole city entry

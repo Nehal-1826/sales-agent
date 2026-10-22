@@ -192,6 +192,7 @@ class SettingsSerializer(serializers.ModelSerializer):
             'targeting': {
                 'countries': [c.strip() for c in instance.target_countries.split(',') if c.strip()],
                 'industries': [i.strip() for i in instance.target_industries.split(',') if i.strip()],
+                'cities': [c.strip() for c in instance.target_cities.split(',') if c.strip()],
             },
         }
 
@@ -235,6 +236,11 @@ class SettingsSerializer(serializers.ModelSerializer):
             # Peer/agency terms are dropped at read time by the ICP engine.
             instance.target_industries = ', '.join(
                 str(i).strip() for i in (targeting.get('industries') or []) if str(i).strip())
+        if 'cities' in targeting:
+            # cities/towns/districts to sweep (e.g. Salem, Omalur); empty =
+            # country-level sweep.  Cities win over countries in discovery.
+            instance.target_cities = ', '.join(
+                str(c).strip() for c in (targeting.get('cities') or []) if str(c).strip())
         instance.save()
         return instance
 

@@ -72,6 +72,15 @@ REGION_COORDS = {
     'mysuru': (12.2958, 76.6394, 12), 'trichy': (10.7905, 78.7047, 12),
     'erode': (11.3410, 77.7172, 12), 'karachi': (24.8607, 67.0011, 12),
     'dhaka': (23.8103, 90.4125, 12),
+    # Salem district + neighbouring Tamil Nadu towns — district/city-level
+    # targeting (Settings → Lead Targeting → target cities)
+    'omalur': (11.7940, 78.0631, 13), 'mettur': (11.7900, 77.8000, 13),
+    'attur': (11.5983, 78.5842, 13), 'sankari': (11.4824, 78.1456, 13),
+    'edappadi': (11.5699, 77.8423, 13), 'gangavalli': (11.5519, 78.3760, 13),
+    'valapady': (11.6414, 78.5119, 13),
+    'namakkal': (11.2189, 78.1674, 12), 'tiruchengode': (11.3798, 77.8977, 13),
+    'rasipuram': (11.4700, 78.3925, 13), 'bhavani': (11.4500, 77.6800, 13),
+    'komarapalayam': (11.4429, 77.6972, 13),
     # world metros from the REGIONS rotation
     'new york': (40.7128, -74.0060, 12), 'austin': (30.2672, -97.7431, 12),
     'chicago': (41.8781, -87.6298, 12), 'los angeles': (34.0522, -118.2437, 12),
@@ -142,11 +151,38 @@ def gmaps_available():
     return os.environ.get('GMAPS_SCRAPER', '1') != '0'
 
 
+_geo_cache = {}             # place name → (lat, lon) from Nominatim
+
+
+def _geocode(place):
+    """Lat/lon for an arbitrary town via OSM Nominatim (free, keyless).
+    Cached for the process lifetime — city coordinates don't change.  Sleeps
+    1.1s per MISS to respect Nominatim's 1 req/s policy; None on failure."""
+    key = (place or '').strip().lower()
+    if not key or key in _geo_cache:
+        return _geo_cache.get(key)
+    try:
+        r = requests.get(
+            'https://nominatim.openstreetmap.org/search',
+            params={'q': place.strip(), 'format': 'json', 'limit': 1},
+            headers={**MAPS_HEADERS,
+                     'User-Agent': 'agentic-ai-lead-discovery/1.0 (sales agent)'},
+            timeout=8)
+        data = r.json() if r.status_code == 200 else []
+        result = (float(data[0]['lat']), float(data[0]['lon'])) if data else None
+    except Exception as exc:
+        log.info('gmaps: geocode failed for %r: %s', place, exc)
+        result = None
+    _geo_cache[key] = result
+    time.sleep(1.1)          # Nominatim usage policy — max 1 request/second
+    return result
+
+
 def _viewport_for(query):
     """(lat, lon, zoom) from the query's region part — 'dental clinic in
-    Mumbai, India' → Mumbai's viewport.  Region names resolve city-first,
-    then country; unknown regions fall back to a world view and let the
-    query text do the location work."""
+    Mumbai, India' → Mumbai's viewport.  Resolution order: the built-in city
+    table, then a one-time Nominatim geocode (any town a user can type,
+    e.g. 'Omalur'), then a world view letting the query text do the work."""
     tail = (query.rsplit(' in ', 1)[-1] if ' in ' in query else query).lower()
     for candidate in (tail, tail.split(',')[0].strip(), tail.split(',')[0].strip() + ' country'):
         if candidate in REGION_COORDS:
@@ -154,6 +190,9 @@ def _viewport_for(query):
     for key, coords in REGION_COORDS.items():
         if re.search(rf'\b{re.escape(key)}\b', tail):
             return coords
+    geo = _geocode(tail)
+    if geo:
+        return (geo[0], geo[1], 13)   # town-level zoom for geocoded places
     return WORLD_FALLBACK
 
 

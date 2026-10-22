@@ -216,6 +216,13 @@ GLOBAL_CITY_STATE = {
     'kolkata': ('West Bengal', 'India'), 'kochi': ('Kerala', 'India'),
     'visakhapatnam': ('Andhra Pradesh', 'India'),
     'indore': ('Madhya Pradesh', 'India'), 'lucknow': ('Uttar Pradesh', 'India'),
+    # Salem district + neighbouring Tamil Nadu towns — city-level targeting
+    'omalur': ('Tamil Nadu', 'India'), 'mettur': ('Tamil Nadu', 'India'),
+    'attur': ('Tamil Nadu', 'India'), 'sankari': ('Tamil Nadu', 'India'),
+    'edappadi': ('Tamil Nadu', 'India'), 'gangavalli': ('Tamil Nadu', 'India'),
+    'valapady': ('Tamil Nadu', 'India'), 'namakkal': ('Tamil Nadu', 'India'),
+    'tiruchengode': ('Tamil Nadu', 'India'), 'rasipuram': ('Tamil Nadu', 'India'),
+    'bhavani': ('Tamil Nadu', 'India'), 'komarapalayam': ('Tamil Nadu', 'India'),
     # United States + Canada
     'new york': ('New York', 'United States'), 'san francisco': ('California', 'United States'),
     'los angeles': ('California', 'United States'), 'san diego': ('California', 'United States'),
@@ -392,19 +399,29 @@ def _region_pool(regions):
     return [known[r.lower()] for r in regions if r.lower() in known] or None
 
 
-def search_queries_for_cycle(cycle_index, n=REGIONS_PER_CYCLE, regions=None, industries=None):
-    """n region slices for one cycle. User-set target countries (Settings →
-    Lead Targeting) restrict the sweep to those only. Otherwise slice #0 is
-    always an Indian metro (rotating metro × industry) so discovery tilts
-    toward the priority market while the remaining slices continue the
-    worldwide sweep. industries = ICP buyer list (core.icp) — who to search
-    for; the legacy INDUSTRY_QUERIES only remain as the fallback."""
+def search_queries_for_cycle(cycle_index, n=REGIONS_PER_CYCLE, regions=None,
+                             industries=None, cities=None):
+    """n slices for one cycle.  Priority of targeting (Settings → Lead
+    Targeting): CITIES win over countries — 'catering service in Omalur'
+    style queries, rotating city × industry.  Without cities: user-set
+    target countries restrict the sweep, else the worldwide rotation with
+    slice #0 always an Indian metro.  industries = ICP buyer list
+    (core.icp) — who to search for."""
     start = cycle_index * n
+    inds = industries or INDUSTRY_QUERIES
+    if cities:
+        # city × industry rotation — every slice pairs a buyer industry with
+        # one of the user's towns
+        slices = []
+        for k in range(n):
+            city = cities[(start + k) % len(cities)]
+            industry = inds[(start + k) % len(inds)]
+            slices.append((f'{industry} in {city}', industry))
+        return slices
     pool = _region_pool(regions)
     if pool:
         return [_cycle_slice(start + k, pool, industries) for k in range(n)]
     slices = [_cycle_slice(start + k, None, industries) for k in range(n)]
-    inds = industries or INDUSTRY_QUERIES
     industry = inds[(cycle_index * 7) % len(inds)]
     region = INDIA_PRIORITY_REGIONS[cycle_index % len(INDIA_PRIORITY_REGIONS)]
     slices[0] = (f'{industry} in {region}', industry)

@@ -65,6 +65,49 @@ class QueryBuilderTests(SimpleTestCase):
                 self.assertIn(industry, buyers)
 
 
+class CityTargetingTests(SimpleTestCase):
+    """District/city-level targeting: 'catering service in Omalur' queries."""
+
+    def test_cities_win_over_countries(self):
+        slices = search_queries_for_cycle(
+            0, regions=['India'], industries=['catering service', 'gym'],
+            cities=['Salem', 'Omalur'])
+        self.assertEqual(len(slices), 3)
+        for query, industry in slices:
+            city = query.rsplit(' in ', 1)[-1]
+            self.assertIn(city, ('Salem', 'Omalur'))
+            self.assertIn(industry, ('catering service', 'gym'))
+
+    def test_city_industry_rotation(self):
+        cities = ['Salem', 'Omalur', 'Mettur']
+        inds = ['gym', 'spa', 'law firm']
+        for cycle in range(6):
+            for k, (query, industry) in enumerate(
+                    search_queries_for_cycle(cycle, cities=cities, industries=inds)):
+                city = query.rsplit(' in ', 1)[-1]
+                self.assertEqual(city, cities[(cycle * 3 + k) % 3])
+                self.assertEqual(industry, inds[(cycle * 3 + k) % 3])
+
+    def test_city_queries_never_contain_agency_terms(self):
+        buyers = icp.BUYER_INDUSTRIES[:6]
+        for cycle in range(10):
+            for query, industry in search_queries_for_cycle(
+                    cycle, cities=['Salem', 'Omalur'], industries=buyers):
+                self.assertFalse(icp.NEVER_SEARCH_INDUSTRIES.search(industry))
+
+    def test_no_cities_falls_back_to_country_pool(self):
+        slices = search_queries_for_cycle(0, regions=['India'])
+        for query, _ in slices:
+            self.assertTrue(query.endswith(' in India'))
+
+    def test_salem_district_towns_tag_tamil_nadu(self):
+        from core.scraper import region_from_query
+        for town in ('Omalur', 'Mettur', 'Attur', 'Sankari', 'Edappadi',
+                     'Namakkal', 'Tiruchengode'):
+            state, country = region_from_query(f'gym in {town}')
+            self.assertEqual((state, country), ('Tamil Nadu', 'India'), msg=town)
+
+
 class SerpJunkFilterTests(SimpleTestCase):
     """The keyless-mode gate against directory / listicle / deal SERP junk."""
 

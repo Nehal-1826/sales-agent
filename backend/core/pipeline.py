@@ -270,7 +270,12 @@ def run_pipeline(triggered_by='manual'):
     # list used to fill the CRM with the user's own competitors.
     settings = AppSettings.load()
     icp_industries = buyer_industries(settings)
-    if not getattr(settings, 'target_industries', ''):
+    target_cities = [c.strip() for c in settings.target_cities.split(',') if c.strip()]
+    if target_cities:
+        summary['notes'].append(
+            f'Search: CITY targeting on — sweeping {", ".join(target_cities)} '
+            f'for businesses that BUY {our_services_text(settings)}')
+    elif not getattr(settings, 'target_industries', ''):
         summary['notes'].append(
             'Search: ICP buyer-targeting on — searching businesses that BUY '
             f'{our_services_text(settings)}; peer/competitor agencies are filtered out')
@@ -278,6 +283,7 @@ def run_pipeline(triggered_by='manual'):
         cycle,
         regions=[c.strip() for c in settings.target_countries.split(',') if c.strip()],
         industries=icp_industries,
+        cities=target_cities,
     )
     results, query_labels = [], []
     for i, (query, industry) in enumerate(queries):

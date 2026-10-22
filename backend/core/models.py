@@ -252,6 +252,11 @@ class AppSettings(Timestamped):
     # terms are always dropped so competitors can't be re-introduced here.
     target_industries = models.TextField(blank=True)
 
+    # Lead targeting — comma-separated cities/towns/districts (e.g.
+    # 'Salem, Omalur, Mettur'); empty = country-level sweep.  City targeting
+    # wins over countries: discovery + Google Maps sweep each town listed.
+    target_cities = models.TextField(blank=True)
+
     # Daily report — recipient of the 8 PM IST lead report (comma-separated allowed;
     # falls back to superuser/staff emails when blank)
     report_email = models.CharField(max_length=300, blank=True)

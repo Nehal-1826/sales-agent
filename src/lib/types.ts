@@ -9,10 +9,10 @@ export type AgentKey = 'search' | 'profile' | 'copywright' | 'responder';
 
 /** Top-level menus — Dashboard · Pipeline · Settings.
  *  Agents, CRM, Leads, Reports and Chat live as tabs inside Pipeline. */
-export type PageKey = 'dashboard' | 'pipeline' | 'settings';
+export type PageKey = 'dashboard' | 'assistant' | 'pipeline' | 'settings';
 
 /** Sub-tabs inside the Pipeline page. */
-export type PipelineTab = 'flow' | 'agents' | 'leads' | 'crm' | 'chat';
+export type PipelineTab = 'flow' | 'agents' | 'leads' | 'crm';
 
 export interface AgentMeta {
   key: AgentKey;
@@ -152,7 +152,31 @@ export interface SettingsState {
   smtp: SmtpConfig;
   runs: FrequentRuns;
   report: ReportConfig;
-  targeting: { countries: string[]; industries: string[]; cities: string[] }; // cities win over countries; [] industries = ICP auto-targeting
+  targeting: TargetingState;
+}
+
+/** Who the ICP engine hunts: buyers of our services, or peer agencies as
+ *  project partners (agency terms searchable, competitor filter off). */
+export type IcpMode = 'buyer' | 'agency';
+
+export interface TargetingState {
+  countries: string[];
+  industries: string[];
+  cities: string[]; // cities win over countries; [] industries = ICP auto-targeting
+  icpMode: IcpMode;
+}
+
+/** Saved lead-targeting preset — one click on Activate copies it into the
+ *  live settings (takes effect on the next pipeline cycle). */
+export interface SearchProfile {
+  id: number;
+  name: string;
+  description: string;
+  countries: string[];
+  industries: string[];
+  cities: string[];
+  icpMode: IcpMode;
+  isActive: boolean;
 }
 
 /** CHAT page. */
@@ -161,4 +185,15 @@ export interface ChatMessage {
   from: 'user' | 'ai';
   text: string;
   time: string;
+}
+
+/** First-login setup wizard state — drives the chat onboarding UI. */
+export interface OnboardingState {
+  needed: boolean;
+  done: boolean;
+  stepIndex: number;
+  stepCount: number;
+  question: string;
+  hint: string;
+  progress: string;
 }

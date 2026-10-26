@@ -8,6 +8,7 @@ import type {
   Finding,
   Lead,
   Potential,
+  SearchProfile,
   Reply,
   SettingsState,
 } from './types';
@@ -423,31 +424,77 @@ export const DEFAULT_SETTINGS: SettingsState = {
     name: 'Shailog Technologies',
     website: 'https://shailog.com',
     description:
-      'SaaS development studio building autonomous, AI-assisted marketing & sales products.',
-    services: ['Lead generation', 'Outbound copywriting', 'Sales automation', 'Pipeline consulting'],
+      'Custom software engineering team building SaaS platforms, web applications and React Native mobile apps for founders — MVPs shipped in 8–14 weeks with fixed quotes, full IP handover and post-launch support.',
+    services: ['Custom SaaS & web app development', 'React Native mobile apps', 'Web design', 'Rapid deployment & support'],
   },
   aiKey: { provider: 'Google AI', apiKey: '' },
   smtp: { host: '', port: '587', user: '', password: '', from: '' },
   runs: { enabled: true, frequency: '1h' },
   report: { email: '' },
-  targeting: { countries: [], industries: [], cities: [] },
+  targeting: { countries: [], industries: [], cities: [], icpMode: 'buyer' },
 };
+
+/* ------------------------------------------------------------------ */
+/* Search profiles — mock fallback (Settings → Search Profiles)        */
+/* ------------------------------------------------------------------ */
+
+export const MOCK_PROFILES: SearchProfile[] = [
+  {
+    id: 1,
+    name: 'Shailog Tech — Agency Partners',
+    description:
+      'Boutique digital agencies & software shops in the US, UK and Germany — white-label project partners for Shailog.',
+    countries: ['United States', 'United Kingdom', 'Germany'],
+    industries: [
+      'boutique digital agency',
+      'digital product studio',
+      'custom software development agency',
+      'web design agency',
+      'web development studio',
+      'app development agency',
+      'SaaS development agency',
+      'MVP development studio',
+      'UX design studio',
+    ],
+    cities: [],
+    icpMode: 'agency',
+    isActive: true,
+  },
+  {
+    id: 2,
+    name: 'Backup — Buyer Targeting',
+    description:
+      'Previous targeting, snapshotted before the agency-partner profile was activated. Activate to restore the old job.',
+    countries: [],
+    industries: [],
+    cities: [],
+    icpMode: 'buyer',
+    isActive: false,
+  },
+];
 
 /* ------------------------------------------------------------------ */
 /* Email templates — starter + mock fallback                           */
 /* ------------------------------------------------------------------ */
 
 export const STARTER_TEMPLATE: Omit<EmailTemplate, 'id'> = {
-  name: 'Shailog - Value-First Audit',
-  subject: 'quick question about {{company}}’s website',
+  name: 'Shailog - Agency Partnership',
+  subject: 'Project partnership — {{company}} × {{sender_name}}',
   body:
     'Hi {{company}} team,\n\n' +
-    'Came across {{company}} while researching {{industry}} — {{description}}\n\n' +
-    'While looking at {{website}}, a few things caught my eye:\n\n' +
-    '{{findings}}\n\n' +
-    'Nothing dramatic on their own, but together they quietly cost you leads every week. ' +
-    'This is exactly what we fix at {{sender_name}} ({{services}}).\n\n' +
-    'Worth a 15-minute call next week? Either way, happy to send over the full audit — free, no strings.\n\n' +
+    "I'm {{sender_name}} — we build SaaS platforms, web apps, and mobile apps, and we're " +
+    'looking to partner with agencies like yours on project work.\n\n' +
+    'Recent things we\'ve shipped:\n' +
+    '• julex.shop — full e-commerce build\n' +
+    '• ijrnexus.com — academic journal publishing platform\n' +
+    '• sashainfinity.com — custom web platform\n' +
+    '• TaraLash Academy — beauty & education platform\n\n' +
+    'MVPs and full builds go live in 8–14 weeks, with fixed quotes, fixed timelines, and ' +
+    'full IP handover — your client stays yours.\n\n' +
+    'The ask: if you have a project coming up — overflow work, a build outside your stack, ' +
+    'or a client timeline you can\'t staff — we\'d love to take it on. Happy to start with ' +
+    'a small pilot so you can judge us on real work, not a deck.\n\n' +
+    'Worth a 15-minute call next week? Or reply "send cases" and I\'ll share the details.\n\n' +
     'Best,\n{{sender_name}}\n{{sender_website}}',
   isDefault: true,
 };

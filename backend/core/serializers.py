@@ -3,7 +3,7 @@
 from django.utils import timezone
 from rest_framework import serializers
 
-from .models import AgentConfig, AppSettings, ChatMessage, EmailDraft, EmailTemplate, Lead, PipelineRun, Potential, Reply
+from .models import AgentConfig, AppSettings, ChatMessage, EmailDraft, EmailTemplate, Lead, PipelineRun, Potential, Reply, SearchProfile
 
 
 def rel_time(dt):
@@ -151,6 +151,56 @@ class AgentConfigSerializer(serializers.ModelSerializer):
         return instance
 
 
+class SearchProfileSerializer(serializers.ModelSerializer):
+    """{ id, name, description, countries[], industries[], cities[], icpMode,
+    isActive, updatedAt } — saved lead-targeting presets (Settings page).
+
+    Lists go in as JSON arrays and are stored comma-joined (the AppSettings
+    convention).  Activating happens through the dedicated endpoint
+    (profile.apply() also rewrites AppSettings), not through PUT/PATCH here."""
+
+    countries = serializers.ListField(child=serializers.CharField(allow_blank=True),
+                                      required=False, source='target_countries', write_only=True)
+    industries = serializers.ListField(child=serializers.CharField(allow_blank=True),
+                                       required=False, source='target_industries', write_only=True)
+    cities = serializers.ListField(child=serializers.CharField(allow_blank=True),
+                                   required=False, source='target_cities', write_only=True)
+    icpMode = serializers.CharField(source='icp_mode', required=False)
+    isActive = serializers.BooleanField(source='is_active', read_only=True)
+
+    class Meta:
+        model = SearchProfile
+        fields = ['id', 'name', 'description', 'countries', 'industries',
+                  'cities', 'icpMode', 'isActive']
+
+    def validate_icpMode(self, value):
+        if value not in ('buyer', 'agency'):
+            raise serializers.ValidationError('icpMode must be "buyer" or "agency"')
+        return value
+
+    def to_representation(self, instance):
+        split = lambda raw: [v.strip() for v in (raw or '').split(',') if v.strip()]
+        return {
+            'id': instance.id,
+            'name': instance.name,
+            'description': instance.description,
+            'countries': split(instance.target_countries),
+            'industries': split(instance.target_industries),
+            'cities': split(instance.target_cities),
+            'icpMode': instance.icp_mode,
+            'isActive': instance.is_active,
+        }
+
+    def create(self, validated):
+        # ListFields hand us lists (source='target_*'); store comma-joined
+        join = lambda v: ', '.join(v) if isinstance(v, (list, tuple)) else (v or '')
+        validated['target_countries'] = join(validated.get('target_countries'))
+        validated['target_industries'] = join(validated.get('target_industries'))
+        validated['target_cities'] = join(validated.get('target_cities'))
+        validated['icp_mode'] = validated.get('icp_mode') or 'buyer'
+        return SearchProfile.objects.create(**validated)
+
+
 class SettingsSerializer(serializers.ModelSerializer):
     """{ company: {...}, aiKey: {provider, apiKey}, smtp: {...}, runs: {...} } — secrets masked on read."""
 
@@ -193,6 +243,7 @@ class SettingsSerializer(serializers.ModelSerializer):
                 'countries': [c.strip() for c in instance.target_countries.split(',') if c.strip()],
                 'industries': [i.strip() for i in instance.target_industries.split(',') if i.strip()],
                 'cities': [c.strip() for c in instance.target_cities.split(',') if c.strip()],
+                'icpMode': instance.icp_mode or 'buyer',
             },
         }
 
@@ -241,6 +292,11 @@ class SettingsSerializer(serializers.ModelSerializer):
             # country-level sweep.  Cities win over countries in discovery.
             instance.target_cities = ', '.join(
                 str(c).strip() for c in (targeting.get('cities') or []) if str(c).strip())
+        icp_mode = targeting.get('icpMode')
+        if icp_mode in ('buyer', 'agency'):
+            # 'agency' = agencies/software shops are the leads (partnership
+            # outreach); 'buyer' = businesses that buy our services
+            instance.icp_mode = icp_mode
         instance.save()
         return instance
 

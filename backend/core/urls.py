@@ -22,6 +22,7 @@ urlpatterns = [
     path('auth/password/', views.change_password, name='change-password'),
     # CRM — custom lead routes BEFORE the router (else 'export' is treated as a pk)
     path('leads/export/', views.leads_export, name='leads-export'),
+    path('leads/<int:lead_id>/draft_email/', views.lead_draft_email, name='lead-draft-email'),
     path('report/generate/', views.report_generate, name='report-generate'),
     path('', include(router.urls)),
     # agents
@@ -29,6 +30,11 @@ urlpatterns = [
     path('agents/<str:agent_key>/config/', views.agent_config, name='agent-config'),
     # settings
     path('settings/', views.settings_view, name='settings'),
+    # one-click mailbox connect (Zoho/Gmail/custom) — verifies + saves SMTP
+    path('settings/smtp_connect/', views.smtp_connect, name='smtp-connect'),
+    # search profiles — saved lead-targeting presets w/ one-click switching
+    path('profiles/', views.profiles, name='profiles'),
+    path('profiles/<int:profile_id>/activate/', views.profile_activate, name='profile-activate'),
     # outreach templates (Settings → Email Templates)
     path('templates/', views.templates, name='templates'),
     path('templates/<int:template_id>/', views.template_detail, name='template-detail'),
@@ -36,6 +42,7 @@ urlpatterns = [
     path('report/test/', views.report_test, name='report-test'),
     # outreach — cold-email drafts (approve → send)
     path('drafts/', views.drafts, name='drafts'),
+    path('drafts/bulk_approve/', views.drafts_bulk_approve, name='drafts-bulk-approve'),
     path('drafts/<int:draft_id>/', views.draft_detail, name='draft-detail'),
     path('drafts/<int:draft_id>/approve/', views.draft_approve, name='draft-approve'),
     path('drafts/<int:draft_id>/reject/', views.draft_reject, name='draft-reject'),
@@ -43,6 +50,8 @@ urlpatterns = [
     path('outreach/status/', views.outreach_status, name='outreach-status'),
     # chat
     path('chat/', views.chat, name='chat'),
+    # first-login setup wizard state (drives the chat onboarding UI)
+    path('onboarding/', views.onboarding, name='onboarding'),
     # in-product AI guide
     path('guide/', views.guide, name='guide'),
     # pipeline loop

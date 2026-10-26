@@ -26,7 +26,7 @@ from .apify_maps import apify_available as apify_maps_available
 from .apify_maps import enrich_leads_via_apify
 from .enrichment import apollo_enrich_domain
 from .gmaps import discover_no_website_places, enrich_leads_via_gmaps, gmaps_available
-from .icp import buyer_industries, looks_like_competitor, our_services_text, vertical
+from .icp import agency_mode, buyer_industries, looks_like_competitor, our_services_text, vertical
 from .models import AgentConfig, AppSettings, EmailDraft, EmailTemplate, Lead, PipelineRun, Potential
 from .scalelist import scalelist_phone_find
 from .scraper import (
@@ -75,7 +75,7 @@ def _looks_like_company(name):
         name or '', re.I)
 
 
-def _ai_review(lead, audit, our_services=''):
+def _ai_review(lead, audit, settings, our_services=''):
     """Gemini reads the lead's own site text and answers two questions in one
     call: is this an actual, relevant business — and what does it do?
 
@@ -92,15 +92,25 @@ def _ai_review(lead, audit, our_services=''):
     excerpt = (audit.get('analysis') or {}).get('text_excerpt', '')
     if not excerpt or not llm_available():
         return True, ''
-    competitor_rule = ''
-    if our_services:
-        competitor_rule = (
-            f' OR the company itself SELLS {our_services} — that is a competitor '
-            f'/ peer provider to us, NOT a prospective buyer')
+    if agency_mode(settings):
+        # partnership targeting: agencies ARE the prospect — vetting only
+        # rejects non-businesses (blogs, directories, huge corporations),
+        # never "they sell the same services we do"
+        goal_rule = (
+            'We are an engineering team looking for boutique digital agencies and '
+            'software shops as PROJECT PARTNERS — a company that designs, builds or '
+            'markets software/websites for clients is EXACTLY the prospect we want, '
+            'never a rejection reason.')
+    else:
+        goal_rule = (
+            f'We sell {our_services or "business services"} and are looking for BUYERS.')
+        if our_services:
+            goal_rule += (
+                f' A company that itself SELLS {our_services} is a competitor / peer '
+                f'provider to us, NOT a prospective buyer')
     prompt = (
         f'You are vetting a sales-prospect lead discovered while searching for a '
-        f'"{lead.industry or "business"}" (website: {lead.website}). We sell '
-        f'{our_services or "business services"} and are looking for BUYERS.\n\n'
+        f'"{lead.industry or "business"}" (website: {lead.website}). {goal_rule}\n\n'
         f'--- SITE TEXT ---\n{excerpt}\n--- END SITE TEXT ---\n\n'
         f'Answer in EXACTLY this format:\n'
         f'RELEVANT: yes|no\n'
@@ -109,7 +119,7 @@ def _ai_review(lead, audit, our_services=''):
         f'Rules for RELEVANT: "no" only when the site is clearly NOT a real operating '
         f'business (blog post, news article, directory/listing, personal portfolio, '
         f'parked page, product of a huge corporation) OR is completely unrelated to '
-        f'{lead.industry or "the industry we searched"}{competitor_rule}. '
+        f'{lead.industry or "the industry we searched"}. '
         f'A real small/mid company in a closely related field is "yes". '
         f'Use only what the text shows. No markdown.'
     )
@@ -137,6 +147,14 @@ def _default_template():
 
 TEMPLATE_VARS = ('company', 'industry', 'website', 'description',
                  'findings', 'sender_name', 'sender_website', 'services')
+
+# Real shipped products — the credibility block for partnership outreach
+# (agency mode).  Keep verbatim; these are live URLs we stand behind.
+SHIPPED_WORK = (
+    '- julex.shop — full e-commerce build\n'
+    '- ijrnexus.com — academic journal publishing platform\n'
+    '- sashainfinity.com — custom web platform\n'
+    '- TaraLash Academy — beauty & education platform')
 
 
 def _fill_template(text, lead, settings, top_findings):
@@ -176,6 +194,7 @@ def _draft_email(lead):
 
     top = lead.findings[:3]
     template = _default_template()
+    agency = agency_mode(settings)
 
     subject = ''
     body = ''
@@ -196,16 +215,38 @@ def _draft_email(lead):
                 f'SUBJECT: {_fill_template(template.subject, lead, settings, top)}\n\n'
                 f'{_fill_template(template.body, lead, settings, top)}\n\n'
             )
+        if agency:
+            # partnership pitch — peer agencies are the prospect, never audit them
+            goal_and_rules = (
+                f'GOAL: win PROJECT PARTNERSHIP — the prospect is a boutique agency / software '
+                f'shop that could hand us builds (overflow work, white-label, outside their stack). '
+                f'This is a peer-to-peer pitch. NEVER criticize their website and NEVER mention '
+                f'audit findings or flaws.\n'
+                f'OUR SHIPPED WORK (use at most two, verbatim):\n{SHIPPED_WORK}\n'
+                f'OUR TERMS: MVPs in 8–14 weeks, fixed quotes and timelines, full IP handover — '
+                f'their client stays theirs. Offer a small paid pilot as proof.\n'
+                f'Rules: reference what they do; offer partnership + pilot; one clear ask '
+                f'(15-minute call, or invite a "send cases" reply); no pricing; no audit language.'
+            )
+            audit_block = ''
+        else:
+            goal_and_rules = (
+                f'Rules: reference what they do plus 1-2 concrete findings; one clear ask '
+                f'(short call); no pricing; no fake urgency.'
+            )
+            audit_block = (
+                f'AUDIT FINDINGS: '
+                f'{json.dumps([{k: f[k] for k in ("area", "issue", "recommendation")} for f in top], indent=1)}\n'
+            )
         prompt = (
             f'Write a short cold outreach email (max 150 words).\n\n'
             f'PROSPECT: {lead.company} ({lead.industry or "unknown industry"}), website: '
             f'{lead.website or "NONE FOUND"}\n'
             f'{what_they_do}'
-            f'AUDIT FINDINGS: {json.dumps([{k: f[k] for k in ("area", "issue", "recommendation")} for f in top], indent=1)}\n'
+            f'{audit_block}'
             f'WE (sender): {our_name} — offering {services}. Website: {our_site or "n/a"}\n\n'
             f'{template_block}'
-            f'Rules: reference what they do plus 1-2 concrete findings; one clear ask '
-            f'(short call); no pricing; no fake urgency.\n'
+            f'{goal_and_rules}\n'
             f'{"Avoid: " + negative if negative else ""}\n\n'
             f'Respond in EXACTLY this format:\n'
             f'SUBJECT: <subject line>\n\n<email body>'
@@ -228,6 +269,24 @@ def _draft_email(lead):
             subject = _fill_template(template.subject or f'Quick idea for {{company}}',
                                      lead, settings, top)
             body = _fill_template(template.body, lead, settings, top)
+        elif agency:
+            # agency-mode built-in — partnership pitch, never an audit
+            subject = f'Project partnership — {lead.company} × {our_name}'
+            body = (
+                f'Hi {lead.company} team,\n\n'
+                f'We\'re {our_name} — we build SaaS platforms, web apps, and mobile apps, '
+                f'and we\'re looking to partner with agencies like yours on project work.\n\n'
+                f'Recent things we\'ve shipped:\n{SHIPPED_WORK}\n\n'
+                f'MVPs and full builds go live in 8–14 weeks, with fixed quotes, fixed '
+                f'timelines, and full IP handover — your client stays yours.\n\n'
+                f'The ask: if you have a project coming up — overflow work, a build outside '
+                f'your stack, or a client timeline you can\'t staff — we\'d love to take it '
+                f'on. Happy to start with a small pilot so you can judge us on real work, '
+                f'not a deck.\n\n'
+                f'Worth a 15-minute call next week? Or reply "send cases" and I\'ll share '
+                f'the details.\n\n'
+                f'Best,\n{our_name}\n{our_site}'
+            ).strip()
         elif lead.has_website:
             # built-in fallback — still personalized from the real audit findings
             subject = f'Quick idea for {lead.company}'
@@ -275,6 +334,10 @@ def run_pipeline(triggered_by='manual'):
         summary['notes'].append(
             f'Search: CITY targeting on — sweeping {", ".join(target_cities)} '
             f'for businesses that BUY {our_services_text(settings)}')
+    elif agency_mode(settings):
+        summary['notes'].append(
+            'Search: AGENCY-PARTNER targeting on — searching boutique agencies / software '
+            'shops (potential project partners); the competitor filter is off for peers')
     elif not getattr(settings, 'target_industries', ''):
         summary['notes'].append(
             'Search: ICP buyer-targeting on — searching businesses that BUY '
@@ -334,7 +397,9 @@ def run_pipeline(triggered_by='manual'):
     # Free keyless Maps scraper (core.gmaps).  A business listed on Maps with
     # no real website is the highest-potential lead for a web-services seller:
     # phone + address from the listing, nothing to audit, everything to build.
-    if gmaps_available():
+    # Skipped in agency mode — a boutique agency without a website is never a
+    # project partner; those slots go to real agency discoveries instead.
+    if gmaps_available() and not agency_mode(settings):
         maps_query, maps_industry = queries[0]
         try:
             no_site_places = discover_no_website_places(maps_query, limit=MAPS_LEADS_PER_CYCLE)
@@ -429,7 +494,7 @@ def run_pipeline(triggered_by='manual'):
             rejected += 1
             continue
         # Gemini reads the site's own text → relevance gate + real description
-        relevant, description = _ai_review(lead, audit, our_services=our_services_text(settings))
+        relevant, description = _ai_review(lead, audit, settings, our_services=our_services_text(settings))
         if relevant is None:
             # strict fake-data gate: the AI couldn't review this lead right now
             # (throttle / network) — leave it unprofiled (nothing persisted) so
@@ -480,7 +545,10 @@ def run_pipeline(triggered_by='manual'):
             f'{len(lead.findings)} finding(s)')
 
         if lead.score >= POTENTIAL_THRESHOLD and not lead.potentials.exists():
-            if not lead.has_website:
+            if agency_mode(settings):
+                opportunity = 'White-label project partnership'
+                stage = 'qualified' if lead.score >= 80 else 'discovery'
+            elif not lead.has_website:
                 opportunity, stage = 'New website — no working web presence', 'discovery'
             else:
                 areas = {f['area'] for f in lead.findings}
@@ -618,7 +686,10 @@ def run_pipeline(triggered_by='manual'):
             'query': summary.get('query', ''),
             'drafts_created': drafts_created,
             'agents': [
-                {'agent': 'search', 'action': f'{len(new_leads)} new lead(s) via DuckDuckGo + Google Maps (ICP buyer targeting)'},
+                {'agent': 'search', 'action': f'{len(new_leads)} new lead(s) via DuckDuckGo'
+                    + (' + Google Maps' if gmaps_available() and not agency_mode(settings) else '')
+                    + (f' (agency-partner targeting)' if agency_mode(settings)
+                       else ' (ICP buyer targeting)')},
                 {'agent': 'profile', 'action': f'{len(to_profile)} site(s) audited'},
                 {'agent': 'copywright', 'action': f'{drafts_created} draft(s) created'},
                 {'agent': 'responder', 'action': f'{queue} draft(s) awaiting approval'},

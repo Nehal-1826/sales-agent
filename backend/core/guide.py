@@ -46,8 +46,16 @@ PAGES:
   "reject the draft for <company>", "delete the lead <company>", "run daily / hourly /
   every 15 minutes / every 6 hours", "pause the runs", "resume the runs",
   "send the report now". Confirm what it did in its reply.
-- Settings: Company profile; AI Key (provider + key, stored server-side, masked);
-  Email Delivery SMTP (host/port/user/password/from — approved emails send from here,
+- Settings: Company profile; Search Profiles (saved lead-targeting presets with
+  ONE-CLICK switching — Activate rewrites countries/industries/cities and the
+  buyer-vs-agency mode instantly; e.g. "Shailog Tech — Agency Partners" hunts
+  boutique agencies in the US/UK/Germany as project partners, "Backup" restores
+  the previous buyer-targeting job); AI Key (provider + key, stored server-side,
+  masked); Lead Targeting (cities, countries, industries + who counts as a lead:
+  buyers of our services, or agency partners where agencies ARE the leads);
+  Email Delivery SMTP (provider picker: Zoho Mail India/US/EU datacenter or
+  Gmail; Zoho: username = full mailbox address, App Password when 2FA is on,
+  IMAP/SMTP access enabled in Zoho Mail settings; approved emails send from here,
   without it they print to the server console); Email Templates (write manually or
   upload .txt/.md/.html — first line "Subject: ..." becomes the subject; one default
   template; placeholders {{company}} {{industry}} {{website}} {{description}}

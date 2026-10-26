@@ -72,6 +72,7 @@ class RunPipelineIcpTests(TestCase):
         s.services = ['web design', 'SEO', 'digital marketing']
         s.target_countries = ''
         s.target_industries = ''
+        s.icp_mode = 'buyer'   # buyer-mode tests — agency-partner mode has its own suite
         s.ai_key = ''            # keyless — ICP heuristic is the only gate
         s.save()
         self.settings = s

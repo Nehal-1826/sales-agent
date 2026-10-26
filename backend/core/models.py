@@ -257,6 +257,17 @@ class AppSettings(Timestamped):
     # wins over countries: discovery + Google Maps sweep each town listed.
     target_cities = models.TextField(blank=True)
 
+    # ICP mode — who counts as a good lead.  'buyer' (default): businesses
+    # that BUY our services; peer agencies are competitors and filtered out.
+    # 'agency': boutique agencies / software shops ARE the target (partnership
+    # outreach — agencies that might hand us project work), so the ICP engine
+    # lets agency terms be searched and stops rejecting peer-shaped leads.
+    icp_mode = models.CharField(
+        max_length=10,
+        choices=[('buyer', 'Buyers of our services'), ('agency', 'Agency partners')],
+        default='buyer',
+    )
+
     # Daily report — recipient of the 8 PM IST lead report (comma-separated allowed;
     # falls back to superuser/staff emails when blank)
     report_email = models.CharField(max_length=300, blank=True)
@@ -268,6 +279,11 @@ class AppSettings(Timestamped):
     # Strict fake-data gate memory — domains the AI review has rejected are
     # never re-admitted on a later cycle (AI verdicts can flip; memory can't)
     rejected_domains = models.JSONField(default=list, blank=True)
+
+    # Chat onboarding — first-login setup wizard state (core.onboarding):
+    # {started, done, step, answers{...}, skipped[...]}; empty dict = fresh
+    # install that has never run the wizard.
+    onboarding = models.JSONField(default=dict, blank=True)
 
     def save(self, *args, **kwargs):
         self.pk = 1  # singleton
@@ -304,6 +320,65 @@ class AppSettings(Timestamped):
 
     def __str__(self):
         return 'App settings'
+
+
+class SearchProfile(Timestamped):
+    """SETTINGS page — saved lead-targeting presets with one-click switching.
+
+    A profile snapshots the Lead Targeting knobs (countries, cities,
+    industries) plus the ICP mode.  Activating one copies its values into the
+    AppSettings singleton — the pipeline keeps reading AppSettings exactly as
+    before, so a switch takes effect on the very next cycle with no restart.
+    """
+
+    name = models.CharField(max_length=200, unique=True)
+    description = models.CharField(max_length=500, blank=True)
+    # same comma-separated storage convention as AppSettings
+    target_countries = models.TextField(blank=True)
+    target_industries = models.TextField(blank=True)
+    target_cities = models.TextField(blank=True)
+    icp_mode = models.CharField(
+        max_length=10,
+        choices=[('buyer', 'Buyers of our services'), ('agency', 'Agency partners')],
+        default='buyer',
+    )
+    is_active = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['-is_active', 'name']
+
+    def __str__(self):
+        return f'{self.name}{" (active)" if self.is_active else ""}'
+
+    def apply(self):
+        """One-click switch: write this profile's targeting into AppSettings
+        and mark it the only active profile."""
+        settings = AppSettings.load()
+        settings.target_countries = self.target_countries
+        settings.target_industries = self.target_industries
+        settings.target_cities = self.target_cities
+        settings.icp_mode = self.icp_mode
+        settings.save(update_fields=['target_countries', 'target_industries',
+                                     'target_cities', 'icp_mode', 'updated_at'])
+        SearchProfile.objects.exclude(pk=self.pk).update(is_active=False)
+        self.is_active = True
+        self.save(update_fields=['is_active', 'updated_at'])
+
+    @classmethod
+    def snapshot(cls, name, description=''):
+        """Capture the AppSettings targeting as it stands right now — used to
+        keep the previous job around as a switchable backup profile."""
+        settings = AppSettings.load()
+        profile = cls.objects.filter(name=name).first()
+        if profile is None:
+            profile = cls(name=name)
+        profile.description = description
+        profile.target_countries = settings.target_countries
+        profile.target_industries = settings.target_industries
+        profile.target_cities = settings.target_cities
+        profile.icp_mode = settings.icp_mode or 'buyer'
+        profile.save()
+        return profile
 
 
 class ChatMessage(Timestamped):

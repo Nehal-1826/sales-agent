@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { approveDraft, getDrafts, getLeads, getPotential, getReplies, rejectDraft, sendDraft, updateDraft } from '../lib/api';
+import { approveDraft, draftLeadEmail, getDrafts, getLeads, getPotential, getReplies, rejectDraft, sendDraft, updateDraft } from '../lib/api';
 import type { EmailDraft, Lead, Potential, Reply } from '../lib/types';
 import { Chip, Spinner } from './ui';
 
@@ -19,6 +19,9 @@ export function CrmBoard({ compact = false, refreshToken = 0 }: { compact?: bool
   const [editSubject, setEditSubject] = useState('');
   const [editBody, setEditBody] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
+  // manual "draft email" feedback for one lead card at a time
+  const [draftMsg, setDraftMsg] = useState<{ leadId: string; text: string } | null>(null);
+  const [draftingId, setDraftingId] = useState<string | null>(null);
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -51,6 +54,24 @@ export function CrmBoard({ compact = false, refreshToken = 0 }: { compact?: bool
     setEditToEmail(d.toEmail || '');
     setEditSubject(d.subject);
     setEditBody(d.body);
+  };
+
+  /** Hand-trigger a draft for ANY lead — qualified or not. */
+  const draftFor = async (lead: Lead) => {
+    setDraftingId(lead.id);
+    setDraftMsg(null);
+    const res = await draftLeadEmail(lead.id);
+    setDraftingId(null);
+    if (!res) {
+      setDraftMsg({ leadId: lead.id, text: 'Backend not reachable — start Django and try again.' });
+      return;
+    }
+    if (res.ok && res.draft) {
+      setDraftMsg({ leadId: lead.id, text: 'Draft created — review it in OUTREACH →' });
+      reload();
+    } else {
+      setDraftMsg({ leadId: lead.id, text: res.detail || 'Could not create the draft.' });
+    }
   };
 
   const saveEdit = async (id: string) => {
@@ -114,6 +135,22 @@ export function CrmBoard({ compact = false, refreshToken = 0 }: { compact?: bool
               <div className="crm-card-foot">
                 <small>{lead.source}</small>
                 <small>{lead.discovered}</small>
+              </div>
+              {/* manual outreach — any lead can be drafted for on demand */}
+              <div className="crm-card-foot" style={{ justifyContent: 'flex-start', gap: 6 }}>
+                <button
+                  className="btn btn-sm"
+                  disabled={draftingId === lead.id}
+                  onClick={() => draftFor(lead)}
+                  title="Create an outreach draft for this lead — even if it's not flagged as a potential"
+                >
+                  {draftingId === lead.id ? 'Drafting…' : '✉ Draft email'}
+                </button>
+                {draftMsg?.leadId === lead.id && (
+                  <small className={draftMsg.text.includes('created') ? 'link-btn' : 'dim'}>
+                    {draftMsg.text}
+                  </small>
+                )}
               </div>
             </article>
           ))}

@@ -200,7 +200,9 @@ class ChatViewTests(SetupMixin, TestCase):
     def test_get_empty_history(self):
         resp = self.client.get('/api/chat/')
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json(), [])
+        body = resp.json()
+        self.assertEqual(body['messages'], [])
+        self.assertIn('onboarding', body)
 
     def test_send_message(self):
         resp = self.client.post('/api/chat/', {'text': 'hello'}, format='json')
@@ -230,6 +232,42 @@ class DraftViewTests(SetupMixin, TestCase):
             body='Body',
             status=EmailDraft.Statuses.DRAFT,
         )
+
+    def test_bulk_approve_sends_each_and_reports_the_rest(self):
+        from unittest import mock
+
+        second = EmailDraft.objects.create(
+            lead=self.lead, company='DraftCo2', to_email='hi2@draftco.com',
+            subject='Two', body='Body', status=EmailDraft.Statuses.DRAFT)
+        sent_draft = EmailDraft.objects.create(
+            lead=self.lead, company='Gone', to_email='gone@draftco.com',
+            subject='Old', body='Body', status=EmailDraft.Statuses.SENT)
+
+        def fake_send(draft):
+            from django.utils import timezone as tz
+            draft.status = EmailDraft.Statuses.SENT
+            draft.sent_via = EmailDraft.Via.CONSOLE
+            draft.sent_at = tz.now()
+            draft.error = ''
+            draft.save(update_fields=['status', 'sent_via', 'sent_at', 'error', 'updated_at'])
+
+        with mock.patch('core.views.send_draft', side_effect=fake_send):
+            resp = self.client.post('/api/drafts/bulk_approve/', {
+                'ids': [self.draft.pk, second.pk, sent_draft.pk, 9999],
+            }, format='json')
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertEqual(body['sent'], 2)
+        self.assertEqual(body['failed'], 2)  # already-sent + unknown id
+        by_id = {r['id']: r for r in body['results']}
+        self.assertTrue(by_id[self.draft.pk]['ok'])
+        self.assertTrue(by_id[second.pk]['ok'])
+        self.assertIn('already sent', by_id[sent_draft.pk]['error'])
+        self.assertEqual(by_id[9999]['error'], 'not found')
+
+    def test_bulk_approve_requires_ids(self):
+        resp = self.client.post('/api/drafts/bulk_approve/', {}, format='json')
+        self.assertEqual(resp.status_code, 400)
 
     def test_list_drafts(self):
         resp = self.client.get('/api/drafts/')

@@ -14,7 +14,7 @@ from .chat import responder_reply
 from .guide import guide_answer
 from .health import status_of
 from .mailer import send_draft, smtp_configured
-from .models import AgentConfig, AppSettings, ChatMessage, EmailDraft, EmailTemplate, Lead, PipelineRun, Potential, Reply, User
+from .models import AgentConfig, AppSettings, ChatMessage, EmailDraft, EmailTemplate, Lead, PipelineRun, Potential, Reply, SearchProfile, User
 from .pipeline import pipeline_status, run_pipeline
 from .reports import _resolve_recipients, send_daily_report
 from .serializers import (
@@ -27,6 +27,7 @@ from .serializers import (
     PipelineRunSerializer,
     PotentialSerializer,
     ReplySerializer,
+    SearchProfileSerializer,
     SettingsSerializer,
     UserSerializer,
 )
@@ -201,6 +202,73 @@ def settings_view(request):
     return Response(SettingsSerializer(obj).data)
 
 
+# ------------------------------------------------------------------
+# SEARCH PROFILES — saved lead-targeting presets, one-click switching
+# ------------------------------------------------------------------
+
+@api_view(['GET', 'POST'])
+def profiles(request):
+    """List saved targeting profiles, or save a new one.
+
+    POST body: { name, description?, countries?, industries?, cities?, icpMode? }
+    — creating does NOT activate it; use /api/profiles/<id>/activate/ for the
+    one-click switch (that's the call which rewrites AppSettings)."""
+    if request.method == 'POST':
+        serializer = SearchProfileSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        profile = serializer.save()
+        return Response(SearchProfileSerializer(profile).data, status=status.HTTP_201_CREATED)
+    return Response(SearchProfileSerializer(SearchProfile.objects.all(), many=True).data)
+
+
+@api_view(['POST'])
+def profile_activate(request, profile_id):
+    """The one-click switch: apply this profile's targeting to the live
+    settings — takes effect on the next pipeline cycle, no restart needed."""
+    profile = SearchProfile.objects.filter(pk=profile_id).first()
+    if profile is None:
+        return Response({'detail': 'profile not found'}, status=404)
+    profile.apply()
+    return Response({
+        'profile': SearchProfileSerializer(profile).data,
+        'settings': SettingsSerializer(AppSettings.load()).data,
+    })
+
+
+# ------------------------------------------------------------------
+# ONE-CLICK SMTP CONNECT — credentials in, verified provider config out
+# ------------------------------------------------------------------
+
+@api_view(['POST'])
+def smtp_connect(request):
+    """Connect an email mailbox in one click.
+
+    Body: { provider: 'zoho'|'gmail'|'custom', user, password, host?, port? }.
+    Probes the provider's servers with a real SMTP handshake + login (nothing
+    is sent); Zoho tries all three datacenters, so the user never has to know
+    which one their account lives on.  The first server that authenticates is
+    saved as the live SMTP setup (host, port, user, password, from).
+
+    Expected failures come back as 200 {ok: false, message} — they are answers,
+    not HTTP errors; only malformed input is a 400."""
+    from .mailer import connect_mailbox
+
+    user = (request.data.get('user') or '').strip()
+    password = (request.data.get('password') or '').strip()
+    provider = (request.data.get('provider') or 'zoho').lower()
+    if not user or not password:
+        return Response({'ok': False,
+                         'message': 'Enter the mailbox address and its password / app password.'},
+                        status=400)
+    try:
+        port = int(request.data.get('port') or 587)
+    except (TypeError, ValueError):
+        port = 587
+    result = connect_mailbox(provider, user, password,
+                             host=(request.data.get('host') or '').strip(), port=port)
+    return Response(result)
+
+
 @api_view(['POST'])
 def report_test(request):
     """Send the daily report right now — verifies the admin email + SMTP setup.
@@ -242,6 +310,44 @@ def leads_export(request):
             l.created_at.strftime('%Y-%m-%d %H:%M'),
         ])
     return response
+
+
+@api_view(['POST'])
+def lead_draft_email(request, lead_id):
+    """Manually request an outreach draft for ANY lead — qualified or not.
+
+    The automated Copywright only drafts on its own schedule; this puts the
+    operator in charge: every lead in the CRM (low score, no Potential flag,
+    even not yet profiled) can get a hand-triggered draft.  The draft lands
+    in the normal approval queue — nothing sends without approval.
+
+    201 {ok: true, draft} on success; 200 {ok: false, detail} when the lead
+    already has an active draft; 404 for an unknown lead."""
+    lead = Lead.objects.filter(pk=lead_id).first()
+    if lead is None:
+        return Response({'detail': 'lead not found'}, status=404)
+    active = lead.drafts.exclude(status__in=[EmailDraft.Statuses.REJECTED,
+                                             EmailDraft.Statuses.FAILED])
+    if active.exists():
+        return Response({'ok': False,
+                         'detail': f'{lead.company} already has an active draft '
+                                   f'({active.first().get_status_display().lower()}) — '
+                                   'find it in the Outreach queue.'})
+    from .pipeline import _draft_email
+    subject, body, used_llm = _draft_email(lead)
+    draft = EmailDraft.objects.create(
+        lead=lead,
+        company=lead.company,
+        to_email=lead.contact_email,
+        subject=subject,
+        body=body,
+        findings=lead.findings[:3],
+        status=EmailDraft.Statuses.DRAFT,
+    )
+    return Response({'ok': True,
+                     'draft': EmailDraftSerializer(draft).data,
+                     'used_llm': used_llm},
+                    status=status.HTTP_201_CREATED)
 
 
 @api_view(['POST'])
@@ -349,19 +455,37 @@ def chat(request):
     if request.method == 'DELETE':
         deleted, _ = ChatMessage.objects.filter(user=request.user).delete()
         return Response({'cleared': True, 'deleted': deleted})
+    # first-login setup wizard rides on the chat while it is active — plain
+    # Q&A that configures the whole system, then hands over to the Responder
+    settings = AppSettings.load()
+    from .onboarding import onboarding_reply, onboarding_status
     if request.method == 'POST':
         text = (request.data.get('text') or '').strip()
         if not text:
             return Response({'detail': 'text is required'}, status=400)
         user_msg = ChatMessage.objects.create(user=request.user, role='user', text=text)
-        reply_text = responder_reply(text, turn=user_msg.id, username=request.user.username)
+        if not onboarding_status(settings)['done']:
+            reply_text = onboarding_reply(text, settings)
+        else:
+            reply_text = responder_reply(text, turn=user_msg.id, username=request.user.username)
         ai_msg = ChatMessage.objects.create(user=request.user, role='ai', text=reply_text)
         return Response({
             'userMessage': ChatMessageSerializer(user_msg).data,
             'reply': ChatMessageSerializer(ai_msg).data,
+            'onboarding': onboarding_status(AppSettings.load()),
         })
     messages = ChatMessage.objects.filter(user=request.user)
-    return Response(ChatMessageSerializer(messages, many=True).data)
+    return Response({
+        'messages': ChatMessageSerializer(messages, many=True).data,
+        'onboarding': onboarding_status(settings),
+    })
+
+
+@api_view(['GET'])
+def onboarding(request):
+    """Setup-wizard state for the frontend (banner, redirect, progress)."""
+    from .onboarding import onboarding_status
+    return Response(onboarding_status(AppSettings.load()))
 
 
 # ------------------------------------------------------------------
@@ -377,8 +501,50 @@ def _get_draft(draft_id):
 
 @api_view(['GET'])
 def drafts(request):
-    objs = EmailDraft.objects.all()[:50]
+    objs = EmailDraft.objects.all()[:200]
     return Response(EmailDraftSerializer(objs, many=True).data)
+
+
+@api_view(['POST'])
+def drafts_bulk_approve(request):
+    """Bulk approve → send. Body: { ids: [id, …] }.
+
+    Each draft is approved and sent independently; one bad id or an
+    already-processed draft is reported in the results and never blocks the
+    rest.  Returns { results: [{id, ok, status?, error?}], sent, failed }."""
+    raw_ids = request.data.get('ids')
+    if not isinstance(raw_ids, list) or not raw_ids:
+        return Response({'detail': 'ids must be a non-empty list'}, status=400)
+    results, sent, failed = [], 0, 0
+    for raw in raw_ids:
+        try:
+            draft_id = int(raw)
+        except (TypeError, ValueError):
+            results.append({'id': raw, 'ok': False, 'error': 'invalid id'})
+            failed += 1
+            continue
+        draft = EmailDraft.objects.filter(pk=draft_id).first()
+        if draft is None:
+            results.append({'id': draft_id, 'ok': False, 'error': 'not found'})
+            failed += 1
+            continue
+        if draft.status not in (EmailDraft.Statuses.DRAFT, EmailDraft.Statuses.FAILED):
+            results.append({'id': draft_id, 'ok': False,
+                            'error': f'already {draft.get_status_display().lower()}'})
+            failed += 1
+            continue
+        draft.status = EmailDraft.Statuses.APPROVED
+        draft.save(update_fields=['status', 'updated_at'])
+        send_draft(draft)
+        draft.refresh_from_db()
+        if draft.status == EmailDraft.Statuses.SENT:
+            results.append({'id': draft_id, 'ok': True, 'status': draft.status})
+            sent += 1
+        else:
+            results.append({'id': draft_id, 'ok': False, 'status': draft.status,
+                            'error': draft.error or 'send failed'})
+            failed += 1
+    return Response({'results': results, 'sent': sent, 'failed': failed})
 
 
 @api_view(['GET', 'PUT'])

@@ -25,9 +25,11 @@ import type {
   EmailDraft,
   EmailTemplate,
   Lead,
+  OnboardingState,
   Potential,
   Reply,
   RunFrequency,
+  SearchProfile,
   SettingsState,
 } from './types';
 
@@ -328,6 +330,86 @@ export async function putSettings(settings: SettingsState): Promise<boolean> {
   return false;
 }
 
+/* ---------------- search profiles (one-click targeting switch) ---------------- */
+
+export async function getProfiles(): Promise<SearchProfile[] | null> {
+  if (await ensureBackend()) {
+    try {
+      return await fetchJson<SearchProfile[]>('/profiles/');
+    } catch {
+      return null;
+    }
+  }
+  return null; // caller falls back to MOCK_PROFILES
+}
+
+export async function createProfile(
+  profile: Omit<SearchProfile, 'id' | 'isActive'>,
+): Promise<SearchProfile | null> {
+  if (await ensureBackend()) {
+    try {
+      return await fetchJson<SearchProfile>('/profiles/', {
+        method: 'POST',
+        body: JSON.stringify(profile),
+      });
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/** The one-click switch — applies the profile to the live settings and
+ *  returns the refreshed settings so the UI can mirror them immediately.
+ *  Null when the backend is unreachable (offline mode keeps local state). */
+export async function activateProfile(
+  id: number,
+): Promise<{ settings: SettingsState } | null> {
+  if (await ensureBackend()) {
+    try {
+      return await fetchJson<{ settings: SettingsState }>(`/profiles/${id}/activate/`, {
+        method: 'POST',
+      });
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/* ---------------- one-click mailbox connect ---------------- */
+
+export interface SmtpConnectResult {
+  ok: boolean;
+  host?: string;
+  port?: number;
+  message: string;
+}
+
+/** Connect a mailbox in one click: the backend probes the provider's servers
+ *  (Zoho = all three datacenters) with a real SMTP login and saves the first
+ *  that authenticates. Expected failures return {ok:false, message} over 200. */
+export async function connectSmtp(payload: {
+  provider: string;
+  user: string;
+  password: string;
+  host?: string;
+  port?: string | number;
+}): Promise<SmtpConnectResult | null> {
+  if (await ensureBackend()) {
+    try {
+      // live SMTP handshakes across up to 3 servers — well past the 5s default
+      return await fetchJson<SmtpConnectResult>('/settings/smtp_connect/', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }, 60000);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 /* ---------------- email templates ---------------- */
 
 export async function getTemplates(): Promise<EmailTemplate[] | null> {
@@ -375,6 +457,55 @@ export async function deleteTemplate(id: string): Promise<boolean> {
   return false;
 }
 
+/* ---------------- manual draft for any lead ---------------- */
+
+export interface DraftLeadResult {
+  ok: boolean;
+  draft?: EmailDraft;
+  used_llm?: boolean;
+  detail?: string;
+}
+
+/** Hand-trigger an outreach draft for ANY lead — qualified or not. The draft
+ *  lands in the normal approval queue; nothing sends without approval. */
+export async function draftLeadEmail(leadId: number | string): Promise<DraftLeadResult | null> {
+  if (await ensureBackend()) {
+    try {
+      // 201 (created) and 200 (duplicate) both carry a usable body
+      return await fetchJson<DraftLeadResult>(`/leads/${leadId}/draft_email/`, {
+        method: 'POST',
+      }, 60000); // AI drafting can take a few seconds
+    } catch {
+      return null; // 404 or network
+    }
+  }
+  return null;
+}
+
+/* ---------------- bulk draft approval ---------------- */
+
+export interface BulkApproveResult {
+  results: { id: number; ok: boolean; status?: string; error?: string }[];
+  sent: number;
+  failed: number;
+}
+
+/** Approve & send many drafts in one call — each is independent; failures
+ *  (already sent, bad id, SMTP error) come back per-id and never block the rest. */
+export async function bulkApproveDrafts(ids: (string | number)[]): Promise<BulkApproveResult | null> {
+  if (await ensureBackend()) {
+    try {
+      return await fetchJson<BulkApproveResult>('/drafts/bulk_approve/', {
+        method: 'POST',
+        body: JSON.stringify({ ids }),
+      }, 60000); // one SMTP round-trip per draft
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 export async function changePassword(current: string, next: string, confirm: string): Promise<string | null> {
   if (await ensureBackend()) {
     try {
@@ -405,12 +536,21 @@ export async function sendTestReport(): Promise<{
   return null;
 }
 
-/* ---------------- chat ---------------- */
+/* ---------------- chat + onboarding ---------------- */
 
-export async function getChatHistory(): Promise<ChatMessage[] | null> {
+/** Chat history + the first-login setup-wizard state in one call. */
+export async function getChatHistory(): Promise<{
+  messages: ChatMessage[];
+  onboarding: OnboardingState | null;
+} | null> {
   if (await ensureBackend()) {
     try {
-      return await fetchJson<ChatMessage[]>('/chat/');
+      const data = await fetchJson<{
+        messages?: ChatMessage[];
+        onboarding?: OnboardingState;
+      } | ChatMessage[]>('/chat/');
+      if (Array.isArray(data)) return { messages: data, onboarding: null };
+      return { messages: data.messages ?? [], onboarding: data.onboarding ?? null };
     } catch {
       return null;
     }
@@ -418,10 +558,28 @@ export async function getChatHistory(): Promise<ChatMessage[] | null> {
   return null;
 }
 
-export async function sendChatMessage(text: string): Promise<{ user?: ChatMessage; reply: ChatMessage }> {
+/** Setup-wizard state alone (first-login redirect + banners). */
+export async function getOnboarding(): Promise<OnboardingState | null> {
   if (await ensureBackend()) {
     try {
-      return await fetchJson<{ userMessage: ChatMessage; reply: ChatMessage }>('/chat/', {
+      return await fetchJson<OnboardingState>('/onboarding/');
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export async function sendChatMessage(
+  text: string,
+): Promise<{ user?: ChatMessage; reply: ChatMessage; onboarding?: OnboardingState | null }> {
+  if (await ensureBackend()) {
+    try {
+      return await fetchJson<{
+        userMessage: ChatMessage;
+        reply: ChatMessage;
+        onboarding?: OnboardingState;
+      }>('/chat/', {
         method: 'POST',
         body: JSON.stringify({ text }),
       }, 60000); // actions (approve/send, report) can take longer than the default probe timeout

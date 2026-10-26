@@ -4,16 +4,20 @@ import { TopBar } from './components/TopBar';
 import { Dashboard } from './pages/Dashboard';
 import { PipelinePage } from './pages/PipelinePage';
 import { SettingsPage } from './pages/SettingsPage';
+import { ChatPage } from './pages/ChatPage';
 import { LoginPage } from './pages/LoginPage';
 import { GuideWidget } from './components/GuideWidget';
-import { checkAuth, logout } from './lib/api';
+import { checkAuth, getOnboarding, logout } from './lib/api';
 import type { PageKey } from './lib/types';
 
 const PAGES: Record<PageKey, (props: { onNavigate: (p: PageKey) => void; live: boolean }) => JSX.Element> = {
   dashboard: Dashboard,
+  assistant: () => <ChatPage />,
   pipeline: ({ live }) => <PipelinePage live={live} />,
   settings: () => <SettingsPage />,
 };
+
+const ONBOARD_SEEN_KEY = 'agentic-ai:onboard-redirected';
 
 export default function App() {
   const [page, setPage] = useState<PageKey>('dashboard');
@@ -28,6 +32,18 @@ export default function App() {
       setAuth(state === 'unauthenticated' ? 'login' : 'app');
     });
   }, []);
+
+  // first login on an unconfigured workspace lands in the chat, where the
+  // setup assistant asks its questions — once per workspace (flag in storage)
+  useEffect(() => {
+    if (auth !== 'app') return;
+    getOnboarding().then((state) => {
+      if (!state?.needed) return;
+      if (localStorage.getItem(ONBOARD_SEEN_KEY)) return;
+      localStorage.setItem(ONBOARD_SEEN_KEY, '1');
+      setPage('assistant');
+    });
+  }, [auth]);
 
   const signOut = () => {
     logout();

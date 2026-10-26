@@ -6,9 +6,9 @@ import { StatusDot } from './ui';
 import type { AgentMeta } from '../lib/types';
 
 /** Animated vertical connector (dashed line + arrowhead). */
-function Connector({ tall = false }: { tall?: boolean }) {
+function Connector({ tall = false, active = false }: { tall?: boolean; active?: boolean }) {
   return (
-    <div className={`connector${tall ? ' tall' : ''}`} aria-hidden>
+    <div className={`connector${tall ? ' tall' : ''}${active ? ' running' : ''}`} aria-hidden>
       <svg viewBox="0 0 14 44" width="14" height={tall ? 56 : 44}>
         <line className="flow-line" x1="7" y1="2" x2="7" y2="32" />
         <polygon className="flow-arrow" points="7,42 2.5,31.5 11.5,31.5" />
@@ -30,6 +30,7 @@ export function PipelineFlow({ live, onRunComplete }: { live: boolean; onRunComp
   const [agents, setAgents] = useState<AgentMeta[]>(AGENTS);
   const [running, setRunning] = useState(false);
   const [runNotes, setRunNotes] = useState<string[]>([]);
+  const [showAllNotes, setShowAllNotes] = useState(false);
 
   useEffect(() => {
     getAgentsLive().then(setAgents);
@@ -75,7 +76,7 @@ export function PipelineFlow({ live, onRunComplete }: { live: boolean; onRunComp
             <span className="p-user-cap">goal / query</span>
           </div>
 
-          <Connector />
+          <Connector active={running} />
 
           <div className="orchestrator">
             <div className="orch-head">
@@ -93,7 +94,7 @@ export function PipelineFlow({ live, onRunComplete }: { live: boolean; onRunComp
           </div>
         </div>
 
-        <Connector tall />
+        <Connector tall active={running} />
 
         {/* Agents + control spine + loop rail */}
         <div className="pipeline-agents-wrap">
@@ -121,7 +122,7 @@ export function PipelineFlow({ live, onRunComplete }: { live: boolean; onRunComp
                       </div>
                     </div>
                   </div>
-                  {i < agents.length - 1 && <Connector />}
+                  {i < agents.length - 1 && <Connector active={running} />}
                 </div>
               );
             })}
@@ -134,7 +135,7 @@ export function PipelineFlow({ live, onRunComplete }: { live: boolean; onRunComp
           <div className="loop-rail" aria-hidden>
             <svg className="loop-svg" viewBox="0 0 76 800" preserveAspectRatio="none">
               <path
-                className="flow-line loop-path"
+                className={`flow-line loop-path${running ? " running" : ""}`}
                 vectorEffect="non-scaling-stroke"
                 d="M 6 762 C 70 762, 70 38, 6 38"
               />
@@ -150,9 +151,17 @@ export function PipelineFlow({ live, onRunComplete }: { live: boolean; onRunComp
 
       {runNotes.length > 0 && (
         <div className="run-result">
-          <span className="section-label">Last cycle</span>
-          <ul>
-            {runNotes.map((note, i) => (
+          <div className="run-result-head">
+            <span className="section-label">Last cycle — {runNotes.length} events</span>
+            {runNotes.length > 6 && (
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowAllNotes((v) => !v)}>
+                {showAllNotes ? 'Show recent only' : `Show all ${runNotes.length}`}
+              </button>
+            )}
+          </div>
+          {/* containerized scroll — the cycle log never stretches the page */}
+          <ul className={showAllNotes ? 'notes-scroll' : undefined}>
+            {(showAllNotes ? runNotes : runNotes.slice(-6)).map((note, i) => (
               <li key={i}>{note}</li>
             ))}
           </ul>

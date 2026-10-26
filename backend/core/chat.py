@@ -96,8 +96,10 @@ def _crm_snapshot():
     leads = Lead.objects.order_by('-created_at')[:5]
     potentials = Potential.objects.order_by('-created_at')[:5]
     replies = Reply.objects.order_by('-updated_at')[:5]
-    drafts_pending = EmailDraft.objects.filter(status=EmailDraft.Statuses.DRAFT).count()
+    drafts_pending_qs = EmailDraft.objects.filter(status=EmailDraft.Statuses.DRAFT)
+    drafts_pending = drafts_pending_qs.count()
     drafts_sent = EmailDraft.objects.filter(status=EmailDraft.Statuses.SENT).count()
+    pending_names = list(drafts_pending_qs.values_list('company', 'to_email')[:10])
 
     lead_lines = [f'  - {l.company} ({l.industry}, score {l.score}, {"website" if l.has_website else "NO website"})' for l in leads]
     pot_lines = [f'  - {p.company}: {p.opportunity} ({p.value}, {p.get_stage_display()})' for p in potentials]
@@ -110,7 +112,9 @@ def _crm_snapshot():
         f'Recent leads:\n' + '\n'.join(lead_lines or ['  (none)']) + '\n'
         f'Recent potentials:\n' + '\n'.join(pot_lines or ['  (none)']) + '\n'
         f'Recent replies:\n' + '\n'.join(reply_lines or ['  (none)']) + '\n'
-        f'Outreach: {drafts_pending} cold email(s) awaiting approval, {drafts_sent} sent.'
+        f'Outreach: {drafts_pending} cold email(s) awaiting approval, {drafts_sent} sent.\n'
+        f'Drafts awaiting approval (company <email>): '
+        + (', '.join(f'{c} <{e}>' for c, e in pending_names) if pending_names else '(none)')
     )
 
 
@@ -135,6 +139,12 @@ def _llm_reply(text, turn=0):
         'stiff marketing tone. NEVER use markdown — no **bold**, no headings, no lists '
         'with * or -; plain text only (a simple "•" line is fine when listing a few items). '
         'Never start the reply with "REPLY:" or similar labels. '
+        'CRITICAL HONESTY RULE: this reply is CONVERSATIONAL ONLY — you have NOT executed '
+        'anything. Never say you changed, updated, saved, set or sent anything (settings, '
+        'recipients, keys, emails, profiles). If the user asks you to change a setting or '
+        'perform an operation, either it already happened via the action layer before this '
+        'reply (then confirm from the result you were given) or say exactly HOW to do it '
+        '(the phrasing that triggers the action, or Settings). Never invent success. '
         f'{LANGUAGE_RULES[detect_language_style(text)]} '
         'You have live CRM data below — mention specific leads/drafts when it genuinely '
         'helps, but don\'t dump stats in every answer.'
@@ -195,6 +205,17 @@ def _keyword_reply(text, turn=0):
                 f'Latest {len(recent)} leads: {names}. They\'re scored and queued for email drafting.'
             )
         return 'No leads yet — trigger a pipeline run and I\'ll go find some companies.'
+
+    if any(w in q for w in ('approval', 'approvals', 'pending', 'waiting', 'approve', 'queue')):
+        pending = list(EmailDraft.objects.filter(status=EmailDraft.Statuses.DRAFT)
+                       .values_list('company', 'to_email')[:8])
+        if pending:
+            names = ', '.join(f'{c} <{e}>' for c, e in pending)
+            more = EmailDraft.objects.filter(status=EmailDraft.Statuses.DRAFT).count() - len(pending)
+            extra = f' (+{more} more)' if more > 0 else ''
+            return (f'{len(pending)} draft(s) waiting for your approval{extra}: {names}. '
+                    'Say "approve all drafts" to send everything, or name one company.')
+        return 'Nothing is waiting — the approval queue is empty. Run a cycle and I\'ll draft the next batch.'
 
     if any(w in q for w in ('email', 'copy', 'pitch', 'draft', 'message')):
         latest = Lead.objects.filter(profiled=True).order_by('-created_at').first()

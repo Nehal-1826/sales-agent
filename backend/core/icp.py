@@ -158,6 +158,26 @@ def vertical(settings):
     return 'web_services' if WEB_SELLER_SIGNALS.search(hay) else 'generic'
 
 
+def agency_mode(settings):
+    """True when the active targeting wants PEER AGENCIES as leads — the
+    partnership-outreach ICP ('we do the engineering, agencies bring the
+    clients').  Flips every competitor guard below: agency terms may be
+    searched and agency-shaped leads are welcome in the CRM."""
+    return (getattr(settings, 'icp_mode', '') or 'buyer') == 'agency'
+
+
+# Agency-mode defaults — what to search when the user picked agency
+# partnering but left the industry list empty: exactly the boutique shops
+# that hand project work to an external engineering team.
+AGENCY_TARGET_INDUSTRIES = [
+    'boutique digital agency', 'digital product studio',
+    'custom software development agency', 'web design agency',
+    'web development studio', 'app development agency',
+    'SaaS development agency', 'MVP development studio',
+    'UX design studio',
+]
+
+
 def competitor_regexes(settings):
     """Competitor fingerprints for this user.  Web sellers reject peer
     agencies, gifting sellers reject other gift/fragrance sellers, generic
@@ -188,7 +208,16 @@ def buyer_industries(settings):
 
     1. user override (Settings → Lead Targeting → target industries), minus
        peer/competitor terms that would reintroduce competitors;
-    2. otherwise the built-in buyer list for our vertical."""
+    2. otherwise the built-in buyer list for our vertical.
+
+    AGENCY MODE is the exception: agencies are the target, so the override is
+    used verbatim (the peer-guard would drop exactly the terms we want) and
+    the fallback list is the built-in agency-shop list above."""
+    if agency_mode(settings):
+        raw = (getattr(settings, 'target_industries', '') or '').strip()
+        if raw:
+            return [i.strip() for i in re.split(r'[,\n]', raw) if i.strip()]
+        return list(AGENCY_TARGET_INDUSTRIES)
     v = vertical(settings)
     default = GIFTING_BUYER_INDUSTRIES if v == 'corporate_gifting' else BUYER_INDUSTRIES
     raw = (getattr(settings, 'target_industries', '') or '').strip()
@@ -219,10 +248,11 @@ def looks_like_competitor(lead, settings):
     Signals checked: the lead's company name, its industry tag, the AI/site
     description and the SERP snippet.  Name/industry hits are decisive;
     free-text hits need two distinct patterns (a clinic site can mention
-    'SEO' without being an agency)."""
-    patterns = competitor_regexes(settings)
-    if not patterns:
-        return False
+    'SEO' without being an agency).
+
+    AGENCY MODE: agencies are the target, not the enemy — every fingerprint
+    check is skipped and only the self-check below runs (we must still never
+    capture our own company as a lead)."""
     # our own domain/company must never end up in the CRM as a "lead" —
     # normalize both sides to bare domains first: the lead's website can
     # arrive with scheme/path ('https://www.shailog.com/about')
@@ -244,6 +274,12 @@ def looks_like_competitor(lead, settings):
         return True
     if own_name and name.lower() == own_name:
         return True
+    if agency_mode(settings):
+        return False
+
+    patterns = competitor_regexes(settings)
+    if not patterns:
+        return False
 
     industry = ((lead.get('industry') if isinstance(lead, dict) else getattr(lead, 'industry', '')) or '')
     desc = ((lead.get('description') if isinstance(lead, dict) else getattr(lead, 'description', '')) or '')

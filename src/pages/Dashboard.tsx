@@ -90,12 +90,12 @@ export function Dashboard({ onNavigate, live }: { onNavigate: (p: PageKey) => vo
         <section className="panel">
           <div className="panel-head">
             <span className="section-label">RESPONDER · CHAT</span>
-            <button className="link-btn" onClick={() => jumpToPipelineTab(onNavigate, 'chat')}>
+            <button className="link-btn" onClick={() => onNavigate('assistant')}>
               Open chat →
             </button>
           </div>
           <div className="chat-preview">
-            <div className="chat-preview-input" onClick={() => jumpToPipelineTab(onNavigate, 'chat')}>
+            <div className="chat-preview-input" onClick={() => onNavigate('assistant')}>
               <span>
                 <IconChat size={13} /> Message the Responder…
               </span>

@@ -43,6 +43,92 @@ def smtp_configured(s=None):
     return bool(s.smtp_host and s.smtp_user and s.smtp_password)
 
 
+def verify_smtp(host, port, user, password, timeout=12):
+    """One-click connector probe: real handshake + login, NO message sent.
+
+    Returns '' on success, 'auth' when the server rejected the credentials,
+    or 'connect: <reason>' when the server could not be reached (wrong host /
+    datacenter, network).  Never raises."""
+    for context in _ssl_contexts():
+        try:
+            if port == 465:  # implicit SSL
+                server = smtplib.SMTP_SSL(host, port, timeout=timeout, context=context)
+            else:  # STARTTLS (587 and friends)
+                server = smtplib.SMTP(host, port, timeout=timeout)
+                server.ehlo()
+                server.starttls(context=context)
+                server.ehlo()
+            try:
+                server.login(user, password)
+                return ''
+            except smtplib.SMTPAuthenticationError:
+                return 'auth'
+            finally:
+                try:
+                    server.quit()
+                except Exception:
+                    pass
+        except ssl.SSLCertVerificationError:
+            continue  # next verification strategy
+        except Exception as exc:  # unreachable host / timeout / wrong DC
+            return f'connect: {exc.__class__.__name__}'
+    return 'connect: tls'
+
+
+# Zoho datacenters in probe order — the connector figures out the account's
+# home so the operator never has to know it.
+ZOHO_SMTP_HOSTS = [('smtp.zoho.in', 587), ('smtp.zoho.com', 587), ('smtp.zoho.eu', 587)]
+GMAIL_SMTP_HOST = ('smtp.gmail.com', 587)
+
+
+def connect_mailbox(provider, user, password, host='', port=587):
+    """Shared one-click connect used by the Settings endpoint AND the chat
+    onboarding wizard.  Probes the provider's servers with verify_smtp and
+    saves the first that authenticates as the live SMTP setup.
+
+    Returns the response dict: {ok, host?, port?, provider?, message}."""
+    if not user or not password:
+        return {'ok': False,
+                'message': 'Enter the mailbox address and its password / app password.'}
+    if provider == 'zoho':
+        hosts = ZOHO_SMTP_HOSTS
+    elif provider == 'gmail':
+        hosts = [GMAIL_SMTP_HOST]
+    else:  # custom — caller-supplied host/port
+        if not host:
+            return {'ok': False, 'message': 'Custom provider needs a host.'}
+        hosts = [(host, port or 587)]
+
+    tried, auth_failures = [], 0
+    for host, port in hosts:
+        tried.append(host)
+        result = verify_smtp(host, port, user, password)
+        if result == '':
+            settings = AppSettings.load()
+            settings.smtp_host = host
+            settings.smtp_port = port
+            settings.smtp_user = user
+            settings.smtp_password = password
+            if not settings.from_email:
+                settings.from_email = user
+            settings.save(update_fields=['smtp_host', 'smtp_port', 'smtp_user',
+                                         'smtp_password', 'from_email', 'updated_at'])
+            return {'ok': True, 'host': host, 'port': port, 'provider': provider,
+                    'message': f'Connected — login verified against {host}.'}
+        if result == 'auth':
+            auth_failures += 1
+
+    if auth_failures:
+        hint = ('Zoho rejected the credentials. With 2FA on you must use an App Password '
+                '(accounts.zoho.com → Security → App Passwords), and IMAP/SMTP access must be '
+                'enabled in Zoho Mail settings.') if provider == 'zoho' else (
+               'The server rejected the credentials — check the address and password '
+               '(Gmail needs an App Password, not your login).')
+        return {'ok': False, 'message': hint}
+    return {'ok': False,
+            'message': f'Could not reach {", ".join(tried)} — check the network or host.'}
+
+
 def _ssl_contexts():
     """Verification strategies, tried in order."""
     yield ssl.create_default_context()
@@ -85,7 +171,7 @@ def send_email_message(subject, body, recipients, s=None, html=None):
     """Send one email via the configured SMTP — plain text, plus an optional
     branded HTML part (logo header) with the logo attached inline. True on success."""
     s = s or AppSettings.load()
-    from_email = s.from_email or s.smtp_user or 'outreach@agentic-ai.local'
+    from_email = s.from_email or s.smtp_user or 'outreach@shailog.com'
     sender_name = s.company_name or 'Agentic AI'
     msg = EmailMessage()
     msg['From'] = formataddr((sender_name, from_email))
@@ -234,7 +320,7 @@ def _log_console_delivery(draft, from_email):
 def send_draft(draft):
     """Send one EmailDraft. Updates status/sent_via/sent_at/error. Returns the draft."""
     s = AppSettings.load()
-    from_email = s.from_email or s.smtp_user or 'outreach@agentic-ai.local'
+    from_email = s.from_email or s.smtp_user or 'outreach@shailog.com'
 
     if not draft.to_email:
         # Fallback target email derived from lead company domain or name

@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react';
-import { DEFAULT_SETTINGS, MOCK_TEMPLATES, TARGET_COUNTRY_OPTIONS } from '../lib/mockData';
+import { DEFAULT_SETTINGS, MOCK_PROFILES, MOCK_TEMPLATES, TARGET_COUNTRY_OPTIONS } from '../lib/mockData';
 import {
+  activateProfile,
   changePassword,
+  connectSmtp,
+  createProfile,
   createTemplate,
   deleteTemplate,
+  getProfiles,
   getSettings,
   getTemplates,
   putSettings,
@@ -12,7 +16,7 @@ import {
 } from '../lib/api';
 import { loadJson, saveJson } from '../lib/store';
 import { Field, PageHeader, SectionLabel, Spinner, Toggle } from '../components/ui';
-import type { EmailTemplate, RunFrequency, SettingsState } from '../lib/types';
+import type { EmailTemplate, IcpMode, RunFrequency, SearchProfile, SettingsState } from '../lib/types';
 
 const STORE_KEY = 'settings';
 
@@ -27,6 +31,7 @@ function loadSettings(): SettingsState {
       countries: stored.targeting?.countries ?? DEFAULT_SETTINGS.targeting.countries,
       industries: stored.targeting?.industries ?? DEFAULT_SETTINGS.targeting.industries,
       cities: stored.targeting?.cities ?? DEFAULT_SETTINGS.targeting.cities,
+      icpMode: stored.targeting?.icpMode ?? DEFAULT_SETTINGS.targeting.icpMode,
     },
   };
 }
@@ -37,6 +42,23 @@ const RUN_OPTIONS: { value: RunFrequency; label: string; hint: string }[] = [
   { value: '6h', label: 'Every 6 hours', hint: 'Low-volume outbound' },
   { value: 'daily', label: 'Daily', hint: 'One full run per day' },
 ];
+
+/** SMTP provider presets — the right Zoho host depends on the account's
+ *  datacenter, so each region is its own option. */
+const SMTP_PROVIDERS: { value: string; label: string; host: string; port: string }[] = [
+  { value: 'zoho-in', label: 'Zoho Mail — India DC (smtp.zoho.in)', host: 'smtp.zoho.in', port: '587' },
+  { value: 'zoho-com', label: 'Zoho Mail — US DC (smtp.zoho.com)', host: 'smtp.zoho.com', port: '587' },
+  { value: 'zoho-eu', label: 'Zoho Mail — EU DC (smtp.zoho.eu)', host: 'smtp.zoho.eu', port: '587' },
+  { value: 'gmail', label: 'Gmail (smtp.gmail.com)', host: 'smtp.gmail.com', port: '587' },
+  { value: 'custom', label: 'Custom / other provider', host: '', port: '' },
+];
+
+/** Which provider option matches the configured host ('' → Zoho India default). */
+function smtpProvider(host: string): string {
+  const known = SMTP_PROVIDERS.find((p) => p.host && p.host === host);
+  if (known) return known.value;
+  return host ? 'custom' : 'zoho-in';
+}
 
 /**
  * SETTINGS — the sections from the notes, extended for real sending:
@@ -61,6 +83,15 @@ export function SettingsPage() {
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [editing, setEditing] = useState<Partial<EmailTemplate> | null>(null);
   const [tplMsg, setTplMsg] = useState('');
+  // search profiles — one-click targeting presets
+  const [profiles, setProfiles] = useState<SearchProfile[]>([]);
+  const [profileMsg, setProfileMsg] = useState('');
+  const [activatingId, setActivatingId] = useState<number | null>(null);
+  const [newProfile, setNewProfile] = useState<Partial<SearchProfile> | null>(null);
+  // one-click mailbox connect (Zoho / Gmail / custom)
+  const [connect, setConnect] = useState({ provider: 'zoho', user: '', password: '', host: '', port: '587' });
+  const [connectBusy, setConnectBusy] = useState(false);
+  const [connectMsg, setConnectMsg] = useState('');
 
   useEffect(() => {
     getSettings().then((remote) => {
@@ -80,12 +111,14 @@ export function SettingsPage() {
             countries: remote.targeting?.countries ?? [],
             industries: remote.targeting?.industries ?? [],
             cities: remote.targeting?.cities ?? [],
+            icpMode: remote.targeting?.icpMode ?? 'buyer',
           },
         });
       }
       setLoading(false);
     });
     getTemplates().then((list) => setTemplates(list ?? MOCK_TEMPLATES));
+    getProfiles().then((list) => setProfiles(list ?? MOCK_PROFILES));
   }, []);
 
   const refreshTemplates = async () => {
@@ -198,6 +231,99 @@ export function SettingsPage() {
   const removeService = (name: string) =>
     setSettings((s) => ({ ...s, company: { ...s.company, services: s.company.services.filter((x) => x !== name) } }));
 
+  const onActivateProfile = async (id: number) => {
+    setActivatingId(id);
+    setProfileMsg('');
+    const profile = profiles.find((p) => p.id === id);
+    const res = await activateProfile(id);
+    setActivatingId(null);
+    if (res) {
+      // live switch — mirror the backend's refreshed settings into the form
+      setProfiles((list) => list.map((p) => ({ ...p, isActive: p.id === id })));
+      const t = res.settings.targeting;
+      setSettings((s) => ({
+        ...s,
+        targeting: {
+          countries: t?.countries ?? [],
+          industries: t?.industries ?? [],
+          cities: t?.cities ?? [],
+          icpMode: t?.icpMode ?? 'buyer',
+        },
+      }));
+      setProfileMsg(`“${profile?.name ?? 'Profile'}” activated — the next pipeline cycle already uses it.`);
+    } else if (!live && profile) {
+      // offline demo: flip the local mock so the one-click still shows
+      setProfiles((list) => list.map((p) => ({ ...p, isActive: p.id === id })));
+      setSettings((s) => ({
+        ...s,
+        targeting: {
+          countries: profile.countries,
+          industries: profile.industries,
+          cities: profile.cities,
+          icpMode: profile.icpMode,
+        },
+      }));
+      setProfileMsg('Backend not running — switched locally only. Start Django to persist it.');
+    } else {
+      setProfileMsg('Activation failed — is the backend running?');
+    }
+  };
+
+  const saveNewProfile = async () => {
+    if (!newProfile || !newProfile.name?.trim()) {
+      setProfileMsg('Give the profile a name first.');
+      return;
+    }
+    const payload = {
+      name: newProfile.name.trim(),
+      description: newProfile.description ?? '',
+      countries: newProfile.countries ?? [],
+      industries: newProfile.industries ?? [],
+      cities: newProfile.cities ?? [],
+      icpMode: (newProfile.icpMode as IcpMode) ?? 'buyer',
+    };
+    const saved = await createProfile(payload);
+    if (!saved) {
+      setProfileMsg('Save failed — the backend rejected the profile.');
+      return;
+    }
+    setProfiles((list) => [...list, saved]);
+    setNewProfile(null);
+    setProfileMsg(`Profile “${saved.name}” saved — activate it to switch targeting.`);
+  };
+
+  const onConnectMailbox = async () => {
+    if (!connect.user.trim() || !connect.password) {
+      setConnectMsg('Enter the mailbox address and its password / app password.');
+      return;
+    }
+    setConnectBusy(true);
+    setConnectMsg('Verifying login against the mail servers… (a few seconds)');
+    const res = await connectSmtp({
+      provider: connect.provider,
+      user: connect.user.trim(),
+      password: connect.password,
+      host: connect.provider === 'custom' ? connect.host.trim() : undefined,
+      port: connect.provider === 'custom' ? connect.port : undefined,
+    });
+    setConnectBusy(false);
+    if (!res) {
+      setConnectMsg('Backend not reachable — start Django and try again.');
+      return;
+    }
+    if (res.ok) {
+      setConnectMsg(`✓ ${res.message}`);
+      setConnect((c) => ({ ...c, password: '' }));
+      // mirror what the backend just saved (host/port/user/from, masked secrets)
+      const remote = await getSettings();
+      if (remote) {
+        setSettings((s) => ({ ...s, smtp: { ...remote.smtp, password: '' } }));
+      }
+    } else {
+      setConnectMsg(res.message);
+    }
+  };
+
   const sendReportNow = async () => {
     setSendingReport(true);
     setReportMsg('');
@@ -271,9 +397,164 @@ export function SettingsPage() {
         </Field>
       </section>
 
+      {/* 1.4 — SEARCH PROFILES (one-click targeting presets) */}
+      <section className="panel settings-panel">
+        <SectionLabel>Search Profiles</SectionLabel>
+        <small className="inline-msg">
+          Saved targeting presets — one click on <strong>Activate</strong> switches the whole
+          lead-discovery job (countries, industries, buyer/agency mode). The active profile is
+          what the next pipeline cycle runs; the Lead Targeting fields below always mirror it.
+        </small>
+        {profiles.map((p) => (
+          <div className="tpl-row" key={p.id}>
+            <div>
+              <strong>
+                {p.name}
+                {p.isActive && (
+                  <span className="tag" style={{ marginLeft: 8 }}>active</span>
+                )}
+                <span className="tag" style={{ marginLeft: 8 }}>
+                  {p.icpMode === 'agency' ? 'agency partners' : 'buyers'}
+                </span>
+              </strong>
+              <small>{p.description}</small>
+              <small className="mono">
+                {[
+                  p.countries.length ? `${p.countries.length} countr${p.countries.length === 1 ? 'y' : 'ies'}` : 'worldwide',
+                  p.cities.length ? `${p.cities.length} cit${p.cities.length === 1 ? 'y' : 'ies'}` : '',
+                  p.industries.length ? `${p.industries.length} industries` : 'auto ICP',
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+                {p.industries.length > 0 && ` — ${p.industries.slice(0, 3).join(', ')}${p.industries.length > 3 ? ', …' : ''}`}
+              </small>
+            </div>
+            <div className="tpl-actions">
+              {p.isActive ? (
+                <button className="btn btn-ghost" disabled>
+                  Running ✓
+                </button>
+              ) : (
+                <button
+                  className="btn btn-primary"
+                  onClick={() => onActivateProfile(p.id)}
+                  disabled={activatingId === p.id}
+                >
+                  {activatingId === p.id ? 'Switching…' : 'Activate'}
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+        {profiles.length === 0 && (
+          <small className="inline-msg">No profiles yet — create one below or run migrations to seed the defaults.</small>
+        )}
+        <div className="tpl-toolbar">
+          <button
+            className="btn btn-ghost"
+            onClick={() =>
+              setNewProfile({ name: '', description: '', countries: [], industries: [], cities: [], icpMode: 'buyer' })
+            }
+          >
+            + New profile
+          </button>
+          {profileMsg && <small className="inline-msg">{profileMsg}</small>}
+        </div>
+
+        {newProfile && (
+          <div className="tpl-editor">
+            <div className="settings-grid">
+              <Field label="Profile name">
+                <input
+                  value={newProfile.name ?? ''}
+                  placeholder="e.g. UK Agencies Q4"
+                  onChange={(e) => setNewProfile((p) => ({ ...p!, name: e.target.value }))}
+                />
+              </Field>
+              <Field label="Who to target">
+                <select
+                  value={newProfile.icpMode ?? 'buyer'}
+                  onChange={(e) => setNewProfile((p) => ({ ...p!, icpMode: e.target.value as IcpMode }))}
+                >
+                  <option value="buyer">Buyers of our services (competitor filter on)</option>
+                  <option value="agency">Agency partners — agencies ARE the leads</option>
+                </select>
+              </Field>
+            </div>
+            <Field label="Description">
+              <input
+                value={newProfile.description ?? ''}
+                placeholder="What this targeting job is for…"
+                onChange={(e) => setNewProfile((p) => ({ ...p!, description: e.target.value }))}
+              />
+            </Field>
+            <div className="settings-grid">
+              <Field label="Countries (comma-separated)" hint="Leave empty for the worldwide sweep.">
+                <input
+                  className="mono"
+                  placeholder="United States, United Kingdom, Germany"
+                  value={(newProfile.countries ?? []).join(', ')}
+                  onChange={(e) =>
+                    setNewProfile((p) => ({
+                      ...p!,
+                      countries: e.target.value.split(',').map((c) => c.trim()).filter(Boolean),
+                    }))
+                  }
+                />
+              </Field>
+              <Field
+                label="Industries (comma-separated)"
+                hint="Empty = auto ICP list for the chosen mode."
+              >
+                <input
+                  className="mono"
+                  placeholder="boutique digital agency, web development studio…"
+                  value={(newProfile.industries ?? []).join(', ')}
+                  onChange={(e) =>
+                    setNewProfile((p) => ({
+                      ...p!,
+                      industries: e.target.value.split(',').map((i) => i.trim()).filter(Boolean),
+                    }))
+                  }
+                />
+              </Field>
+            </div>
+            <div className="tpl-toolbar">
+              <button className="btn btn-primary" onClick={saveNewProfile}>
+                Save profile
+              </button>
+              <button className="btn btn-ghost" onClick={() => setNewProfile(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+
       {/* 1.5 — LEAD TARGETING (cities/districts + countries + buyer industries) */}
       <section className="panel settings-panel">
         <SectionLabel>Lead Targeting</SectionLabel>
+        <Field
+          label="Who counts as a lead"
+          hint={
+            settings.targeting.icpMode === 'agency'
+              ? 'Agency-partner mode: boutique agencies / software shops are the targets — agency search terms are allowed and the competitor filter is off. This is what the Shailog Tech profile activates.'
+              : 'Buyer mode: businesses that BUY your services; peer agencies are filtered out as competitors.'
+          }
+        >
+          <select
+            value={settings.targeting.icpMode}
+            onChange={(e) =>
+              setSettings((s) => ({
+                ...s,
+                targeting: { ...s.targeting, icpMode: e.target.value as IcpMode },
+              }))
+            }
+          >
+            <option value="buyer">Buyers of our services (competitor filter on)</option>
+            <option value="agency">Agency partners — agencies ARE the leads</option>
+          </select>
+        </Field>
         <Field
           label="Target cities / districts"
           hint={
@@ -329,11 +610,15 @@ export function SettingsPage() {
           </small>
         )}
         <Field
-          label="Target industries (buyers only)"
+          label={settings.targeting.icpMode === 'agency' ? 'Target industries (agencies welcome)' : 'Target industries (buyers only)'}
           hint={
-            settings.targeting.industries.length === 0
-              ? 'Empty = auto ICP targeting: the agent searches businesses that BUY your services (clinics, hotels, gyms…) and filters out competitor agencies.'
-              : 'Your buyer list is used verbatim — agency/peer terms are still dropped automatically so competitors never sneak back in.'
+            settings.targeting.icpMode === 'agency'
+              ? settings.targeting.industries.length === 0
+                ? 'Empty = the built-in agency list (boutique digital agency, product studio, software dev agency…).'
+                : 'Your list is used verbatim — agency terms are the point in this mode, nothing is dropped.'
+              : settings.targeting.industries.length === 0
+                ? 'Empty = auto ICP targeting: the agent searches businesses that BUY your services (clinics, hotels, gyms…) and filters out competitor agencies.'
+                : 'Your buyer list is used verbatim — agency/peer terms are still dropped automatically so competitors never sneak back in.'
           }
         >
           <IndustryTags
@@ -418,8 +703,90 @@ export function SettingsPage() {
         <SectionLabel>Email Delivery (SMTP)</SectionLabel>
         <small className="inline-msg">
           Where approved cold emails are sent from. Without SMTP, approved emails are printed to the
-          Django server console instead. Gmail: host smtp.gmail.com, port 587, app password.
+          Django server console instead.
         </small>
+
+        {/* one-click connector — mailbox + password, the server figures out the rest */}
+        <Field
+          label="Quick connect"
+          hint="Zoho tries all three datacenters automatically — you never need to know which one your account is on. 2FA accounts need an App Password (accounts.zoho.com → Security → App Passwords)."
+        >
+          <div className="settings-grid three">
+            <select
+              value={connect.provider}
+              onChange={(e) => setConnect((c) => ({ ...c, provider: e.target.value }))}
+            >
+              <option value="zoho">Zoho Mail</option>
+              <option value="gmail">Gmail</option>
+              <option value="custom">Custom host…</option>
+            </select>
+            <input
+              className="mono"
+              placeholder={connect.provider === 'gmail' ? 'you@gmail.com' : 'hello@shailog.com'}
+              value={connect.user}
+              onChange={(e) => setConnect((c) => ({ ...c, user: e.target.value }))}
+            />
+            <div className="input-with-action">
+              <input
+                type="password"
+                className="mono"
+                placeholder="password / app password"
+                value={connect.password}
+                onChange={(e) => setConnect((c) => ({ ...c, password: e.target.value }))}
+                onKeyDown={(e) => e.key === 'Enter' && onConnectMailbox()}
+              />
+              <button className="btn btn-primary" onClick={onConnectMailbox} disabled={connectBusy}>
+                {connectBusy ? 'Connecting…' : 'Connect'}
+              </button>
+            </div>
+          </div>
+          {connect.provider === 'custom' && (
+            <div className="settings-grid">
+              <input
+                className="mono"
+                placeholder="smtp.yourprovider.com"
+                value={connect.host}
+                onChange={(e) => setConnect((c) => ({ ...c, host: e.target.value }))}
+              />
+              <input
+                className="mono"
+                placeholder="587"
+                value={connect.port}
+                onChange={(e) => setConnect((c) => ({ ...c, port: e.target.value }))}
+              />
+            </div>
+          )}
+          {connectMsg && <small className="inline-msg">{connectMsg}</small>}
+        </Field>
+
+        <Field
+          label="Provider"
+          hint={
+            settings.smtp.host.startsWith('smtp.zoho')
+              ? 'Zoho: username is the FULL mailbox address (e.g. hello@shailog.com). With 2FA on, use an App Password (accounts.zoho.com → Security → App Passwords) — and enable IMAP/SMTP access in Zoho Mail Settings. From address must be this mailbox or a Zoho alias. Auth failing? Your account may live on another Zoho datacenter — try the other region.'
+              : 'Pick a provider to auto-fill the server, or Custom to type your own host/port.'
+          }
+        >
+          <select
+            value={smtpProvider(settings.smtp.host)}
+            onChange={(e) => {
+              const p = SMTP_PROVIDERS.find((x) => x.value === e.target.value);
+              if (!p) return;
+              setSettings((s) => ({
+                ...s,
+                smtp: p.host
+                  ? { ...s.smtp, host: p.host, port: p.port }
+                  : { ...s.smtp }, // custom — keep whatever is typed
+              }));
+            }}
+          >
+            {SMTP_PROVIDERS.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </Field>
         <div className="settings-grid">
           <Field label="SMTP Host">
             <input

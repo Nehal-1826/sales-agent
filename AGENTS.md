@@ -65,6 +65,15 @@ Docker (VPS): `docker compose up -d --build`; HTTPS variant adds
   `{{company}}`-style placeholders in `pipeline.TEMPLATE_VARS` are the no-AI
   fallback. Outbound emails are branded HTML (logo header, inline `cid:` image)
   via `mailer.branded_email_html()`.
+- Search profiles: `SearchProfile` rows are saved lead-targeting presets
+  (countries/industries/cities + `icp_mode`); `/api/profiles/<id>/activate/`
+  is the one-click switch that copies the preset into the `AppSettings`
+  singleton — the pipeline only ever reads `AppSettings`, so switching takes
+  effect next cycle, no restart. `icp_mode='agency'` flips `core/icp.py`:
+  agency search terms are allowed and peer-agency leads are NOT rejected
+  (partnership targeting — the seeded "Shailog Tech — Agency Partners"
+  profile hunts boutique agencies in US/UK/DE; "Backup — Buyer Targeting"
+  preserves the previous job).
 - Auth: DRF token auth (`Authorization: Token …`). Only `/api/health/` and
   `/api/auth/*` are open. The frontend has a branded login page — no
   auto-login. Product installs create the owner at first boot via

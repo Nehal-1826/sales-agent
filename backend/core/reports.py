@@ -116,7 +116,7 @@ def send_daily_report(day=None):
         return 'skipped', subject
 
     s = AppSettings.load()
-    from_email = s.from_email or s.smtp_user or 'reports@agentic-ai.local'
+    from_email = s.from_email or s.smtp_user or 'reports@shailog.com'
 
     if smtp_configured(s):
         send_email_message(

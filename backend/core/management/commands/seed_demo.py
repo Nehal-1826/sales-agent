@@ -139,9 +139,12 @@ class Command(BaseCommand):
         AppSettings.objects.get_or_create(pk=1, defaults={
             'company_name': 'Shailog Technologies',
             'company_website': 'https://shailog.com',
-            'company_description': 'SaaS development studio building autonomous, AI-assisted '
-                                   'marketing & sales products.',
-            'services': ['Lead generation', 'Outbound copywriting', 'Sales automation', 'Pipeline consulting'],
+            'company_description': 'Custom software engineering team building SaaS platforms, web '
+                                   'applications and React Native mobile apps for founders — MVPs '
+                                   'shipped in 8–14 weeks with fixed quotes, full IP handover and '
+                                   'post-launch support.',
+            'services': ['Custom SaaS & web app development', 'React Native mobile apps',
+                         'Web design', 'Rapid deployment & support'],
             'ai_provider': 'Google AI',
             'runs_enabled': True,
             'run_frequency': '1h',

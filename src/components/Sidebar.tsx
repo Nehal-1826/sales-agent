@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { IconDashboard, IconLoop, IconSettings } from './icons';
+import { IconBot, IconDashboard, IconLoop, IconSettings } from './icons';
 import { getCurrentUser } from '../lib/api';
 import { StatusDot } from './ui';
 import type { PageKey } from '../lib/types';
 
 const NAV: { key: PageKey; label: string; icon: (p: { size?: number }) => JSX.Element }[] = [
   { key: 'dashboard', label: 'Dashboard', icon: IconDashboard },
+  { key: 'assistant', label: 'Assistant', icon: IconBot },
   { key: 'pipeline', label: 'Pipeline', icon: IconLoop },
   { key: 'settings', label: 'Settings', icon: IconSettings },
 ];
@@ -38,7 +39,7 @@ export function Sidebar({
       </div>
 
       <nav className="side-nav" aria-label="Main">
-        {NAV.map(({ key, label, icon: Icon }) => (
+        {NAV.map(({ key, label, icon: Icon }, i) => (
           <button
             key={key}
             className={`nav-item${page === key ? ' active' : ''}`}
@@ -48,6 +49,9 @@ export function Sidebar({
             }}
             aria-current={page === key ? 'page' : undefined}
           >
+            <span className="nav-num" aria-hidden>
+              {String(i + 1).padStart(2, '0')}
+            </span>
             <Icon size={17} />
             <span>{label}</span>
           </button>

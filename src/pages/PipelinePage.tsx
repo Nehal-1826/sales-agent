@@ -1,10 +1,10 @@
 import { useState } from 'react';
+import { OutreachQueue } from '../components/OutreachQueue';
 import { PipelineFlow } from '../components/PipelineFlow';
 import { StatusStrip } from '../components/StatusStrip';
 import { AgentsPage } from './AgentsPage';
 import { CrmPage } from './CrmPage';
 import { LeadsPage } from './LeadsPage';
-import { ChatPage } from './ChatPage';
 import type { PipelineTab } from '../lib/types';
 
 const TABS: { key: PipelineTab; label: string }[] = [
@@ -12,7 +12,6 @@ const TABS: { key: PipelineTab; label: string }[] = [
   { key: 'agents', label: 'Agents' },
   { key: 'leads', label: 'Leads & Reports' },
   { key: 'crm', label: 'CRM' },
-  { key: 'chat', label: 'Chat' },
 ];
 
 const TAB_KEYS = new Set<string>(TABS.map((t) => t.key));
@@ -30,6 +29,7 @@ function initialTab(): PipelineTab {
  */
 export function PipelinePage({ live }: { live: boolean }) {
   const [tab, setTab] = useState<PipelineTab>(initialTab);
+  const [runToken, setRunToken] = useState(0);
 
   return (
     <div className="page">
@@ -48,14 +48,15 @@ export function PipelinePage({ live }: { live: boolean }) {
 
       {tab === 'flow' && (
         <>
-          <PipelineFlow live={live} />
+          {/* approval inbox first — nothing scrolls past the drafts that need you */}
+          <OutreachQueue refreshToken={runToken} />
+          <PipelineFlow live={live} onRunComplete={() => setRunToken((t) => t + 1)} />
           <StatusStrip live={live} />
         </>
       )}
       {tab === 'agents' && <AgentsPage />}
       {tab === 'leads' && <LeadsPage />}
       {tab === 'crm' && <CrmPage />}
-      {tab === 'chat' && <ChatPage />}
     </div>
   );
 }

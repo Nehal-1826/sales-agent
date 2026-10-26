@@ -2899,6 +2899,21 @@ function DnsPanel({
                 Warmup cannot start until SPF, DKIM and DMARC are published.
                 Refresh after publishing.
               </p>
+              {/* Escape hatch (owner call, 2026-10-26): mailboxes created
+                  before this gate shipped (e.g. cto@shailog.com on this very
+                  domain) run warmup with no DNS records required — onboarding
+                  must not be stricter than the product itself. */}
+              <button
+                type="button"
+                onClick={onContinue}
+                className="onb-side__switch"
+              >
+                Continue anyway — add records later
+              </button>
+              <p className="onb-dns__locked-hint">
+                Until records are published, inbox providers may park warmup
+                mail in spam. Add them anytime under Warmup → DNS & Deliverability.
+              </p>
             </div>
           ) : (
             <button

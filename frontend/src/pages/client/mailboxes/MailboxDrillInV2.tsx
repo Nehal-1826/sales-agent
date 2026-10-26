@@ -248,6 +248,8 @@ function providerLabel(p: MailboxProvider): string {
       return 'Outlook';
     case 'yahoo':
       return 'Yahoo';
+    case 'zoho':
+      return 'Zoho Mail';
     case 'smtp':
       return 'SMTP';
   }
@@ -261,6 +263,8 @@ function providerLetter(p: MailboxProvider): string {
       return 'O';
     case 'yahoo':
       return 'Y';
+    case 'zoho':
+      return 'Z';
     case 'smtp':
       return 'S';
   }

@@ -6,7 +6,7 @@
  * any new fields must land here first.
  */
 
-export type MailboxProvider = 'gmail' | 'outlook' | 'yahoo' | 'smtp';
+export type MailboxProvider = 'gmail' | 'outlook' | 'yahoo' | 'zoho' | 'smtp';
 
 export type MailboxStatus = 'pending' | 'active' | 'paused' | 'completed';
 

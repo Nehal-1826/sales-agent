@@ -85,6 +85,7 @@ const PROVIDER_LABEL: Record<MailboxProvider, string> = {
   gmail: 'Gmail',
   outlook: 'Outlook',
   yahoo: 'Yahoo',
+  zoho: 'Zoho Mail',
   smtp: 'Generic SMTP',
 };
 
@@ -397,6 +398,7 @@ export function useProPlusSignalMapData(): UseProPlusSignalMapDataResult {
       gmail: 'prov-gmail',
       outlook: 'prov-outlook',
       yahoo: 'prov-yahoo',
+      zoho: 'prov-zoho',
       smtp: 'prov-smtp',
     };
 

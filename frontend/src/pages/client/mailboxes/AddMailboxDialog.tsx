@@ -74,18 +74,22 @@ const PROVIDERS: Array<{
   { value: 'gmail', label: 'Gmail / Workspace', sub: 'App password — recommended', oauth: false },
   { value: 'outlook', label: 'Outlook / Microsoft 365', sub: 'App password via SMTP', oauth: false },
   { value: 'yahoo', label: 'Yahoo Mail', sub: 'App password via SMTP', oauth: false },
+  { value: 'zoho', label: 'Zoho Mail', sub: 'App password — region auto-detected', oauth: false },
   { value: 'smtp', label: 'Generic SMTP / IMAP', sub: 'Any provider', oauth: false },
 ];
 
 // SMTP/IMAP host defaults per app-password provider — prefilled so the user
 // doesn't have to hunt for the right hostnames. Mirrors the onboarding
-// wizard's Step3Credentials defaults.
+// wizard's Step3Credentials defaults. Zoho's default is the .com datacenter;
+// MX detection below rewrites it to the account's real region (.in/.eu/…)
+// because Zoho AUTH is datacenter-locked.
 const SMTP_DEFAULTS: Partial<
   Record<MailboxProvider, { smtp_host: string; smtp_port: number; imap_host: string; imap_port: number }>
 > = {
   gmail: { smtp_host: 'smtp.gmail.com', smtp_port: 587, imap_host: 'imap.gmail.com', imap_port: 993 },
   outlook: { smtp_host: 'smtp.office365.com', smtp_port: 587, imap_host: 'outlook.office365.com', imap_port: 993 },
   yahoo: { smtp_host: 'smtp.mail.yahoo.com', smtp_port: 587, imap_host: 'imap.mail.yahoo.com', imap_port: 993 },
+  zoho: { smtp_host: 'smtp.zoho.com', smtp_port: 587, imap_host: 'imap.zoho.com', imap_port: 993 },
 };
 
 const smtpSchema = z.object({
@@ -97,11 +101,16 @@ const smtpSchema = z.object({
     .pipe(z.number().int().min(1, 'Port is required').max(65535)),
   smtp_username: z.string().min(1, 'SMTP username is required'),
   smtp_password: z.string().min(1, 'SMTP password is required'),
-  imap_host: z.string().min(3, 'IMAP host is required'),
+  // IMAP is optional — outbound-only warmup is valid, and Zoho ships with
+  // IMAP disabled by default. Blank host = skip the inbound probe entirely.
+  imap_host: z
+    .union([z.string(), z.undefined()])
+    .transform((v) => (typeof v === 'string' ? v.trim() : ''))
+    .refine((v) => v === '' || v.length >= 3, 'IMAP host must be at least 3 characters'),
   imap_port: z
-    .union([z.number(), z.string()])
-    .transform((v) => Number(v))
-    .pipe(z.number().int().min(1, 'Port is required').max(65535)),
+    .union([z.number(), z.string(), z.undefined(), z.null()])
+    .transform((v) => (v === '' || v === null || v === undefined ? 993 : Number(v)))
+    .pipe(z.number().int().min(1).max(65535)),
 });
 
 type SmtpForm = z.infer<typeof smtpSchema>;
@@ -228,9 +237,9 @@ export function AddMailboxDialog({ open, onOpenChange }: AddMailboxDialogProps) 
 
   useEffect(() => {
     // SMTP username defaults to the email address for every app-password
-    // provider (generic SMTP, Yahoo, Outlook).
+    // provider (generic SMTP, Yahoo, Outlook, Zoho).
     if (
-      (provider === 'smtp' || provider === 'yahoo' || provider === 'outlook' || provider === 'gmail') &&
+      (provider === 'smtp' || provider === 'yahoo' || provider === 'outlook' || provider === 'gmail' || provider === 'zoho') &&
       emailValue &&
       !form.getValues('smtp_username')
     ) {
@@ -256,6 +265,26 @@ export function AddMailboxDialog({ open, onOpenChange }: AddMailboxDialogProps) 
     form.setValue('imap_host', d.imap_host, { shouldValidate: false });
     form.setValue('imap_port', d.imap_port, { shouldValidate: false });
   }, [provider, form]);
+
+  // Main-form MX detection — same idea as the wizard's: once the email looks
+  // complete, ask the backend which provider/region the domain really is and
+  // correct the pre-filled hosts. Critical for Zoho, whose SMTP AUTH is
+  // datacenter-locked (a .in account cannot auth against smtp.zoho.com).
+  // Never overwrites fields the user has typed in.
+  const mainDetect = useDetectProvider(emailValue.includes('@') ? emailValue : null);
+  useEffect(() => {
+    const d = mainDetect.data;
+    if (!d || !d.smtp_host) return;
+    // Only trust the correction when MX confirms the provider the user picked
+    // (or they're on the generic tile with defaults still in place).
+    const known = provider === 'gmail' || provider === 'outlook' || provider === 'yahoo' || provider === 'zoho';
+    if (known && d.provider !== provider) return;
+    const touched = form.formState.touchedFields;
+    if (!touched.smtp_host) form.setValue('smtp_host', d.smtp_host, { shouldValidate: false });
+    if (d.smtp_port && !touched.smtp_port) form.setValue('smtp_port', d.smtp_port, { shouldValidate: false });
+    if (d.imap_host && !touched.imap_host) form.setValue('imap_host', d.imap_host, { shouldValidate: false });
+    if (d.imap_port && !touched.imap_port) form.setValue('imap_port', d.imap_port, { shouldValidate: false });
+  }, [mainDetect.data, provider, form]);
 
   const applyDetection = (d: ProviderDetection) => {
     const touched = wizForm.formState.touchedFields;
@@ -343,8 +372,8 @@ export function AddMailboxDialog({ open, onOpenChange }: AddMailboxDialogProps) 
         smtp_port: Number(values.smtp_port),
         smtp_username: values.smtp_username,
         smtp_password: values.smtp_password,
-        imap_host: values.imap_host,
-        imap_port: Number(values.imap_port),
+        imap_host: values.imap_host || null,
+        imap_port: values.imap_host ? Number(values.imap_port) : null,
       },
       {
         onSuccess: () => {
@@ -574,7 +603,7 @@ export function AddMailboxDialog({ open, onOpenChange }: AddMailboxDialogProps) 
                             (provider === 'gmail' ||
                               provider === 'yahoo' ||
                               provider === 'outlook' ||
-                              provider === 'smtp'
+                              provider === 'zoho'
                               ? provider
                               : 'smtp') as AppPasswordProvider
                           }
@@ -584,8 +613,8 @@ export function AddMailboxDialog({ open, onOpenChange }: AddMailboxDialogProps) 
                     <FormField
                       label="IMAP host"
                       htmlFor="imap-host"
-                      required
                       error={form.formState.errors.imap_host?.message}
+                      hint="Optional — leave blank for outbound-only warmup. Zoho ships with IMAP disabled; enable it in Zoho Mail Settings → IMAP Access if you want inbound warmup."
                     >
                       <Input
                         id="imap-host"
@@ -596,7 +625,6 @@ export function AddMailboxDialog({ open, onOpenChange }: AddMailboxDialogProps) 
                     <FormField
                       label="IMAP port"
                       htmlFor="imap-port"
-                      required
                       error={form.formState.errors.imap_port?.message}
                     >
                       <Input

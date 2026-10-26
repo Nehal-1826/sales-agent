@@ -41,6 +41,7 @@ const PROVIDER_COLOR: Record<MailboxProvider, string> = {
   gmail: 'text-accent3',
   outlook: 'text-accent2',
   yahoo: 'text-accent4',
+  zoho: 'text-accent2',
   smtp: 'text-text-dim',
 };
 
@@ -48,6 +49,7 @@ const PROVIDER_LABEL: Record<MailboxProvider, string> = {
   gmail: 'Gmail',
   outlook: 'Outlook',
   yahoo: 'Yahoo',
+  zoho: 'Zoho Mail',
   smtp: 'SMTP',
 };
 

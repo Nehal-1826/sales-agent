@@ -481,7 +481,10 @@ async def create_mailbox(
         user_id=user.id,
         workspace_id=user.workspace_id,
         email_address=payload.email_address.lower(),
-        provider=MailboxProvider(payload.provider),
+        # "zoho" is a wire alias for the smtp provider (DB enum has no zoho).
+        provider=MailboxProvider(
+            "smtp" if payload.provider == "zoho" else payload.provider
+        ),
         # New mailboxes start warming immediately: the workspace auto-routes to
         # the peer pool matching its plan (see auto_route_workspace_by_plan,
         # called after persist), so there's no admin-gated pending wait.
@@ -562,7 +565,7 @@ async def create_mailbox(
         target_id=mbx.id,
         payload={
             "mailbox_id": str(mbx.id),
-            "provider": payload.provider,
+            "provider": "smtp" if payload.provider == "zoho" else payload.provider,
             "email_address": mbx.email_address,
         },
     )

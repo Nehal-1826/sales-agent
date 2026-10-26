@@ -78,10 +78,16 @@ def _normalize_app_password(v):
 
 
 class MailboxCreateSmtp(BaseModel):
-    """Classic SMTP+IMAP credential flow (provider=smtp or yahoo)."""
+    """Classic SMTP+IMAP credential flow (provider=smtp, yahoo, or zoho).
+
+    "zoho" is accepted as an alias of "smtp" — older/mobile clients send the
+    raw provider tile name; Zoho mailboxes are stored as provider=smtp either
+    way (no zoho value exists in the DB enum). The alias is normalised here so
+    ``MailboxCreateSmtp(provider="zoho", ...)`` behaves identically to smtp.
+    """
 
     email_address: EmailStr
-    provider: Literal["smtp", "yahoo"]
+    provider: Literal["smtp", "yahoo", "zoho"]
     smtp_host: str = Field(min_length=1, max_length=255)
     smtp_port: int = Field(default=587, ge=1, le=65535)
     smtp_username: str = Field(min_length=1, max_length=255)

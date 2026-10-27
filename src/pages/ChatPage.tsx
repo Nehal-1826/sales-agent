@@ -98,7 +98,22 @@ export function ChatPage() {
     }
   };
 
+  /** ICP file upload — read as text and send through the chat as the answer. */
+  const onUploadIcp = (file: File) => {
+    if (file.size > 300_000) {
+      setMessages((m) => [
+        ...m,
+        { id: Date.now(), from: 'ai', text: 'That file is too large — keep it under 300 KB, or paste the important parts as a message.', time: now() },
+      ]);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => send(`📎 ${file.name}\n${String(reader.result ?? '')}`);
+    reader.readAsText(file);
+  };
+
   const inSetup = !!onboarding?.needed;
+  const icpStep = inSetup && onboarding?.stepKey === 'icp';
 
   return (
     <div className="page chat-page">
@@ -178,6 +193,21 @@ export function ChatPage() {
           ))}
         </div>
         <div className="chat-input-row">
+          {icpStep && (
+            <label className="btn btn-ghost" title="Upload your Ideal Client Profile (txt / md / csv)">
+              📎
+              <input
+                type="file"
+                accept=".txt,.md,.csv,.json"
+                hidden
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = '';
+                  if (file) onUploadIcp(file);
+                }}
+              />
+            </label>
+          )}
           <input
             value={input}
             placeholder={inSetup ? 'Type your answer — plain text is fine…' : 'Tell the system what to do — run a cycle, approve drafts, switch profiles…'}

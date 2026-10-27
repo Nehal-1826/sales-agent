@@ -92,6 +92,10 @@ def _ai_review(lead, audit, settings, our_services=''):
     excerpt = (audit.get('analysis') or {}).get('text_excerpt', '')
     if not excerpt or not llm_available():
         return True, ''
+    icp_line = ''
+    if getattr(settings, 'icp_notes', ''):
+        icp_line = (f'OUR IDEAL CLIENT PROFILE (weigh this heavily when deciding): '
+                    f'{settings.icp_notes[:800]}\n\n')
     if agency_mode(settings):
         # partnership targeting: agencies ARE the prospect — vetting only
         # rejects non-businesses (blogs, directories, huge corporations),
@@ -103,14 +107,12 @@ def _ai_review(lead, audit, settings, our_services=''):
             'never a rejection reason.')
     else:
         goal_rule = (
-            f'We sell {our_services or "business services"} and are looking for BUYERS.')
-        if our_services:
-            goal_rule += (
-                f' A company that itself SELLS {our_services} is a competitor / peer '
-                f'provider to us, NOT a prospective buyer')
+            'We sell CUSTOM SAAS ENGINEERING: complete SaaS platforms, marketplaces, '
+            'internal tools and mobile apps built for businesses.')
     prompt = (
         f'You are vetting a sales-prospect lead discovered while searching for a '
-        f'"{lead.industry or "business"}" (website: {lead.website}). {goal_rule}\n\n'
+        f'"{lead.industry or "business"}" (website: {lead.website}). {goal_rule}\n'
+        f'{icp_line}'
         f'--- SITE TEXT ---\n{excerpt}\n--- END SITE TEXT ---\n\n'
         f'Answer in EXACTLY this format:\n'
         f'RELEVANT: yes|no\n'
@@ -170,7 +172,7 @@ def _fill_template(text, lead, settings, top_findings):
         'findings': bullets,
         'sender_name': settings.company_name or 'our team',
         'sender_website': settings.company_website or '',
-        'services': ', '.join(settings.services or []) or 'web design, SEO and growth',
+        'services': ', '.join(settings.services or []) or 'custom SaaS platform & mobile app engineering',
     }
     for var in TEMPLATE_VARS:
         text = text.replace('{{' + var + '}}', values[var])
@@ -190,7 +192,7 @@ def _draft_email(lead):
     cfg = _copywright_config()
     our_name = settings.company_name or 'the team'
     our_site = settings.company_website
-    services = ', '.join(settings.services or []) or 'web design, SEO and growth'
+    services = ', '.join(settings.services or []) or 'custom SaaS platform & mobile app engineering'
 
     top = lead.findings[:3]
     template = _default_template()
@@ -220,31 +222,38 @@ def _draft_email(lead):
             goal_and_rules = (
                 f'GOAL: win PROJECT PARTNERSHIP — the prospect is a boutique agency / software '
                 f'shop that could hand us builds (overflow work, white-label, outside their stack). '
-                f'This is a peer-to-peer pitch. NEVER criticize their website and NEVER mention '
-                f'audit findings or flaws.\n'
+                f'This is a peer-to-peer pitch.\n'
                 f'OUR SHIPPED WORK (use at most two, verbatim):\n{SHIPPED_WORK}\n'
                 f'OUR TERMS: MVPs in 8–14 weeks, fixed quotes and timelines, full IP handover — '
                 f'their client stays theirs. Offer a small paid pilot as proof.\n'
                 f'Rules: reference what they do; offer partnership + pilot; one clear ask '
-                f'(15-minute call, or invite a "send cases" reply); no pricing; no audit language.'
+                f'(15-minute call, or invite a "send cases" reply); no pricing.'
             )
-            audit_block = ''
         else:
+            # high-level buyer pitch — we build their product, never nitpick their site
             goal_and_rules = (
-                f'Rules: reference what they do plus 1-2 concrete findings; one clear ask '
-                f'(short call); no pricing; no fake urgency.'
-            )
-            audit_block = (
-                f'AUDIT FINDINGS: '
-                f'{json.dumps([{k: f[k] for k in ("area", "issue", "recommendation")} for f in top], indent=1)}\n'
+                f'GOAL: win a CUSTOM SAAS BUILD — the prospect is a business that could own '
+                f'its own software platform (SaaS product, marketplace, internal tool, client '
+                f'portal or mobile app) instead of renting generic tools. We are senior '
+                f'product engineers, NOT a website/SEO shop: NEVER mention website flaws, '
+                f'SEO, meta tags, performance or design critiques — talk products, not pages.\n'
+                f'OUR SHIPPED WORK (use at most two, verbatim):\n{SHIPPED_WORK}\n'
+                f'OUR TERMS: fixed quote and timeline, MVP live in 8–14 weeks, full IP '
+                f'handover — the client owns the code and the repo.\n'
+                f'Rules: open with something true about THEIR business (from what they do); '
+                f'pitch ONE concrete software product we could build for them (be specific '
+                f'to their industry); one clear ask (15-minute call to walk through a build '
+                f'plan); no pricing; no audit language; max 150 words.'
             )
         prompt = (
             f'Write a short cold outreach email (max 150 words).\n\n'
             f'PROSPECT: {lead.company} ({lead.industry or "unknown industry"}), website: '
             f'{lead.website or "NONE FOUND"}\n'
             f'{what_they_do}'
-            f'{audit_block}'
-            f'WE (sender): {our_name} — offering {services}. Website: {our_site or "n/a"}\n\n'
+            f'WE (sender): {our_name} — {services}. Website: {our_site or "n/a"}\n'
+            + (f'OUR IDEAL CLIENT (tailor the pitch to exactly this): '
+               f'{settings.icp_notes[:600]}\n' if getattr(settings, 'icp_notes', '') else '')
+            + f'\n'
             f'{template_block}'
             f'{goal_and_rules}\n'
             f'{"Avoid: " + negative if negative else ""}\n\n'
@@ -288,27 +297,36 @@ def _draft_email(lead):
                 f'Best,\n{our_name}\n{our_site}'
             ).strip()
         elif lead.has_website:
-            # built-in fallback — still personalized from the real audit findings
-            subject = f'Quick idea for {lead.company}'
-            bullets = '\n'.join(f'• {f["issue"]} → {f["recommendation"]}' for f in top) or \
-                '• a few on-page improvements worth making'
+            # built-in fallback — custom-SaaS pitch, personalized from their business
+            subject = f'A platform for {lead.company} — live in 8–14 weeks'
             body = (
                 f'Hi {lead.company} team,\n\n'
-                f'I was researching {lead.industry or "companies in your space"} and looked at '
-                f'{lead.website} — a couple of things stood out:\n\n'
-                f'{bullets}\n\n'
-                f'We help teams fix exactly this ({services}). '
-                f'Worth a 15-minute call next week to walk through the top items?\n\n'
+                f'I\'m {our_name} from Shailog — we build custom SaaS platforms, marketplaces '
+                f'and mobile apps for businesses. You bring the domain expertise'
+                f'{" in " + lead.industry if lead.industry else ""}, we own the engineering '
+                f'end-to-end.\n\n'
+                f'Recent things we\'ve shipped:\n{SHIPPED_WORK}\n\n'
+                f'How we work: fixed quote and timeline, MVP live in 8–14 weeks, full IP '
+                f'handover — you own the code and the repo.\n\n'
+                f'The ask: if there\'s a platform or internal tool you keep wishing existed — '
+                f'or an MVP you want in front of users this quarter — I\'ll put together a '
+                f'concrete build plan for {lead.company}. Worth a 15-minute call?\n\n'
                 f'Best,\n{our_name}\n{our_site}'
             ).strip()
         else:
-            subject = f'Getting {lead.company} online'
+            subject = f'The software {lead.company} deserves — built in 8–14 weeks'
             body = (
                 f'Hi {lead.company} team,\n\n'
-                f'I couldn\'t find a working website for {lead.company} — which usually means '
-                f'customers searching for you end up with competitors instead.\n\n'
-                f'We build fast, search-ready sites for {lead.industry or "businesses like yours"} '
-                f'({services}). Would a 15-minute call next week be useful?\n\n'
+                f'I\'m {our_name} from Shailog. We build custom SaaS platforms and mobile '
+                f'apps for {"businesses in " + lead.industry if lead.industry else "businesses"} '
+                f'— the booking system, client portal or ops platform that off-the-shelf tools '
+                f'never quite cover. You run the business, we run the engineering.\n\n'
+                f'Recent things we\'ve shipped:\n{SHIPPED_WORK}\n\n'
+                f'Fixed quote, fixed timeline, MVP live in 8–14 weeks — and you own the code '
+                f'outright.\n\n'
+                f'If digitizing {"how " + lead.company + " operates" if lead.company else "your operations"} '
+                f'is on your mind this year, I\'ll draft a concrete build plan. Worth a '
+                f'15-minute call?\n\n'
                 f'Best,\n{our_name}\n{our_site}'
             ).strip()
     return subject, body, used_llm
@@ -635,7 +653,9 @@ def run_pipeline(triggered_by='manual'):
     # potential first.  Leads without an email stay in the CRM for manual /
     # phone follow-up instead of getting a draft addressed to nobody.
     drafts_created = 0
-    candidates = [l for l in Lead.objects.filter(profiled=True) if l.findings]
+    # High-level prospects have polished sites with few/no audit findings —
+    # drafting keys off REACHABILITY (a real contact email), not site flaws.
+    candidates = list(Lead.objects.filter(profiled=True))
     candidates.sort(key=lambda l: (not bool(l.contact_email), -l.score))
     no_email = 0
     for lead in candidates:

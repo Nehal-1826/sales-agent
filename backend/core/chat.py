@@ -156,7 +156,7 @@ def _llm_reply(text, turn=0):
     prompt = (
         f'{crm_context}\n\n'
         f'Company: {settings.company_name or "the team"}\n'
-        f'Services: {", ".join(settings.services or []) or "web design, SEO and growth"}\n\n'
+        f'Services: {", ".join(settings.services or []) or "custom SaaS platform & mobile app engineering"}\n\n'
         f'{("RULES TO AVOID: " + negative + chr(10)) if negative else ""}'
         f'USER MESSAGE: {text}\n\n'
         f'Respond in the user\'s own language and style (see STYLE RULES).'

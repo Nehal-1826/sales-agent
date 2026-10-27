@@ -215,11 +215,22 @@ class AgencyDraftTests(TestCase):
         self.assertNotIn('meta description', body.lower())
         self.assertNotIn('finding', body.lower())
 
-    def test_buyer_mode_draft_keeps_audit_angle(self):
+    def test_buyer_mode_draft_is_saas_pitch_not_audit(self):
+        """Buyer outreach = custom-SaaS pitch. Website-builder / audit language
+        must never reach a high-level prospect."""
         self.settings_obj.icp_mode = 'buyer'
         self.settings_obj.save()
         subject, body, used_llm = _draft_email(self.lead)
-        self.assertIn('meta description', body)  # findings still used for buyers
+        # SaaS-builder positioning
+        self.assertTrue('SaaS' in body or 'platform' in body.lower())
+        self.assertIn('8–14 weeks', body)
+        self.assertIn('julex.shop', body)               # shipped work as proof
+        self.assertIn('IP', body)                        # ownership terms
+        # the audit/website-builder voice is gone
+        self.assertNotIn('meta description', body.lower())
+        self.assertNotIn('caught my eye', body.lower())
+        self.assertNotIn('finding', body.lower())
+        self.assertNotIn('seo', body.lower())
 
     def test_user_template_wins_over_builtins_in_agency_mode(self):
         self.settings_obj.icp_mode = 'agency'
@@ -231,3 +242,19 @@ class AgencyDraftTests(TestCase):
         subject, body, used_llm = _draft_email(self.lead)
         self.assertEqual(subject, 'Partnership with Viget')
         self.assertIn('overflow builds', body)
+
+
+    def test_draft_works_for_polished_lead_without_findings(self):
+        """High-level prospects: no audit findings, still gets a full draft."""
+        self.settings_obj.icp_mode = 'buyer'
+        self.settings_obj.save()
+        from core.models import Lead
+        clean = Lead.objects.create(
+            company='Fundly', industry='fintech startup', website='fundly.example',
+            has_website=True, contact_email='hi@fundly.example',
+            description='Series-A fintech building SMB lending tools.',
+            findings=[])
+        subject, body, used_llm = _draft_email(clean)
+        self.assertNotEqual(subject, '')
+        self.assertIn('SaaS', body)
+        self.assertIn('Fundly', body)

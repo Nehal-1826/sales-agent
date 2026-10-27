@@ -456,7 +456,9 @@ def chat(request):
         deleted, _ = ChatMessage.objects.filter(user=request.user).delete()
         return Response({'cleared': True, 'deleted': deleted})
     # first-login setup wizard rides on the chat while it is active — plain
-    # Q&A that configures the whole system, then hands over to the Responder
+    # Q&A that configures the whole system, then hands over to the Responder.
+    # State is PER USER (User.onboarding): every new client login gets the
+    # wizard; existing users were marked done in migration 0017.
     settings = AppSettings.load()
     from .onboarding import onboarding_reply, onboarding_status
     if request.method == 'POST':
@@ -464,28 +466,28 @@ def chat(request):
         if not text:
             return Response({'detail': 'text is required'}, status=400)
         user_msg = ChatMessage.objects.create(user=request.user, role='user', text=text)
-        if not onboarding_status(settings)['done']:
-            reply_text = onboarding_reply(text, settings)
+        if not onboarding_status(request.user, settings)['done']:
+            reply_text = onboarding_reply(text, request.user, settings)
         else:
             reply_text = responder_reply(text, turn=user_msg.id, username=request.user.username)
         ai_msg = ChatMessage.objects.create(user=request.user, role='ai', text=reply_text)
         return Response({
             'userMessage': ChatMessageSerializer(user_msg).data,
             'reply': ChatMessageSerializer(ai_msg).data,
-            'onboarding': onboarding_status(AppSettings.load()),
+            'onboarding': onboarding_status(request.user, AppSettings.load()),
         })
     messages = ChatMessage.objects.filter(user=request.user)
     return Response({
         'messages': ChatMessageSerializer(messages, many=True).data,
-        'onboarding': onboarding_status(settings),
+        'onboarding': onboarding_status(request.user, settings),
     })
 
 
 @api_view(['GET'])
 def onboarding(request):
-    """Setup-wizard state for the frontend (banner, redirect, progress)."""
+    """Setup-wizard state for THIS user (banner, redirect, progress)."""
     from .onboarding import onboarding_status
-    return Response(onboarding_status(AppSettings.load()))
+    return Response(onboarding_status(request.user, AppSettings.load()))
 
 
 # ------------------------------------------------------------------

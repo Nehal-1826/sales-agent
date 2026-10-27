@@ -237,7 +237,7 @@ def our_services_text(settings):
     competitor ('we build websites') from a buyer ('dental clinic')."""
     services = ', '.join(settings.services or [])
     if not services and vertical(settings) == 'web_services':
-        services = 'web design, SEO and online marketing'
+        services = 'custom SaaS platform & mobile app engineering'
     return services or 'our services'
 
 

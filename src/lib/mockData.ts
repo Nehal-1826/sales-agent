@@ -425,7 +425,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
     website: 'https://shailog.com',
     description:
       'Custom software engineering team building SaaS platforms, web applications and React Native mobile apps for founders — MVPs shipped in 8–14 weeks with fixed quotes, full IP handover and post-launch support.',
-    services: ['Custom SaaS & web app development', 'React Native mobile apps', 'Web design', 'Rapid deployment & support'],
+    services: ['Custom SaaS platform development', 'MVP & product engineering', 'Mobile apps (React Native)', 'API & integrations'],
   },
   aiKey: { provider: 'Google AI', apiKey: '' },
   smtp: { host: '', port: '587', user: '', password: '', from: '' },
@@ -478,23 +478,23 @@ export const MOCK_PROFILES: SearchProfile[] = [
 /* ------------------------------------------------------------------ */
 
 export const STARTER_TEMPLATE: Omit<EmailTemplate, 'id'> = {
-  name: 'Shailog - Agency Partnership',
-  subject: 'Project partnership — {{company}} × {{sender_name}}',
+  name: 'Shailog - Custom SaaS Pitch',
+  subject: 'A platform for {{company}} — live in 8–14 weeks',
   body:
     'Hi {{company}} team,\n\n' +
-    "I'm {{sender_name}} — we build SaaS platforms, web apps, and mobile apps, and we're " +
-    'looking to partner with agencies like yours on project work.\n\n' +
-    'Recent things we\'ve shipped:\n' +
-    '• julex.shop — full e-commerce build\n' +
+    "I'm {{sender_name}} from Shailog — we build custom SaaS platforms, marketplaces and " +
+    'mobile apps for businesses. You bring the domain expertise in {{industry}}, we own the ' +
+    'engineering end-to-end.\n\n' +
+    "Recent things we've shipped:\n" +
+    '• julex.shop — full e-commerce platform\n' +
     '• ijrnexus.com — academic journal publishing platform\n' +
-    '• sashainfinity.com — custom web platform\n' +
-    '• TaraLash Academy — beauty & education platform\n\n' +
-    'MVPs and full builds go live in 8–14 weeks, with fixed quotes, fixed timelines, and ' +
-    'full IP handover — your client stays yours.\n\n' +
-    'The ask: if you have a project coming up — overflow work, a build outside your stack, ' +
-    'or a client timeline you can\'t staff — we\'d love to take it on. Happy to start with ' +
-    'a small pilot so you can judge us on real work, not a deck.\n\n' +
-    'Worth a 15-minute call next week? Or reply "send cases" and I\'ll share the details.\n\n' +
+    '• sashainfinity.com — custom business platform\n' +
+    '• TaraLash Academy — course & academy platform\n\n' +
+    'How we work: fixed quote and timeline, MVP live in 8–14 weeks, full IP handover — ' +
+    'you own the code and the repo.\n\n' +
+    "The ask: if there's a platform or internal tool you keep wishing existed — or an MVP " +
+    "you want in front of users this quarter — I'll put together a concrete build plan for " +
+    '{{company}}. Worth a 15-minute call?\n\n' +
     'Best,\n{{sender_name}}\n{{sender_website}}',
   isDefault: true,
 };

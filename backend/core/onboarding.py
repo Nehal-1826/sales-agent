@@ -2,18 +2,17 @@
 
 The wizard lives in the Chat page: the bot asks, the operator answers in
 normal language, each answer is parsed and applied to the live settings
-immediately.  Progress is stored in AppSettings.onboarding
-({started, done, step, answers, skipped}) so the flow survives reloads and
-works with zero AI key (pure heuristics — reliability over cleverness).
+immediately.  Progress is stored PER USER (User.onboarding) so every new
+client login gets the wizard — existing users were marked done in migration
+0017 and are never hijacked.  Works with zero AI key (pure heuristics for
+the standard steps; the ICP step uses the LLM when available for sharper
+extraction, and falls back to storing the raw text).
 
-    onboarding_status(settings)  → is the wizard active + current question
-    onboarding_reply(text)       → parse one answer, apply, advance, reply
-
-Existing/configured workspaces are never hijacked: a workspace whose
-company profile is already filled in is treated as onboarded (auto-done
-backfill), and "skip setup" ends the wizard at any point.
+    onboarding_status(user, settings)  → is the wizard active + current question
+    onboarding_reply(text, user, settings) → parse one answer, apply, advance
 """
 
+import json
 import re
 
 from .models import AppSettings, SearchProfile
@@ -57,23 +56,29 @@ EMAIL_RE = re.compile(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}')
 STEPS = [
     ('company', True,
      'First — what should I call your company? Just the name is perfect.',
-     'e.g. "Shailog Technologies"'),
+     'e.g. "Support Icon"'),
     ('services', True,
      'Nice! What do you sell? A few words are enough — I use this to write '
      'your outreach emails and pick the right leads.',
-     'e.g. "web design, SEO, mobile apps"'),
+     'e.g. "customer support outsourcing, ticket handling, live chat support"'),
     ('website', True,
      'What\'s your website? (I need it for the email signature and to never '
      'pitch your own company by accident.)',
-     'e.g. "shailog.com"'),
+     'e.g. "supporticon.com"'),
     ('target', True,
      'Who should I find for you?\n'
-     '• BUSINESSES that buy your services (clinics, hotels, gyms…), or\n'
+     '• BUSINESSES that buy your services (clinics, SaaS companies, e-commerce…), or\n'
      '• other AGENCIES / software shops you want project partnerships with?',
      '"agencies" or "buyers" — one word is enough'),
     ('countries', True,
      'Which countries should I search? Name a few, or say "worldwide".',
      'e.g. "US, UK, Germany" or "worldwide" or "India"'),
+    ('icp', False,
+     'Now the important one: describe your IDEAL CLIENT — industries, company '
+     'size, geography, any signals (funding, hiring, tools they use). Type it '
+     'out or attach a file. I\'ll use this to pick better leads and write '
+     'sharper emails. Or say "skip".',
+     'e.g. "e-commerce brands doing 100k+/mo, US, hiring CS agents" — or attach a file'),
     ('ai_key', False,
      'Optional: paste your AI provider API key so I can write smarter, '
      'personalized outreach — or say "skip".',
@@ -85,48 +90,43 @@ STEPS = [
      'hello@yourdomain.com:apppassword or "skip"'),
 ]
 
+STEP_KEYS = [s[0] for s in STEPS]
+
 SKIP_WORDS = {'skip', 'skip it', 'later', 'not now', 'no', 'nah', 'nope',
               'skip for now', 'ill do it later', "i'll do it later", 'pass'}
 
 
-def _load_state(settings):
-    return dict(settings.onboarding or {})
+def _load_state(user):
+    return dict(getattr(user, 'onboarding', None) or {})
 
 
-def _save_state(settings, **patch):
-    state = _load_state(settings)
+def _save_state(user, **patch):
+    state = _load_state(user)
     state.update(patch)
-    settings.onboarding = state
-    settings.save(update_fields=['onboarding', 'updated_at'])
+    user.onboarding = state
+    user.save(update_fields=['onboarding'])
+    return state
 
 
-def is_done(settings):
-    state = _load_state(settings)
-    if state.get('done'):
-        return True
-    if state.get('started'):
-        return False  # wizard in progress — trust its step counter, not the fields
-    # never started + already configured via Settings/restore → treat as onboarded,
-    # never hijack an existing workspace's chat with a wizard
-    return bool(settings.company_name and settings.company_website and settings.services)
-
-
-def onboarding_status(settings=None):
-    """Wizard state for the frontend: {needed, stepIndex, stepCount,
-    question, hint, progress} — needed=False once done/skipped."""
+def onboarding_status(user=None, settings=None):
+    """Wizard state for the frontend: {needed, done, stepIndex, stepCount,
+    stepKey, question, hint, progress} — needed=False once done/skipped."""
     settings = settings or AppSettings.load()
-    if is_done(settings):
+    if user is None or user.is_anonymous:
         return {'needed': False, 'done': True, 'stepIndex': 0, 'stepCount': len(STEPS),
-                'question': '', 'hint': '', 'progress': ''}
-    state = _load_state(settings)
-    step = int(state.get('step') or 0)
-    step = min(step, len(STEPS) - 1)
+                'stepKey': '', 'question': '', 'hint': '', 'progress': ''}
+    state = _load_state(user)
+    if state.get('done'):
+        return {'needed': False, 'done': True, 'stepIndex': 0, 'stepCount': len(STEPS),
+                'stepKey': '', 'question': '', 'hint': '', 'progress': ''}
+    step = min(int(state.get('step') or 0), len(STEPS) - 1)
     key, _req, question, hint = STEPS[step]
     return {
         'needed': True,
         'done': False,
         'stepIndex': step,
         'stepCount': len(STEPS),
+        'stepKey': key,
         'question': question,
         'hint': hint,
         'progress': f'Setup step {step + 1} of {len(STEPS)} — {key.replace("_", " ")}',
@@ -150,10 +150,10 @@ def _clean_name(text):
 def _parse_services(text):
     parts = re.split(r'[,;\n]|\band\b', text)
     items = []
-    for p in parts:
-        p = _clean_name(p)
-        if p and len(p) > 1 and p.lower() not in SKIP_WORDS:
-            items.append(p[:60])
+    for part in parts:
+        part = _clean_name(part)
+        if part and len(part) > 1 and part.lower() not in SKIP_WORDS:
+            items.append(part[:60])
     return items[:6]
 
 
@@ -216,6 +216,73 @@ def _parse_mailbox(text):
 
 
 # ------------------------------------------------------------------
+# ICP step — freeform text (typed or uploaded file content)
+# ------------------------------------------------------------------
+
+def _extract_icp(text, settings):
+    """LLM extracts structure from the ideal-client description; anything
+    unparseable degrades to storing the raw notes (which still steer the
+    AI vetting + drafting prompts).  Returns (industries, countries)."""
+    industries, countries = [], []
+    try:
+        from .ai import llm_available, llm_complete
+        if not llm_available():
+            return industries, countries
+        raw = llm_complete(
+            f'IDEAL CLIENT PROFILE (freeform):\n{text[:4000]}\n\n'
+            f'Extract structured targeting from it. Respond with ONLY minified JSON: '
+            f'{{"industries":["…"],"countries":["…"]}} — industries are SEARCH PHRASES '
+            f'(like "dental clinic", "SaaS startup", "e-commerce brand"); countries use '
+            f'full names (like "United States"). Empty lists when not stated. No markdown.',
+            system='You extract structured lead-targeting from freeform ICP descriptions.',
+            timeout=45) or ''
+        m = re.search(r'\{.*\}', raw.replace('```', ''), re.S)
+        data = json.loads(m.group(0)) if m else {}
+        industries = [str(i).strip()[:60] for i in (data.get('industries') or [])
+                      if str(i).strip()][:8]
+        countries = [str(c).strip() for c in (data.get('countries') or [])
+                     if str(c).strip()][:6]
+    except Exception:
+        pass
+    return industries, countries
+
+
+def _apply_icp(text, settings):
+    """Store the raw ICP and merge LLM-extracted targeting into the settings.
+    Returns a human summary of what was captured."""
+    settings.icp_notes = text.strip()[:6000]
+    parsed_industries, parsed_countries = _extract_icp(text, settings)
+
+    # countries: only ADD when both sides name real regions we know
+    known_current = _parse_countries(settings.target_countries)
+    for c in parsed_countries:
+        mapped = _parse_countries(c)
+        for real in mapped:
+            if real not in known_current:
+                known_current.append(real)
+    if known_current:
+        settings.target_countries = ', '.join(known_current)
+
+    current_industries = [i.strip() for i in re.split(r'[,\n]', settings.target_industries) if i.strip()]
+    for ind in parsed_industries:
+        if ind.lower() not in {i.lower() for i in current_industries}:
+            current_industries.append(ind)
+    if current_industries:
+        settings.target_industries = ', '.join(current_industries)
+
+    settings.save(update_fields=['icp_notes', 'target_countries',
+                                 'target_industries', 'updated_at'])
+    bits = []
+    if parsed_industries:
+        bits.append('industries: ' + ', '.join(parsed_industries[:4]))
+    if parsed_countries:
+        bits.append('geography: ' + ', '.join(parsed_countries[:3]))
+    return ('Locked in your ideal client profile' +
+            (f' — {"; ".join(bits)}' if bits else
+             ' — I\'ll use these notes to steer lead vetting and every email')) + '.'
+
+
+# ------------------------------------------------------------------
 # The wizard turn — parse the current answer, apply, advance
 # ------------------------------------------------------------------
 
@@ -225,11 +292,11 @@ def _question_message(step_index, prefix=''):
     return text
 
 
-def _finish(settings):
+def _finish(settings, user):
     """Wizard complete: snapshot the chat-set targeting as the active
     profile so one-click switching starts from a true picture."""
-    _save_state(settings, done=True)
-    answers = _load_state(settings).get('answers') or {}
+    _save_state(user, done=True)
+    answers = _load_state(user).get('answers') or {}
     profile, _ = SearchProfile.objects.get_or_create(
         name='Setup — chat wizard',
         defaults={'description': 'Targeting configured in the first-login chat setup.'})
@@ -250,11 +317,11 @@ def _finish(settings):
     )
 
 
-def onboarding_reply(text, settings=None):
-    """Handle one user message while the wizard is active.
+def onboarding_reply(text, user, settings=None):
+    """Handle one user message while the wizard is active for THIS user.
     Returns the bot's reply (never raises — any parse failure re-asks)."""
     settings = settings or AppSettings.load()
-    state = _load_state(settings)
+    state = _load_state(user)
     answers = dict(state.get('answers') or {})
     step = min(int(state.get('step') or 0), len(STEPS) - 1)
     key = STEPS[step][0]
@@ -262,12 +329,12 @@ def onboarding_reply(text, settings=None):
 
     # global escape hatch works at every step
     if re.search(r'\bskip\b.*\bsetup\b|skip\b.*(setup|wizard)|not now|do this later|cancel setup', lowered):
-        _save_state(settings, done=True, skipped=True)
+        _save_state(user, done=True, skipped=True)
         return ('No problem — setup skipped. Everything is also configurable in Settings, '
                 'and I\'m here in chat whenever you need me.')
 
     if not state.get('started'):
-        _save_state(settings, started=True)
+        _save_state(user, started=True)
 
     # ---------------- per-step parsing ----------------
     if key == 'company':
@@ -277,17 +344,17 @@ def onboarding_reply(text, settings=None):
         settings.company_name = name
         settings.save(update_fields=['company_name', 'updated_at'])
         answers['company'] = name
-        _save_state(settings, step=1, answers=answers)
+        _save_state(user, step=1, answers=answers)
         return _question_message(1, prefix=f'Nice to meet you, {name}! 👋 ')
 
     if key == 'services':
         services = _parse_services(text)
         if not services:
-            return 'Give me at least one thing you sell — e.g. "web design, SEO, mobile apps".'
+            return 'Give me at least one thing you sell — e.g. "customer support, ticket handling, live chat".'
         settings.services = services
         settings.save(update_fields=['services', 'updated_at'])
         answers['services'] = services
-        _save_state(settings, step=2, answers=answers)
+        _save_state(user, step=2, answers=answers)
         return _question_message(2)
 
     if key == 'website':
@@ -297,7 +364,7 @@ def onboarding_reply(text, settings=None):
         settings.company_website = domain
         settings.save(update_fields=['company_website', 'updated_at'])
         answers['website'] = domain
-        _save_state(settings, step=3, answers=answers)
+        _save_state(user, step=3, answers=answers)
         return _question_message(3, prefix='Got it. ')
 
     if key == 'target':
@@ -305,7 +372,7 @@ def onboarding_reply(text, settings=None):
         settings.icp_mode = mode
         settings.save(update_fields=['icp_mode', 'updated_at'])
         answers['target_mode'] = mode
-        _save_state(settings, step=4, answers=answers)
+        _save_state(user, step=4, answers=answers)
         label = ('other agencies and software shops — partnership mode 🔓'
                  if mode == 'agency' else 'businesses that buy what you sell')
         return (f'Understood — I\'ll hunt {label}. '
@@ -319,10 +386,20 @@ def onboarding_reply(text, settings=None):
         settings.target_countries = ', '.join(countries)
         settings.save(update_fields=['target_countries', 'updated_at'])
         answers['countries'] = countries or ['worldwide']
-        _save_state(settings, step=5, answers=answers)
+        _save_state(user, step=5, answers=answers)
         if countries:
-            return (f'Locked: {", ".join(countries)}. ' + _question_message(5))
+            return _question_message(5, prefix=f'Locked: {", ".join(countries)}. ')
         return _question_message(5, prefix='Worldwide sweep it is — the whole rotation. ')
+
+    if key == 'icp':
+        if lowered in SKIP_WORDS or len(text.strip()) < 8:
+            answers['icp'] = 'skipped'
+            _save_state(user, step=6, answers=answers)
+            return _question_message(6, prefix='No problem — I\'ll keep the default targeting. ')
+        summary = _apply_icp(text, settings)
+        answers['icp'] = 'set'
+        _save_state(user, step=6, answers=answers)
+        return _question_message(6, prefix=summary + ' ')
 
     if key == 'ai_key':
         if lowered not in SKIP_WORDS and _looks_like_key(text):
@@ -330,11 +407,11 @@ def onboarding_reply(text, settings=None):
             settings.ai_provider = _provider_for_key(text.strip())
             settings.save(update_fields=['ai_key', 'ai_provider', 'updated_at'])
             answers['ai_key'] = 'set'
-            _save_state(settings, step=6, answers=answers)
-            return _question_message(6, prefix='Key saved 🔑 — I can now write and vet with AI. ')
+            _save_state(user, step=7, answers=answers)
+            return _question_message(7, prefix='Key saved 🔑 — I can now write and vet with AI. ')
         answers['ai_key'] = 'skipped'
-        _save_state(settings, step=6, answers=answers)
-        return _question_message(6, prefix='No problem, template mode works fine. ')
+        _save_state(user, step=7, answers=answers)
+        return _question_message(7, prefix='No problem, template mode works fine. ')
 
     if key == 'email':
         if lowered not in SKIP_WORDS:
@@ -345,17 +422,17 @@ def onboarding_reply(text, settings=None):
                 result = connect_mailbox(provider, email, password)
                 if result.get('ok'):
                     answers['email'] = email
-                    _save_state(settings, step=len(STEPS), answers=answers)
-                    return _finish(settings)
+                    _save_state(user, step=len(STEPS), answers=answers)
+                    return _finish(settings, user)
                 return (f'Couldn\'t log in to that mailbox ({result.get("message")}) — '
                         'try again with the address and APP password '
                         '(hello@yourdomain.com:apppassword), or say "skip".')
             return ('I need both the address and the password together, like '
                     'hello@yourdomain.com:apppassword — or say "skip".')
         answers['email'] = 'skipped'
-        _save_state(settings, step=len(STEPS), answers=answers)
-        return _finish(settings)
+        _save_state(user, step=len(STEPS), answers=answers)
+        return _finish(settings, user)
 
     # unreachable guard
-    _save_state(settings, done=True)
-    return _finish(settings)
+    _save_state(user, done=True)
+    return _finish(settings, user)

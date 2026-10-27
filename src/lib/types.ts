@@ -193,6 +193,7 @@ export interface OnboardingState {
   done: boolean;
   stepIndex: number;
   stepCount: number;
+  stepKey: string;
   question: string;
   hint: string;
   progress: string;

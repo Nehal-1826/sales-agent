@@ -34,21 +34,33 @@ def fresh_settings():
 
 
 class OnboardingStatusTests(TestCase):
-    def test_fresh_workspace_needs_onboarding(self):
-        status = onboarding_status(fresh_settings())
+    def test_new_user_needs_onboarding(self):
+        u = User.objects.create_user(username='newop', password='pass12345')
+        status = onboarding_status(u, fresh_settings())
         self.assertTrue(status['needed'])
         self.assertEqual(status['stepIndex'], 0)
+        self.assertEqual(status['stepKey'], 'company')
         self.assertIn('company', status['question'].lower())
 
-    def test_configured_workspace_is_never_hijacked(self):
+    def test_new_user_on_configured_workspace_still_onboards(self):
+        """Per-user state: every NEW client gets the wizard, even on a
+        workspace another client already configured."""
         s = fresh_settings()
         s.company_name = 'Shailog Technologies'
         s.company_website = 'shailog.com'
         s.services = ['web design']
         s.save()
-        status = onboarding_status(s)
+        u = User.objects.create_user(username='client2', password='pass12345')
+        status = onboarding_status(u, s)
+        self.assertTrue(status['needed'])
+
+    def test_backfilled_legacy_user_is_never_hijacked(self):
+        s = fresh_settings()
+        u = User.objects.create_user(username='legacy', password='pass12345')
+        u.onboarding = {'done': True, 'backfilled': True}  # what migration 0017 sets
+        u.save(update_fields=['onboarding'])
+        status = onboarding_status(u, s)
         self.assertFalse(status['needed'])
-        self.assertTrue(status['done'])
 
 
 class OnboardingFlowTests(TestCase):
@@ -56,9 +68,10 @@ class OnboardingFlowTests(TestCase):
 
     def setUp(self):
         self.s = fresh_settings()
+        self.u = User.objects.create_user(username='op', password='pass12345')
 
     def answer(self, text):
-        return onboarding_reply(text, self.s)
+        return onboarding_reply(text, self.u, self.s)
 
     def test_full_happy_path_buyer(self):
         r = self.answer('My company is Brew & Byte Studios')
@@ -79,13 +92,16 @@ class OnboardingFlowTests(TestCase):
         r = self.answer('India and UAE')
         self.assertEqual(self.s.target_countries, 'India, UAE')
 
+        r = self.answer('skip')  # ICP step
+        self.assertIn('default targeting', r)
+
         r = self.answer('skip')
         self.assertIn('template mode', r)
 
-        r = self.answer('skip')
+        r = self.answer('skip')  # email step
         self.assertIn('set up', r.lower())
         # wizard done — settings live, snapshot profile active
-        self.assertTrue(onboarding_status(self.s)['done'])
+        self.assertTrue(onboarding_status(self.u, self.s)['done'])
         profile = SearchProfile.objects.get(name='Setup — chat wizard')
         self.assertTrue(profile.is_active)
         self.assertEqual(profile.icp_mode, 'buyer')
@@ -114,6 +130,7 @@ class OnboardingFlowTests(TestCase):
         self.answer('acme.com')
         self.answer('buyers')
         self.answer('India')
+        self.answer('skip')  # ICP step
         r = self.answer('AIzaSy1234567890abcdefghijklmnopqrstuvw')
         self.assertEqual(self.s.ai_provider, 'Google AI')
         self.assertTrue(self.s.ai_key.startswith('AIza'))
@@ -124,7 +141,8 @@ class OnboardingFlowTests(TestCase):
         self.answer('acme.com')
         self.answer('buyers')
         self.answer('India')
-        self.answer('skip')
+        self.answer('skip')  # ICP step
+        self.answer('skip')  # AI key step
         with mock.patch('core.mailer.verify_smtp', return_value=''):
             r = self.answer('hello@acme.com:apppass123')
         self.assertIn('set up', r.lower())
@@ -138,21 +156,22 @@ class OnboardingFlowTests(TestCase):
         self.answer('acme.com')
         self.answer('buyers')
         self.answer('India')
-        self.answer('skip')
+        self.answer('skip')  # ICP step
+        self.answer('skip')  # AI key step
         with mock.patch('core.mailer.verify_smtp', return_value='auth'):
             r = self.answer('hello@acme.com:wrongpass')
         self.assertIn('app password', r.lower())
-        self.assertFalse(onboarding_status(self.s)['done'])
+        self.assertFalse(onboarding_status(self.u, self.s)['done'])
 
     def test_skip_setup_escapes_anytime(self):
         r = self.answer('skip setup, ill do it later')
         self.assertIn('skipped', r.lower())
-        self.assertTrue(onboarding_status(self.s)['done'])
+        self.assertTrue(onboarding_status(self.u, self.s)['done'])
 
     def test_garbage_answer_reasks(self):
         r = self.answer('   ')
         self.assertIn('catch a name', r.lower())
-        self.assertEqual(onboarding_status(self.s)['stepIndex'], 0)
+        self.assertEqual(onboarding_status(self.u, self.s)['stepIndex'], 0)
 
 
 class OnboardingChatApiTests(TestCase):
@@ -379,3 +398,59 @@ class ManualDraftTests(TestCase):
         from core.actions import execute
         result = execute({'action': 'draft_email', 'company': 'Nonexistent Corp'})
         self.assertIn('No lead matching', result)
+
+
+class IcpStepTests(TestCase):
+    """The ICP step: typed or uploaded ideal-client description."""
+
+    def setUp(self):
+        self.s = fresh_settings()
+        self.s.target_countries = 'United States'
+        self.s.save()
+        self.u = User.objects.create_user(username='op', password='pass12345')
+
+    def test_icp_stored_and_llm_extraction_merged(self):
+        self.s.target_industries = ''
+        self.s.save()
+        for q, a in [('Acme', 'Acme'), ('x', 'stuff'), ('acme.com', 'acme.com'),
+                     ('buyers', 'buyers'), ('India', 'India')]:
+            onboarding_reply(a, self.u, self.s)
+        with mock.patch('core.ai.llm_available', return_value=True), \
+                mock.patch('core.ai.llm_complete',
+                           return_value='{"industries":["e-commerce brand","D2C store"],'
+                                        '"countries":["United States","Singapore"]}'):
+            r = onboarding_reply(
+                'E-commerce brands doing 100k+/mo revenue, ideally US and Singapore, '
+                'hiring CS agents', self.u, self.s)
+        self.s.refresh_from_db()
+        self.assertIn('E-commerce brands doing 100k+', self.s.icp_notes)  # raw stored
+        self.assertIn('e-commerce brand', self.s.target_industries)
+        self.assertIn('D2C store', self.s.target_industries)
+        self.assertIn('Singapore', self.s.target_countries)   # merged, not overwritten
+        self.assertIn('India', self.s.target_countries)
+        self.assertIn('ideal client', r.lower())
+
+    def test_icp_falls_back_to_raw_notes_without_llm(self):
+        onboarding_reply('Acme', self.u, self.s)
+        onboarding_reply('stuff', self.u, self.s)
+        onboarding_reply('acme.com', self.u, self.s)
+        onboarding_reply('buyers', self.u, self.s)
+        onboarding_reply('India', self.u, self.s)
+        with mock.patch('core.ai.llm_available', return_value=False):
+            onboarding_reply('B2B SaaS companies with 10-50 employees',
+                             self.u, self.s)
+        self.s.refresh_from_db()
+        self.assertIn('B2B SaaS', self.s.icp_notes)  # raw notes still steer prompts
+
+    def test_icp_skip_moves_on(self):
+        for a in ('Acme', 'stuff', 'acme.com', 'buyers', 'India'):
+            onboarding_reply(a, self.u, self.s)
+        r = onboarding_reply('skip', self.u, self.s)
+        self.assertIn('default targeting', r)
+        self.assertEqual(onboarding_status(self.u, self.s)['stepKey'], 'ai_key')
+
+    def test_step_order_includes_icp(self):
+        from core.onboarding import STEP_KEYS
+        self.assertEqual(STEP_KEYS,
+                         ['company', 'services', 'website', 'target', 'countries',
+                          'icp', 'ai_key', 'email'])

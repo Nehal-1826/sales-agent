@@ -17,8 +17,6 @@ const PAGES: Record<PageKey, (props: { onNavigate: (p: PageKey) => void; live: b
   settings: () => <SettingsPage />,
 };
 
-const ONBOARD_SEEN_KEY = 'agentic-ai:onboard-redirected';
-
 export default function App() {
   const [page, setPage] = useState<PageKey>('dashboard');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -33,15 +31,12 @@ export default function App() {
     });
   }, []);
 
-  // first login on an unconfigured workspace lands in the chat, where the
-  // setup assistant asks its questions — once per workspace (flag in storage)
+  // any user whose setup wizard is still open lands in the chat — the state
+  // lives per user on the backend, so each new client gets onboarded exactly once
   useEffect(() => {
     if (auth !== 'app') return;
     getOnboarding().then((state) => {
-      if (!state?.needed) return;
-      if (localStorage.getItem(ONBOARD_SEEN_KEY)) return;
-      localStorage.setItem(ONBOARD_SEEN_KEY, '1');
-      setPage('assistant');
+      if (state?.needed) setPage('assistant');
     });
   }, [auth]);
 

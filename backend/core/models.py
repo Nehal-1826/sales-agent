@@ -23,6 +23,9 @@ class User(AbstractUser):
         MEMBER = 'member', 'Member'
 
     role = models.CharField(max_length=10, choices=Roles.choices, default=Roles.MEMBER)
+    # per-user chat onboarding state (core.onboarding): {started, done, step,
+    # answers{...}} — every NEW login gets the setup wizard; empty = fresh user
+    onboarding = models.JSONField(default=dict, blank=True)
 
     def save(self, *args, **kwargs):
         # First user to sign up owns the workspace.
@@ -279,6 +282,12 @@ class AppSettings(Timestamped):
     # Strict fake-data gate memory — domains the AI review has rejected are
     # never re-admitted on a later cycle (AI verdicts can flip; memory can't)
     rejected_domains = models.JSONField(default=list, blank=True)
+
+    # Ideal Client Profile — freeform notes typed or uploaded during the chat
+    # onboarding ("SaaS startups in healthcare, 10-50 people, US only...").
+    # Injected into the AI vetting + drafting prompts so discovery and copy
+    # follow the client's actual ICP.
+    icp_notes = models.TextField(blank=True)
 
     # Chat onboarding — first-login setup wizard state (core.onboarding):
     # {started, done, step, answers{...}, skipped[...]}; empty dict = fresh

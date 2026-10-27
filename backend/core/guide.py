@@ -106,22 +106,22 @@ def workspace_state():
     )
 
 
-def guide_answer(question, history=None):
+def guide_answer(question, history=None, user=None):
     """One guide answer via Gemini — and the guide can ACT: commands
     ("run a cycle", "approve the draft for X", "do it yourself" after a
     suggestion) are executed for real, then confirmed in the reply.
     Friendly static pointer without an AI key."""
-    from .actions import detect_action, execute  # late import — pipeline is heavy
+    from .actions import handle_command  # late import — pipeline is heavy
 
-    spec = detect_action(question, history)
-    if spec and spec.get('action') != 'none':
-        try:
-            result = execute(spec, username='guide')
-        except Exception as exc:
-            log.warning('guide action failed (%s): %s', spec, exc)
-            result = 'That action failed on the server — check the logs.'
-        if result:
-            return _phrase_action(question, result)
+    try:
+        result = handle_command(question, user, history)
+    except Exception as exc:
+        log.warning('guide action failed (%s): %s', question, exc)
+        result = 'That action failed on the server — check the logs.'
+    if result:
+        if 'Reply "yes"' in result:
+            return result  # confirmation prompts go out verbatim
+        return _phrase_action(question, result)
 
     if not llm_available():
         return FALLBACK_ANSWER

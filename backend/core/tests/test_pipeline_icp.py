@@ -140,3 +140,25 @@ class RunPipelineIcpTests(TestCase):
         self._run()
         gym = Lead.objects.get(company='Iron Gym')
         self.assertEqual(gym.contact_phone, '+91 98765 43210')
+
+
+class PerCycleNotesTests(TestCase):
+    def test_old_leads_without_email_are_not_counted_in_this_cycles_notes(self):
+        from core.tests.test_runlock import quiet_cycle
+        Lead.objects.create(company='OldNoMail', website='oldnomail.example', profiled=True,
+                            has_website=True, contact_email='')
+        Lead.objects.create(company='OldBlocked', website='oldblocked.example', profiled=True,
+                            contact_email='a@oldblocked.example', analysis={'blocked': True})
+        patches = quiet_cycle()
+        for p in patches:
+            p.start()
+        self.addCleanup(lambda: [p.stop() for p in patches])
+        run = run_pipeline(triggered_by='test')
+        notes = ' '.join(run.summary['notes'])
+        self.assertNotIn('without a contact email held', notes)
+        self.assertNotIn('site blocks bots', notes)
+
+    def test_enrich_due_tolerates_non_string_timestamp(self):
+        from core.pipeline import _enrich_due
+        lead = Lead(company='X', analysis={'enrich_tried_at': 12345})
+        self.assertTrue(_enrich_due(lead))

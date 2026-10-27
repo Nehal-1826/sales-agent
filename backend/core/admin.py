@@ -1,6 +1,6 @@
 from django.contrib import admin, messages
 
-from .mailer import send_draft
+from .mailer import NO_RECIPIENT_ERROR, claim_draft_for_send, send_draft, valid_recipient
 from .models import (
     AgentConfig,
     AppSettings,
@@ -54,18 +54,30 @@ class EmailDraftAdmin(admin.ModelAdmin):
 
     @admin.action(description='✅ Approve & send selected drafts')
     def approve_and_send(self, request, queryset):
+        # same guards as the API: only DRAFT/FAILED, a real recipient, and the
+        # atomic claim — so an admin click can never double-send or guess an address
         sent = failed = skipped = 0
         for draft in queryset:
-            if draft.status in (EmailDraft.Statuses.SENT, EmailDraft.Statuses.REJECTED):
+            if draft.status not in (EmailDraft.Statuses.DRAFT, EmailDraft.Statuses.FAILED):
                 skipped += 1
                 continue
-            send_draft(draft)  # updates status/sent_via/error itself
-            draft.refresh_from_db()
-            if draft.status == EmailDraft.Statuses.SENT:
+            if not valid_recipient(draft.to_email):
+                self.message_user(request, f'{draft.company}: {NO_RECIPIENT_ERROR}',
+                                  level=messages.WARNING)
+                failed += 1
+                continue
+            claimed = claim_draft_for_send(draft.id)
+            if claimed is None:  # another request already took it
+                skipped += 1
+                continue
+            send_draft(claimed)  # updates status/sent_via/error itself
+            claimed.refresh_from_db()
+            if claimed.status == EmailDraft.Statuses.SENT:
                 sent += 1
             else:
                 failed += 1
-        msg = f'{sent} sent, {failed} failed' + (f', {skipped} skipped (already sent/rejected)' if skipped else '')
+        msg = f'{sent} sent, {failed} failed' + (
+            f', {skipped} skipped (not sendable: already sent, approved or rejected)' if skipped else '')
         level = messages.SUCCESS if failed == 0 else messages.WARNING
         self.message_user(request, f'Approve & send: {msg}.', level=level)
 

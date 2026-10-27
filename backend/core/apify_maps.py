@@ -27,8 +27,8 @@ import requests
 log = logging.getLogger(__name__)
 
 ACTOR_RUNS_URL = 'https://api.apify.com/v2/acts/compass~google-maps-extractor/runs'
-RUN_STATUS_URL = 'https://api.apify.com/v2/actor-runs/{run_id}?token={token}'
-DATASET_URL = 'https://api.apify.com/v2/datasets/{dataset_id}/items?token={token}&clean=true'
+RUN_STATUS_URL = 'https://api.apify.com/v2/actor-runs/{run_id}'
+DATASET_URL = 'https://api.apify.com/v2/datasets/{dataset_id}/items?clean=true'
 RUN_WAIT_S = 480       # actor runs for 6+ searches can take several minutes
 RUN_POLL_EVERY_S = 6
 
@@ -63,10 +63,11 @@ def maps_places(searches, max_per_search=4):
     key = os.environ.get('APIFY_API_KEY', '')
     if not key or not searches:
         return []
+    headers = {'Authorization': f'Bearer {key}'}  # never in the URL — it leaks into logs
     try:
         started = requests.post(
             ACTOR_RUNS_URL,
-            params={'token': key},
+            headers=headers,
             json={
                 'searchStringsArray': list(searches),
                 'maxCrawls': max_per_search,
@@ -94,7 +95,7 @@ def maps_places(searches, max_per_search=4):
             time.sleep(RUN_POLL_EVERY_S)
             waited += RUN_POLL_EVERY_S
             state = requests.get(
-                RUN_STATUS_URL.format(run_id=run_id, token=key), timeout=30)
+                RUN_STATUS_URL.format(run_id=run_id), headers=headers, timeout=30)
             if state.status_code != 200:
                 log.warning('Apify run status failed: HTTP %s', state.status_code)
                 return []
@@ -105,7 +106,7 @@ def maps_places(searches, max_per_search=4):
             log.warning('Apify Maps run ended as %s after %ss', status or 'UNKNOWN', waited)
             return []
         items_resp = requests.get(
-            DATASET_URL.format(dataset_id=dataset_id, token=key), timeout=60)
+            DATASET_URL.format(dataset_id=dataset_id), headers=headers, timeout=60)
         if items_resp.status_code != 200:
             log.warning('Apify dataset fetch failed: HTTP %s', items_resp.status_code)
             return []
@@ -161,7 +162,13 @@ def enrich_leads_via_apify(leads, max_per_search=4):
     enriched = []
     for lead in targets:
         domain = _norm_domain(lead.website)
-        place = by_domain.get(domain) or by_title.get(re.sub(r'\W+', '', lead.company.lower()))
+        place = by_domain.get(domain)
+        if not place:
+            # name fallback only for a listing with no website of its own — one
+            # that names a different domain is another business with a similar title
+            by_name = by_title.get(re.sub(r'\W+', '', lead.company.lower()))
+            if by_name and (not by_name['website'] or _norm_domain(by_name['website']) == domain):
+                place = by_name
         if not place:
             continue
         lead.contact_phone = place['phone']

@@ -132,8 +132,51 @@ class OnboardingFlowTests(TestCase):
         self.answer('India')
         self.answer('skip')  # ICP step
         r = self.answer('AIzaSy1234567890abcdefghijklmnopqrstuvw')
-        self.assertEqual(self.s.ai_provider, 'Google AI')
+        self.assertEqual(self.s.ai_provider, 'Gemini')
         self.assertTrue(self.s.ai_key.startswith('AIza'))
+
+    def _to_ai_key_step(self):
+        for a in ('Acme', 'stuff', 'acme.com', 'buyers', 'India', 'skip'):
+            self.answer(a)
+
+    def test_unknown_key_shape_is_not_guessed_as_zhipu(self):
+        self._to_ai_key_step()
+        self.s.ai_provider = 'Gemini'
+        self.s.save(update_fields=['ai_provider', 'updated_at'])
+        r = self.answer('mistralkeyABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
+        self.s.refresh_from_db()
+        self.assertEqual(self.s.ai_provider, 'Gemini')  # unchanged, not Zhipu
+        self.assertTrue(self.s.ai_key)
+        for name in ('Gemini', 'OpenAI', 'Zhipu (GLM)', 'DeepSeek', 'Groq', 'Mistral', 'Ollama'):
+            self.assertIn(name, r)
+        # still on the key step; naming the provider completes it
+        self.assertEqual(onboarding_status(self.u, self.s)['stepKey'], 'ai_key')
+        self.answer('mistral')
+        self.s.refresh_from_db()
+        self.assertEqual(self.s.ai_provider, 'Mistral')
+        self.assertEqual(onboarding_status(self.u, self.s)['stepKey'], 'email')
+
+    def test_unknown_key_then_skip_moves_on(self):
+        self._to_ai_key_step()
+        self.answer('mistralkeyABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
+        self.answer('skip')
+        self.assertEqual(onboarding_status(self.u, self.s)['stepKey'], 'email')
+
+    def test_anthropic_key_is_refused_plainly(self):
+        self._to_ai_key_step()
+        r = self.answer('sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789')
+        self.s.refresh_from_db()
+        self.assertIn('Anthropic', r)
+        self.assertIn('not supported', r)
+        self.assertNotEqual(self.s.ai_provider, 'Zhipu (GLM)')
+        self.assertFalse((self.s.ai_key or '').startswith('sk-ant-'))
+
+    def test_key_embedded_in_sentence_is_extracted(self):
+        self._to_ai_key_step()
+        self.answer('my key is AIzaSy1234567890abcdefghijklmnopqrstuvw thanks')
+        self.s.refresh_from_db()
+        self.assertEqual(self.s.ai_key, 'AIzaSy1234567890abcdefghijklmnopqrstuvw')
+        self.assertEqual(self.s.ai_provider, 'Gemini')
 
     def test_email_step_connects_via_shared_helper(self):
         self.answer('Acme')
@@ -377,7 +420,7 @@ class ManualDraftTests(TestCase):
         resp2 = c.post(f'/api/leads/{self.low_lead.pk}/draft_email/')
         self.assertEqual(resp2.status_code, 200)
         self.assertFalse(resp2.json()['ok'])
-        self.assertIn('already has an active draft', resp2.json()['detail'])
+        self.assertIn('already has an email waiting for approval', resp2.json()['detail'])
 
         # unknown lead
         self.assertEqual(c.post('/api/leads/99999/draft_email/').status_code, 404)
@@ -392,7 +435,7 @@ class ManualDraftTests(TestCase):
         self.assertIn('approve the draft for LoW_score Cafe', result)
         self.assertEqual(EmailDraft.objects.filter(lead=self.low_lead).count(), 1)
         # second attempt reports the duplicate instead of double-drafting
-        self.assertIn('already has an active draft', execute(spec))
+        self.assertIn('already has an email waiting for approval', execute(spec))
 
     def test_chat_action_unknown_lead(self):
         from core.actions import execute

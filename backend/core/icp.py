@@ -223,7 +223,7 @@ def buyer_industries(settings):
     raw = (getattr(settings, 'target_industries', '') or '').strip()
     if raw:
         picked = [i.strip() for i in re.split(r'[,\n]', raw) if i.strip()]
-        guards = _never_search_regexes(settings)
+        guards = _never_search_regexes(settings) + list(competitor_regexes(settings))
         safe = [i for i in picked if not any(g.search(i) for g in guards)]
         dropped = len(picked) - len(safe)
         if dropped:

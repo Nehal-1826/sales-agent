@@ -12,7 +12,7 @@ import time
 from django.core.management.base import BaseCommand
 
 from core.models import AppSettings, PipelineRun
-from core.pipeline import FREQUENCY_MINUTES, run_pipeline
+from core.pipeline import FREQUENCY_MINUTES, PipelineBusy, run_pipeline
 
 
 class Command(BaseCommand):
@@ -34,6 +34,8 @@ class Command(BaseCommand):
                             f'Run #{run.id}: {run.leads_created} lead(s), '
                             f'{run.potentials_created} potential(s), '
                             f'{run.summary.get("drafts_created", 0)} draft(s)'))
+                    except PipelineBusy:
+                        pass  # the API or chat is already running one — next tick
                     except Exception as exc:
                         self.stderr.write(f'Pipeline cycle failed: {exc}')
             time.sleep(30)

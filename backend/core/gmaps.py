@@ -356,6 +356,12 @@ def enrich_leads_via_gmaps(leads, delay=2.5):
             log.info('gmaps: search crashed for %r: %s', query, exc)
             continue
         domain = _norm(getattr(lead, 'website', ''))
+
+        def _conflicts(p):
+            # a listing with its OWN, different website is another business
+            other = _norm(p.get('website', ''))
+            return bool(domain and other and other != domain)
+
         match = None
         for p in places:
             if domain and _norm(p.get('website', '')) == domain:
@@ -364,12 +370,12 @@ def enrich_leads_via_gmaps(leads, delay=2.5):
         if match is None:
             lname = (lead.company or '').strip().lower()
             for p in places:
-                if p.get('phone') and p['name'].strip().lower() == lname:
+                if p.get('phone') and not _conflicts(p) and p['name'].strip().lower() == lname:
                     match = p
                     break
         if match is None:
             for p in places:
-                if p.get('phone') and _name_matches(lead.company, p['name']):
+                if p.get('phone') and not _conflicts(p) and _name_matches(lead.company, p['name']):
                     match = p
                     break
         if match and match.get('phone'):

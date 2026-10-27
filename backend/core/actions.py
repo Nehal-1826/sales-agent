@@ -13,11 +13,13 @@ against real Lead / EmailDraft rows — no hallucinated targets.
 import json
 import logging
 import re
-import threading
+from datetime import timedelta
+
+from django.utils import timezone
 
 from .ai import llm_available, llm_complete
-from .mailer import send_draft
-from .models import AppSettings, EmailDraft, Lead
+from .mailer import claim_draft_for_send, send_draft, valid_recipient
+from .models import AppSettings, EmailDraft, Lead, SearchProfile
 from .reports import send_daily_report
 
 log = logging.getLogger(__name__)
@@ -25,6 +27,19 @@ log = logging.getLogger(__name__)
 ACTION_NAMES = ('run_pipeline', 'approve_draft', 'approve_all', 'reject_draft',
                 'delete_lead', 'set_frequency', 'set_report_email', 'send_report',
                 'switch_profile', 'draft_email', 'none')
+
+# Actions that change or send things for real — they wait for an explicit "yes"
+CONFIRM_ACTIONS = {'approve_draft', 'approve_all', 'reject_draft', 'delete_lead',
+                   'switch_profile', 'set_report_email'}
+PENDING_TTL_MINUTES = 10
+_YES_POLITE = r'(?:[\s,]+(?:please|thanks|pls|do it))?'
+_NO_POLITE = r'(?:[\s,]+(?:please|thanks|pls|wait))?'   # "yes, wait" must never confirm
+_YES = re.compile(r'^\s*(yes|y|yeah|yep|sure|ok|okay|confirm|go ahead|do it|haan|ha|aama|seri|sari)\b'
+                  + _YES_POLITE + r'[\s.!]*$', re.I)
+_NO = re.compile(r'^\s*(no|n|nope|nah|cancel|stop|don\'?t|venda|vendam|illa)\b'
+                 + _NO_POLITE + r'[\s.!]*$', re.I)
+_NEGATION = re.compile(r"\b(don'?t|do not|not yet|never|shouldn'?t|wouldn'?t|without)\b", re.I)
+_QUESTION_START = re.compile(r'^\s*(should|would|could|can|will|when|what|why|how|is|are|do|does|did|which|who)\b', re.I)
 
 EMAIL_IN_TEXT = re.compile(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}')
 
@@ -47,6 +62,13 @@ _FREQ_PATTERNS = [
 ]
 
 
+def is_question_or_negation(text):
+    """Questions and negations are conversation, never commands — 'should I
+    send all the drafts?' must not send them."""
+    t = (text or '').strip()
+    return t.endswith('?') or bool(_NEGATION.search(t)) or bool(_QUESTION_START.match(t))
+
+
 def detect_action_regex(text):
     """Fast keyword path — returns an action spec or None (let the LLM try)."""
     q = text.lower()
@@ -54,8 +76,12 @@ def detect_action_regex(text):
         return {'action': 'set_frequency', 'frequency': 'pause'}
     if re.search(r'\b(resume|enable)\b.*\brun|start\s*the\s*loop', q):
         return {'action': 'set_frequency', 'frequency': 'resume'}
-    if re.search(r'approve\s+(all|every|everything)|approve\s+\S+\s+drafts|send\s+all\s+(the\s+)?(drafts|emails)', q):
+    if re.search(r'approve\s+(all|every|everything)\b|send\s+all\s+(the\s+)?(drafts|emails)', q):
         return {'action': 'approve_all'}
+    if re.search(r'\b(delete|remove)\b.*\blead\b', q):
+        # name = whatever follows the word "lead"; empty → asks which one
+        name = re.split(r'\blead\b', text, maxsplit=1, flags=re.I)[1].strip(' .!"\'')
+        return {'action': 'delete_lead', 'company': name}
     # "the daily report recipient is x@y.com" / "send reports to x@y.com" —
     # an email address plus the word 'report' means the recipient is being set
     if 'report' in q and EMAIL_IN_TEXT.search(text):
@@ -205,13 +231,23 @@ def match_profile(query, profiles):
 
 
 def _match_company(name, candidates):
+    """All candidates the name could mean: an exact match wins, else every
+    containment match.  Empty name matches nothing."""
     n = (name or '').strip().lower()
     if not n:
-        return None
+        return []
     exact = next((c for c in candidates if c.lower() == n), None)
     if exact:
-        return exact
-    return next((c for c in candidates if n in c.lower() or c.lower() in n), None)
+        return [exact]
+    return list(dict.fromkeys(c for c in candidates if n in c.lower() or (len(c) >= 3 and c.lower() in n)))
+
+
+def _no_single_match(kind, matches, waiting):
+    if len(matches) > 1:
+        return f'Which one? {", ".join(matches[:5])}'
+    waiting = list(waiting)
+    return (f'No matching {kind}.' +
+            (f' Waiting: {", ".join(waiting[:5])}.' if waiting else ''))
 
 
 def execute(spec, username='chat'):
@@ -219,25 +255,35 @@ def execute(spec, username='chat'):
     action = spec.get('action')
 
     if action == 'run_pipeline':
-        from .pipeline import run_pipeline  # late import — heavy module
-        threading.Thread(
-            target=run_pipeline, kwargs={'triggered_by': f'chat:{username}'}, daemon=True,
-        ).start()
+        from .pipeline import start_pipeline_async  # late import — heavy module
+        if not start_pipeline_async(f'chat:{username}'):
+            return 'A cycle is already running — I\'ll have results in a few minutes.'
         return ('Started a full pipeline cycle in the background — Search, Profile and '
                 'Copywright are working; results land in the CRM in a couple of minutes.')
 
     if action == 'approve_draft':
         drafts = EmailDraft.objects.filter(status=EmailDraft.Statuses.DRAFT)
-        company = _match_company(spec.get('company'), list(drafts.values_list('company', flat=True)))
-        if not company:
-            pending = list(drafts.values_list('company', flat=True))
-            return ('No matching draft to approve.' +
-                    (f' Drafts waiting: {", ".join(pending)}.' if pending else ' There are no drafts awaiting approval.'))
-        draft = drafts.filter(company=company).first()  # one email per company per approval
-        draft.status = EmailDraft.Statuses.APPROVED
-        draft.save(update_fields=['status', 'updated_at'])
+        if spec.get('draft_ids') is not None:
+            # targets were resolved when the user was asked to confirm
+            drafts = drafts.filter(id__in=spec['draft_ids'])
+            company = spec.get('company') or ''
+        else:
+            matches = _match_company(spec.get('company'), list(drafts.values_list('company', flat=True)))
+            if len(matches) != 1:
+                return _no_single_match('draft to approve', matches, drafts.values_list('company', flat=True))
+            company = matches[0]
+        draft = drafts.filter(company=company).first() if company else drafts.first()  # one email per company per approval
+        if draft is None:
+            return 'No matching draft to approve — it may already have been handled.'
+        company = draft.company
+        if not valid_recipient(draft.to_email):
+            return (f'The draft for {company} has no valid recipient email — add one in '
+                    'Approvals, then approve it.')
+        draft = claim_draft_for_send(draft.id)
+        if draft is None:
+            return f'The email to {company} is already being sent.'
         draft = send_draft(draft)
-        remaining = drafts.filter(company=company).count()
+        remaining = EmailDraft.objects.filter(status=EmailDraft.Statuses.DRAFT, company=company).count()
         extra = f' {remaining} more draft(s) waiting for this company.' if remaining else ''
         if draft.status == EmailDraft.Statuses.SENT:
             via = 'console (SMTP not configured)' if draft.sent_via == EmailDraft.Via.CONSOLE else 'via SMTP'
@@ -245,46 +291,68 @@ def execute(spec, username='chat'):
         return f'Tried to send the email to {company} but it failed: {draft.error}'
 
     if action == 'approve_all':
-        drafts = list(EmailDraft.objects.filter(status=EmailDraft.Statuses.DRAFT))
+        drafts = EmailDraft.objects.filter(status=EmailDraft.Statuses.DRAFT)
+        if spec.get('draft_ids') is not None:
+            drafts = drafts.filter(id__in=spec['draft_ids'])  # only what was confirmed
+        drafts = list(drafts)
         if not drafts:
             return ('Nothing is waiting — no drafts need approval right now. '
                     'Run a cycle and I\'ll queue the next batch.')
-        sent, failed = 0, []
+        sent, failed, skipped = 0, [], []
         for draft in drafts:
-            draft.status = EmailDraft.Statuses.APPROVED
-            draft.save(update_fields=['status', 'updated_at'])
-            draft = send_draft(draft)
+            if not valid_recipient(draft.to_email):
+                skipped.append(draft.company)  # never guess an address
+                continue
+            claimed = claim_draft_for_send(draft.id)
+            if claimed is None:
+                continue  # another request already took it
+            draft = send_draft(claimed)
             if draft.status == EmailDraft.Statuses.SENT:
                 sent += 1
             else:
                 failed.append(f'{draft.company} ({(draft.error or "")[:60]})')
         summary = f'Approved and sent {sent} of {len(drafts)} draft(s)'
+        if skipped:
+            summary += (f'. Skipped {len(skipped)} with no recipient email: '
+                        + ', '.join(skipped[:3]) + (' …' if len(skipped) > 3 else ''))
         if failed:
             summary += (f'. {len(failed)} failed: ' + '; '.join(failed[:3])
                         + (' …' if len(failed) > 3 else ''))
-        else:
+        elif not skipped:
             summary += ' ✅'
         return summary
 
     if action == 'reject_draft':
         drafts = EmailDraft.objects.filter(status=EmailDraft.Statuses.DRAFT)
-        company = _match_company(spec.get('company'), list(drafts.values_list('company', flat=True)))
-        if not company:
-            return 'No matching draft to reject.'
-        count = drafts.filter(company=company).update(status=EmailDraft.Statuses.REJECTED)
+        if spec.get('draft_ids') is not None:
+            company = spec.get('company') or 'that company'
+            drafts = drafts.filter(id__in=spec['draft_ids'])
+        else:
+            matches = _match_company(spec.get('company'), list(drafts.values_list('company', flat=True)))
+            if len(matches) != 1:
+                return _no_single_match('draft to reject', matches, [])
+            company = matches[0]
+            drafts = drafts.filter(company=company)
+        count = drafts.update(status=EmailDraft.Statuses.REJECTED)
         return f'Rejected {count} draft(s) for {company}.'
 
     if action == 'delete_lead':
-        leads = Lead.objects.all()
-        matches = [c for c in leads.values_list('company', flat=True)
-                   if spec.get('company', '').lower() in c.lower() or c.lower() in spec.get('company', '').lower()]
-        if not matches:
-            return 'No matching lead to delete.'
-        if len(matches) > 1:
-            return (f'{len(matches)} leads match that name ({", ".join(matches[:4])}) — '
-                    'tell me the exact one to delete.')
-        Lead.objects.filter(company=matches[0]).delete()
-        return f'Deleted the lead {matches[0]} (and its drafts/potentials).'
+        matches = _match_company(spec.get('company'), list(Lead.objects.values_list('company', flat=True)))
+        if len(matches) != 1:
+            return _no_single_match('lead to delete', matches, [])
+        from .pipeline import _norm_domain  # late import — heavy module
+        for lead in Lead.objects.filter(company=matches[0]):
+            # unsent mail must not go out, and the domain must not be rediscovered
+            lead.drafts.filter(status__in=[EmailDraft.Statuses.DRAFT,
+                                           EmailDraft.Statuses.FAILED]).update(status=EmailDraft.Statuses.REJECTED)
+            domain = _norm_domain(lead.website)
+            if domain:
+                settings = AppSettings.load()
+                if domain not in (settings.rejected_domains or []):
+                    settings.rejected_domains = list(settings.rejected_domains or []) + [domain]
+                    settings.save(update_fields=['rejected_domains'])
+            lead.delete()
+        return f'Deleted the lead {matches[0]} (and its potentials), rejected its unsent emails and blacklisted its domain.'
 
     if action == 'set_frequency':
         s = AppSettings.load()
@@ -326,17 +394,19 @@ def execute(spec, username='chat'):
     if action == 'draft_email':
         from .pipeline import _draft_email  # late import — heavy module
         companies = list(Lead.objects.values_list('company', flat=True))
-        company = _match_company(spec.get('company'), companies)
+        matches = _match_company(spec.get('company'), companies)
+        if len(matches) > 1:
+            return f'Which one? {", ".join(matches[:5])}'
+        company = matches[0] if matches else None
         if not company:
             recent = ', '.join(companies[:5]) if companies else 'none yet — run a cycle first'
             return f'No lead matching "{spec.get("company")}". Leads in the CRM: {recent}.'
         lead = Lead.objects.filter(company=company).first()
-        active = lead.drafts.exclude(status__in=[EmailDraft.Statuses.REJECTED,
-                                                 EmailDraft.Statuses.FAILED])
+        active = lead.drafts.filter(status__in=[EmailDraft.Statuses.DRAFT,
+                                                EmailDraft.Statuses.APPROVED])
         if active.exists():
-            return (f'{lead.company} already has an active draft '
-                    f'({active.first().get_status_display().lower()}) — approve it in the '
-                    f'Outreach queue, or say "approve the draft for {lead.company}".')
+            return (f'{lead.company} already has an email waiting for approval — find it in '
+                    f'Approvals, or say "approve the draft for {lead.company}".')
         subject, _body, _used_llm = _draft_email(lead)
         EmailDraft.objects.create(
             lead=lead, company=lead.company, to_email=lead.contact_email,
@@ -367,3 +437,89 @@ def execute(spec, username='chat'):
                 f'{profile.target_countries or "worldwide"}) — the next cycle already uses it.')
 
     return ''
+
+
+# ------------------------------------------------------------------
+# Confirmation flow — one entry point for chat + guide
+# ------------------------------------------------------------------
+
+def _describe(spec):
+    """Prepare a confirmable action: resolve its exact targets now and say
+    precisely what will happen.  Returns (summary, resolved_spec) or
+    (message, None) when there is nothing to confirm."""
+    action = spec['action']
+    if action == 'approve_all':
+        drafts = list(EmailDraft.objects.filter(status=EmailDraft.Statuses.DRAFT))
+        if not drafts:
+            return 'Nothing is waiting — no drafts need approval right now.', None
+        names = ', '.join(d.company for d in drafts[:5]) + (' …' if len(drafts) > 5 else '')
+        return (f'I\'ll approve and send {len(drafts)} email(s): {names}.',
+                {**spec, 'draft_ids': [d.id for d in drafts]})
+    if action in ('approve_draft', 'reject_draft'):
+        drafts = EmailDraft.objects.filter(status=EmailDraft.Statuses.DRAFT)
+        matches = _match_company(spec.get('company'), list(drafts.values_list('company', flat=True)))
+        if len(matches) != 1:
+            return _no_single_match('draft', matches, drafts.values_list('company', flat=True)), None
+        ids = list(drafts.filter(company=matches[0]).values_list('id', flat=True))
+        verb = 'approve and send' if action == 'approve_draft' else 'reject'
+        return f'I\'ll {verb} the email to {matches[0]}.', {**spec, 'company': matches[0], 'draft_ids': ids}
+    if action == 'delete_lead':
+        matches = _match_company(spec.get('company'), list(Lead.objects.values_list('company', flat=True)))
+        if len(matches) != 1:
+            return _no_single_match('lead', matches, []), None
+        return (f'I\'ll delete the lead {matches[0]}, reject its unsent emails and never rediscover it.',
+                {**spec, 'company': matches[0]})
+    if action == 'switch_profile':
+        profile = match_profile(spec.get('profile'), list(SearchProfile.objects.all()))
+        if profile is None:
+            return 'Which profile? ' + ', '.join(SearchProfile.objects.values_list('name', flat=True)), None
+        if profile.is_active:
+            return f'"{profile.name}" is already the active profile.', None
+        return f'I\'ll switch lead targeting to "{profile.name}".', {**spec, 'profile': profile.name}
+    if action == 'set_report_email':
+        return f'I\'ll send the daily report to {spec.get("email")} from now on.', spec
+    return '', spec
+
+
+def _set_pending(user, value):
+    user.pending_action = value
+    user.save(update_fields=['pending_action'])
+
+
+def handle_command(text, user, history=None):
+    """One entry point for chat + guide.  '' = not a command (let the
+    conversational reply answer)."""
+    pending = (getattr(user, 'pending_action', None) or {}) if user else {}
+    if pending:
+        expired = pending.get('expires', '') < timezone.now().isoformat()
+        if not expired and _YES.match(text):
+            _set_pending(user, {})
+            return execute(pending['spec'], username=user.username)
+        if expired and _YES.match(text):
+            _set_pending(user, {})
+            return 'That confirmation expired, so nothing was done. Ask again if you still want it.'
+        if _NO.match(text):
+            _set_pending(user, {})
+            return 'Okay — cancelled, nothing was changed.'
+        _set_pending(user, {})   # any other message drops the stale confirmation
+    if is_question_or_negation(text):
+        return ''
+    spec = detect_action(text, history)
+    if not spec or spec.get('action') == 'none':
+        return ''
+    if spec['action'] not in CONFIRM_ACTIONS:
+        return execute(spec, username=getattr(user, 'username', 'chat'))
+    summary, resolved = _describe(spec)
+    if resolved is None:
+        return summary
+    if user is None:
+        return summary + ' Open the Assistant to confirm.'
+    _set_pending(user, {'spec': resolved, 'summary': summary,
+                        'expires': (timezone.now() + timedelta(minutes=PENDING_TTL_MINUTES)).isoformat()})
+    return f'{summary} Reply "yes" to confirm or "no" to cancel.'
+
+
+def pending_summary(user):
+    """Summary of the action awaiting a yes/no (the API's pendingAction)."""
+    p = getattr(user, 'pending_action', None) or {}
+    return p.get('summary') if p and p.get('expires', '') >= timezone.now().isoformat() else None

@@ -7,6 +7,7 @@ as mailer.py: real SMTP when configured in Settings, console delivery
 """
 
 import logging
+import re
 from datetime import datetime, time as dtime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -49,6 +50,24 @@ def _resolve_recipients():
     return sorted({u.email for u in staff if u.email})
 
 
+def _value_number(p):
+    """Numeric worth of a Potential.value string for sorting.
+
+    Values are free text ('$36,000', '$50k', '$1.2M', '$5,000-$10,000'), so
+    take the FIRST number and apply its suffix — concatenating every digit
+    would rank '$5,000-$10,000' above every real deal."""
+    m = re.search(r'(\d[\d,.]*)\s*([kKmM]|lakh|crore)?', p.value or '')
+    if not m:
+        return 0
+    try:
+        amount = float(m.group(1).replace(',', ''))
+    except ValueError:
+        return 0
+    suffix = (m.group(2) or '').lower()
+    multiplier = {'k': 1_000, 'm': 1_000_000, 'lakh': 100_000, 'crore': 10_000_000}
+    return int(amount * multiplier.get(suffix, 1))
+
+
 def build_daily_report(day=None):
     """(subject, body) — brief summary of one IST day: leads scraped, potentials, cycles.
     day=None → ALL TIME (for on-demand reports from the Leads & Reports page)."""
@@ -56,15 +75,16 @@ def build_daily_report(day=None):
         start = datetime.combine(day, dtime.min, tzinfo=IST)
         end = start + timedelta(days=1)
         leads = list(Lead.objects.filter(created_at__gte=start, created_at__lt=end).order_by('-score'))
-        potentials = list(Potential.objects.filter(created_at__gte=start, created_at__lt=end).order_by('-value'))
+        potentials = list(Potential.objects.filter(created_at__gte=start, created_at__lt=end))
         runs = list(PipelineRun.objects.filter(started_at__gte=start, started_at__lt=end))
         label = day.strftime('%d %b %Y')
     else:
         leads = list(Lead.objects.order_by('-score'))
-        potentials = list(Potential.objects.order_by('-created_at'))
+        potentials = list(Potential.objects.all())
         runs = list(PipelineRun.objects.all())
         label = 'all time'
-    start_aware, end_aware = None, None  # kept for clarity — filters applied above
+    # biggest opportunities first — a report leads with the largest deals
+    potentials.sort(key=_value_number, reverse=True)  # numeric, not text
 
     def where(l):
         return ', '.join(p for p in (l.state, l.country) if p) or '—'

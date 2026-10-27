@@ -130,3 +130,29 @@ class SerpJunkFilterTests(SimpleTestCase):
     def test_marketplace_domains_blocked(self):
         self.assertIn('urbancompany.com', BLOCKED_DOMAINS)
         self.assertIn('justdial.com', BLOCKED_DOMAINS)
+
+
+class SameSiteTests(SimpleTestCase):
+    def test_own_domain_forms_still_match(self):
+        from core.scraper import _same_site
+        for email, site in [('smiledental.com', 'smiledental.com'),
+                            ('smiledental.in', 'smiledental.com'),  # sibling TLD
+                            ('smiledental.com', 'smiledental.co.uk'),
+                            ('mail.smiledental.com', 'smiledental.com'),  # true subdomain
+                            ('smiledental.com', 'www.smiledental.com'),
+                            ('smiledental.com', 'blog.smiledental.com'),  # site's own parent
+                            ('smiledental.com:8080', 'smiledental.com'),
+                            ('foo.wixsite.com', 'foo.wixsite.com')]:
+            self.assertTrue(_same_site(email, site), (email, site))
+
+    def test_shared_hosting_parent_is_a_third_party(self):
+        from core.scraper import _same_site
+        for parent in ('wixsite.com', 'blogspot.com', 'github.io', 'squarespace.com',
+                       'weebly.com', 'wordpress.com', 'myshopify.com'):
+            self.assertFalse(_same_site(parent, f'foo.{parent}'), parent)
+            self.assertFalse(_same_site(f'bar.{parent}', f'foo.{parent}'), parent)
+
+    def test_first_label_of_a_subdomain_is_not_a_brand_match(self):
+        from core.scraper import _same_site
+        self.assertFalse(_same_site('clinic.net', 'clinic.example.in'))
+        self.assertFalse(_same_site('gmail.com', 'smiledental.com'))

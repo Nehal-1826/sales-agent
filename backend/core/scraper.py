@@ -607,6 +607,68 @@ def scrape_company(url):
         }
 
 
+FREE_MAIL_DOMAINS = {'gmail.com', 'googlemail.com', 'yahoo.com', 'yahoo.co.in', 'outlook.com',
+                     'hotmail.com', 'live.com', 'icloud.com', 'rediffmail.com', 'proton.me',
+                     'protonmail.com', 'zoho.com', 'aol.com'}
+GENERIC_TITLE_WORDS = {'home', 'homepage', 'home page', 'welcome', 'index', 'official site',
+                       'official website', 'main', 'start'}
+
+
+# Hosting / site-builder parents shared by thousands of unrelated businesses —
+# an address on one of these is a third party, never "the site's own domain".
+SHARED_HOST_DOMAINS = frozenset({
+    'wixsite.com', 'wix.com', 'blogspot.com', 'github.io', 'squarespace.com',
+    'weebly.com', 'wordpress.com', 'myshopify.com', 'netlify.app', 'vercel.app',
+    'herokuapp.com', 'pages.dev', 'webflow.io', 'carrd.co', 'godaddysites.com',
+    'business.site', 'sites.google.com', 'tumblr.com', 'medium.com',
+})
+_SECOND_LEVEL = {'co', 'com', 'org', 'net', 'gov', 'edu', 'ac', 'or', 'ne'}
+
+
+def _registrable(domain):
+    """Registrable-ish domain: last two labels, or three under a ccTLD second
+    level (co.uk, com.au, co.in)."""
+    parts = domain.split('.')
+    if len(parts) <= 2:
+        return domain
+    if len(parts[-1]) == 2 and parts[-2] in _SECOND_LEVEL:
+        return '.'.join(parts[-3:])
+    return '.'.join(parts[-2:])
+
+
+def _same_site(email_domain, site_domain):
+    """Own-domain check: equal, a true subdomain of the site, the site's own
+    registrable parent, or the same brand on a sibling TLD (smiledental.in on
+    smiledental.com).  Shared hosting parents (wixsite.com, blogspot.com, ...)
+    never match beyond exact / subdomain.  Any :port is ignored."""
+    email_domain = email_domain.split(':')[0].lower()
+    site_domain = site_domain.split(':')[0].lower()
+    if email_domain.startswith('www.'):
+        email_domain = email_domain[4:]
+    if site_domain.startswith('www.'):
+        site_domain = site_domain[4:]
+    if not email_domain or not site_domain:
+        return False
+    if email_domain == site_domain or email_domain.endswith('.' + site_domain):
+        return True
+    reg_email, reg_site = _registrable(email_domain), _registrable(site_domain)
+    if reg_email in SHARED_HOST_DOMAINS or reg_site in SHARED_HOST_DOMAINS:
+        return False
+    if site_domain.endswith('.' + email_domain) and email_domain == reg_email:
+        return True  # the site's registrable parent (blog.acme.com / @acme.com)
+    return reg_email.split('.')[0] == reg_site.split('.')[0]  # sibling TLD
+
+
+def pick_site_name(raw):
+    """First segment of a title/og:site_name that is a real brand, not 'Home'.
+    A hyphen or colon only separates when spaced ('Coca-Cola Dental' stays whole)."""
+    for part in re.split(r'\s+[-:]\s+|\s*[|–—·]\s*', raw or ''):
+        part = part.strip()
+        if 3 <= len(part) <= 60 and part.lower() not in GENERIC_TITLE_WORDS:
+            return part
+    return ''
+
+
 def _clean_email(candidate):
     candidate = candidate.strip().strip('.').lower()
     if EMAIL_JUNK.search(candidate):
@@ -633,12 +695,18 @@ def extract_contact_email(html, base_url, soup=None):
             emails.append(cleaned)
     if not emails:
         return ''
-    # prefer role inboxes on the site's own domain, then any role inbox, then anything
     domain = urlparse(base_url).netloc.lower().removeprefix('www.')
-    role = [e for e in emails if e.split('@')[0] in
-            ('info', 'contact', 'hello', 'office', 'sales', 'admin', 'mail', 'enquiries', 'support')]
-    own = [e for e in role if e.endswith('@' + domain)] or role or emails
-    return own[0]
+    role_names = ('info', 'contact', 'hello', 'office', 'sales', 'admin', 'mail', 'enquiries', 'support')
+    own = [e for e in emails if _same_site(e.split('@')[1], domain)]
+    # a free-mail inbox (gmail…) is how many small businesses are reached; any
+    # OTHER company's domain is a third party (web designer credit, vendor) —
+    # never email them about someone else's business
+    free = [e for e in emails if e.split('@')[1] in FREE_MAIL_DOMAINS]
+    pool = own or free
+    if not pool:
+        return ''
+    role = [e for e in pool if e.split('@')[0] in role_names]
+    return (role or pool)[0]
 
 
 def _clean_phone(raw):
@@ -832,8 +900,8 @@ def analyze_website(name, website, prefer_country=''):
     og_site = soup.find('meta', attrs={'property': 'og:site_name'})
     site_name = ((og_site.get('content') or '').strip() if og_site else '') or \
         ((soup.title.string or '').strip() if soup.title and soup.title.string else '')
-    site_name = re.split(r'\s*[|–—·]\s*', site_name)[0].strip()
-    if 3 <= len(site_name) <= 60:
+    site_name = pick_site_name(site_name)
+    if site_name:
         analysis['site_name'] = site_name
     score_weight = 0
 

@@ -96,6 +96,23 @@ class SettingsSerializerTests(TestCase):
         data = SettingsSerializer(s).data
         self.assertTrue(data['smtp']['password'].startswith('••••'))
 
+    def test_unknown_ai_provider_rejected(self):
+        ser = SettingsSerializer(AppSettings.load(), data={'aiKey': {'provider': 'Antropic'}},
+                                 partial=True)
+        self.assertFalse(ser.is_valid())
+        self.assertIn('aiKey', ser.errors)
+        self.assertIn('openai', str(ser.errors['aiKey']))
+
+    def test_known_blank_and_unchanged_ai_provider_accepted(self):
+        for provider in ('Google AI', 'DeepSeek', '', None):
+            ser = SettingsSerializer(AppSettings.load(),
+                                     data={'aiKey': {'provider': provider, 'apiKey': ''}},
+                                     partial=True)
+            self.assertTrue(ser.is_valid(), (provider, ser.errors))
+        ser = SettingsSerializer(AppSettings.load(), data={'aiKey': {'apiKey': '••••abcd'}},
+                                 partial=True)
+        self.assertTrue(ser.is_valid())
+
     def test_company_fields(self):
         s = AppSettings.load()
         s.company_name = 'TestCorp'

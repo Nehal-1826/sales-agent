@@ -51,23 +51,6 @@ def seed_profiles(apps, schema_editor):
 
     # 3 — classic buyer profile: operating businesses that need a website
     # (kept inactive; activating it is one click / one chat message)
-    saas_builds, _ = SearchProfile.objects.get_or_create(
-        name='Shailog — SaaS Builds (high level)',
-        defaults={
-            'description': 'High-level clients for custom SaaS builds: funded startups, '
-                           'B2B SaaS, fintech/healthtech/edtech/AI companies and technology '
-                           'operators — businesses that need a real platform, not a brochure.',
-            'target_countries': SHAILOG_COUNTRIES,
-            'target_industries': 'SaaS startup, B2B SaaS company, fintech startup, '
-                                 'healthtech startup, edtech startup, AI startup, '
-                                 'e-commerce brand, logistics technology company, '
-                                 'proptech startup, marketplace startup',
-            'target_cities': '',
-            'icp_mode': 'buyer',
-            'is_active': False,
-        },
-    )
-
     website_clients, _ = SearchProfile.objects.get_or_create(
         name='Shailog — Website Clients',
         defaults={
@@ -99,7 +82,7 @@ def unseed_profiles(apps, schema_editor):
     SearchProfile = apps.get_model('core', 'SearchProfile')
     SearchProfile.objects.filter(
         name__in=['Backup — Buyer Targeting', 'Shailog Tech — Agency Partners',
-                  'Shailog — Website Clients', 'Shailog — SaaS Builds (high level)']).delete()
+                  'Shailog — Website Clients']).delete()
 
 
 class Migration(migrations.Migration):

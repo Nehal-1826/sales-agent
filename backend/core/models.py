@@ -26,6 +26,8 @@ class User(AbstractUser):
     # per-user chat onboarding state (core.onboarding): {started, done, step,
     # answers{...}} — every NEW login gets the setup wizard; empty = fresh user
     onboarding = models.JSONField(default=dict, blank=True)
+    # chat action awaiting an explicit "yes" (core.actions): {spec, summary, expires}
+    pending_action = models.JSONField(default=dict, blank=True)
 
     def save(self, *args, **kwargs):
         # First user to sign up owns the workspace.
@@ -278,6 +280,9 @@ class AppSettings(Timestamped):
     # Frequent Runs
     runs_enabled = models.BooleanField(default=True)
     run_frequency = models.CharField(max_length=10, choices=Frequencies.choices, default=Frequencies.EVERY_1H)
+    # Single-cycle run lock (core.runlock) — set while a cycle runs anywhere
+    # (API, chat or worker); a value older than runlock.STALE_AFTER is a crash
+    pipeline_running_since = models.DateTimeField(null=True, blank=True)
 
     # Strict fake-data gate memory — domains the AI review has rejected are
     # never re-admitted on a later cycle (AI verdicts can flip; memory can't)
@@ -319,11 +324,17 @@ class AppSettings(Timestamped):
             'apollo_api_key': 'APOLLO_API_KEY',
         }
         dirty = False
+        key_absorbed = False
         for field, env_name in env_map.items():
             value = os.environ.get(env_name, '')
             if value and not getattr(self, field):
                 setattr(self, field, value)
                 dirty = True
+                key_absorbed = key_absorbed or field == 'ai_key'
+        # The key and its provider travel together: the default 'OpenAI' must
+        # not mask the env's provider, or the key would be posted to the wrong host.
+        if key_absorbed and os.environ.get('AI_PROVIDER'):
+            self.ai_provider = os.environ['AI_PROVIDER']
         if dirty:
             self.save(update_fields=[f for f, e in env_map.items() if os.environ.get(e)])
 

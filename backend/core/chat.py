@@ -180,7 +180,7 @@ def _keyword_reply(text, turn=0):
     def n(items):
         return len(items)
 
-    if any(w in q for w in ('hi', 'hello', 'hey', 'vanakkam', 'hey')):
+    if re.search(r'\b(hi|hello|hey|vanakkam)\b', q):
         leads, potentials, replies = n(Lead.objects.all()), n(Potential.objects.all()), n(Reply.objects.all())
         if style == 'tanglish':
             return (
@@ -255,24 +255,24 @@ def _keyword_reply(text, turn=0):
     return FALLBACK_REPLIES[turn % len(FALLBACK_REPLIES)]
 
 
-def responder_reply(text, turn=0, username='chat'):
+def responder_reply(text, turn=0, user=None):
     """Return the Responder's answer for a user message.
 
     Agentic: first tries to detect + execute an action (run cycle, approve/
     reject draft, delete lead, set cadence, send report), then phrases the
-    result in the user's language. Falls back to conversation, then keywords.
+    result in the user's language.  Risky actions wait for an explicit "yes". Falls back to conversation, then keywords.
     """
-    from .actions import detect_action, execute  # late import — pipeline is heavy
+    from .actions import handle_command  # late import — pipeline is heavy
 
-    spec = detect_action(text)
-    if spec and spec.get('action') != 'none':
-        try:
-            result = execute(spec, username=username)
-        except Exception as exc:
-            log.warning('chat action failed (%s): %s', spec, exc)
-            result = 'That action failed on the server — check the logs.'
-        if result:
-            return _phrase_reply(text, result)
+    try:
+        result = handle_command(text, user)
+    except Exception as exc:
+        log.warning('chat action failed (%s): %s', text, exc)
+        result = 'That action failed on the server — check the logs.'
+    if result:
+        if 'Reply "yes"' in result:
+            return result  # confirmation prompts go out verbatim
+        return _phrase_reply(text, result)
 
     if llm_available():
         try:

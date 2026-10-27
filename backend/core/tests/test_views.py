@@ -82,6 +82,17 @@ class AuthTests(TestCase):
         resp = self.client.get('/api/auth/me/')
         self.assertEqual(resp.status_code, 401)
 
+    def test_register_closed_once_a_user_exists(self):
+        first = self.client.post('/api/auth/register/', {
+            'username': 'owner1', 'password': 'securepass123',
+        }, content_type='application/json')
+        self.assertEqual(first.status_code, 201)
+        second = self.client.post('/api/auth/register/', {
+            'username': 'intruder', 'password': 'securepass123',
+        }, content_type='application/json')
+        self.assertEqual(second.status_code, 403)
+        self.assertFalse(User.objects.filter(username='intruder').exists())
+
 
 class LeadViewTests(SetupMixin, TestCase):
     """CRUD on /api/leads/."""

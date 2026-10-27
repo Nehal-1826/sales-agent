@@ -5,6 +5,7 @@
 """
 
 import time
+from datetime import date
 
 from django.core.management.base import BaseCommand
 
@@ -24,7 +25,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         if not options['loop']:
-            day = options['day'] or None
+            day = date.fromisoformat(options['day']) if options['day'] else None
             status, subject = send_daily_report(day)
             self.stdout.write(self.style.SUCCESS(f'{status}: {subject}'))
             return

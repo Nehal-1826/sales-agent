@@ -10,13 +10,15 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .actions import pending_summary
 from .chat import responder_reply
 from .guide import guide_answer
 from .health import status_of
-from .mailer import send_draft, smtp_configured
+from .mailer import NO_RECIPIENT_ERROR, claim_draft_for_send, send_draft, smtp_configured, valid_recipient
 from .models import AgentConfig, AppSettings, ChatMessage, EmailDraft, EmailTemplate, Lead, PipelineRun, Potential, Reply, SearchProfile, User
-from .pipeline import pipeline_status, run_pipeline
+from .pipeline import PipelineBusy, pipeline_status, run_pipeline, start_pipeline_async
 from .reports import _resolve_recipients, send_daily_report
+from .runlock import running_since
 from .serializers import (
     AgentConfigSerializer,
     AgentMetaSerializer,
@@ -78,6 +80,12 @@ def health(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def register(request):
+    # First-boot only: the very first account becomes the owner.  After that
+    # sign-up is closed — the app is reachable on a public URL and every
+    # account sees the whole CRM, SMTP setup and send buttons.
+    if User.objects.exists():
+        return Response({'detail': 'Sign-up is closed — ask the workspace owner for an account.'},
+                        status=403)
     username = (request.data.get('username') or '').strip()
     password = request.data.get('password') or ''
     if not username or len(password) < 8:
@@ -159,6 +167,12 @@ def agents(request):
         'copywright': f'{drafts_waiting} draft(s) awaiting approval',
         'responder': f'{drafts_sent} cold email(s) sent · {counts["reply"]} replies handled',
     }
+    if not AppSettings.load().runs_enabled:
+        agent_status = 'Paused'
+    elif running_since() is not None:
+        agent_status = 'Running'
+    else:
+        agent_status = 'Ready'
     metas = []
     for key, (name, short, role) in AGENT_META.items():
         metas.append({
@@ -166,7 +180,7 @@ def agents(request):
             'name': name,
             'shortName': short,
             'role': role,
-            'status': 'Active',
+            'status': agent_status,
             'lastAction': actions[key],
         })
     return Response(AgentMetaSerializer(metas, many=True).data)
@@ -322,17 +336,18 @@ def lead_draft_email(request, lead_id):
     in the normal approval queue — nothing sends without approval.
 
     201 {ok: true, draft} on success; 200 {ok: false, detail} when the lead
-    already has an active draft; 404 for an unknown lead."""
+    already has an email waiting (draft/approved); 404 for an unknown lead."""
     lead = Lead.objects.filter(pk=lead_id).first()
     if lead is None:
         return Response({'detail': 'lead not found'}, status=404)
-    active = lead.drafts.exclude(status__in=[EmailDraft.Statuses.REJECTED,
-                                             EmailDraft.Statuses.FAILED])
+    # only a draft in flight blocks a new one — a sent/rejected/failed history
+    # must not stop a deliberate manual re-draft
+    active = lead.drafts.filter(status__in=[EmailDraft.Statuses.DRAFT,
+                                            EmailDraft.Statuses.APPROVED])
     if active.exists():
         return Response({'ok': False,
-                         'detail': f'{lead.company} already has an active draft '
-                                   f'({active.first().get_status_display().lower()}) — '
-                                   'find it in the Outreach queue.'})
+                         'detail': f'{lead.company} already has an email waiting for '
+                                   'approval — find it in Approvals.'})
     from .pipeline import _draft_email
     subject, body, used_llm = _draft_email(lead)
     draft = EmailDraft.objects.create(
@@ -443,7 +458,7 @@ def guide(request):
         return Response({'detail': 'text is required'}, status=400)
     history = [h for h in (request.data.get('history') or [])
                if isinstance(h, dict) and isinstance(h.get('text'), str)][:8]
-    return Response({'answer': guide_answer(text, history)})
+    return Response({'answer': guide_answer(text, history, user=request.user)})
 
 
 # ------------------------------------------------------------------
@@ -454,32 +469,44 @@ def guide(request):
 def chat(request):
     if request.method == 'DELETE':
         deleted, _ = ChatMessage.objects.filter(user=request.user).delete()
+        if request.user.pending_action:
+            request.user.pending_action = {}   # the confirmation is no longer visible
+            request.user.save(update_fields=['pending_action'])
         return Response({'cleared': True, 'deleted': deleted})
     # first-login setup wizard rides on the chat while it is active — plain
     # Q&A that configures the whole system, then hands over to the Responder.
     # State is PER USER (User.onboarding): every new client login gets the
     # wizard; existing users were marked done in migration 0017.
     settings = AppSettings.load()
-    from .onboarding import onboarding_reply, onboarding_status
+    from .onboarding import onboarding_reply, onboarding_status, redact_for_history
     if request.method == 'POST':
         text = (request.data.get('text') or '').strip()
         if not text:
             return Response({'detail': 'text is required'}, status=400)
-        user_msg = ChatMessage.objects.create(user=request.user, role='user', text=text)
-        if not onboarding_status(request.user, settings)['done']:
+        status = onboarding_status(request.user, settings)
+        # always redact: a key pasted after setup is stored (and re-served) forever too
+        stored = redact_for_history(text, status['stepKey'] or '')
+        user_msg = ChatMessage.objects.create(user=request.user, role='user', text=stored)
+        if not status['done']:
+            if request.user.pending_action:
+                request.user.pending_action = {}   # never let a "yes" fire it after the wizard
+                request.user.save(update_fields=['pending_action'])
             reply_text = onboarding_reply(text, request.user, settings)
         else:
-            reply_text = responder_reply(text, turn=user_msg.id, username=request.user.username)
+            reply_text = responder_reply(text, turn=user_msg.id, user=request.user)
         ai_msg = ChatMessage.objects.create(user=request.user, role='ai', text=reply_text)
         return Response({
             'userMessage': ChatMessageSerializer(user_msg).data,
             'reply': ChatMessageSerializer(ai_msg).data,
             'onboarding': onboarding_status(request.user, AppSettings.load()),
+            'pendingAction': pending_summary(request.user),
         })
     messages = ChatMessage.objects.filter(user=request.user)
     return Response({
         'messages': ChatMessageSerializer(messages, many=True).data,
         'onboarding': onboarding_status(request.user, settings),
+        # a refresh must not hide a confirmation the server still holds
+        'pendingAction': pending_summary(request.user),
     })
 
 
@@ -535,8 +562,15 @@ def drafts_bulk_approve(request):
                             'error': f'already {draft.get_status_display().lower()}'})
             failed += 1
             continue
-        draft.status = EmailDraft.Statuses.APPROVED
-        draft.save(update_fields=['status', 'updated_at'])
+        if not valid_recipient(draft.to_email):
+            results.append({'id': draft_id, 'ok': False, 'error': NO_RECIPIENT_ERROR})
+            failed += 1
+            continue
+        draft = claim_draft_for_send(draft.id)
+        if draft is None:
+            results.append({'id': draft_id, 'ok': False, 'error': 'already being sent'})
+            failed += 1
+            continue
         send_draft(draft)
         draft.refresh_from_db()
         if draft.status == EmailDraft.Statuses.SENT:
@@ -555,13 +589,36 @@ def draft_detail(request, draft_id):
     if draft is None:
         return Response({'detail': 'draft not found'}, status=404)
     if request.method == 'PUT':
-        # editable only while it is still a draft
-        if draft.status != EmailDraft.Statuses.DRAFT:
-            return Response({'detail': 'only drafts can be edited'}, status=409)
-        for field in ('subject', 'body', 'to_email'):
-            if field in request.data:
-                setattr(draft, field, (request.data[field] or '').strip())
-        draft.save()
+        # editable only while unsent — a failed draft (e.g. no recipient) is
+        # fixed in place and retried
+        if draft.status not in (EmailDraft.Statuses.DRAFT, EmailDraft.Statuses.FAILED):
+            return Response({'detail': 'only unsent drafts can be edited'}, status=409)
+        incoming = request.data
+        changes = {}
+        # the UI sends camelCase (toEmail); accept the snake_case spelling too
+        if 'toEmail' in incoming or 'to_email' in incoming:
+            to_email = incoming.get('toEmail', incoming.get('to_email'))
+            if not isinstance(to_email, str):
+                return Response({'detail': 'toEmail must be a string.'}, status=400)
+            to_email = to_email.strip()
+            if to_email and not valid_recipient(to_email):
+                return Response({'detail': 'That recipient email is not valid.'}, status=400)
+            changes['to_email'] = to_email
+        for field in ('subject', 'body'):
+            if field in incoming:
+                if not isinstance(incoming[field], str):
+                    return Response({'detail': f'{field} must be a string.'}, status=400)
+                changes[field] = incoming[field].strip()
+        # conditional UPDATE, not draft.save(): an approve that claims/sends this
+        # draft between our read above and this write must not be overwritten
+        # back to 'draft' (that would let it be sent twice)
+        updated = (EmailDraft.objects
+                   .filter(pk=draft.pk, status__in=[EmailDraft.Statuses.DRAFT,
+                                                    EmailDraft.Statuses.FAILED])
+                   .update(updated_at=timezone.now(), **changes))
+        if not updated:
+            return Response({'detail': 'only unsent drafts can be edited'}, status=409)
+        draft.refresh_from_db()
     return Response(EmailDraftSerializer(draft).data)
 
 
@@ -573,8 +630,11 @@ def draft_approve(request, draft_id):
         return Response({'detail': 'draft not found'}, status=404)
     if draft.status not in (EmailDraft.Statuses.DRAFT, EmailDraft.Statuses.FAILED):
         return Response({'detail': f'draft is already {draft.status}'}, status=409)
-    draft.status = EmailDraft.Statuses.APPROVED
-    draft.save(update_fields=['status', 'updated_at'])
+    if not valid_recipient(draft.to_email):
+        return Response({'detail': NO_RECIPIENT_ERROR}, status=400)
+    draft = claim_draft_for_send(draft.id)
+    if draft is None:
+        return Response({'detail': 'this draft is already being sent'}, status=409)
     send_draft(draft)
     return Response(EmailDraftSerializer(draft).data)
 
@@ -586,19 +646,34 @@ def draft_reject(request, draft_id):
         return Response({'detail': 'draft not found'}, status=404)
     if draft.status == EmailDraft.Statuses.SENT:
         return Response({'detail': 'draft already sent'}, status=409)
-    draft.status = EmailDraft.Statuses.REJECTED
-    draft.save(update_fields=['status', 'updated_at'])
+    # conditional UPDATE (like claim_draft_for_send): a plain save could land while
+    # send_draft is mid-SMTP and be overwritten by its SENT, telling the user
+    # "rejected" while the mail still goes out
+    rejected = (EmailDraft.objects
+                .filter(pk=draft.pk, status__in=[EmailDraft.Statuses.DRAFT, EmailDraft.Statuses.FAILED])
+                .update(status=EmailDraft.Statuses.REJECTED, updated_at=timezone.now()))
+    if not rejected:
+        draft.refresh_from_db()
+        already = draft.status == EmailDraft.Statuses.REJECTED
+        return Response({'detail': 'That email was already rejected.' if already
+                         else 'That email is already being sent.'}, status=409)
+    draft.refresh_from_db()
     return Response(EmailDraftSerializer(draft).data)
 
 
 @api_view(['POST'])
 def draft_send(request, draft_id):
-    """Retry delivery of an approved/failed draft."""
+    """Retry delivery of a failed draft."""
     draft = _get_draft(draft_id)
     if draft is None:
         return Response({'detail': 'draft not found'}, status=404)
-    if draft.status not in (EmailDraft.Statuses.APPROVED, EmailDraft.Statuses.FAILED):
-        return Response({'detail': 'only approved/failed drafts can be sent'}, status=409)
+    if draft.status != EmailDraft.Statuses.FAILED:
+        return Response({'detail': 'only failed drafts can be retried'}, status=409)
+    if not valid_recipient(draft.to_email):
+        return Response({'detail': NO_RECIPIENT_ERROR}, status=400)
+    draft = claim_draft_for_send(draft.id, from_statuses=(EmailDraft.Statuses.FAILED,))
+    if draft is None:
+        return Response({'detail': 'this draft is already being sent'}, status=409)
     send_draft(draft)
     return Response(EmailDraftSerializer(draft).data)
 
@@ -610,6 +685,7 @@ def outreach_status(request):
         'drafts': EmailDraft.objects.filter(status=EmailDraft.Statuses.DRAFT).count(),
         'sent': EmailDraft.objects.filter(status=EmailDraft.Statuses.SENT).count(),
         'failed': EmailDraft.objects.filter(status=EmailDraft.Statuses.FAILED).count(),
+        'approved': EmailDraft.objects.filter(status=EmailDraft.Statuses.APPROVED).count(),
         'smtpConfigured': smtp_configured(),
     })
 
@@ -625,8 +701,20 @@ def pipeline_status_view(request):
 
 @api_view(['POST'])
 def pipeline_run(request):
-    run = run_pipeline(triggered_by=request.data.get('triggeredBy', 'manual'))
-    return Response(PipelineRunSerializer(run).data, status=201)
+    """Start one cycle.  Default: background thread → 202 and the UI polls
+    /pipeline/status/.  ?wait=1 runs synchronously (scripts)."""
+    triggered_by = request.data.get('triggeredBy', 'manual')
+    busy = Response({'detail': 'A cycle is already running — results appear when it finishes.'},
+                    status=409)
+    if request.query_params.get('wait') == '1':
+        try:
+            run = run_pipeline(triggered_by=triggered_by)
+        except PipelineBusy:
+            return busy
+        return Response(PipelineRunSerializer(run).data, status=201)
+    if not start_pipeline_async(triggered_by=triggered_by):
+        return busy
+    return Response({'started': True, 'status': pipeline_status()}, status=202)
 
 
 @api_view(['GET'])

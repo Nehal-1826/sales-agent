@@ -92,6 +92,15 @@ STEPS = [
 
 STEP_KEYS = [s[0] for s in STEPS]
 
+KEEP_RE = re.compile(r'^(keep|yes|ok|okay|fine|use it|sure)$')
+CHANGE_RE = re.compile(r'^(change|redo|start over|restart|set it up again)$')
+
+# a key-shaped token anywhere in a sentence (known prefixes, or a long mixed token)
+_KEY_IN_TEXT_RE = re.compile(
+    r'(?<![A-Za-z0-9_-])(?:(?:sk-|AIza|ghp_|gsk_|xai-|rz-|gl-)[A-Za-z0-9_-]{12,}'
+    r'|(?=[A-Za-z_-]*\d)(?=[A-Za-z0-9_-]*[A-Za-z])[A-Za-z0-9_-]{28,})')
+_MAILBOX_PAIR_RE = re.compile(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\s*:\s*\S+')
+
 SKIP_WORDS = {'skip', 'skip it', 'later', 'not now', 'no', 'nah', 'nope',
               'skip for now', 'ill do it later', "i'll do it later", 'pass'}
 
@@ -108,6 +117,12 @@ def _save_state(user, **patch):
     return state
 
 
+def _existing_question(settings):
+    services = ', '.join(settings.services or []) or 'no services listed'
+    return (f'This workspace is already set up for {settings.company_name} ({services}). '
+            'Reply "keep" to use it as is, or "change" to walk through setup again.')
+
+
 def onboarding_status(user=None, settings=None):
     """Wizard state for the frontend: {needed, done, stepIndex, stepCount,
     stepKey, question, hint, progress} — needed=False once done/skipped."""
@@ -119,6 +134,22 @@ def onboarding_status(user=None, settings=None):
     if state.get('done'):
         return {'needed': False, 'done': True, 'stepIndex': 0, 'stepCount': len(STEPS),
                 'stepKey': '', 'question': '', 'hint': '', 'progress': ''}
+    if not state.get('started') and (settings.company_name or '').strip():
+        # a teammate can't reconfigure a set-up workspace, so never send them
+        # into a wizard they can't use — the frontend redirects on needed=True
+        if getattr(user, 'role', '') not in ('owner', 'admin'):
+            return {'needed': False, 'done': False, 'stepIndex': 0, 'stepCount': len(STEPS),
+                    'stepKey': '', 'question': '', 'hint': '', 'progress': ''}
+        return {
+            'needed': True,
+            'done': False,
+            'stepIndex': 0,
+            'stepCount': len(STEPS),
+            'stepKey': 'existing',
+            'question': _existing_question(settings),
+            'hint': '"keep" or "change"',
+            'progress': 'Workspace already set up',
+        }
     step = min(int(state.get('step') or 0), len(STEPS) - 1)
     key, _req, question, hint = STEPS[step]
     return {
@@ -169,7 +200,9 @@ def _parse_target(text):
     t = text.lower()
     if re.search(r'agenc|partner|white[- ]label|studio|software (shop|house|company)|outsourc|collab|sub ?contract', t):
         return 'agency'
-    return 'buyer'
+    if re.search(r'buyer|business|compan|client|customer|clinic|saas|e-?commerce|brand|shop|store', t):
+        return 'buyer'
+    return None
 
 
 def _parse_countries(text):
@@ -196,12 +229,50 @@ def _looks_like_key(text):
     return bool(re.match(r'^(sk-|AIza|ghp_|gsk_|xai-|rz-|gl-|[A-Za-z0-9_-]{28,})', t)) and ' ' not in t
 
 
+def _extract_key(text):
+    """The API key in an answer — the whole text when it is just a key, or the
+    key-shaped token inside a sentence ("my key is sk-...").  '' when none."""
+    t = text.strip()
+    if _looks_like_key(t):
+        return t
+    m = _KEY_IN_TEXT_RE.search(t)
+    return m.group(0) if m else ''
+
+
+_GLM_KEY_RE = re.compile(r'^[A-Za-z0-9]{16,}\.[A-Za-z0-9]{6,}$')
+
+SUPPORTED_PROVIDERS = ('Gemini', 'OpenAI', 'Zhipu (GLM)', 'DeepSeek', 'Groq',
+                       'Mistral', 'Ollama')
+_PROVIDER_DISPLAY = {
+    'openai': 'OpenAI', 'glm': 'Zhipu (GLM)', 'zhipu': 'Zhipu (GLM)',
+    'deepseek': 'DeepSeek', 'groq': 'Groq', 'mistral': 'Mistral',
+    'gemini': 'Gemini', 'google': 'Gemini', 'ollama': 'Ollama',
+}
+
+
 def _provider_for_key(key):
+    """Provider by key shape — '' when the shape is not recognised (never guess:
+    the key is sent as a Bearer token to whichever host this names)."""
+    if key.startswith('sk-ant-') or key.startswith('sk-or-'):
+        return ''  # Anthropic (unsupported) / OpenRouter (unsupported)
+    if key.startswith('gsk_'):
+        return 'Groq'
     if key.startswith('AIza'):
-        return 'Google AI'
+        return 'Gemini'
     if key.startswith('sk-'):
         return 'OpenAI'
-    return 'Zhipu (GLM)'
+    if _GLM_KEY_RE.match(key):
+        return 'Zhipu (GLM)'
+    return ''
+
+
+def _provider_from_name(text):
+    """'mistral' / 'Google AI' -> display name of a supported provider, else ''."""
+    from .ai import resolve_provider
+    if not (text or '').strip():
+        return ''
+    name = resolve_provider(text)
+    return _PROVIDER_DISPLAY.get(name, '') if name else ''
 
 
 def _parse_mailbox(text):
@@ -211,8 +282,27 @@ def _parse_mailbox(text):
         return '', ''
     email = m.group(0).lower()
     rest = text[m.end():].lstrip(' :/|-')
-    password = rest.strip().split()[0] if rest.strip() else ''
+    # Gmail app passwords are pasted as 4 groups of 4 — keep them all, joined
+    password = ''.join(rest.split())
     return email, password
+
+
+def redact_for_history(text, step_key):
+    """What the chat history may store for an answer: secrets pasted into the
+    wizard never land in ChatMessage (GET /api/chat/ returns it forever)."""
+    if step_key == 'ai_key' and _extract_key(text):
+        return '🔒 API key (hidden)'
+    if step_key == 'email':
+        email, password = _parse_mailbox(text)
+        if email and password:
+            return f'🔒 {email}:••••••'
+    # a secret pasted at the wrong step must not be stored raw either
+    if _looks_like_key(text) or _KEY_IN_TEXT_RE.search(text):
+        return '🔒 API key (hidden)'
+    if _MAILBOX_PAIR_RE.search(text):
+        email = EMAIL_RE.search(text).group(0).lower()
+        return f'🔒 {email}:••••••'
+    return text
 
 
 # ------------------------------------------------------------------
@@ -333,11 +423,31 @@ def onboarding_reply(text, user, settings=None):
         return ('No problem — setup skipped. Everything is also configurable in Settings, '
                 'and I\'m here in chat whenever you need me.')
 
+    if not state.get('started') and (settings.company_name or '').strip():
+        # only the workspace owner/admin may re-run the wizard over a configured
+        # workspace; everyone else gets it read-only and is never asked again
+        if getattr(user, 'role', '') not in ('owner', 'admin'):
+            _save_state(user, done=True, kept_existing=True)
+            return ('This workspace is already set up by the owner, so you can just start '
+                    'using it — ask me about leads, or say "run a cycle". The owner can '
+                    'change the setup any time in Settings.')
+        answer = re.sub(r'[\s.!]+$', '', lowered)
+        if KEEP_RE.match(answer):
+            _save_state(user, done=True, kept_existing=True)
+            return ('Great — keeping the existing setup as is. Ask me anything about your '
+                    'leads, or say "run a cycle" to start.')
+        if CHANGE_RE.match(answer):
+            _save_state(user, started=True, step=0)
+            return _question_message(0)
+        return _existing_question(settings)
+
     if not state.get('started'):
         _save_state(user, started=True)
 
     # ---------------- per-step parsing ----------------
     if key == 'company':
+        if re.match(r'^\s*(hi|hello|hey|vanakkam)\b', lowered) or text.strip().endswith('?'):
+            return 'Hi! Before anything else — what should I call your company? Just the name is perfect.'
         name = _clean_name(text)
         if len(name) < 2:
             return 'Hmm, I didn\'t catch a name — what should I call your company?'
@@ -369,6 +479,9 @@ def onboarding_reply(text, user, settings=None):
 
     if key == 'target':
         mode = _parse_target(text)
+        if mode is None:
+            return ('Is it businesses that BUY what you sell, or other agencies to partner with? '
+                    'Say "buyers" or "agencies".')
         settings.icp_mode = mode
         settings.save(update_fields=['icp_mode', 'updated_at'])
         answers['target_mode'] = mode
@@ -402,13 +515,43 @@ def onboarding_reply(text, user, settings=None):
         return _question_message(6, prefix=summary + ' ')
 
     if key == 'ai_key':
-        if lowered not in SKIP_WORDS and _looks_like_key(text):
-            settings.ai_key = text.strip()
-            settings.ai_provider = _provider_for_key(text.strip())
-            settings.save(update_fields=['ai_key', 'ai_provider', 'updated_at'])
+        api_key = '' if lowered in SKIP_WORDS else _extract_key(text)
+        if api_key.startswith('sk-ant-'):
+            return ('That looks like an Anthropic (Claude) key — Anthropic is not supported '
+                    'here, so I haven\'t saved it. Paste a key from one of: '
+                    + ', '.join(SUPPORTED_PROVIDERS) + ' — or say "skip".')
+        if api_key:
+            provider = _provider_for_key(api_key)
+            fields = ['ai_key', 'updated_at']
+            settings.ai_key = api_key
+            if provider:
+                settings.ai_provider = provider
+                fields.append('ai_provider')
+            settings.save(update_fields=fields)
+            if not provider:
+                answers['ai_key'] = 'needs_provider'
+                _save_state(user, step=6, answers=answers)
+                return ('Key saved 🔑 — but I can\'t tell which provider it belongs to, and '
+                        'I won\'t guess. Which provider is it? Supported: '
+                        + ', '.join(SUPPORTED_PROVIDERS) + '. (Or say "skip".)')
             answers['ai_key'] = 'set'
             _save_state(user, step=7, answers=answers)
-            return _question_message(7, prefix='Key saved 🔑 — I can now write and vet with AI. ')
+            # name the provider: an 'sk-' key could be OpenAI or DeepSeek, and the
+            # user is the only one who can tell us which host may see their key
+            return _question_message(
+                7,
+                prefix=f'Key saved 🔑 — I\'ll use it with {provider}. (If it belongs to a '
+                       f'different provider, change that in Settings → Advanced.) ')
+        if answers.get('ai_key') == 'needs_provider' and lowered not in SKIP_WORDS:
+            provider = _provider_from_name(text)
+            if provider:
+                settings.ai_provider = provider
+                settings.save(update_fields=['ai_provider', 'updated_at'])
+                answers['ai_key'] = 'set'
+                _save_state(user, step=7, answers=answers)
+                return _question_message(7, prefix=f'Got it — {provider}. ')
+            return ('Which provider is that key from? Supported: '
+                    + ', '.join(SUPPORTED_PROVIDERS) + '. (Or say "skip".)')
         answers['ai_key'] = 'skipped'
         _save_state(user, step=7, answers=answers)
         return _question_message(7, prefix='No problem, template mode works fine. ')

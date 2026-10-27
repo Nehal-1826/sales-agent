@@ -42,22 +42,50 @@ DEFAULT_MODELS = {
     'ollama': 'llama3.1',
 }
 
+# Model-id prefixes each provider serves; an empty tuple = hosts many families,
+# so accept whatever is configured.
+MODEL_FAMILIES = {
+    'openai': ('gpt-', 'o1', 'o3', 'o4', 'chatgpt'),
+    'glm': ('glm',), 'zhipu': ('glm',),
+    'deepseek': ('deepseek',),
+    'mistral': ('mistral', 'open-mistral', 'codestral', 'ministral', 'pixtral'),
+    'gemini': ('gemini',), 'google': ('gemini',),
+    'groq': (), 'ollama': (),   # host many families — accept whatever is set
+}
+
 
 def resolve_provider(provider):
-    """Map a free-text provider name (e.g. 'Google AI') to a known provider key."""
+    """Free-text provider name (e.g. 'Google AI') → known provider key; None when
+    we don't know where it lives (never fall back to OpenAI — that would send
+    someone else's key there). Blank means the default, OpenAI."""
     key = (provider or '').strip().lower()
+    if not key:
+        return 'openai'
     for name in PROVIDER_BASE_URLS:
         if name in key:
             return name
-    return 'openai'
+    return None
+
+
+def model_for(provider, requested):
+    """The agent's configured model when it belongs to this provider, else
+    the provider default (a GLM id sent to Gemini fails every call)."""
+    requested = (requested or '').strip()
+    families = MODEL_FAMILIES.get(provider, ())
+    if requested and (not families or requested.lower().startswith(families)):
+        return requested
+    return DEFAULT_MODELS[provider]
 
 
 def provider_base_url(provider):
-    return PROVIDER_BASE_URLS[resolve_provider(provider)]
+    return PROVIDER_BASE_URLS[resolve_provider(provider) or 'openai']
 
 
 def llm_available():
-    return bool(AppSettings.load().ai_key)
+    """Key set AND provider known — an unknown provider is keyless mode, so the
+    strict AI gate in the pipeline doesn't hold every lead forever."""
+    s = AppSettings.load()
+    return bool(s.ai_key) and resolve_provider(s.ai_provider) is not None
 
 
 def llm_complete(prompt, system='', model='', timeout=45, temperature=0.7):
@@ -68,9 +96,12 @@ def llm_complete(prompt, system='', model='', timeout=45, temperature=0.7):
     if not settings.ai_key:
         return None
     provider = resolve_provider(settings.ai_provider)
+    if provider is None:
+        log.warning('Unsupported AI provider %r — AI disabled', settings.ai_provider)
+        return None
     base = PROVIDER_BASE_URLS[provider]
     body = {
-        'model': model or DEFAULT_MODELS[provider],
+        'model': model_for(provider, model),
         'messages': ([{'role': 'system', 'content': system}] if system else [])
         + [{'role': 'user', 'content': prompt}],
         'temperature': temperature,

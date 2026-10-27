@@ -15,10 +15,13 @@ Real implementation:
 
 import json
 import logging
+import os
 import random
 import re
+import threading
 import time
 
+from django.db.models import Q
 from django.utils import timezone
 
 from .ai import llm_available, llm_complete
@@ -26,8 +29,10 @@ from .apify_maps import apify_available as apify_maps_available
 from .apify_maps import enrich_leads_via_apify
 from .enrichment import apollo_enrich_domain
 from .gmaps import discover_no_website_places, enrich_leads_via_gmaps, gmaps_available
+from .health import status_of
 from .icp import agency_mode, buyer_industries, looks_like_competitor, our_services_text, vertical
 from .models import AgentConfig, AppSettings, EmailDraft, EmailTemplate, Lead, PipelineRun, Potential
+from .runlock import acquire_run_lock, release_run_lock, running_since
 from .scalelist import scalelist_phone_find
 from .scraper import (
     analyze_website,
@@ -44,6 +49,7 @@ MAX_PROFILE_PER_CYCLE = 6    # sites scraped+audited per cycle
 MAX_DRAFTS_PER_CYCLE = 3     # cold emails drafted per cycle
 APOLLO_SWEEP_PER_CYCLE = 5   # phone-enrichment retries per cycle (quota-friendly)
 MAPS_LEADS_PER_CYCLE = 3     # no-website leads from the free Google Maps scraper
+ENRICH_RETRY_HOURS = 72      # paid phone lookups: at most one per lead per this many hours
 
 # Score at which Profile flags a POTENTIAL opportunity.
 POTENTIAL_THRESHOLD = 65
@@ -83,8 +89,8 @@ def _ai_review(lead, audit, settings, our_services=''):
       True   → genuine, industry-relevant business — keep it
       False  → blog/directory/landing-page junk — the caller deletes the lead
       None   → the AI was configured but could not answer right now (throttle,
-               network, bad key) — the caller HOLDS the lead unprofiled so the
-               next cycle re-vets it.  Strict mode: an unreviewed site never
+               network, bad key) or gave no explicit RELEVANT: yes|no verdict —
+               the caller HOLDS the lead unprofiled so the next cycle re-vets it.  Strict mode: an unreviewed site never
                enters the CRM, because unvetted discoveries are where fake
                leads come from.  Without an AI key the fallback is (True, '')
                — keep everything, describe nothing (keyless demo mode; the
@@ -132,7 +138,10 @@ def _ai_review(lead, audit, settings, our_services=''):
             temperature=0)  # deterministic verdicts — no creative randomness
         if not text:
             return None, ''  # strict: hold for re-vetting instead of passing unvetted
-        relevant = not re.search(r'RELEVANT:\s*no', text, re.I)
+        verdict = re.search(r'RELEVANT\W*\s*(yes|no)\b', text, re.I)
+        if not verdict:
+            return None, ''   # no clear verdict (refusal, garbled) → hold, never admit
+        relevant = verdict.group(1).lower() == 'yes'
         m = re.search(r'DESCRIPTION:\s*(.+)', text, re.S)
         description = (m.group(1).strip().split('---')[0].strip() if m else '')
         description = ' '.join(description.split())[:600]
@@ -140,6 +149,44 @@ def _ai_review(lead, audit, settings, our_services=''):
     except Exception as exc:
         log.warning('AI review failed for %s: %s', lead.company, exc)
         return None, ''
+
+
+def _enrich_due(lead):
+    tried = (lead.analysis or {}).get('enrich_tried_at')
+    if not tried:
+        return True
+    try:
+        last = timezone.datetime.fromisoformat(tried)
+    except (TypeError, ValueError):
+        return True
+    return timezone.now() - last >= timezone.timedelta(hours=ENRICH_RETRY_HOURS)
+
+
+def _paid_lookup_configured():
+    """True when at least one paid phone provider (Scalelist / Apollo) has a key."""
+    return bool(os.environ.get('SCALELIST_API_KEY') or AppSettings.load().apollo_api_key)
+
+
+def _paid_phone_lookup(lead):
+    """Scalelist → Apollo, only for vetted leads, at most once per
+    ENRICH_RETRY_HOURS — paid credits are never spent on leads that the
+    gates delete, or re-spent every cycle on the same leads.  The stamp is
+    only written when a paid call is genuinely made: with no provider key
+    nothing was tried, so the lead must not be skipped later."""
+    if lead.contact_phone or not _enrich_due(lead) or not _paid_lookup_configured():
+        return ''
+    lead.analysis = {**(lead.analysis or {}), 'enrich_tried_at': timezone.now().isoformat()}
+    phone = scalelist_phone_find(email=lead.contact_email, company=lead.company, domain=lead.website)
+    if phone:
+        lead.analysis['phone_source'] = 'scalelist'
+        return phone
+    apollo = apollo_enrich_domain(lead.website)
+    if apollo.get('employees'):
+        lead.analysis['employees'] = apollo['employees']
+    if apollo.get('phone'):
+        lead.analysis['phone_source'] = 'apollo.io'
+        return apollo['phone']
+    return ''
 
 
 def _default_template():
@@ -275,7 +322,7 @@ def _draft_email(lead):
     if not subject or not body:
         if template:
             # user template + placeholders — no AI needed
-            subject = _fill_template(template.subject or f'Quick idea for {{company}}',
+            subject = _fill_template(template.subject or 'Quick idea for {{company}}',
                                      lead, settings, top)
             body = _fill_template(template.body, lead, settings, top)
         elif agency:
@@ -332,9 +379,59 @@ def _draft_email(lead):
     return subject, body, used_llm
 
 
-def run_pipeline(triggered_by='manual'):
-    """Run one orchestrator cycle: Search → Profile → Copywright → Responder."""
+class PipelineBusy(Exception):
+    """Another cycle holds the run lock."""
 
+
+def run_pipeline(triggered_by='manual'):
+    """Run one orchestrator cycle synchronously.  Raises PipelineBusy when a
+    cycle is already running anywhere (API, chat, worker)."""
+    token = acquire_run_lock()
+    if not token:
+        raise PipelineBusy('A pipeline cycle is already running.')
+    try:
+        return _run_cycle(triggered_by)
+    finally:
+        try:
+            release_run_lock(token)
+        except Exception:
+            # don't mask the cycle's own exception (or its result) — a stuck
+            # lock just expires after runlock.STALE_AFTER
+            log.exception('Could not release the pipeline run lock')
+
+
+def start_pipeline_async(triggered_by='manual'):
+    """Take the lock now (so callers can answer 'busy' immediately), run the
+    cycle on a daemon thread, release when done.  Returns False when busy."""
+    token = acquire_run_lock()
+    if not token:
+        return False
+
+    def _target():
+        from django.db import connection
+        try:
+            _run_cycle(triggered_by)
+        except Exception:
+            log.exception('Background pipeline cycle failed')
+        finally:
+            try:
+                release_run_lock(token)
+            finally:
+                connection.close()  # thread-local connection — don't leak it
+
+    try:
+        threading.Thread(target=_target, name='pipeline-cycle', daemon=True).start()
+    except Exception:
+        release_run_lock(token)  # no thread will ever run — don't strand the lock
+        raise
+    return True
+
+
+def _run_cycle(triggered_by):
+    """One orchestrator cycle: Search → Profile → Copywright → Responder.
+    Callers hold the run lock (see run_pipeline / start_pipeline_async)."""
+
+    cycle_started = timezone.now()
     summary = {'agents': [], 'notes': []}
     cycle = PipelineRun.objects.count()
 
@@ -382,8 +479,9 @@ def run_pipeline(triggered_by='manual'):
     # gets discovered again — verdicts can flip between runs, memory can't
     known |= {d.lower() for d in (settings.rejected_domains or [])}
     new_leads = []
+    profiled_now = []  # pks profiled THIS cycle — scopes the per-cycle Copywright notes
     seen_domains = set()
-    per_region_cap = max(2, MAX_LEADS_PER_CYCLE // len(queries))  # spread across regions
+    per_region_cap = max(2, MAX_LEADS_PER_CYCLE // max(1, len(queries)))  # spread across regions
     taken_per_query = {}
     for r in results:
         if len(new_leads) >= MAX_LEADS_PER_CYCLE:
@@ -455,7 +553,10 @@ def run_pipeline(triggered_by='manual'):
     # --- PROFILE: scrape + audit up to N unprofiled leads ------------------
     potentials_created = 0
     rejected = 0
-    to_profile = list(Lead.objects.filter(profiled=False)[:MAX_PROFILE_PER_CYCLE])
+    # oldest first: a lead held by the AI gate is retried before newer
+    # discoveries, so held leads are never starved by a stream of new ones
+    to_profile = list(Lead.objects.filter(profiled=False)
+                      .order_by('created_at')[:MAX_PROFILE_PER_CYCLE])
     for lead in to_profile:
         if lead != to_profile[0]:
             time.sleep(1)  # politeness pause between site fetches
@@ -471,28 +572,6 @@ def run_pipeline(triggered_by='manual'):
         # merge — audit keys win, but Maps/SERP metadata survives the audit
         lead.analysis = {**(lead.analysis or {}), **(audit['analysis'] or {})}
         lead.score = audit['score']
-        # Phone enrichment for THIS lead (matched by its own DB id — the loop
-        # variable is the lead row itself, never a positional lookup):
-        # 1) Scalelist person/company phone find — uses the scraped work email,
-        #    else the company name + domain we just audited
-        # 2) Apollo.io company database — fallback when Scalelist comes up empty
-        # Either source only fills an EMPTY phone; a scraped number always wins.
-        if not lead.contact_phone:
-            scalelist_phone = scalelist_phone_find(
-                email=lead.contact_email,
-                company=lead.company,
-                domain=lead.website,
-            )
-            if scalelist_phone:
-                lead.contact_phone = scalelist_phone
-                lead.analysis['phone_source'] = 'scalelist'
-        if not lead.contact_phone:
-            apollo = apollo_enrich_domain(lead.website)
-            if apollo.get('phone'):
-                lead.contact_phone = apollo['phone']
-                lead.analysis['phone_source'] = 'apollo.io'
-            if apollo.get('employees'):
-                lead.analysis['employees'] = apollo['employees']
         # ICP gate (core.icp) — competitor agencies never enter the CRM, even
         # in keyless mode: heuristic fingerprints over name / industry /
         # description / SERP snippet.  Same strict treatment as the AI gate:
@@ -543,8 +622,16 @@ def run_pipeline(triggered_by='manual'):
         site_name = audit['analysis'].get('site_name')
         if site_name and _looks_like_company(site_name):
             lead.company = site_name[:200]
+        # Paid phone enrichment (Scalelist → Apollo) for THIS lead — only now
+        # that it passed both gates, so credits are never spent on leads that
+        # are deleted or held.  Either source only fills an EMPTY phone; a
+        # scraped number always wins.
+        phone = _paid_phone_lookup(lead)
+        if phone:
+            lead.contact_phone = phone
         lead.profiled = True
         lead.save()
+        profiled_now.append(lead.pk)
         # Phone rescue — a lead without a number is unusable for outreach.
         # Scalelist/Apollo need keys; Google Maps is free, so every freshly
         # profiled lead gets ONE immediate Maps lookup (matched by domain,
@@ -592,34 +679,42 @@ def run_pipeline(triggered_by='manual'):
             f'relevant businesses (kept the CRM strictly relevant)')
 
     # --- ENRICH: Scalelist + Apollo + Google Maps phone sweep (every cycle) -
-    # Profiled leads whose phone field is still empty are retried every cycle:
+    # Profiled leads whose phone field is still empty are retried:
     # 1) Scalelist person/company phone find (work email / company + domain)
     # 2) Apollo.io company database
     # 3) Apify Google Maps extractor — location-aware, strongest for India —
     #    matched to each lead by website domain, never by result position.
+    # Paid lookups run at most once per lead per ENRICH_RETRY_HOURS (stamped in
+    # analysis.enrich_tried_at, hit or miss) — leads inside the window are
+    # skipped without using up the cycle's attempts.
     # Sequential, capped calls: rate-limit friendly, never blocks discovery.
     enriched = 0
-    sweep = (Lead.objects.filter(profiled=True)
-             .exclude(website='').filter(contact_phone='')
-             .order_by('-score')[:APOLLO_SWEEP_PER_CYCLE])
-    for lead in sweep:
-        phone = scalelist_phone_find(
-            email=lead.contact_email, company=lead.company, domain=lead.website)
-        source = 'scalelist' if phone else ''
-        if not phone:
-            apollo = apollo_enrich_domain(lead.website)
-            if apollo.get('phone'):
-                phone = apollo['phone']
-                source = 'apollo.io'
-                lead.analysis = {**(lead.analysis or {}), 'employees': apollo['employees']} \
-                    if apollo.get('employees') else (lead.analysis or {})
+    sweep = []
+    phone_missing = (Lead.objects.filter(profiled=True)
+                     .exclude(website='').filter(contact_phone=''))
+    # not-due leads are excluded IN the query (never tried, or last stamp older
+    # than the window) so a block of high-score leads inside their window can't
+    # crowd lower-score due leads out of the pool
+    due_cutoff = (timezone.now() - timezone.timedelta(hours=ENRICH_RETRY_HOURS)).isoformat()
+    sweep_pool = (phone_missing
+                  .filter(Q(analysis__enrich_tried_at__isnull=True)
+                          | Q(analysis__enrich_tried_at__lt=due_cutoff))
+                  .order_by('-score', 'id'))
+    for lead in sweep_pool.iterator():
+        if len(sweep) >= APOLLO_SWEEP_PER_CYCLE:
+            break
+        if not _enrich_due(lead):
+            continue
+        sweep.append(lead)
+        phone = _paid_phone_lookup(lead)
         if phone:
             lead.contact_phone = phone
-            lead.analysis = {**(lead.analysis or {}), 'phone_source': source}
             lead.save()
             enriched += 1
             summary['notes'].append(
-                f'Enrichment: {lead.company} phone via {source} ({phone})')
+                f'Enrichment: {lead.company} phone via {lead.analysis["phone_source"]} ({phone})')
+        else:
+            lead.save(update_fields=['analysis'])   # keep the stamp (and any employee count) on a miss
     if sweep:
         summary['notes'].append(
             f'Enrichment sweep: {enriched}/{len(sweep)} phone(s) recovered')
@@ -627,8 +722,12 @@ def run_pipeline(triggered_by='manual'):
     # Free Google Maps round (core.gmaps keyless scraper) — whatever is still
     # missing gets one Maps lookup per lead, matched by domain then by name.
     # Runs BEFORE Apify so the paid actor is strictly the last resort.
+    # The free and Apify rounds run on their OWN list — not filtered by the
+    # paid-lookup window, so a lead the paid sweep skipped (or couldn't try for
+    # lack of a key) still gets its free Maps lookup.
+    maps_pool = list(phone_missing.order_by('-score', 'id')[:APOLLO_SWEEP_PER_CYCLE])
     if gmaps_available():
-        still_missing = [l for l in sweep if not l.contact_phone]
+        still_missing = [l for l in maps_pool if not l.contact_phone]
         if still_missing:
             gmaps_hits = enrich_leads_via_gmaps(still_missing[:APOLLO_SWEEP_PER_CYCLE])
             for lead in gmaps_hits:
@@ -638,8 +737,7 @@ def run_pipeline(triggered_by='manual'):
 
     # Apify Google Maps round — one batched actor run for whatever is still missing
     if apify_maps_available():
-        maps_still_missing = [l for l in Lead.objects.filter(profiled=True)
-                              .exclude(website='').filter(contact_phone='')]
+        maps_still_missing = [l for l in maps_pool if not l.contact_phone]
         if maps_still_missing:
             mapped = enrich_leads_via_apify(maps_still_missing[:APOLLO_SWEEP_PER_CYCLE])
             for lead in mapped:
@@ -655,21 +753,26 @@ def run_pipeline(triggered_by='manual'):
     drafts_created = 0
     # High-level prospects have polished sites with few/no audit findings —
     # drafting keys off REACHABILITY (a real contact email), not site flaws.
-    candidates = list(Lead.objects.filter(profiled=True))
-    candidates.sort(key=lambda l: (not bool(l.contact_email), -l.score))
-    no_email = 0
+    reachable = (Lead.objects.filter(profiled=True).exclude(contact_email='')
+                 .filter(drafts__isnull=True))  # never re-draft: rejected stays rejected
+    # sites that block bots need a human look — filtered in the query so they
+    # never eat a draft slot.  Exclude via a pk subquery: a bare
+    # exclude(analysis__blocked=True) also drops leads whose analysis has no
+    # 'blocked' key (NULL = true), on SQLite and Postgres alike.
+    # '-score' then 'id' keeps the pick deterministic.
+    blocked = Lead.objects.filter(analysis__blocked=True).values('pk')
+    candidates = (reachable.exclude(pk__in=blocked)
+                  .order_by('-score', 'id')[:MAX_DRAFTS_PER_CYCLE * 3])
+    # per-cycle notes: count only leads profiled in THIS cycle (all-time DB counts
+    # would inflate every cycle summary and the daily report)
+    blocked_skipped = reachable.filter(pk__in=blocked).filter(pk__in=profiled_now).count()
+    no_email = Lead.objects.filter(pk__in=profiled_now, contact_email='').count()
+    if blocked_skipped:
+        summary['notes'].append(
+            f'Copywright skipped {blocked_skipped} lead(s) — site blocks bots, needs human review')
     for lead in candidates:
         if drafts_created >= MAX_DRAFTS_PER_CYCLE:
             break
-        if not lead.contact_email:
-            no_email += 1
-            continue
-        if (lead.analysis or {}).get('blocked'):
-            summary['notes'].append(
-                f'Copywright skipped {lead.company} — site blocks bots, needs human review')
-            continue
-        if lead.drafts.exclude(status=EmailDraft.Statuses.REJECTED).exists():
-            continue
         subject, body, used_llm = _draft_email(lead)
         EmailDraft.objects.create(
             lead=lead,
@@ -716,6 +819,9 @@ def run_pipeline(triggered_by='manual'):
             ],
         },
     )
+    # auto_now_add stamps creation (= the END of the cycle); record the real start
+    PipelineRun.objects.filter(pk=run.pk).update(started_at=cycle_started)
+    run.started_at = cycle_started
     return run
 
 
@@ -731,14 +837,26 @@ def pipeline_status():
     started_at = last.started_at if last else None
     elapsed = (timezone.now() - started_at).total_seconds() / 60 if started_at else None
     due = settings.runs_enabled and (elapsed is None or elapsed >= next_run_minutes)
+    since = running_since()
+    worker = status_of('worker', max_age_seconds=120)
 
     return {
-        'running': settings.runs_enabled,
+        'running': settings.runs_enabled,  # legacy name — same as autopilot
+        'autopilot': settings.runs_enabled,
         'frequency': settings.run_frequency,
+        'cycleRunning': since is not None,
+        'cycleStartedAt': since.isoformat() if since else None,
+        'workerOnline': worker['running'],
         'lastRun': {
             'id': last.id,
             'at': started_at.isoformat() if started_at else None,
+            'finishedAt': last.finished_at.isoformat() if last.finished_at else None,
+            'leadsCreated': last.leads_created,
+            'potentialsCreated': last.potentials_created,
+            'draftsCreated': (last.summary or {}).get('drafts_created', last.replies_created),
             'summary': last.summary,
         } if last else None,
-        'nextRunInMinutes': None if due else max(0, int(next_run_minutes - (elapsed or 0))),
+        # no countdown while autopilot is off — nothing is scheduled
+        'nextRunInMinutes': None if due or not settings.runs_enabled
+                            else max(0, int(next_run_minutes - (elapsed or 0))),
     }

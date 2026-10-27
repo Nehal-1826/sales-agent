@@ -6,7 +6,7 @@ and the daily report both go through send_email_message().
 Windows note: some antivirus/proxy software intercepts TLS with its own
 certificate, which breaks Python's default verification.  The connection
 helper therefore tries: default verify → Windows cert store → unverified
-(dev machines only, loudly logged).
+(only yielded when settings.DEBUG is true, loudly logged).
 """
 
 import html as html_lib
@@ -14,10 +14,16 @@ import logging
 import re
 import smtplib
 import ssl
+import sys
+from datetime import timedelta
 from email.message import EmailMessage
 from email.utils import formataddr, formatdate
 from pathlib import Path
 
+from django.conf import settings as django_settings
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
+from django.db.models import Q
 from django.utils import timezone
 
 from .models import AppSettings, EmailDraft
@@ -25,6 +31,8 @@ from .models import AppSettings, EmailDraft
 log = logging.getLogger(__name__)
 
 SMTP_TIMEOUT = 30
+
+NO_RECIPIENT_ERROR = 'No recipient email — add one before sending.'
 
 # Inline logo attached to every HTML email (referenced as cid:agentic-logo).
 LOGO_PATH = Path(__file__).resolve().parent / 'assets' / 'logo.png'
@@ -138,10 +146,11 @@ def _ssl_contexts():
         yield ctx
     except Exception:
         pass
-    ctx = ssl._create_unverified_context()  # noqa: SLF001 — dev-machine fallback
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    yield ctx
+    if django_settings.DEBUG:  # never skip certificate checks in production
+        ctx = ssl._create_unverified_context()  # noqa: SLF001 — dev-machine fallback
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        yield ctx
 
 
 def _open_smtp(s):
@@ -311,38 +320,70 @@ def _log_console_delivery(draft, from_email):
     """No SMTP yet: print the full email to the server console so the
     workflow is still end-to-end verifiable."""
     line = '-' * 62
-    print(f"\n{line}\n[COLD EMAIL -- console delivery, SMTP not configured]\n{line}")
-    print(f"From:    {from_email}\nTo:      {draft.to_email or '(no address found)'}")
-    print(f"Subject: {draft.subject}\n\n{draft.body}\n{line}\n")
+    text = (f"\n{line}\n[COLD EMAIL -- console delivery, SMTP not configured]\n{line}\n"
+            f"From:    {from_email}\nTo:      {draft.to_email or '(no address found)'}\n"
+            f"Subject: {draft.subject}\n\n{draft.body}\n{line}\n")
+    # Windows consoles are cp1252 — a bare print() of "→" would raise and fail the send
+    enc = getattr(sys.stdout, 'encoding', None) or 'utf-8'
+    print(text.encode(enc, errors='replace').decode(enc))
     log.info('Console-delivered cold email to %s (%s)', draft.to_email or 'n/a', draft.company)
 
 
+def valid_recipient(email):
+    """True only for a syntactically valid address — never guess one."""
+    email = (email or '').strip()
+    if not email:
+        return False
+    try:
+        validate_email(email)
+    except ValidationError:
+        return False
+    return True
+
+
+# An APPROVED draft untouched this long lost its sender (process died between
+# the claim and send_draft writing a result) and may be claimed again.
+STUCK_AFTER = timedelta(minutes=15)
+
+
+def claim_draft_for_send(draft_id, from_statuses=(EmailDraft.Statuses.DRAFT, EmailDraft.Statuses.FAILED)):
+    """Atomically move a draft to APPROVED.  Returns the draft, or None when
+    another request (double-click, chat 'approve all') already claimed it —
+    the conditional UPDATE is what makes double sends impossible.  An APPROVED
+    draft older than STUCK_AFTER (crashed sender) is claimable too; a fresh one
+    is still actively sending and never is."""
+    stuck = Q(status=EmailDraft.Statuses.APPROVED,
+              updated_at__lt=timezone.now() - STUCK_AFTER)
+    claimed = (EmailDraft.objects.filter(Q(status__in=list(from_statuses)) | stuck, pk=draft_id)
+               .update(status=EmailDraft.Statuses.APPROVED, updated_at=timezone.now()))
+    return EmailDraft.objects.filter(pk=draft_id).first() if claimed else None
+
+
 def send_draft(draft):
-    """Send one EmailDraft. Updates status/sent_via/sent_at/error. Returns the draft."""
-    s = AppSettings.load()
-    from_email = s.from_email or s.smtp_user or 'outreach@shailog.com'
+    """Send one EmailDraft. Updates status/sent_via/sent_at/error. Returns the draft.
 
-    if not draft.to_email:
-        # Fallback target email derived from lead company domain or name
-        domain = draft.lead.website if (draft.lead and draft.lead.website) else ''
-        domain = domain.split('/')[0].split('?')[0].lower().strip()
-        if domain.startswith('www.'):
-            domain = domain[4:]
-        if domain and '.' in domain:
-            draft.to_email = f'contact@{domain}'
+    Never leaves the draft stuck in APPROVED: any failure on the send path —
+    settings lookup, console print, SMTP — ends as FAILED with the error text."""
+    # a pasted address often carries stray whitespace — normalize before validating
+    draft.to_email = (draft.to_email or '').strip()
+
+    if not valid_recipient(draft.to_email):
+        # never invent contact@<domain> — a guessed address reaches strangers
+        draft.status = EmailDraft.Statuses.FAILED
+        draft.error = NO_RECIPIENT_ERROR
+        draft.save(update_fields=['to_email', 'status', 'error', 'updated_at'])
+        return draft
+
+    try:
+        s = AppSettings.load()
+        from_email = s.from_email or s.smtp_user or 'outreach@shailog.com'
+        if not smtp_configured(s):
+            _log_console_delivery(draft, from_email)
+            draft.status = EmailDraft.Statuses.SENT
+            draft.sent_via = EmailDraft.Via.CONSOLE
+            draft.sent_at = timezone.now()
+            draft.error = ''
         else:
-            clean_name = ''.join(c for c in draft.company.lower() if c.isalnum()) or 'target'
-            draft.to_email = f'contact@{clean_name}.com'
-        draft.save(update_fields=['to_email', 'updated_at'])
-
-    if not smtp_configured(s):
-        _log_console_delivery(draft, from_email)
-        draft.status = EmailDraft.Statuses.SENT
-        draft.sent_via = EmailDraft.Via.CONSOLE
-        draft.sent_at = timezone.now()
-        draft.error = ''
-    else:
-        try:
             send_email_message(
                 draft.subject, draft.body, [draft.to_email], s,
                 html=branded_email_html(designed_email_html(draft.body, s), s),
@@ -352,10 +393,10 @@ def send_draft(draft):
             draft.sent_at = timezone.now()
             draft.error = ''
             log.info('SMTP cold email sent to %s (%s)', draft.to_email, draft.company)
-        except Exception as exc:
-            draft.status = EmailDraft.Statuses.FAILED
-            draft.error = str(exc)[:500]
-            log.warning('SMTP send failed for %s: %s', draft.to_email, exc)
+    except Exception as exc:
+        draft.status = EmailDraft.Statuses.FAILED
+        draft.error = str(exc)[:500] or exc.__class__.__name__
+        log.warning('Send failed for %s: %s', draft.to_email, exc)
 
-    draft.save(update_fields=['status', 'sent_via', 'sent_at', 'error', 'updated_at'])
+    draft.save(update_fields=['to_email', 'status', 'sent_via', 'sent_at', 'error', 'updated_at'])
     return draft

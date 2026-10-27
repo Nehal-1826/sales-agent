@@ -25,6 +25,7 @@ def rel_time(dt):
 
 class LeadSerializer(serializers.ModelSerializer):
     discovered = serializers.SerializerMethodField()
+    discoveredAt = serializers.DateTimeField(source='created_at', read_only=True)
     hasWebsite = serializers.BooleanField(source='has_website')
     contactEmail = serializers.CharField(source='contact_email', required=False, allow_blank=True)
     contactPhone = serializers.CharField(source='contact_phone', required=False, allow_blank=True)
@@ -33,7 +34,7 @@ class LeadSerializer(serializers.ModelSerializer):
         model = Lead
         fields = ['id', 'company', 'industry', 'website', 'score', 'source', 'profiled',
                   'state', 'country', 'hasWebsite', 'contactEmail', 'contactPhone', 'findings',
-                  'description', 'discovered']
+                  'description', 'discovered', 'discoveredAt']
 
     def get_discovered(self, obj):
         return rel_time(obj.created_at)
@@ -53,11 +54,13 @@ class EmailDraftSerializer(serializers.ModelSerializer):
     sentVia = serializers.CharField(source='sent_via', read_only=True)
     status = serializers.SerializerMethodField()  # display form ('Draft') — matches the frontend type
     lastActivity = serializers.SerializerMethodField()
+    leadId = serializers.IntegerField(source='lead_id', read_only=True)
+    sentAt = serializers.DateTimeField(source='sent_at', read_only=True)
 
     class Meta:
         model = EmailDraft
         fields = ['id', 'company', 'toEmail', 'subject', 'body', 'findings',
-                  'status', 'sentVia', 'error', 'lastActivity']
+                  'status', 'sentVia', 'error', 'lastActivity', 'leadId', 'sentAt']
         read_only_fields = ['error']
 
     def get_status(self, obj):
@@ -112,6 +115,13 @@ class AgentMetaSerializer(serializers.Serializer):
     lastAction = serializers.CharField()
 
 
+MASK = '••••'
+
+
+def _mask(secret):
+    return MASK + secret[-4:] if secret else ''
+
+
 class AgentConfigSerializer(serializers.ModelSerializer):
     """{ db: {provider, name, connection}, api: {url, auth}, systemPrompt, negativePrompt, model }"""
 
@@ -129,8 +139,9 @@ class AgentConfigSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         return {
             'agent': instance.agent,
-            'db': {'provider': instance.db_provider, 'name': instance.db_name, 'connection': instance.db_connection},
-            'api': {'url': instance.api_url, 'auth': instance.api_auth},
+            'db': {'provider': instance.db_provider, 'name': instance.db_name,
+                   'connection': _mask(instance.db_connection)},
+            'api': {'url': instance.api_url, 'auth': _mask(instance.api_auth)},
             'systemPrompt': instance.system_prompt,
             'negativePrompt': instance.negative_prompt,
             'model': instance.model,
@@ -141,9 +152,13 @@ class AgentConfigSerializer(serializers.ModelSerializer):
         api = validated.get('api') or {}
         instance.db_provider = 'mongodb'  # the only provider — not configurable
         instance.db_name = db.get('name', instance.db_name)
-        instance.db_connection = db.get('connection', instance.db_connection)
+        connection = db.get('connection', instance.db_connection)
+        if not connection.startswith(MASK):  # a masked echo must not overwrite the real secret
+            instance.db_connection = connection
         instance.api_url = api.get('url', instance.api_url)
-        instance.api_auth = api.get('auth', instance.api_auth)
+        auth = api.get('auth', instance.api_auth)
+        if not auth.startswith(MASK):
+            instance.api_auth = auth
         instance.system_prompt = validated.get('systemPrompt', instance.system_prompt)
         instance.negative_prompt = validated.get('negativePrompt', instance.negative_prompt)
         instance.model = validated.get('model', instance.model)
@@ -214,6 +229,17 @@ class SettingsSerializer(serializers.ModelSerializer):
     class Meta:
         model = AppSettings
         fields = ['company', 'aiKey', 'smtp', 'runs', 'report', 'targeting']
+
+    def validate_aiKey(self, value):
+        # An unknown provider makes llm_available() false, which silently puts the
+        # pipeline's AI relevance gate into keyless mode — reject it loudly instead.
+        from .ai import PROVIDER_BASE_URLS, resolve_provider
+        provider = (value or {}).get('provider')
+        if provider and str(provider).strip() and resolve_provider(str(provider)) is None:
+            supported = ', '.join(sorted(PROVIDER_BASE_URLS))
+            raise serializers.ValidationError(
+                f'Unsupported AI provider "{provider}". Supported providers: {supported}.')
+        return value
 
     def to_representation(self, instance):
         return {
@@ -297,7 +323,11 @@ class SettingsSerializer(serializers.ModelSerializer):
             # 'agency' = agencies/software shops are the leads (partnership
             # outreach); 'buyer' = businesses that buy our services
             instance.icp_mode = icp_mode
-        instance.save()
+        # never write pipeline_running_since from this (stale) copy — a bare
+        # save() would clobber a live run lock held by a cycle (core.runlock)
+        instance.save(update_fields=[
+            f.name for f in AppSettings._meta.concrete_fields
+            if f.name not in ('id', 'pipeline_running_since')])
         return instance
 
 

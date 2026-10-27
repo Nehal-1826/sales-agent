@@ -1,78 +1,134 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
-import { Dashboard } from './pages/Dashboard';
-import { PipelinePage } from './pages/PipelinePage';
-import { SettingsPage } from './pages/SettingsPage';
-import { ChatPage } from './pages/ChatPage';
-import { LoginPage } from './pages/LoginPage';
 import { GuideWidget } from './components/GuideWidget';
-import { checkAuth, getOnboarding, logout } from './lib/api';
-import type { PageKey } from './lib/types';
+import { Toaster, toast } from './components/feedback';
+import { HomePage } from './pages/HomePage';
+import { ApprovalsPage } from './pages/ApprovalsPage';
+import { LeadsPage } from './pages/LeadsPage';
+import { ActivityPage } from './pages/ActivityPage';
+import { ChatPage } from './pages/ChatPage';
+import { SettingsPage } from './pages/SettingsPage';
+import { LoginPage } from './pages/LoginPage';
+import { SESSION_EXPIRED_EVENT, checkAuth, getOnboarding, logout, reprobe } from './lib/api';
+import type { AuthState } from './lib/api';
+import { navigate, useRoute } from './lib/router';
+import { WorkspaceStatusProvider } from './lib/status';
 
-const PAGES: Record<PageKey, (props: { onNavigate: (p: PageKey) => void; live: boolean }) => JSX.Element> = {
-  dashboard: Dashboard,
-  assistant: () => <ChatPage />,
-  pipeline: ({ live }) => <PipelinePage live={live} />,
-  settings: () => <SettingsPage />,
-};
+type Gate = 'checking' | AuthState;
 
 export default function App() {
-  const [page, setPage] = useState<PageKey>('dashboard');
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [live, setLive] = useState<boolean | null>(null); // null = probing
-  // 'checking' → probe; 'login' → auth required; 'app' → signed in (or offline demo)
-  const [auth, setAuth] = useState<'checking' | 'login' | 'app'>('checking');
+  const [gate, setGate] = useState<Gate>('checking');
 
-  useEffect(() => {
-    checkAuth().then((state) => {
-      setLive(state !== 'mock');
-      setAuth(state === 'unauthenticated' ? 'login' : 'app');
-    });
+  const probe = useCallback(async (fresh = false) => {
+    setGate('checking');
+    if (fresh) await reprobe();
+    setGate(await checkAuth());
   }, []);
 
-  // any user whose setup wizard is still open lands in the chat — the state
-  // lives per user on the backend, so each new client gets onboarded exactly once
   useEffect(() => {
-    if (auth !== 'app') return;
-    getOnboarding().then((state) => {
-      if (state?.needed) setPage('assistant');
-    });
-  }, [auth]);
+    void probe();
+  }, [probe]);
 
-  const signOut = () => {
-    logout();
-    setAuth('login');
-  };
+  // any 401 mid-session (token revoked/expired) → back to the sign-in screen
+  useEffect(() => {
+    const onExpired = () => {
+      toast.info('Your session ended. Please sign in again.');
+      setGate('unauthenticated');
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
+  }, []);
 
-  if (auth === 'checking') {
+  if (gate === 'checking') {
     return (
       <div className="login-wrap">
-        <div className="panel login-card" style={{ placeItems: 'center', gap: 12 }}>
+        <div className="panel login-card login-card-center">
           <img src="/logo.png" alt="Shailog Technologies" className="login-logo" />
+          <span className="spinner" aria-hidden />
           <small className="login-footnote">Connecting to your workspace…</small>
+        </div>
+        <Toaster />
+      </div>
+    );
+  }
+
+  if (gate === 'offline') {
+    return (
+      <div className="login-wrap">
+        <div className="panel login-card login-card-center" role="alert">
+          <img src="/logo.png" alt="Shailog Technologies" className="login-logo" />
+          <strong className="login-headline">Can't reach your workspace</strong>
+          <small className="login-footnote">
+            The server didn't answer. It may be restarting. Check your connection and try again.
+          </small>
+          <button className="btn btn-primary" onClick={() => void probe(true)}>
+            Try again
+          </button>
         </div>
       </div>
     );
   }
 
-  if (auth === 'login') {
-    return <LoginPage onLoggedIn={() => { setLive(true); setAuth('app'); }} />;
+  if (gate === 'unauthenticated') {
+    return (
+      <>
+        <LoginPage onLoggedIn={() => setGate('live')} />
+        <Toaster />
+      </>
+    );
   }
 
-  const Page = PAGES[page];
+  return (
+    <WorkspaceStatusProvider>
+      <Shell
+        demo={gate === 'demo'}
+        onSignOut={() => {
+          logout();
+          setGate('unauthenticated');
+        }}
+      />
+    </WorkspaceStatusProvider>
+  );
+}
+
+function Shell({ demo, onSignOut }: { demo: boolean; onSignOut: () => void }) {
+  const { page, sub } = useRoute();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  // a user whose setup chat is still open lands in the Assistant once
+  useEffect(() => {
+    if (demo) return;
+    getOnboarding()
+      .then((state) => {
+        if (state?.needed) navigate('assistant');
+      })
+      .catch(() => undefined);
+  }, [demo]);
+
+  useEffect(() => setMenuOpen(false), [page]);
 
   return (
     <div className="app-shell">
-      <Sidebar page={page} onNavigate={setPage} open={menuOpen} onClose={() => setMenuOpen(false)} live={live} onLogout={signOut} />
+      {/* a button, not #main: the hash router would read that as an unknown page and bounce to Home */}
+      <button type="button" className="skip-link" onClick={() => document.getElementById('main')?.focus()}>
+        Skip to content
+      </button>
+      <Sidebar page={page} open={menuOpen} onClose={() => setMenuOpen(false)} demo={demo} onSignOut={onSignOut} />
       {menuOpen && <div className="scrim" onClick={() => setMenuOpen(false)} aria-hidden />}
       <div className="main">
-        <TopBar onMenu={() => setMenuOpen(true)} live={live} />
-        <main className="content">
-          <Page onNavigate={setPage} live={live === true} />
+        <TopBar page={page} onMenu={() => setMenuOpen(true)} demo={demo} />
+        <main className="content" id="main" tabIndex={-1}>
+          {page === 'home' && <HomePage />}
+          {page === 'approvals' && <ApprovalsPage />}
+          {page === 'leads' && <LeadsPage tab={sub} />}
+          {page === 'activity' && <ActivityPage />}
+          {page === 'assistant' && <ChatPage />}
+          {page === 'settings' && <SettingsPage section={sub} />}
         </main>
       </div>
-      <GuideWidget />
+      {page !== 'assistant' && <GuideWidget />}
+      <Toaster />
     </div>
   );
 }

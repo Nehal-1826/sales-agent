@@ -7,12 +7,24 @@
 
 export type AgentKey = 'search' | 'profile' | 'copywright' | 'responder';
 
-/** Top-level menus — Dashboard · Pipeline · Settings.
- *  Agents, CRM, Leads, Reports and Chat live as tabs inside Pipeline. */
-export type PageKey = 'dashboard' | 'assistant' | 'pipeline' | 'settings';
+/** Wire ids are integers; bundled demo data uses string ids ('lead-1'). */
+export type Id = string | number;
 
-/** Sub-tabs inside the Pipeline page. */
-export type PipelineTab = 'flow' | 'agents' | 'leads' | 'crm';
+/** Top-level pages — Home · Approvals · Leads · Activity · Assistant · Settings. */
+export type PageKey = 'home' | 'approvals' | 'leads' | 'activity' | 'assistant' | 'settings';
+
+/** Tabs inside the Leads page. */
+export type LeadsTab = 'all' | 'board' | 'reports';
+
+/** Sections of the Settings page (left-hand section list). */
+export type SettingsSection =
+  | 'business'
+  | 'targeting'
+  | 'email'
+  | 'templates'
+  | 'schedule'
+  | 'account'
+  | 'advanced';
 
 export interface AgentMeta {
   key: AgentKey;
@@ -21,7 +33,7 @@ export interface AgentMeta {
   shortName: string;
   /** What this agent represents in the pipeline. */
   role: string;
-  status: 'Active' | 'Idle';
+  status: string; // 'Ready' · 'Running' · 'Paused' (live) / 'Active' (demo)
   lastAction: string;
 }
 
@@ -35,13 +47,15 @@ export interface Finding {
 
 /** CRM — LEADS: companies/leads discovered by the Search agent. */
 export interface Lead {
-  id: string;
+  id: Id;
   company: string;
   industry: string;
   website: string;
   score: number; // 0–100 potential — more fixable flaws → higher score
   source: string; // how Search discovered it
   discovered: string; // relative time
+  discoveredAt?: string; // ISO timestamp — for sorting
+  profiled?: boolean; // false = Research hasn't checked the site yet
   state: string; // e.g. 'Tamil Nadu' — derived from the discovery query
   country: string; // e.g. 'India' — derived from the discovery query / TLD
   hasWebsite: boolean; // website / no-website categorization
@@ -53,7 +67,8 @@ export interface Lead {
 
 /** CRM — OUTREACH: cold email drafted by Copywright, approved + sent by the user. */
 export interface EmailDraft {
-  id: string;
+  id: Id;
+  leadId?: number | null;
   company: string;
   toEmail: string;
   subject: string;
@@ -63,13 +78,14 @@ export interface EmailDraft {
   sentVia: string; // 'smtp' | 'console' | ''
   error: string;
   lastActivity: string;
+  sentAt?: string | null;
 }
 
 /** SETTINGS — user cold-email template (written manually or uploaded).
  *  Placeholders like {{company}} are filled per lead; with an AI key set,
  *  Gemini personalizes the whole template per lead. */
 export interface EmailTemplate {
-  id: string;
+  id: Id;
   name: string;
   subject: string;
   body: string;
@@ -78,7 +94,7 @@ export interface EmailTemplate {
 
 /** CRM — POTENTIAL: opportunities identified by the system. */
 export interface Potential {
-  id: string;
+  id: Id;
   company: string;
   opportunity: string;
   value: string;
@@ -88,7 +104,7 @@ export interface Potential {
 
 /** CRM — REPLY: responses handled by the Responder (Chatbot). */
 export interface Reply {
-  id: string;
+  id: Id;
   company: string;
   contact: string;
   channel: 'Email' | 'LinkedIn' | 'Webchat';
@@ -102,6 +118,8 @@ export interface Reply {
 export interface AgentConfig {
   db: {
     provider: 'mongodb';
+    name?: string;
+    connection?: string;
   };
   api: {
     url: string;
@@ -197,4 +215,44 @@ export interface OnboardingState {
   question: string;
   hint: string;
   progress: string;
+}
+
+/** Live loop state — GET /api/pipeline/status/. */
+export interface PipelineStatus {
+  autopilot: boolean; // Settings → Schedule: automatic runs on/off
+  frequency: RunFrequency;
+  cycleRunning: boolean; // a cycle is executing right now (API, chat or worker)
+  cycleStartedAt: string | null;
+  workerOnline: boolean; // background worker heartbeat is fresh
+  nextRunInMinutes: number | null;
+  lastRun: {
+    id: number;
+    at: string | null;
+    finishedAt: string | null;
+    leadsCreated: number;
+    potentialsCreated: number;
+    draftsCreated: number;
+    summary: { notes?: string[]; query?: string };
+  } | null;
+}
+
+/** Outreach counters — GET /api/outreach/status/. */
+export interface OutreachStatus {
+  drafts: number;
+  approved: number;
+  sent: number;
+  failed: number;
+  smtpConfigured: boolean;
+}
+
+/** One past cycle — GET /api/pipeline/runs/. */
+export interface PipelineRunRecord {
+  id: number;
+  startedAt: string;
+  finishedAt: string;
+  triggeredBy: string;
+  leadsCreated: number;
+  potentialsCreated: number;
+  draftsCreated: number;
+  notes: string[];
 }

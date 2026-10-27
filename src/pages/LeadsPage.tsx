@@ -1,216 +1,239 @@
-import { useEffect, useMemo, useState } from 'react';
-import { downloadLeadsCsv, generateReport, getLeads } from '../lib/api';
-import { MOCK_LEADS } from '../lib/mockData';
-import { PageHeader, SectionLabel, Spinner } from '../components/ui';
-import type { Lead } from '../lib/types';
+import { useMemo, useState } from 'react';
+import { CycleButton } from '../components/CycleButton';
+import { LeadBoard, STAGE_LABEL, leadStage } from '../components/LeadBoard';
+import { FitChip, LeadDrawer } from '../components/LeadDrawer';
+import { ReportPanel } from '../components/ReportPanel';
+import { EmptyState, LoadError, Skeleton, StaleNotice, toast } from '../components/feedback';
+import { PageHeader } from '../components/ui';
+import { downloadLeadsCsv, getDrafts, getLeads, isDemo } from '../lib/api';
+import { useAsync } from '../lib/hooks';
+import { navigate } from '../lib/router';
+import { useWorkspaceStatus } from '../lib/status';
+import type { Lead, LeadsTab } from '../lib/types';
 
-type SortKey = 'company' | 'score' | 'discovered' | 'industry' | 'country' | 'contact' | 'website';
+const TABS: { key: LeadsTab; label: string }[] = [
+  { key: 'all', label: 'All leads' },
+  { key: 'board', label: 'Board' },
+  { key: 'reports', label: 'Reports' },
+];
 
-/**
- * LEADS & REPORTS — the full workspace lead list (search, sort, CSV export)
- * plus on-demand branded report generation with live preview.
- */
-export function LeadsPage() {
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [sort, setSort] = useState<SortKey>('score');
-  const [minScore, setMinScore] = useState(0);
+type SortKey = 'newest' | 'fit' | 'name' | 'contact' | 'nowebsite';
+type ContactFilter = 'any' | 'email' | 'phone' | 'none';
 
-  useEffect(() => {
-    getLeads().then((list) => {
-      setLeads(list ?? MOCK_LEADS);
-      setLoading(false);
-    });
-  }, []);
+/** LEADS — every company found, as a searchable list, a journey board, and reports. */
+export function LeadsPage({ tab: rawTab }: { tab: string }) {
+  const tab: LeadsTab = TABS.some((t) => t.key === rawTab) ? (rawTab as LeadsTab) : 'all';
+  const status = useWorkspaceStatus();
+  const leads = useAsync(getLeads, [status.cycleVersion], { keepStale: true });
+  const drafts = useAsync(getDrafts, [status.cycleVersion], { keepStale: true });
+  const [open, setOpen] = useState<Lead | null>(null);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const out = leads.filter(
-      (l) =>
-        l.score >= minScore &&
-        (!q ||
-          l.company.toLowerCase().includes(q) ||
-          l.industry.toLowerCase().includes(q) ||
-          l.website.toLowerCase().includes(q) ||
-          l.country.toLowerCase().includes(q) ||
-          (l.description || '').toLowerCase().includes(q)),
-    );
-    out.sort((a, b) => {
-      switch (sort) {
-        case 'score':
-          return b.score - a.score;
-        case 'company':
-          return a.company.localeCompare(b.company);
-        case 'industry':
-          return a.industry.localeCompare(b.industry) || b.score - a.score;
-        case 'country':
-          return (a.country || 'zz').localeCompare(b.country || 'zz') || b.score - a.score;
-        case 'contact':
-          return Number(Boolean(b.contactEmail)) - Number(Boolean(a.contactEmail)) || b.score - a.score;
-        case 'website':
-          return Number(Boolean(b.hasWebsite)) - Number(Boolean(a.hasWebsite)) || b.score - a.score;
-        default:
-          return Date.parse(b.discovered) - Date.parse(a.discovered) || 0;
-      }
-    });
-    return out;
-  }, [leads, search, minScore, sort]);
+  const exportCsv = async () => {
+    const res = await downloadLeadsCsv();
+    if (!res.ok) toast.error(res.error);
+  };
 
   return (
     <div className="page">
       <PageHeader
-        title="Leads & Reports"
-        subtitle="The full lead list with everything the agents discovered — plus on-demand branded reports."
+        title="Leads"
+        subtitle="Every company your assistant has found. Click one to see what it learned."
         actions={
-          <button className="btn btn-primary" onClick={() => downloadLeadsCsv()}>
-            ⬇ Export CSV
-          </button>
+          <>
+            <button className="btn" onClick={() => void exportCsv()} disabled={isDemo()}>
+              Download CSV
+            </button>
+            <CycleButton />
+          </>
         }
       />
 
-      {loading ? (
-        <Spinner label="Loading leads…" />
-      ) : (
+      <nav className="subtabs" aria-label="Leads views">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            className={`subtab${tab === t.key ? ' active' : ''}`}
+            aria-current={tab === t.key ? 'page' : undefined}
+            onClick={() => navigate('leads', t.key === 'all' ? '' : t.key)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </nav>
+
+      {tab !== 'reports' && leads.error && leads.data && <StaleNotice onRetry={() => void leads.reload()} />}
+
+      {tab === 'reports' ? (
+        <ReportPanel />
+      ) : leads.loading ? (
         <section className="panel">
-          <SectionLabel>Lead list ({filtered.length} of {leads.length})</SectionLabel>
-          <div className="leads-toolbar">
-            <input
-              value={search}
-              placeholder="Search company, industry, site, country or description…"
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
-              <option value="score">Sort: score</option>
-              <option value="company">Sort: company A→Z</option>
-              <option value="discovered">Sort: newest</option>
-              <option value="industry">Sort: industry A→Z</option>
-              <option value="country">Sort: country A→Z</option>
-              <option value="contact">Sort: has contact first</option>
-              <option value="website">Sort: needs website first</option>
-            </select>
-            <select value={minScore} onChange={(e) => setMinScore(Number(e.target.value))}>
-              <option value={0}>Any score</option>
-              <option value={40}>40+</option>
-              <option value={65}>65+ (potential)</option>
-              <option value={80}>80+ (hot)</option>
-            </select>
-          </div>
-          <div className="leads-scroll">
-            <table className="leads-geo-table">
-              <thead>
-                <tr>
-                  <th>Company</th>
-                  <th>Industry</th>
-                  <th>Score</th>
-                  <th>Region</th>
-                  <th>Contact</th>
-                  <th>Phone</th>
-                  <th>AI description</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((l) => (
-                  <tr key={l.id}>
-                    <td>
-                      <strong>{l.company}</strong>
-                      <small className="mono d-block">{l.website || 'no website'}</small>
-                    </td>
-                    <td>{l.industry || '—'}</td>
-                    <td>
-                      <span className="score">{l.score}</span>
-                    </td>
-                    <td>{[l.state, l.country].filter(Boolean).join(', ') || '—'}</td>
-                    <td>{l.contactEmail || <em>missing</em>}</td>
-                    <td className="mono">{l.contactPhone || <em>missing</em>}</td>
-                    <td className="leads-desc">
-                      {(l.description || '').slice(0, 160) || <em>not profiled yet</em>}
-                    </td>
-                  </tr>
-                ))}
-                {filtered.length === 0 && (
-                  <tr>
-                    <td colSpan={7}>
-                      No leads match — run a cycle from the Pipeline page (or ask the AI guide).
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <Skeleton rows={6} height={40} />
         </section>
+      ) : leads.error && !leads.data ? (
+        <LoadError message={leads.error} onRetry={() => void leads.reload()} />
+      ) : (leads.data ?? []).length === 0 ? (
+        <section className="panel">
+          <EmptyState title="No companies yet" action={<CycleButton />}>
+            Start a search and your assistant will find businesses that match who you sell to. Change who it looks
+            for in Settings → Who to find.
+          </EmptyState>
+        </section>
+      ) : tab === 'board' ? (
+        <LeadBoard leads={leads.data ?? []} drafts={drafts.data ?? []} onOpen={setOpen} />
+      ) : (
+        <LeadTable leads={leads.data ?? []} onOpen={setOpen} drafts={drafts.data ?? []} />
       )}
 
-      <ReportSection />
+      {open && (
+        <LeadDrawer
+          lead={open}
+          drafts={drafts.data ?? []}
+          onClose={() => setOpen(null)}
+          onChanged={() => {
+            void drafts.reload();
+            void status.refresh();
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function ReportSection() {
-  const [scope, setScope] = useState<'today' | 'all'>('all');
-  const [busy, setBusy] = useState(false);
-  const [report, setReport] = useState<{ subject: string; html: string; emailed: boolean } | null>(null);
-  const [msg, setMsg] = useState('');
+function LeadTable({
+  leads,
+  drafts,
+  onOpen,
+}: {
+  leads: Lead[];
+  drafts: Parameters<typeof leadStage>[1];
+  onOpen: (l: Lead) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<SortKey>('newest');
+  const [minFit, setMinFit] = useState(0);
+  const [contact, setContact] = useState<ContactFilter>('any');
 
-  const generate = async (email: boolean) => {
-    setBusy(true);
-    setMsg('');
-    const r = await generateReport(scope, email);
-    setBusy(false);
-    if (!r) {
-      setMsg('Backend not reachable — start Django and try again.');
-      return;
-    }
-    setReport(r);
-    setMsg(r.emailed ? `Report emailed to the configured recipient ✓` : email ? 'Email not sent — check SMTP and the report recipient in Settings.' : '');
-  };
-
-  const download = () => {
-    if (!report) return;
-    const blob = new Blob([report.html], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `lead-report-${new Date().toISOString().slice(0, 10)}.html`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+  const rows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const out = leads.filter((l) => {
+      // placeholder scores of unresearched leads never count as a fit
+      if (minFit > 0 && (l.profiled === false || l.score < minFit)) return false;
+      if (contact === 'email' && !l.contactEmail) return false;
+      if (contact === 'phone' && !l.contactPhone) return false;
+      if (contact === 'none' && (l.contactEmail || l.contactPhone)) return false;
+      if (!q) return true;
+      return [l.company, l.industry, l.website, l.country, l.state, l.description]
+        .some((v) => (v || '').toLowerCase().includes(q));
+    });
+    const newest = (l: Lead) => Date.parse(l.discoveredAt ?? '') || 0;
+    out.sort((a, b) => {
+      switch (sort) {
+        case 'fit':
+          return b.score - a.score;
+        case 'name':
+          return a.company.localeCompare(b.company);
+        case 'contact':
+          return Number(!!b.contactEmail) - Number(!!a.contactEmail) || b.score - a.score;
+        case 'nowebsite':
+          // companies WITHOUT a website first — they need one built
+          return Number(a.hasWebsite) - Number(b.hasWebsite) || b.score - a.score;
+        default:
+          return newest(b) - newest(a);
+      }
+    });
+    return out;
+  }, [leads, query, sort, minFit, contact]);
 
   return (
-    <section className="panel" style={{ marginTop: 18 }}>
-      <SectionLabel>Report generation</SectionLabel>
-      <small className="inline-msg">
-        Build the branded lead report on demand — preview it exactly as it arrives by email, download
-        it as a shareable HTML file, or send it to the report recipient now.
-      </small>
-      <div className="leads-toolbar">
-        <select value={scope} onChange={(e) => setScope(e.target.value as 'today' | 'all')}>
-          <option value="all">Scope: all time</option>
-          <option value="today">Scope: today</option>
+    <section className="panel">
+      <div className="toolbar leads-toolbar">
+        <label className="sr-only" htmlFor="lead-search">
+          Search leads
+        </label>
+        <input
+          id="lead-search"
+          type="search"
+          value={query}
+          placeholder="Search name, industry, place…"
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <label className="sr-only" htmlFor="lead-fit">
+          Minimum fit
+        </label>
+        <select id="lead-fit" value={minFit} onChange={(e) => setMinFit(Number(e.target.value))}>
+          <option value={0}>Any fit</option>
+          <option value={65}>Good fits (65+)</option>
+          <option value={80}>Strong fits (80+)</option>
         </select>
-        <button className="btn btn-primary" onClick={() => generate(false)} disabled={busy}>
-          {busy ? 'Generating…' : 'Generate report'}
-        </button>
-        {report && (
-          <>
-            <button className="btn" onClick={download}>⬇ Download .html</button>
-            <button className="btn" onClick={() => generate(true)} disabled={busy}>✉ Email now</button>
-          </>
-        )}
-        {msg && <small className="inline-msg">{msg}</small>}
+        <label className="sr-only" htmlFor="lead-contact">
+          Contact details
+        </label>
+        <select id="lead-contact" value={contact} onChange={(e) => setContact(e.target.value as ContactFilter)}>
+          <option value="any">Any contact</option>
+          <option value="email">Has email</option>
+          <option value="phone">Has phone</option>
+          <option value="none">No contact yet</option>
+        </select>
+        <label className="sr-only" htmlFor="lead-sort">
+          Sort
+        </label>
+        <select id="lead-sort" value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
+          <option value="newest">Newest first</option>
+          <option value="fit">Best fit first</option>
+          <option value="name">Name A→Z</option>
+          <option value="contact">Has email first</option>
+          <option value="nowebsite">No website first</option>
+        </select>
+        <span className="toolbar-count">
+          {rows.length} of {leads.length}
+        </span>
       </div>
-      {report && (
-        <>
-          <p className="inline-msg" style={{ marginTop: 10 }}>
-            <strong>{report.subject}</strong>
-          </p>
-          <iframe
-            title="Report preview"
-            className="report-preview"
-              srcDoc={`<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#ffffff">${report.html}</body></html>`}
-            sandbox=""
-          />
-        </>
+
+      {rows.length === 0 ? (
+        <EmptyState title="No leads match these filters">Try clearing the search or picking “Any fit”.</EmptyState>
+      ) : (
+        <div className="table-wrap">
+          <table className="leads-table">
+            <thead>
+              <tr>
+                <th scope="col">Company</th>
+                <th scope="col">Fit</th>
+                <th scope="col">Industry</th>
+                <th scope="col">Location</th>
+                <th scope="col">Contact</th>
+                <th scope="col">Stage</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((l) => (
+                <tr key={l.id} onClick={() => onOpen(l)}>
+                  <td data-label="Company">
+                    <button className="row-link" onClick={(e) => (e.stopPropagation(), onOpen(l))}>
+                      {l.company}
+                    </button>
+                    <small className="d-block dim">{l.website || 'No website'}</small>
+                  </td>
+                  <td data-label="Fit">
+                    <FitChip lead={l} showScore />
+                  </td>
+                  <td data-label="Industry">{l.industry || '—'}</td>
+                  <td data-label="Location">{[l.state, l.country].filter(Boolean).join(', ') || '—'}</td>
+                  <td data-label="Contact">
+                    {l.contactEmail || l.contactPhone ? (
+                      <span className="contact-cell">
+                        {l.contactEmail && <span className="mono">{l.contactEmail}</span>}
+                        {l.contactPhone && <span className="mono dim">{l.contactPhone}</span>}
+                      </span>
+                    ) : (
+                      <span className="dim">Not found yet</span>
+                    )}
+                  </td>
+                  <td data-label="Stage">{STAGE_LABEL[leadStage(l, drafts)]}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   );

@@ -1,87 +1,91 @@
 import { useEffect, useState } from 'react';
-import { IconBot, IconDashboard, IconLoop, IconSettings } from './icons';
+import { IconBot, IconBuilding, IconHome, IconInbox, IconLogout, IconPulse, IconSettings } from './icons';
+import type { IconProps } from './icons';
+import { AutopilotPill } from './AutopilotPill';
 import { getCurrentUser } from '../lib/api';
-import { StatusDot } from './ui';
+import type { CurrentUser } from '../lib/api';
+import { navigate } from '../lib/router';
+import { useWorkspaceStatus } from '../lib/status';
 import type { PageKey } from '../lib/types';
 
-const NAV: { key: PageKey; label: string; icon: (p: { size?: number }) => JSX.Element }[] = [
-  { key: 'dashboard', label: 'Dashboard', icon: IconDashboard },
+const NAV: { key: PageKey; label: string; icon: (p: IconProps) => JSX.Element }[] = [
+  { key: 'home', label: 'Home', icon: IconHome },
+  { key: 'approvals', label: 'Approvals', icon: IconInbox },
+  { key: 'leads', label: 'Leads', icon: IconBuilding },
+  { key: 'activity', label: 'Activity', icon: IconPulse },
   { key: 'assistant', label: 'Assistant', icon: IconBot },
-  { key: 'pipeline', label: 'Pipeline', icon: IconLoop },
   { key: 'settings', label: 'Settings', icon: IconSettings },
 ];
 
 export function Sidebar({
   page,
-  onNavigate,
   open,
   onClose,
-  live,
-  onLogout,
+  demo,
+  onSignOut,
 }: {
   page: PageKey;
-  onNavigate: (p: PageKey) => void;
   open: boolean;
   onClose: () => void;
-  live: boolean | null;
-  onLogout?: () => void;
+  demo: boolean;
+  onSignOut: () => void;
 }) {
-  const [user, setUser] = useState<{ name: string; role: string; mode: string } | null>(null);
+  const { outreach } = useWorkspaceStatus();
+  const [user, setUser] = useState<CurrentUser | null>(null);
+  const waiting = outreach?.drafts ?? 0;
 
   useEffect(() => {
-    getCurrentUser().then(setUser);
-  }, [live]);
+    getCurrentUser().then(setUser).catch(() => setUser(null));
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
 
   return (
-    <aside className={`sidebar${open ? ' open' : ''}`}>
-      <div className="sidebar-brand" onClick={() => onNavigate('dashboard')}>
-        <img src="/logo.png" alt="Shailog Technologies" className="brand-logo" />
-      </div>
+    <aside className={`sidebar${open ? ' open' : ''}`} aria-label="Main navigation">
+      <button className="sidebar-brand" onClick={() => navigate('home')} aria-label="Shailog — go to Home">
+        <img src="/logo.png" alt="" className="brand-logo" />
+      </button>
 
-      <nav className="side-nav" aria-label="Main">
-        {NAV.map(({ key, label, icon: Icon }, i) => (
+      <nav className="side-nav">
+        {NAV.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
             className={`nav-item${page === key ? ' active' : ''}`}
-            onClick={() => {
-              onNavigate(key);
-              onClose();
-            }}
+            onClick={() => navigate(key)}
             aria-current={page === key ? 'page' : undefined}
           >
-            <span className="nav-num" aria-hidden>
-              {String(i + 1).padStart(2, '0')}
-            </span>
-            <Icon size={17} />
+            <Icon size={18} />
             <span>{label}</span>
+            {key === 'approvals' && waiting > 0 && (
+              <span className="nav-badge" aria-label={`${waiting} waiting`}>
+                {waiting > 99 ? '99+' : waiting}
+              </span>
+            )}
           </button>
         ))}
       </nav>
 
       <div className="sidebar-foot">
-        <div className="sidebar-system">
-          <StatusDot tone="success" pulse />
-          <div>
-            <strong>System running</strong>
-            <small>{live === null ? 'Backend: checking…' : live ? 'Backend: live · Django' : 'Backend: not running'}</small>
-          </div>
+        <div className="sidebar-status">
+          <AutopilotPill demo={demo} compact />
         </div>
         <div className="sidebar-user">
           <span className="avatar" aria-hidden>
-            {(user?.name ?? 'OP').slice(0, 2).toUpperCase()}
+            {(user?.name ?? '··').slice(0, 2).toUpperCase()}
           </span>
           <div>
-            <strong>{user?.name ?? 'Operator'}</strong>
-            <small>
-              {user ? `${user.role} · ${user.mode}` : 'Owner · mock session'}
-            </small>
+            <strong>{user?.name ?? 'Signed in'}</strong>
+            <small>{user ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : ''}</small>
           </div>
-        </div>
-        {onLogout && (
-          <button className="btn btn-ghost side-logout" onClick={onLogout}>
-            ⎋ Sign out
+          <button className="icon-btn side-logout" onClick={onSignOut} aria-label="Sign out" title="Sign out">
+            <IconLogout size={17} />
           </button>
-        )}
+        </div>
       </div>
     </aside>
   );

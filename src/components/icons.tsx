@@ -1,6 +1,6 @@
 /** Minimal inline stroke icons — no icon-library dependency. */
 
-type IconProps = { size?: number; className?: string };
+export type IconProps = { size?: number; className?: string };
 
 function base(size = 18, className?: string) {
   return {
@@ -135,6 +135,57 @@ export const IconPlug = ({ size, className }: IconProps) => (
 export const IconSend = ({ size, className }: IconProps) => (
   <svg {...base(size, className)}>
     <path d="M4 11.5 20 4l-7.5 16-2-6.5L4 11.5Z" />
+  </svg>
+);
+
+export const IconHome = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M4 10.5 12 4l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5H15v-6h-6v6H5.5A1.5 1.5 0 0 1 4 19v-8.5Z" />
+  </svg>
+);
+
+export const IconInbox = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M4 13.5 6.2 5.6A1.5 1.5 0 0 1 7.6 4.5h8.8a1.5 1.5 0 0 1 1.4 1.1L20 13.5V18a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18v-4.5Z" />
+    <path d="M4 13.5h4.5l1.2 2h4.6l1.2-2H20" />
+  </svg>
+);
+
+export const IconBuilding = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <rect x="4" y="3.5" width="10" height="17" rx="1.5" />
+    <path d="M14 9.5h4.5A1.5 1.5 0 0 1 20 11v9.5H14M7.5 7.5h3M7.5 11h3M7.5 14.5h3M10 20.5v-3" />
+  </svg>
+);
+
+export const IconPulse = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M3 12h4l2.5-6 4.5 12 2.5-6H21" />
+  </svg>
+);
+
+export const IconCheck = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="m5 12.5 4.5 4.5L19 7.5" />
+  </svg>
+);
+
+export const IconMail = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <rect x="3.5" y="5.5" width="17" height="13" rx="2" />
+    <path d="m4 7 8 6 8-6" />
+  </svg>
+);
+
+export const IconSpark = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M12 3.5v4M12 16.5v4M3.5 12h4M16.5 12h4M6 6l2.6 2.6M15.4 15.4 18 18M6 18l2.6-2.6M15.4 8.6 18 6" />
+  </svg>
+);
+
+export const IconLogout = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M14 4.5h3.5A1.5 1.5 0 0 1 19 6v12a1.5 1.5 0 0 1-1.5 1.5H14M10 16l-4-4 4-4M6 12h9" />
   </svg>
 );
 

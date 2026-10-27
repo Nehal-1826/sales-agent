@@ -1,36 +1,20 @@
 /**
- * Tiny localStorage persistence layer.
+ * localStorage cleanup.
  *
- * Everything is frontend-only for now; when the backend exists these
- * helpers get replaced by real API calls in src/lib/api.ts.
+ * Only the auth token is persisted (see transport.ts). Settings, agent
+ * configs and secrets deliberately live server-side only — a stale local
+ * copy used to overwrite real values and leak API keys into the browser.
  */
 
 const PREFIX = 'agentic-ai:';
 
-export function loadJson<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(PREFIX + key);
-    if (raw === null) return fallback;
-    return { ...(fallback as object), ...(JSON.parse(raw) as object) } as T;
-  } catch {
-    return fallback;
-  }
-}
-
-export function saveJson<T>(key: string, value: T): void {
-  try {
-    localStorage.setItem(PREFIX + key, JSON.stringify(value));
-  } catch {
-    /* storage unavailable — ignore, mock mode only */
-  }
-}
-
+/** Wipe every agentic-ai:* key — called on sign-out. */
 export function clearAll(): void {
   try {
     Object.keys(localStorage)
       .filter((k) => k.startsWith(PREFIX))
       .forEach((k) => localStorage.removeItem(k));
   } catch {
-    /* ignore */
+    /* storage unavailable */
   }
 }

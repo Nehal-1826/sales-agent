@@ -204,6 +204,14 @@ export async function login(username: string, password: string): Promise<Result<
 
 /** Sign out: drop the token and every cached agentic-ai:* value. */
 export function logout(): void {
+  // revoke on the server first — a token copied from this browser must die too
+  if (authToken) {
+    void fetch(`${API_BASE_URL}/auth/logout/`, {
+      method: 'POST',
+      headers: { Authorization: `Token ${authToken}`, 'Content-Type': 'application/json' },
+      keepalive: true,
+    }).catch(() => undefined);
+  }
   authToken = null;
   clearAll();
 }

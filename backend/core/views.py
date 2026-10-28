@@ -15,6 +15,8 @@ from .chat import responder_reply
 from .guide import guide_answer
 from .health import status_of
 from .mailer import NO_RECIPIENT_ERROR, claim_draft_for_send, send_draft, smtp_configured, valid_recipient
+from .authentication import token_expired
+from .permissions import IsWorkspaceAdmin, IsWorkspaceAdminOrReadOnly
 from .models import AgentConfig, AppSettings, ChatMessage, EmailDraft, EmailTemplate, Lead, PipelineRun, Potential, Reply, SearchProfile, User
 from .pipeline import PipelineBusy, pipeline_status, run_pipeline, start_pipeline_async
 from .reports import _resolve_recipients, send_daily_report
@@ -108,7 +110,18 @@ def login(request):
     if user is None:
         return Response({'detail': 'invalid credentials'}, status=401)
     token, _ = Token.objects.get_or_create(user=user)
+    if token_expired(token):   # an expired token is dead — issue a fresh one
+        token.delete()
+        token = Token.objects.create(user=user)
     return Response({'token': token.key, 'user': UserSerializer(user).data})
+
+
+@api_view(['POST'])
+def logout(request):
+    """Revoke this user's token server-side — signing out must not leave a
+    copied token valid."""
+    Token.objects.filter(user=request.user).delete()
+    return Response({'detail': 'signed out'})
 
 
 @api_view(['GET'])
@@ -128,7 +141,9 @@ def change_password(request):
         return Response({'detail': 'passwords do not match'}, status=400)
     user.set_password(new)
     user.save(update_fields=['password'])
-    return Response({'detail': 'password updated'})
+    # a password change must end every existing session, including any copied token
+    Token.objects.filter(user=user).delete()
+    return Response({'detail': 'password updated — sign in again'})
 
 
 # ------------------------------------------------------------------
@@ -136,16 +151,19 @@ def change_password(request):
 # ------------------------------------------------------------------
 
 class LeadViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsWorkspaceAdminOrReadOnly]
     queryset = Lead.objects.all()
     serializer_class = LeadSerializer
 
 
 class PotentialViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsWorkspaceAdminOrReadOnly]
     queryset = Potential.objects.all()
     serializer_class = PotentialSerializer
 
 
 class ReplyViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsWorkspaceAdminOrReadOnly]
     queryset = Reply.objects.all()
     serializer_class = ReplySerializer
 
@@ -187,6 +205,7 @@ def agents(request):
 
 
 @api_view(['GET', 'PUT'])
+@permission_classes([IsWorkspaceAdmin])
 def agent_config(request, agent_key):
     if agent_key not in AGENT_META:
         return Response({'detail': 'unknown agent'}, status=404)
@@ -206,6 +225,7 @@ def agent_config(request, agent_key):
 # ------------------------------------------------------------------
 
 @api_view(['GET', 'PUT'])
+@permission_classes([IsWorkspaceAdmin])
 def settings_view(request):
     obj = AppSettings.load()
     if request.method == 'PUT':
@@ -221,6 +241,7 @@ def settings_view(request):
 # ------------------------------------------------------------------
 
 @api_view(['GET', 'POST'])
+@permission_classes([IsWorkspaceAdmin])
 def profiles(request):
     """List saved targeting profiles, or save a new one.
 
@@ -236,6 +257,7 @@ def profiles(request):
 
 
 @api_view(['POST'])
+@permission_classes([IsWorkspaceAdmin])
 def profile_activate(request, profile_id):
     """The one-click switch: apply this profile's targeting to the live
     settings — takes effect on the next pipeline cycle, no restart needed."""
@@ -254,6 +276,7 @@ def profile_activate(request, profile_id):
 # ------------------------------------------------------------------
 
 @api_view(['POST'])
+@permission_classes([IsWorkspaceAdmin])
 def smtp_connect(request):
     """Connect an email mailbox in one click.
 
@@ -284,6 +307,7 @@ def smtp_connect(request):
 
 
 @api_view(['POST'])
+@permission_classes([IsWorkspaceAdmin])
 def report_test(request):
     """Send the daily report right now — verifies the admin email + SMTP setup.
 
@@ -304,6 +328,7 @@ def report_test(request):
 # ------------------------------------------------------------------
 
 @api_view(['GET'])
+@permission_classes([IsWorkspaceAdmin])
 def leads_export(request):
     """All leads as a CSV download (Leads & Reports page)."""
     import csv
@@ -327,6 +352,7 @@ def leads_export(request):
 
 
 @api_view(['POST'])
+@permission_classes([IsWorkspaceAdmin])
 def lead_draft_email(request, lead_id):
     """Manually request an outreach draft for ANY lead — qualified or not.
 
@@ -366,6 +392,7 @@ def lead_draft_email(request, lead_id):
 
 
 @api_view(['POST'])
+@permission_classes([IsWorkspaceAdmin])
 def report_generate(request):
     """Build the branded lead report on demand (Leads & Reports page).
     body: {scope: 'today' | 'all', email: bool} — returns subject/text/html;
@@ -413,6 +440,7 @@ def _ensure_single_default(tpl):
 
 
 @api_view(['GET', 'POST'])
+@permission_classes([IsWorkspaceAdmin])
 def templates(request):
     if request.method == 'POST':
         serializer = EmailTemplateSerializer(data=request.data)
@@ -424,6 +452,7 @@ def templates(request):
 
 
 @api_view(['PUT', 'DELETE'])
+@permission_classes([IsWorkspaceAdmin])
 def template_detail(request, template_id):
     tpl = _get_template(template_id)
     if tpl is None:
@@ -535,6 +564,7 @@ def drafts(request):
 
 
 @api_view(['POST'])
+@permission_classes([IsWorkspaceAdmin])
 def drafts_bulk_approve(request):
     """Bulk approve → send. Body: { ids: [id, …] }.
 
@@ -584,6 +614,7 @@ def drafts_bulk_approve(request):
 
 
 @api_view(['GET', 'PUT'])
+@permission_classes([IsWorkspaceAdmin])
 def draft_detail(request, draft_id):
     draft = _get_draft(draft_id)
     if draft is None:
@@ -623,6 +654,7 @@ def draft_detail(request, draft_id):
 
 
 @api_view(['POST'])
+@permission_classes([IsWorkspaceAdmin])
 def draft_approve(request, draft_id):
     """Approve → send immediately. Sent via SMTP, or console when unset."""
     draft = _get_draft(draft_id)
@@ -640,6 +672,7 @@ def draft_approve(request, draft_id):
 
 
 @api_view(['POST'])
+@permission_classes([IsWorkspaceAdmin])
 def draft_reject(request, draft_id):
     draft = _get_draft(draft_id)
     if draft is None:
@@ -662,6 +695,7 @@ def draft_reject(request, draft_id):
 
 
 @api_view(['POST'])
+@permission_classes([IsWorkspaceAdmin])
 def draft_send(request, draft_id):
     """Retry delivery of a failed draft."""
     draft = _get_draft(draft_id)
@@ -700,6 +734,7 @@ def pipeline_status_view(request):
 
 
 @api_view(['POST'])
+@permission_classes([IsWorkspaceAdmin])
 def pipeline_run(request):
     """Start one cycle.  Default: background thread → 202 and the UI polls
     /pipeline/status/.  ?wait=1 runs synchronously (scripts)."""

@@ -20,6 +20,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 DEBUG = os.environ.get('DJANGO_DEBUG', '1') == '1'
 
+# API tokens expire; login issues a fresh one (core.authentication)
+TOKEN_TTL_DAYS = int(os.environ.get('TOKEN_TTL_DAYS', '14'))
+
 if not DEBUG:
     # fail fast in production instead of silently running insecure defaults
     if not os.environ.get('DJANGO_SECRET_KEY'):
@@ -108,7 +111,7 @@ AUTH_USER_MODEL = 'core.User'
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.TokenAuthentication',
+        'core.authentication.ExpiringTokenAuthentication',
         'rest_framework.authentication.SessionAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [

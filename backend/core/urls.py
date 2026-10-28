@@ -2,7 +2,6 @@
 
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
-from rest_framework.authtoken.views import obtain_auth_token
 
 from . import views
 
@@ -17,8 +16,8 @@ urlpatterns = [
     # users / roles
     path('auth/register/', views.register, name='register'),
     path('auth/login/', views.login, name='login'),
-    path('auth/token/', obtain_auth_token, name='token'),  # DRF default username/password token
     path('auth/me/', views.me, name='me'),
+    path('auth/logout/', views.logout, name='logout'),
     path('auth/password/', views.change_password, name='change-password'),
     # CRM — custom lead routes BEFORE the router (else 'export' is treated as a pk)
     path('leads/export/', views.leads_export, name='leads-export'),

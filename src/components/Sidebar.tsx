@@ -52,7 +52,7 @@ export function Sidebar({
       </button>
 
       <nav className="side-nav">
-        {NAV.map(({ key, label, icon: Icon }) => (
+        {NAV.filter(({ key }) => key !== 'settings' || user?.role === 'owner' || user?.role === 'admin').map(({ key, label, icon: Icon }) => (
           <button
             key={key}
             className={`nav-item${page === key ? ' active' : ''}`}

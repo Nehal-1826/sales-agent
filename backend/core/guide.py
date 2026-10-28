@@ -11,6 +11,7 @@ import logging
 from .ai import llm_available, llm_complete
 from .chat import _humanize, detect_language_style
 from .mailer import smtp_configured
+from .permissions import is_privileged
 from .models import AppSettings, EmailDraft, EmailTemplate, Lead, PipelineRun, Potential
 
 log = logging.getLogger(__name__)
@@ -85,9 +86,19 @@ TROUBLESHOOTING:
 """
 
 
-def workspace_state():
-    """Live snapshot so the guide can point at what's missing for THIS user."""
+def workspace_state(user=None):
+    """Live snapshot so the guide can point at what's missing for THIS user.
+    Configuration (keys, mailbox, report address, schedule) is owner/admin
+    information — a member gets only the CRM counts."""
     s = AppSettings.load()
+    if user is not None and not is_privileged(user):
+        return (
+            'WORKSPACE STATE (live right now):\n'
+            f'- Leads in CRM: {Lead.objects.count()}\n'
+            f'- Email drafts awaiting approval: '
+            f'{EmailDraft.objects.filter(status="draft").count()}\n'
+            '- Workspace configuration is managed by the owner; do not describe it.\n'
+        )
     return (
         'WORKSPACE STATE (live right now):\n'
         f'- Leads in CRM: {Lead.objects.count()} '
@@ -150,7 +161,7 @@ def guide_answer(question, history=None, user=None):
          'Reply in friendly, natural English.')
     )
     prompt = (
-        f'{PRODUCT_KB}\n\n{workspace_state()}\n\n'
+        f'{PRODUCT_KB}\n\n{workspace_state(user)}\n\n'
         f'{convo}'
         f'USER QUESTION: {question}\n\n'
         'Answer with the exact click-path and, when the workspace state shows something '

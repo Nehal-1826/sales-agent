@@ -20,6 +20,7 @@ from django.utils import timezone
 from .ai import llm_available, llm_complete
 from .mailer import claim_draft_for_send, send_draft, valid_recipient
 from .models import AppSettings, EmailDraft, Lead, SearchProfile
+from .permissions import is_privileged
 from .reports import send_daily_report
 
 log = logging.getLogger(__name__)
@@ -486,6 +487,10 @@ def _set_pending(user, value):
     user.save(update_fields=['pending_action'])
 
 
+NOT_ALLOWED = ('That needs the workspace owner or an admin. I can still answer questions '
+               'about your leads and emails.')
+
+
 def handle_command(text, user, history=None):
     """One entry point for chat + guide.  '' = not a command (let the
     conversational reply answer)."""
@@ -494,6 +499,8 @@ def handle_command(text, user, history=None):
         expired = pending.get('expires', '') < timezone.now().isoformat()
         if not expired and _YES.match(text):
             _set_pending(user, {})
+            if not is_privileged(user):   # role may have changed since it was stored
+                return NOT_ALLOWED
             return execute(pending['spec'], username=user.username)
         if expired and _YES.match(text):
             _set_pending(user, {})
@@ -507,6 +514,11 @@ def handle_command(text, user, history=None):
     spec = detect_action(text, history)
     if not spec or spec.get('action') == 'none':
         return ''
+    # chat is a second door to the same operations as the API: every action
+    # (send mail, switch targeting, run cycles, change cadence/report address,
+    # delete leads) is owner/admin only — a member only gets answers
+    if user is not None and not is_privileged(user):
+        return NOT_ALLOWED
     if spec['action'] not in CONFIRM_ACTIONS:
         return execute(spec, username=getattr(user, 'username', 'chat'))
     summary, resolved = _describe(spec)

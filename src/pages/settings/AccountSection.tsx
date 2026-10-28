@@ -21,7 +21,7 @@ export function AccountSection() {
     const res = await changePassword(current, next, confirm);
     setBusy(false);
     if (!res.ok) return toast.error(res.error);
-    toast.success('Password changed.');
+    toast.success('Password changed. Sign in again with the new one.');
     setCurrent('');
     setNext('');
     setConfirm('');

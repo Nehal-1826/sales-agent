@@ -52,6 +52,12 @@ def create_celery_app() -> Celery:
             # Billing (dummy): renewal reminders + auto-renew charges.
             "app.tasks.billing_reminder",
             "app.tasks.billing_renew",
+            # Ops signals — beat schedules these hourly/daily; they were
+            # missing from this list, so every fire raised KeyError and the
+            # task never ran (alerts, postmaster + SNDS feedback loops).
+            "app.tasks.alert_check",
+            "app.tasks.postmaster_ingest",
+            "app.tasks.snds_ingest",
         ],
     )
 

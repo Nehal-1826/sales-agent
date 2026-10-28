@@ -10,6 +10,7 @@ import { ActivityPage } from './pages/ActivityPage';
 import { ChatPage } from './pages/ChatPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { LoginPage } from './pages/LoginPage';
+import { LandingPage } from './pages/LandingPage';
 import { SESSION_EXPIRED_EVENT, checkAuth, getOnboarding, logout, reprobe } from './lib/api';
 import type { AuthState } from './lib/api';
 import { navigate, useRoute } from './lib/router';
@@ -19,6 +20,9 @@ type Gate = 'checking' | AuthState;
 
 export default function App() {
   const [gate, setGate] = useState<Gate>('checking');
+  // public marketing page is the entry for signed-out visitors; "Dashboard" /
+  // "Start" goes to sign-in (never to open sign-up — accounts are created by the owner)
+  const [landing, setLanding] = useState(true);
 
   const probe = useCallback(async (fresh = false) => {
     setGate('checking');
@@ -70,10 +74,14 @@ export default function App() {
     );
   }
 
+  if (gate === 'unauthenticated' && landing) {
+    return <LandingPage onEnterDashboard={() => setLanding(false)} />;
+  }
+
   if (gate === 'unauthenticated') {
     return (
       <>
-        <LoginPage onLoggedIn={() => setGate('live')} />
+        <LoginPage onLoggedIn={() => setGate('live')} onHome={() => setLanding(true)} />
         <Toaster />
       </>
     );

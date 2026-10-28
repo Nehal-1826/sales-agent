@@ -5,7 +5,7 @@ import { login } from '../lib/api';
  * LOGIN — the product entry point. No shipped credentials: the owner account
  * is created at first boot (ADMIN_* env vars) or seeded for demo installs.
  */
-export function LoginPage({ onLoggedIn }: { onLoggedIn: () => void }) {
+export function LoginPage({ onLoggedIn, onHome }: { onLoggedIn: () => void; onHome?: () => void }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -25,6 +25,11 @@ export function LoginPage({ onLoggedIn }: { onLoggedIn: () => void }) {
 
   return (
     <div className="login-wrap">
+      {onHome && (
+        <button type="button" className="login-home" onClick={onHome}>
+          ← Back to home
+        </button>
+      )}
       <form className="panel login-card" onSubmit={submit} noValidate>
         <img src="/logo.png" alt="Shailog Technologies" className="login-logo" />
         <div className="login-title">

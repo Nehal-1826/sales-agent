@@ -15,6 +15,7 @@ extraction, and falls back to storing the raw text).
 import json
 import re
 
+from .permissions import is_privileged
 from .models import AppSettings, SearchProfile
 
 # ------------------------------------------------------------------
@@ -131,7 +132,9 @@ def onboarding_status(user=None, settings=None):
         return {'needed': False, 'done': True, 'stepIndex': 0, 'stepCount': len(STEPS),
                 'stepKey': '', 'question': '', 'hint': '', 'progress': ''}
     state = _load_state(user)
-    if state.get('done'):
+    # the wizard writes workspace settings, keys and the mailbox — owner/admin
+    # only, whether or not the workspace is configured yet
+    if state.get('done') or not is_privileged(user):
         return {'needed': False, 'done': True, 'stepIndex': 0, 'stepCount': len(STEPS),
                 'stepKey': '', 'question': '', 'hint': '', 'progress': ''}
     if not state.get('started') and (settings.company_name or '').strip():
@@ -411,6 +414,9 @@ def onboarding_reply(text, user, settings=None):
     """Handle one user message while the wizard is active for THIS user.
     Returns the bot's reply (never raises — any parse failure re-asks)."""
     settings = settings or AppSettings.load()
+    if not is_privileged(user):   # defence in depth: never write settings for a member
+        _save_state(user, done=True, kept_existing=True)
+        return ('Setup is done by the workspace owner (Settings). You can ask me about leads and emails.')
     state = _load_state(user)
     answers = dict(state.get('answers') or {})
     step = min(int(state.get('step') or 0), len(STEPS) - 1)

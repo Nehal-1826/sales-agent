@@ -66,13 +66,18 @@ class RolePermissionTests(TestCase):
             ('post', '/api/drafts/bulk_approve/', {'ids': [self.draft.id]}),
             ('post', '/api/leads/', {'company': 'x'}),
             ('delete', f'/api/leads/{self.lead.id}/', None),
+            ('put', f'/api/leads/{self.lead.id}/', {'company': 'x'}),
+            ('patch', f'/api/leads/{self.lead.id}/', {'company': 'x'}),
+            ('post', '/api/potential/', {'company': 'x', 'opportunity': 'y'}),
+            ('post', '/api/replies/', {'company': 'x'}),
         ]
-        with mock.patch('core.mailer.send_draft') as send:
+        with mock.patch('core.views.send_draft') as send, mock.patch('core.actions.send_draft') as send2:
             for method, url, body in calls:
                 r = getattr(self.m, method)(url, body, format='json') if body is not None \
                     else getattr(self.m, method)(url)
                 self.assertEqual(r.status_code, 403, f'{method} {url}')
             send.assert_not_called()
+            send2.assert_not_called()
         # nothing changed
         self.draft.refresh_from_db()
         self.assertEqual((self.draft.status, self.draft.to_email), ('draft', 'a@acme.com'))
@@ -98,6 +103,27 @@ class RolePermissionTests(TestCase):
         su.role = 'member'   # default role on a Django-created account
         su.save(update_fields=['role'])
         self.assertEqual(client_for(su).get('/api/settings/').status_code, 200)
+
+    def test_member_reads_a_single_draft_but_cannot_edit_it(self):
+        self.assertEqual(self.m.get(f'/api/drafts/{self.draft.id}/').status_code, 200)
+        self.assertEqual(self.m.put(f'/api/drafts/{self.draft.id}/', {'subject': 'x'}, format='json').status_code, 403)
+
+    def test_member_cannot_drive_the_setup_wizard_over_chat(self):
+        # unconfigured workspace: the wizard would write company/keys/mailbox
+        s = AppSettings.load()
+        s.company_name = ''
+        s.save(update_fields=['company_name'])
+        r = self.m.post('/api/chat/', {'text': 'Evil Corp'}, format='json')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(AppSettings.load().company_name, '')
+        self.assertFalse(r.json()['onboarding']['needed'])
+
+    def test_member_cannot_run_actions_through_the_chat_or_guide_api(self):
+        for url in ('/api/chat/', '/api/guide/'):
+            self.m.post(url, {'text': 'approve all drafts'}, format='json')
+            self.m.post(url, {'text': 'yes'}, format='json')
+        self.draft.refresh_from_db()
+        self.assertEqual(self.draft.status, 'draft')
 
     def test_unauthenticated_still_401(self):
         self.assertEqual(APIClient().get('/api/settings/').status_code, 401)
@@ -154,6 +180,14 @@ class TokenLifecycleTests(TestCase):
         Token.objects.filter(pk=self.token.pk).update(created=timezone.now() - timedelta(days=15))
         self.assertEqual(self._get().status_code, 401)
         self.assertFalse(Token.objects.filter(pk=self.token.pk).exists())
+
+    def test_ttl_follows_settings(self):
+        from datetime import timedelta
+        from django.test import override_settings
+        from django.utils import timezone
+        Token.objects.filter(pk=self.token.pk).update(created=timezone.now() - timedelta(days=2))
+        with override_settings(TOKEN_TTL_DAYS=1):
+            self.assertEqual(self._get().status_code, 401)
 
     def test_login_replaces_an_expired_token(self):
         from datetime import timedelta

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { toast } from '../../components/feedback';
 import { Field } from '../../components/ui';
-import { changePassword } from '../../lib/api';
+import { changePassword, logout } from '../../lib/api';
 
 /** Account — change your password. */
 export function AccountSection() {
@@ -21,10 +21,9 @@ export function AccountSection() {
     const res = await changePassword(current, next, confirm);
     setBusy(false);
     if (!res.ok) return toast.error(res.error);
-    toast.success('Password changed. Sign in again with the new one.');
-    setCurrent('');
-    setNext('');
-    setConfirm('');
+    // the server just revoked every session, including this one — go back to sign-in now
+    logout();
+    window.location.reload();
   };
 
   return (

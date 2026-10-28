@@ -614,7 +614,7 @@ def drafts_bulk_approve(request):
 
 
 @api_view(['GET', 'PUT'])
-@permission_classes([IsWorkspaceAdmin])
+@permission_classes([IsWorkspaceAdminOrReadOnly])
 def draft_detail(request, draft_id):
     draft = _get_draft(draft_id)
     if draft is None:

@@ -80,8 +80,8 @@ class ExistingWorkspaceTests(TestCase):
         s = AppSettings.load()
         s.company_name = '   '
         s.save(update_fields=['company_name'])
-        self.assertEqual(onboarding_status(self.user)['stepKey'], 'company')
-        onboarding_reply('Acme Inc', self.user)
+        self.assertEqual(onboarding_status(self.owner)['stepKey'], 'company')
+        onboarding_reply('Acme Inc', self.owner)
         self.assertEqual(AppSettings.load().company_name, 'Acme Inc')
 
     def test_target_unclear_reasks(self):

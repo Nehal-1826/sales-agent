@@ -12,11 +12,14 @@ from django.utils import timezone
 from rest_framework import exceptions
 from rest_framework.authentication import TokenAuthentication
 
-TOKEN_TTL = timedelta(days=getattr(settings, 'TOKEN_TTL_DAYS', 14))
+
+def token_ttl():
+    # read per call so the TTL follows settings (and override_settings in tests)
+    return timedelta(days=getattr(settings, 'TOKEN_TTL_DAYS', 14))
 
 
 def token_expired(token):
-    return timezone.now() - token.created > TOKEN_TTL
+    return timezone.now() - token.created > token_ttl()
 
 
 class ExpiringTokenAuthentication(TokenAuthentication):

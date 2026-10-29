@@ -6,13 +6,13 @@ is attempted when available (mocked).
 """
 from unittest.mock import patch
 
-from django.test import TestCase
+from core.tests.base import TenantTestCase
 
 from core.chat import responder_reply, _keyword_reply, _crm_snapshot
 from core.models import AppSettings, Lead, Potential, Reply
 
 
-class KeywordReplyTests(TestCase):
+class KeywordReplyTests(TenantTestCase):
     """Keyword-based fallback replies — no LLM needed."""
 
     def test_greeting(self):
@@ -63,7 +63,7 @@ class KeywordReplyTests(TestCase):
         self.assertTrue(len(reply) > 20)
 
 
-class CrmSnapshotTests(TestCase):
+class CrmSnapshotTests(TenantTestCase):
     """CRM snapshot string generation for LLM context."""
 
     def test_snapshot_empty(self):
@@ -78,7 +78,7 @@ class CrmSnapshotTests(TestCase):
         self.assertIn('1 leads', snapshot)
 
 
-class ResponderReplyIntegrationTests(TestCase):
+class ResponderReplyIntegrationTests(TenantTestCase):
     """Test responder_reply() dispatches correctly."""
 
     def test_falls_back_to_keyword_when_no_key(self):

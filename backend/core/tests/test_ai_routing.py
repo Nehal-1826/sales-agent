@@ -2,14 +2,14 @@
 import os
 from unittest import mock
 
-from django.test import TestCase
+from core.tests.base import TenantTestCase
 
 from core import ai
 from core.models import AppSettings
 from core.onboarding import _provider_for_key
 
 
-class RoutingTests(TestCase):
+class RoutingTests(TenantTestCase):
     def _settings(self, provider, key='k-123'):
         s = AppSettings.load()
         s.ai_provider, s.ai_key = provider, key
@@ -86,7 +86,7 @@ class RoutingTests(TestCase):
         AppSettings.objects.all().delete()
         with mock.patch.dict(os.environ, {'AI_KEY': 'AIza-test', 'AI_PROVIDER': 'Gemini'}):
             AppSettings.load()
-        s = AppSettings.objects.get(pk=1)
+        s = AppSettings.objects.get(workspace=self.workspace)
         self.assertEqual((s.ai_provider, s.ai_key), ('Gemini', 'AIza-test'))
 
     def test_env_provider_does_not_override_existing_key(self):
@@ -110,7 +110,7 @@ class RoutingTests(TestCase):
             self.assertIn('ai_provider', call.kwargs['update_fields'])
 
 
-class ProviderForKeyTests(TestCase):
+class ProviderForKeyTests(TenantTestCase):
     def test_key_prefixes(self):
         self.assertEqual(_provider_for_key('gsk_abc123'), 'Groq')
         self.assertEqual(_provider_for_key('AIzaSyABC'), 'Gemini')

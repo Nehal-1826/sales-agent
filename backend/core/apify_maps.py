@@ -17,7 +17,6 @@ Behaviour contract (mirrors scalelist.py):
 """
 
 import logging
-import os
 import re
 import time
 from urllib.parse import urlparse
@@ -33,8 +32,15 @@ RUN_WAIT_S = 480       # actor runs for 6+ searches can take several minutes
 RUN_POLL_EVERY_S = 6
 
 
+def _api_key():
+    """The workspace's own key; env is a fallback for the default tenant only
+    (AppSettings.load() absorbs it there, so the DB field is the single source)."""
+    from .models import AppSettings
+    return AppSettings.load().apify_api_key
+
+
 def apify_available():
-    return bool(os.environ.get('APIFY_API_KEY'))
+    return bool(_api_key())
 
 
 def _norm_domain(url):
@@ -60,7 +66,7 @@ def maps_places(searches, max_per_search=4):
     fetch dataset).  Returns [{title, phone, website, city, state, address,
     countryCode}] — [] when the key is missing, the run fails, or nothing
     comes back."""
-    key = os.environ.get('APIFY_API_KEY', '')
+    key = _api_key()
     if not key or not searches:
         return []
     headers = {'Authorization': f'Bearer {key}'}  # never in the URL — it leaks into logs

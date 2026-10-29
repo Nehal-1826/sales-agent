@@ -12,7 +12,7 @@ Proves the behaviours this change shipped:
   4. buyer mode keeps dropping peer terms exactly as before.
 """
 
-from django.test import TestCase
+from core.tests.base import TenantTestCase
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
@@ -38,8 +38,9 @@ def lead(company='', industry='', website='', description='', snippet=''):
             'description': description, 'analysis': {'serp_snippet': snippet}}
 
 
-class SeededProfileTests(TestCase):
+class SeededProfileTests(TenantTestCase):
     """Migration 0015 seeds — present on every fresh database."""
+    workspace_slug = 'shailog'  # relies on rows the data migrations seeded
 
     def test_two_profiles_seeded(self):
         names = set(SearchProfile.objects.values_list('name', flat=True))
@@ -61,8 +62,9 @@ class SeededProfileTests(TestCase):
         self.assertEqual(backup.icp_mode, 'buyer')
 
 
-class ProfileSwitchTests(TestCase):
+class ProfileSwitchTests(TenantTestCase):
     """One-click switch — write-through to the live settings."""
+    workspace_slug = 'shailog'  # relies on rows the data migrations seeded
 
     def test_activate_rewrites_settings_and_single_active(self):
         backup = SearchProfile.objects.get(name='Backup — Buyer Targeting')
@@ -100,8 +102,9 @@ class ProfileSwitchTests(TestCase):
         self.assertEqual(profile.icp_mode, 'buyer')
 
 
-class AgencyModeIcpTests(TestCase):
+class AgencyModeIcpTests(TenantTestCase):
     """Agency mode flips every competitor guard."""
+    workspace_slug = 'shailog'  # relies on rows the data migrations seeded
 
     def test_agency_terms_survive_industry_override(self):
         s = Settings(icp_mode='agency',
@@ -137,8 +140,9 @@ class AgencyModeIcpTests(TestCase):
         self.assertTrue(icp.looks_like_competitor(agency, s))
 
 
-class ProfileApiTests(TestCase):
+class ProfileApiTests(TenantTestCase):
     """/api/profiles/ — list, create and the activate switch."""
+    workspace_slug = 'shailog'  # relies on rows the data migrations seeded
 
     def setUp(self):
         self.user = User.objects.create_user(
@@ -183,7 +187,7 @@ class ProfileApiTests(TestCase):
         self.assertEqual(resp.status_code, 404)
 
 
-class AgencyDraftTests(TestCase):
+class AgencyDraftTests(TenantTestCase):
     """Agency-mode outreach: partnership-seeking, never a flaw audit."""
 
     def setUp(self):

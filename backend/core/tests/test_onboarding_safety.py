@@ -1,7 +1,8 @@
 """Onboarding never overwrites a configured workspace; secrets never land in chat history."""
 from unittest import mock
 
-from django.test import TestCase, override_settings
+from django.test import override_settings
+from core.tests.base import TenantTestCase
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
@@ -12,7 +13,7 @@ from core.onboarding import (
 )
 
 
-class ExistingWorkspaceTests(TestCase):
+class ExistingWorkspaceTests(TenantTestCase):
     def setUp(self):
         s = AppSettings.load()
         s.company_name, s.services = 'Shailog', ['SaaS builds']
@@ -89,7 +90,7 @@ class ExistingWorkspaceTests(TestCase):
         self.assertEqual(_parse_target('agencies'), 'agency')
 
 
-class RedactionTests(TestCase):
+class RedactionTests(TenantTestCase):
     def test_redaction(self):
         self.assertNotIn('AIzaSyD', redact_for_history('AIzaSyD-1234567890abcdefghijkl', 'ai_key'))
         red = redact_for_history('hello@x.com:supersecret', 'email')
@@ -131,7 +132,7 @@ class RedactionTests(TestCase):
         self.assertEqual(AppSettings.load().ai_key, 'AIzaSyD-1234567890abcdefghijkl')
 
 
-class SecretHygieneTests(TestCase):
+class SecretHygieneTests(TenantTestCase):
     def test_agent_config_masks_secrets(self):
         from core.serializers import AgentConfigSerializer
         cfg = AgentConfig.objects.create(agent='search', api_auth='secret-token-1234',
@@ -176,7 +177,7 @@ class SecretHygieneTests(TestCase):
         self.assertEqual(len(dev), len(prod) + 1)
 
 
-class ConsoleDeliveryEncodingTests(TestCase):
+class ConsoleDeliveryEncodingTests(TenantTestCase):
     def test_console_delivery_survives_cp1252_stdout(self):
         import io
         import sys

@@ -1,7 +1,7 @@
 """
 Tests for core.serializers — verifies JSON shapes match frontend expectations.
 """
-from django.test import TestCase
+from core.tests.base import TenantTestCase
 
 from core.models import AgentConfig, AppSettings, EmailDraft, Lead, Potential, Reply
 from core.serializers import (
@@ -14,7 +14,7 @@ from core.serializers import (
 )
 
 
-class LeadSerializerTests(TestCase):
+class LeadSerializerTests(TenantTestCase):
     def test_output_shape(self):
         lead = Lead.objects.create(
             company='SerCo', industry='SaaS', website='serco.com',
@@ -35,7 +35,7 @@ class LeadSerializerTests(TestCase):
         self.assertIsInstance(data['discovered'], str)
 
 
-class EmailDraftSerializerTests(TestCase):
+class EmailDraftSerializerTests(TenantTestCase):
     def test_output_shape(self):
         draft = EmailDraft.objects.create(
             company='DraftCo', to_email='x@y.com', subject='Hi', body='Body',
@@ -47,7 +47,7 @@ class EmailDraftSerializerTests(TestCase):
         self.assertIn('status', data)
 
 
-class PotentialSerializerTests(TestCase):
+class PotentialSerializerTests(TenantTestCase):
     def test_stage_is_display(self):
         pot = Potential.objects.create(
             company='PotCo', opportunity='Deal', value='$5k', stage='qualified',
@@ -57,7 +57,7 @@ class PotentialSerializerTests(TestCase):
         self.assertIn('owner', data)
 
 
-class ReplySerializerTests(TestCase):
+class ReplySerializerTests(TenantTestCase):
     def test_channel_and_status_display(self):
         reply = Reply.objects.create(
             company='RepCo', contact='J', channel='email', status='meeting',
@@ -67,7 +67,7 @@ class ReplySerializerTests(TestCase):
         self.assertEqual(data['status'], 'Meeting booked')
 
 
-class AgentConfigSerializerTests(TestCase):
+class AgentConfigSerializerTests(TenantTestCase):
     def test_nested_structure(self):
         cfg = AgentConfig.objects.create(
             agent='search', db_provider='postgresql', db_name='test',
@@ -80,7 +80,7 @@ class AgentConfigSerializerTests(TestCase):
         self.assertEqual(data['model'], 'GPT-4o')
 
 
-class SettingsSerializerTests(TestCase):
+class SettingsSerializerTests(TenantTestCase):
     def test_api_key_masked(self):
         s = AppSettings.load()
         s.ai_key = 'sk-1234567890abcdef'

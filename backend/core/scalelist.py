@@ -15,7 +15,6 @@ lead row.  Behaviour contract:
 """
 
 import logging
-import os
 
 import requests
 
@@ -24,14 +23,21 @@ log = logging.getLogger(__name__)
 SCALELIST_PHONE_URL = 'https://api.scalelist.com/api/v1/phone/find'
 
 
+def _api_key():
+    """The workspace's own key; env is a fallback for the default tenant only
+    (AppSettings.load() absorbs it there, so the DB field is the single source)."""
+    from .models import AppSettings
+    return AppSettings.load().scalelist_api_key
+
+
 def scalelist_available():
-    return bool(os.environ.get('SCALELIST_API_KEY'))
+    return bool(_api_key())
 
 
 def scalelist_phone_find(email='', full_name='', company='', domain=''):
     """One phone lookup.  Returns the E.164-ish phone string, or '' when
     Scalelist has nothing (or the key is missing / the call failed)."""
-    key = os.environ.get('SCALELIST_API_KEY', '')
+    key = _api_key()
     if not key:
         return ''
     body = {}

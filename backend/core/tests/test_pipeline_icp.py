@@ -11,7 +11,7 @@ Runs keyless (no AI): the ICP heuristic alone must do the competitor work.
 
 from unittest import mock
 
-from django.test import TestCase
+from core.tests.base import TenantTestCase
 
 from core.models import AppSettings, EmailDraft, Lead, PipelineRun, Potential
 from core.pipeline import run_pipeline
@@ -64,7 +64,7 @@ def pipeline_patches():
     ]
 
 
-class RunPipelineIcpTests(TestCase):
+class RunPipelineIcpTests(TenantTestCase):
     def setUp(self):
         s = AppSettings.load()
         s.company_name = 'Shailog Technologies'
@@ -142,7 +142,7 @@ class RunPipelineIcpTests(TestCase):
         self.assertEqual(gym.contact_phone, '+91 98765 43210')
 
 
-class PerCycleNotesTests(TestCase):
+class PerCycleNotesTests(TenantTestCase):
     def test_old_leads_without_email_are_not_counted_in_this_cycles_notes(self):
         from core.tests.test_runlock import quiet_cycle
         Lead.objects.create(company='OldNoMail', website='oldnomail.example', profiled=True,

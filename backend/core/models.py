@@ -11,7 +11,28 @@ Maps 1:1 to the handwritten architecture:
 """
 
 from django.contrib.auth.models import AbstractUser
+import os
+
 from django.db import models
+
+from .tenancy import TenantOwned, current_workspace
+
+
+class Workspace(models.Model):
+    """One company (tenant). Every tenant-owned row belongs to exactly one."""
+
+    name = models.CharField(max_length=200)
+    slug = models.SlugField(max_length=60, unique=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = models.Manager()
+    # same name as the tenant models' unscoped manager, so callers can grep
+    # one idiom for "deliberately not tenant-scoped"
+    all_tenants = models.Manager()
+
+    def __str__(self):
+        return self.name
 
 
 class User(AbstractUser):
@@ -28,10 +49,19 @@ class User(AbstractUser):
     onboarding = models.JSONField(default=dict, blank=True)
     # chat action awaiting an explicit "yes" (core.actions): {spec, summary, expires}
     pending_action = models.JSONField(default=dict, blank=True)
+    # null only for platform operators (superusers: Django admin / manage.py)
+    workspace = models.ForeignKey(Workspace, null=True, blank=True,
+                                  on_delete=models.CASCADE, related_name='users')
 
     def save(self, *args, **kwargs):
-        # First user to sign up owns the workspace.
-        if not self.pk and not User.objects.exists():
+        # A new tenant user inherits the active workspace (tests, create_workspace).
+        if self.workspace_id is None and not self.is_superuser:
+            ws = current_workspace()
+            if ws is not None:
+                self.workspace = ws
+        # First user IN THAT WORKSPACE owns it.
+        if (not self.pk and self.workspace_id is not None
+                and not User.objects.filter(workspace_id=self.workspace_id).exists()):
             self.role = self.Roles.OWNER
         super().save(*args, **kwargs)
 
@@ -59,7 +89,7 @@ class HealthBeat(models.Model):
         return f'{self.name} @ {self.updated_at:%H:%M:%S}'
 
 
-class Lead(Timestamped):
+class Lead(TenantOwned, Timestamped):
     """CRM — LEADS: companies discovered by the Search (Scrape) agent."""
 
     company = models.CharField(max_length=200)
@@ -80,14 +110,14 @@ class Lead(Timestamped):
     # AI (Gemini) summary of what the company does, written from its own site text
     description = models.TextField(blank=True)
 
-    class Meta:
+    class Meta(TenantOwned.Meta):
         ordering = ['-created_at']
 
     def __str__(self):
         return self.company
 
 
-class EmailDraft(Timestamped):
+class EmailDraft(TenantOwned, Timestamped):
     """Outreach — cold email drafted by Copywright, sent after approval."""
 
     class Statuses(models.TextChoices):
@@ -112,14 +142,14 @@ class EmailDraft(Timestamped):
     sent_at = models.DateTimeField(null=True, blank=True)
     error = models.CharField(max_length=500, blank=True)
 
-    class Meta:
+    class Meta(TenantOwned.Meta):
         ordering = ['-updated_at']
 
     def __str__(self):
         return f'{self.company} — {self.get_status_display()}'
 
 
-class EmailTemplate(Timestamped):
+class EmailTemplate(TenantOwned, Timestamped):
     """Outreach — reusable cold-email base created by the user (written
     manually or uploaded). Copywright personalizes it per lead with Gemini;
     {{placeholders}} are substituted when no AI key is set.
@@ -133,14 +163,14 @@ class EmailTemplate(Timestamped):
     body = models.TextField(blank=True)
     is_default = models.BooleanField(default=False)
 
-    class Meta:
+    class Meta(TenantOwned.Meta):
         ordering = ['-is_default', '-updated_at']
 
     def __str__(self):
         return f'{self.name}{" (default)" if self.is_default else ""}'
 
 
-class Potential(Timestamped):
+class Potential(TenantOwned, Timestamped):
     """CRM — POTENTIAL: opportunities identified by the system."""
 
     class Stages(models.TextChoices):
@@ -156,14 +186,14 @@ class Potential(Timestamped):
     owner_agent = models.CharField(max_length=50, default='Profile agent')
     lead = models.ForeignKey(Lead, null=True, blank=True, on_delete=models.SET_NULL, related_name='potentials')
 
-    class Meta:
+    class Meta(TenantOwned.Meta):
         ordering = ['-created_at']
 
     def __str__(self):
         return f'{self.company} — {self.opportunity}'
 
 
-class Reply(Timestamped):
+class Reply(TenantOwned, Timestamped):
     """CRM — REPLY: responses handled by the Responder (Chatbot)."""
 
     class Statuses(models.TextChoices):
@@ -182,14 +212,14 @@ class Reply(Timestamped):
     status = models.CharField(max_length=20, choices=Statuses.choices, default=Statuses.AWAITING)
     summary = models.TextField(blank=True)
 
-    class Meta:
+    class Meta(TenantOwned.Meta):
         ordering = ['-updated_at']
 
     def __str__(self):
         return f'{self.company} — {self.get_status_display()}'
 
 
-class AgentConfig(Timestamped):
+class AgentConfig(TenantOwned, Timestamped):
     """AGENTS page — per-agent configuration (DB / API / prompts / model)."""
 
     class Agents(models.TextChoices):
@@ -198,7 +228,7 @@ class AgentConfig(Timestamped):
         COPYWRIGHT = 'copywright', 'Copywright'
         RESPONDER = 'responder', 'Responder (Chatbot)'
 
-    agent = models.CharField(max_length=20, choices=Agents.choices, unique=True)
+    agent = models.CharField(max_length=20, choices=Agents.choices)
     # DB — MongoDB only (not editable from the UI)
     db_provider = models.CharField(max_length=20, default='mongodb')
     db_name = models.CharField(max_length=200, blank=True)
@@ -212,15 +242,16 @@ class AgentConfig(Timestamped):
     # Model
     model = models.CharField(max_length=100, default='GLM-4.6')
 
-    class Meta:
+    class Meta(TenantOwned.Meta):
         ordering = ['id']
+        unique_together = [('workspace', 'agent')]
 
     def __str__(self):
         return self.get_agent_display()
 
 
-class AppSettings(Timestamped):
-    """SETTINGS page — Company Profile · AI Key · Frequent Runs (singleton)."""
+class AppSettings(TenantOwned, Timestamped):
+    """SETTINGS page — Company Profile · AI Key · Frequent Runs (one row per workspace)."""
 
     class Frequencies(models.TextChoices):
         EVERY_15M = '15m', 'Every 15 minutes'
@@ -241,6 +272,10 @@ class AppSettings(Timestamped):
     # Apollo.io — B2B data-enrichment API: real phone numbers for leads whose
     # sites hide contact details behind bot protection / robots.txt
     apollo_api_key = models.CharField(max_length=200, blank=True)
+    # Scalelist / Apify - per-tenant phone-enrichment keys (env is a fallback
+    # for the default tenant only, see core.scalelist / core.apify_maps)
+    scalelist_api_key = models.CharField(max_length=200, blank=True)
+    apify_api_key = models.CharField(max_length=200, blank=True)
 
     # SMTP — outbound cold email (password never returned in full by the API)
     smtp_host = models.CharField(max_length=200, blank=True)
@@ -299,20 +334,24 @@ class AppSettings(Timestamped):
     # install that has never run the wizard.
     onboarding = models.JSONField(default=dict, blank=True)
 
-    def save(self, *args, **kwargs):
-        self.pk = 1  # singleton
-        super().save(*args, **kwargs)
+    # Exactly one row per workspace (OneToOne replaces the old pk=1 singleton)
+    workspace = models.OneToOneField(Workspace, on_delete=models.CASCADE, related_name='+')
 
     @classmethod
     def load(cls):
-        obj, _ = cls.objects.get_or_create(pk=1)
+        ws = current_workspace()
+        obj, _ = cls.objects.get_or_create(workspace=ws)
         obj._absorb_env_secrets()
         return obj
 
     def _absorb_env_secrets(self):
         """On a VPS, secrets live in environment variables — fill only the
         empty DB fields once so the admin UI stays the source of truth."""
-        import os
+        # Env secrets belong to the default tenant ONLY - any other company
+        # must bring its own keys, never inherit the operator's.
+        ws = current_workspace()
+        if ws is None or ws.slug != os.environ.get('DEFAULT_TENANT_SLUG', 'shailog'):
+            return
         env_map = {
             'smtp_host': 'SMTP_HOST',
             'smtp_user': 'SMTP_USER',
@@ -322,6 +361,8 @@ class AppSettings(Timestamped):
             'ai_provider': 'AI_PROVIDER',
             'ai_key': 'AI_KEY',
             'apollo_api_key': 'APOLLO_API_KEY',
+            'scalelist_api_key': 'SCALELIST_API_KEY',
+            'apify_api_key': 'APIFY_API_KEY',
         }
         dirty = False
         key_absorbed = False
@@ -342,7 +383,7 @@ class AppSettings(Timestamped):
         return 'App settings'
 
 
-class SearchProfile(Timestamped):
+class SearchProfile(TenantOwned, Timestamped):
     """SETTINGS page — saved lead-targeting presets with one-click switching.
 
     A profile snapshots the Lead Targeting knobs (countries, cities,
@@ -351,7 +392,7 @@ class SearchProfile(Timestamped):
     before, so a switch takes effect on the very next cycle with no restart.
     """
 
-    name = models.CharField(max_length=200, unique=True)
+    name = models.CharField(max_length=200)
     description = models.CharField(max_length=500, blank=True)
     # same comma-separated storage convention as AppSettings
     target_countries = models.TextField(blank=True)
@@ -364,8 +405,9 @@ class SearchProfile(Timestamped):
     )
     is_active = models.BooleanField(default=False)
 
-    class Meta:
+    class Meta(TenantOwned.Meta):
         ordering = ['-is_active', 'name']
+        unique_together = [('workspace', 'name')]
 
     def __str__(self):
         return f'{self.name}{" (active)" if self.is_active else ""}'
@@ -401,7 +443,7 @@ class SearchProfile(Timestamped):
         return profile
 
 
-class ChatMessage(Timestamped):
+class ChatMessage(TenantOwned, Timestamped):
     """CHAT — conversation with the Responder (Chatbot)."""
 
     class Roles(models.TextChoices):
@@ -412,14 +454,14 @@ class ChatMessage(Timestamped):
     role = models.CharField(max_length=10, choices=Roles.choices)
     text = models.TextField()
 
-    class Meta:
+    class Meta(TenantOwned.Meta):
         ordering = ['created_at']
 
     def __str__(self):
         return f'{self.get_role_display()}: {self.text[:40]}'
 
 
-class PipelineRun(Timestamped):
+class PipelineRun(TenantOwned, Timestamped):
     """LOOP — one orchestrator cycle through the agent pipeline."""
 
     started_at = models.DateTimeField(auto_now_add=True)
@@ -430,7 +472,7 @@ class PipelineRun(Timestamped):
     potentials_created = models.PositiveSmallIntegerField(default=0)
     replies_created = models.PositiveSmallIntegerField(default=0)
 
-    class Meta:
+    class Meta(TenantOwned.Meta):
         ordering = ['-started_at']
 
     def __str__(self):

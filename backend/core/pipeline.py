@@ -164,7 +164,8 @@ def _enrich_due(lead):
 
 def _paid_lookup_configured():
     """True when at least one paid phone provider (Scalelist / Apollo) has a key."""
-    return bool(os.environ.get('SCALELIST_API_KEY') or AppSettings.load().apollo_api_key)
+    cfg = AppSettings.load()
+    return bool(cfg.scalelist_api_key or cfg.apollo_api_key)
 
 
 def _paid_phone_lookup(lead):

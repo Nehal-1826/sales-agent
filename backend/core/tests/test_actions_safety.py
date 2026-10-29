@@ -1,11 +1,11 @@
 """Chat actions: questions never act, destructive actions need an explicit yes."""
-from django.test import TestCase
+from core.tests.base import TenantTestCase
 
 from core.actions import detect_action_regex, handle_command, is_question_or_negation
 from core.models import AppSettings, EmailDraft, Lead, SearchProfile, User
 
 
-class GuardTests(TestCase):
+class GuardTests(TenantTestCase):
     def test_questions_and_negations(self):
         for text in ('should I send all the drafts?', "don't send all the emails yet",
                      'what happens if I stop the runs?', 'when will the next run of the pipeline start?'):
@@ -14,7 +14,7 @@ class GuardTests(TestCase):
             self.assertFalse(is_question_or_negation(text), text)
 
 
-class ConfirmFlowTests(TestCase):
+class ConfirmFlowTests(TenantTestCase):
     def setUp(self):
         self.user = User.objects.create_user(username='o', password='pass12345', role='owner')
         self.d1 = EmailDraft.objects.create(company='Acme', to_email='a@acme.com', subject='s', body='b')
@@ -58,7 +58,7 @@ class ConfirmFlowTests(TestCase):
         self.assertNotEqual(spec.get('action'), 'approve_all')
 
 
-class ChatWiringTests(TestCase):
+class ChatWiringTests(TenantTestCase):
     def setUp(self):
         self.user = User.objects.create_user(username='o', password='pass12345', role='owner')
         EmailDraft.objects.create(company='Acme', to_email='a@acme.com', subject='s', body='b')
@@ -88,7 +88,7 @@ class ChatWiringTests(TestCase):
         self.assertTrue(r.data['pendingAction'])
 
 
-class PendingHardeningTests(TestCase):
+class PendingHardeningTests(TenantTestCase):
     def setUp(self):
         self.user = User.objects.create_user(username='o', password='pass12345', role='owner')
         EmailDraft.objects.create(company='Acme', to_email='a@acme.com', subject='s', body='b')
@@ -163,7 +163,7 @@ class PendingHardeningTests(TestCase):
         self.assertIsNone(c.get('/api/chat/').data['pendingAction'])
 
 
-class PostSetupRedactionTests(TestCase):
+class PostSetupRedactionTests(TenantTestCase):
     """Secrets pasted into the Assistant after setup must not be stored raw."""
 
     def setUp(self):
@@ -191,7 +191,7 @@ class PostSetupRedactionTests(TestCase):
         self.assertEqual(self._stored(), 'how many leads today?')
 
 
-class DraftRejectRaceTests(TestCase):
+class DraftRejectRaceTests(TenantTestCase):
     def setUp(self):
         from rest_framework.test import APIClient
         self.user = User.objects.create_user(username='o', password='pass12345', role='owner')

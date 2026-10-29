@@ -3,7 +3,7 @@ from io import StringIO
 from unittest import mock
 
 from django.core.management import call_command
-from django.test import TestCase
+from core.tests.base import TenantTestCase
 
 from core.management.commands import run_worker
 from core.pipeline import PipelineBusy
@@ -26,7 +26,7 @@ def stop_after(n):
     return fake_sleep
 
 
-class WorkerLoopTests(TestCase):
+class WorkerLoopTests(TenantTestCase):
     """Drives Command.handle for a bounded number of 30 s ticks."""
 
     def run_ticks(self, ticks, run_pipeline):
@@ -93,7 +93,7 @@ class WorkerLoopTests(TestCase):
         run_pipeline.assert_not_called()
 
 
-class HeartbeatThreadTests(TestCase):
+class HeartbeatThreadTests(TenantTestCase):
     def test_heartbeat_thread_survives_errors(self):
         with mock.patch(f'{MODULE}.close_old_connections'), \
                 mock.patch(f'{MODULE}.beat', side_effect=RuntimeError('db down')) as beat, \

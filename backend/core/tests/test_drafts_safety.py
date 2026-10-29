@@ -1,7 +1,7 @@
 """Outreach safety: no fabricated recipients, no double sends, recipient edits stick."""
 from unittest import mock
 
-from django.test import TestCase
+from core.tests.base import TenantTestCase
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
@@ -10,7 +10,7 @@ from core.models import EmailDraft, Lead, User
 from core.pipeline import run_pipeline
 
 
-class DraftSafetyTests(TestCase):
+class DraftSafetyTests(TenantTestCase):
     def setUp(self):
         self.user = User.objects.create_user(username='o', password='pass12345', role='owner')
         self.client = APIClient()
@@ -96,7 +96,7 @@ class DraftSafetyTests(TestCase):
         self.assertEqual(EmailDraft.objects.filter(lead=self.lead).count(), 1)
 
 
-class DraftSafetyFlowTests(TestCase):
+class DraftSafetyFlowTests(TenantTestCase):
     """Retry endpoint, chat actions and manual re-draft use the same guards."""
 
     def setUp(self):
@@ -150,7 +150,7 @@ class DraftSafetyFlowTests(TestCase):
         self.assertIn('waiting for approval', again.json()['detail'])
 
 
-class DraftFixRound1Tests(TestCase):
+class DraftFixRound1Tests(TenantTestCase):
     """Edit race, send-path hardening, admin action, pipeline candidate query."""
 
     def setUp(self):

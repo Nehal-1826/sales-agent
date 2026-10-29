@@ -2,7 +2,7 @@
 from datetime import timedelta
 from unittest import mock
 
-from django.test import TestCase
+from core.tests.base import TenantTestCase
 from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
@@ -19,7 +19,7 @@ def quiet_cycle():
             mock.patch('core.pipeline.llm_available', return_value=False)]
 
 
-class RunLockTests(TestCase):
+class RunLockTests(TenantTestCase):
     def test_second_acquire_fails_until_release(self):
         self.assertTrue(runlock.acquire_run_lock())
         self.assertFalse(runlock.acquire_run_lock())
@@ -84,7 +84,7 @@ class RunLockTests(TestCase):
         self.assertIn('finishedAt', status['lastRun'])
 
 
-class StartAsyncTests(TestCase):
+class StartAsyncTests(TenantTestCase):
     def test_returns_false_when_busy(self):
         runlock.acquire_run_lock()
         with mock.patch('core.pipeline.threading.Thread') as thread:
@@ -129,7 +129,7 @@ class StartAsyncTests(TestCase):
                 run_pipeline(triggered_by='test')
 
 
-class RunEndpointTests(TestCase):
+class RunEndpointTests(TenantTestCase):
     def setUp(self):
         user = User.objects.create_user(username='o', password='pass12345', role='owner')
         self.client = APIClient()
@@ -162,7 +162,7 @@ class RunEndpointTests(TestCase):
         self.assertEqual(resp.status_code, 409)
 
 
-class SettingsSaveKeepsLockTests(TestCase):
+class SettingsSaveKeepsLockTests(TenantTestCase):
     def test_settings_put_does_not_clobber_a_live_run_lock(self):
         user = User.objects.create_user(username='o2', password='pass12345', role='owner')
         client = APIClient()
@@ -172,11 +172,11 @@ class SettingsSaveKeepsLockTests(TestCase):
         with mock.patch.object(AppSettings, 'load', return_value=stale):
             resp = client.put('/api/settings/', {'company': {'name': 'Renamed Co'}}, format='json')
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(AppSettings.objects.get(pk=1).company_name, 'Renamed Co')
+        self.assertEqual(AppSettings.objects.get(workspace=self.workspace).company_name, 'Renamed Co')
         self.assertIsNotNone(runlock.running_since())  # the cycle still holds it
 
 
-class ChatActionTests(TestCase):
+class ChatActionTests(TenantTestCase):
     def test_run_pipeline_action_starts_background_cycle(self):
         from core import actions
         with mock.patch('core.pipeline.start_pipeline_async', return_value=True) as start:
@@ -191,11 +191,11 @@ class ChatActionTests(TestCase):
         self.assertIn('already running', reply)
 
 
-class StaleHolderReleaseTests(TestCase):
+class StaleHolderReleaseTests(TenantTestCase):
     def test_late_release_by_first_holder_keeps_second_lock(self):
         first = runlock.acquire_run_lock()
         self.assertTrue(first)
-        AppSettings.objects.filter(pk=1).update(
+        AppSettings.objects.filter(workspace=self.workspace).update(
             pipeline_running_since=timezone.now() - timedelta(hours=2))
         second = runlock.acquire_run_lock()  # stale lock taken over
         self.assertTrue(second)

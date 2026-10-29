@@ -4,7 +4,7 @@ Tests for core.views — API endpoint integration tests.
 Each test creates its own data and hits the endpoint through Django's
 test client, verifying status codes and response shapes.
 """
-from django.test import TestCase
+from core.tests.base import TenantTestCase
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
@@ -33,7 +33,7 @@ class SetupMixin:
         self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token.key}')
 
 
-class HealthTests(TestCase):
+class HealthTests(TenantTestCase):
     """GET /api/health/ — open endpoint, no auth required."""
 
     def test_health_ok(self):
@@ -45,7 +45,7 @@ class HealthTests(TestCase):
         self.assertIn('time', data)
 
 
-class AuthTests(TestCase):
+class AuthTests(TenantTestCase):
     """Registration, login, me, password change."""
 
     def test_register_and_login(self):
@@ -94,7 +94,7 @@ class AuthTests(TestCase):
         self.assertFalse(User.objects.filter(username='intruder').exists())
 
 
-class LeadViewTests(SetupMixin, TestCase):
+class LeadViewTests(SetupMixin, TenantTestCase):
     """CRUD on /api/leads/."""
 
     def test_list_leads(self):
@@ -121,7 +121,7 @@ class LeadViewTests(SetupMixin, TestCase):
         self.assertEqual(resp.json()['company'], 'Detail Co')
 
 
-class PotentialViewTests(SetupMixin, TestCase):
+class PotentialViewTests(SetupMixin, TenantTestCase):
     """CRUD on /api/potential/."""
 
     def test_list_potentials(self):
@@ -131,7 +131,7 @@ class PotentialViewTests(SetupMixin, TestCase):
         self.assertGreaterEqual(len(resp.json()), 1)
 
 
-class ReplyViewTests(SetupMixin, TestCase):
+class ReplyViewTests(SetupMixin, TenantTestCase):
     """CRUD on /api/replies/."""
 
     def test_list_replies(self):
@@ -141,7 +141,7 @@ class ReplyViewTests(SetupMixin, TestCase):
         self.assertGreaterEqual(len(resp.json()), 1)
 
 
-class AgentViewTests(SetupMixin, TestCase):
+class AgentViewTests(SetupMixin, TenantTestCase):
     """GET /api/agents/ and GET/PUT /api/agents/<key>/config/."""
 
     def setUp(self):
@@ -180,7 +180,7 @@ class AgentViewTests(SetupMixin, TestCase):
         self.assertEqual(resp.status_code, 404)
 
 
-class SettingsViewTests(SetupMixin, TestCase):
+class SettingsViewTests(SetupMixin, TenantTestCase):
     """GET/PUT /api/settings/."""
 
     def test_get_settings(self):
@@ -205,7 +205,7 @@ class SettingsViewTests(SetupMixin, TestCase):
         self.assertEqual(s.run_frequency, '6h')
 
 
-class ChatViewTests(SetupMixin, TestCase):
+class ChatViewTests(SetupMixin, TenantTestCase):
     """GET/POST /api/chat/."""
 
     def test_get_empty_history(self):
@@ -229,7 +229,7 @@ class ChatViewTests(SetupMixin, TestCase):
         self.assertEqual(resp.status_code, 400)
 
 
-class DraftViewTests(SetupMixin, TestCase):
+class DraftViewTests(SetupMixin, TenantTestCase):
     """OUTREACH — draft lifecycle: list, edit, approve, reject."""
 
     def setUp(self):
@@ -314,7 +314,7 @@ class DraftViewTests(SetupMixin, TestCase):
         self.assertEqual(resp.status_code, 409)
 
 
-class PipelineViewTests(SetupMixin, TestCase):
+class PipelineViewTests(SetupMixin, TenantTestCase):
     """GET /api/pipeline/status/, GET /api/pipeline/runs/."""
 
     def setUp(self):

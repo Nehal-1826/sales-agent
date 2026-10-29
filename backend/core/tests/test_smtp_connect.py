@@ -7,14 +7,14 @@ as 200 {ok: false, message} — answers, not HTTP errors.
 
 from unittest import mock
 
-from django.test import TestCase
+from core.tests.base import TenantTestCase
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
 from core.models import AppSettings, User
 
 
-class SmtpConnectTests(TestCase):
+class SmtpConnectTests(TenantTestCase):
     def setUp(self):
         self.user = User.objects.create_user(
             username='tester', password='testpass1234', role=User.Roles.OWNER)

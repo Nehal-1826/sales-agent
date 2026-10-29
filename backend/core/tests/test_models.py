@@ -2,7 +2,7 @@
 Tests for core.models — verifies model creation, constraints and
 the singleton AppSettings pattern.
 """
-from django.test import TestCase
+from core.tests.base import TenantTestCase
 
 from core.models import (
     AgentConfig,
@@ -17,7 +17,7 @@ from core.models import (
 )
 
 
-class UserModelTests(TestCase):
+class UserModelTests(TenantTestCase):
     """User model with roles."""
 
     def test_first_user_becomes_owner(self):
@@ -36,7 +36,7 @@ class UserModelTests(TestCase):
         self.assertIn('member', values)
 
 
-class LeadModelTests(TestCase):
+class LeadModelTests(TenantTestCase):
     """Lead (CRM - LEADS) model."""
 
     def test_create_lead(self):
@@ -73,7 +73,7 @@ class LeadModelTests(TestCase):
         self.assertEqual(str(lead), 'Acme')
 
 
-class EmailDraftModelTests(TestCase):
+class EmailDraftModelTests(TenantTestCase):
     """EmailDraft (outreach cold emails)."""
 
     def test_create_draft(self):
@@ -98,7 +98,7 @@ class EmailDraftModelTests(TestCase):
         self.assertIn('Co', str(draft))
 
 
-class PotentialModelTests(TestCase):
+class PotentialModelTests(TenantTestCase):
     """Potential (CRM - POTENTIAL)."""
 
     def test_create_potential(self):
@@ -116,7 +116,7 @@ class PotentialModelTests(TestCase):
         self.assertEqual(values, {'discovery', 'qualified', 'proposal', 'negotiation'})
 
 
-class ReplyModelTests(TestCase):
+class ReplyModelTests(TenantTestCase):
     """Reply (CRM - REPLY)."""
 
     def test_create_reply(self):
@@ -131,7 +131,7 @@ class ReplyModelTests(TestCase):
         self.assertEqual(reply.get_status_display(), 'Awaiting')
 
 
-class AgentConfigModelTests(TestCase):
+class AgentConfigModelTests(TenantTestCase):
     """AgentConfig (per-agent settings)."""
 
     def test_create_agent_config(self):
@@ -149,8 +149,8 @@ class AgentConfigModelTests(TestCase):
             AgentConfig.objects.create(agent='search')
 
 
-class AppSettingsModelTests(TestCase):
-    """AppSettings (singleton pattern)."""
+class AppSettingsModelTests(TenantTestCase):
+    """AppSettings (one row per workspace)."""
 
     def test_singleton(self):
         s1 = AppSettings.load()
@@ -159,14 +159,14 @@ class AppSettingsModelTests(TestCase):
         s2 = AppSettings.load()
         self.assertEqual(s2.company_name, 'Test Corp')
         self.assertEqual(s1.pk, s2.pk)
-        self.assertEqual(s1.pk, 1)
+        self.assertEqual(s1.workspace, self.workspace)
 
     def test_frequency_choices(self):
         values = {c[0] for c in AppSettings.Frequencies.choices}
         self.assertEqual(values, {'15m', '1h', '6h', 'daily'})
 
 
-class ChatMessageModelTests(TestCase):
+class ChatMessageModelTests(TenantTestCase):
     """ChatMessage model."""
 
     def test_create_message(self):
@@ -181,7 +181,7 @@ class ChatMessageModelTests(TestCase):
         self.assertEqual(msgs[0], 'First')
 
 
-class PipelineRunModelTests(TestCase):
+class PipelineRunModelTests(TenantTestCase):
     """PipelineRun model."""
 
     def test_create_run(self):

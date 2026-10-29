@@ -4,7 +4,7 @@ from io import StringIO
 from unittest import mock
 
 from django.core.management import call_command
-from django.test import TestCase
+from core.tests.base import TenantTestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -16,7 +16,8 @@ from core.serializers import EmailDraftSerializer, LeadSerializer
 SAAS = 'Shailog — SaaS Builds (high level)'
 
 
-class MiscTests(TestCase):
+class MiscTests(TenantTestCase):
+    workspace_slug = 'shailog'  # relies on rows the data migrations seeded
     def test_lead_has_iso_discovered_at(self):
         lead = Lead.objects.create(company='Acme')
         self.assertIn('T', LeadSerializer(lead).data['discoveredAt'])
@@ -60,7 +61,7 @@ class MiscTests(TestCase):
         self.assertLess(body.index('Big'), body.index('Small'))
 
 
-class ApiFieldTests(TestCase):
+class ApiFieldTests(TenantTestCase):
     def setUp(self):
         self.user = User.objects.create_user(username='o', password='pass12345', role='owner')
         self.c = APIClient()
@@ -91,7 +92,7 @@ class ApiFieldTests(TestCase):
         self.assertEqual(self._statuses(), {'Paused'})
 
 
-class ReportValueSortTests(TestCase):
+class ReportValueSortTests(TenantTestCase):
     """Potential.value is free text — sorting must read the real amount."""
 
     def _value(self, text):
@@ -130,7 +131,7 @@ class ReportValueSortTests(TestCase):
         self.assertLess(text.index('Older'), text.index('Newer'))
 
 
-class TeammateOnboardingTests(TestCase):
+class TeammateOnboardingTests(TenantTestCase):
     """A teammate must never be sent into a wizard they cannot use."""
 
     def setUp(self):

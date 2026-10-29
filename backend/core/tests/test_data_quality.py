@@ -1,7 +1,7 @@
 """Data-quality gates: who gets enriched, who gets emailed, what a lead is called."""
 from unittest import mock
 
-from django.test import TestCase
+from core.tests.base import TenantTestCase
 from django.utils import timezone
 
 from core.gmaps import enrich_leads_via_gmaps
@@ -11,7 +11,7 @@ from core.pipeline import APOLLO_SWEEP_PER_CYCLE, MAX_PROFILE_PER_CYCLE, _ai_rev
 from core.scraper import analyze_website, extract_contact_email, pick_site_name
 
 
-class ContactEmailTests(TestCase):
+class ContactEmailTests(TenantTestCase):
     def test_third_party_vendor_address_rejected(self):
         html = 'Site by Pixel Studio hello@pixelstudio.in'
         self.assertEqual(extract_contact_email(html, 'https://smiledental.com/'), '')
@@ -46,7 +46,7 @@ class ContactEmailTests(TestCase):
                          'smiledental.pune@gmail.com')
 
 
-class SiteNameTests(TestCase):
+class SiteNameTests(TenantTestCase):
     def test_generic_segment_skipped(self):
         self.assertEqual(pick_site_name('Home | Smile Dental Clinic'), 'Smile Dental Clinic')
         self.assertEqual(pick_site_name('Welcome — Iron Gym Pune'), 'Iron Gym Pune')
@@ -61,7 +61,7 @@ class SiteNameTests(TestCase):
         self.assertEqual(pick_site_name('Wi-Fi Cafe'), 'Wi-Fi Cafe')
 
 
-class AiVerdictTests(TestCase):
+class AiVerdictTests(TenantTestCase):
     def setUp(self):
         self.lead = Lead.objects.create(company='Smile', website='smile.com', industry='dental clinic')
         self.audit = {'analysis': {'text_excerpt': 'Family dentistry.'}}
@@ -81,7 +81,7 @@ class AiVerdictTests(TestCase):
         self.assertIsNone(self._review('I cannot help with that.'))
 
 
-class MapsMatchTests(TestCase):
+class MapsMatchTests(TenantTestCase):
     def test_name_match_skipped_when_listing_has_other_domain(self):
         lead = Lead.objects.create(company='Acme', website='acme.com')
         place = {'name': 'Acme Plumbing Works', 'phone': '+1 555 0100', 'website': 'acmeplumbing.com'}
@@ -89,7 +89,7 @@ class MapsMatchTests(TestCase):
             self.assertEqual(enrich_leads_via_gmaps([lead], delay=0), [])
 
 
-class IcpOverrideTests(TestCase):
+class IcpOverrideTests(TenantTestCase):
     def test_override_that_matches_competitor_patterns_is_dropped(self):
         s = AppSettings.load()
         s.company_name, s.services = 'Shailog', ['web development', 'SEO']
@@ -101,7 +101,7 @@ class IcpOverrideTests(TestCase):
         self.assertNotIn('marketing firm', picked)
 
 
-class AnalyzeSiteNameTests(TestCase):
+class AnalyzeSiteNameTests(TenantTestCase):
     """analyze_website must never record a generic page title as the brand."""
 
     def _audit(self, title):
@@ -126,7 +126,7 @@ class AnalyzeSiteNameTests(TestCase):
                          'Smile Dental Clinic')
 
 
-class MapsFallbackConflictTests(TestCase):
+class MapsFallbackConflictTests(TenantTestCase):
     """A name fallback must never attach a phone from a listing that has its own,
     different website — that is another business."""
 
@@ -153,7 +153,7 @@ class MapsFallbackConflictTests(TestCase):
         self.assertEqual(self._enrich(lead, place), [lead])
 
 
-class ApifyTitleFallbackTests(TestCase):
+class ApifyTitleFallbackTests(TenantTestCase):
     def _enrich(self, lead, place):
         from core.apify_maps import enrich_leads_via_apify
         with mock.patch('core.apify_maps.apify_available', return_value=True), \
@@ -179,7 +179,7 @@ def _audit(contact_phone='', score=50, excerpt='Family dental clinic in Pune.'):
             'analysis': {'text_excerpt': excerpt}, 'state': '', 'country': ''}
 
 
-class PipelineGateTests(TestCase):
+class PipelineGateTests(TenantTestCase):
     """Cycle-level behaviour with every network touchpoint mocked."""
 
     analyze_result = None

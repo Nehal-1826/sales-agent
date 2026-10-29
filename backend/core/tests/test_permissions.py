@@ -3,7 +3,7 @@ owner's workspace configuration, send mail, export leads or run cycles —
 over the API or through the chat."""
 from unittest import mock
 
-from django.test import TestCase
+from core.tests.base import TenantTestCase
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
@@ -18,7 +18,7 @@ def client_for(user):
     return c
 
 
-class RolePermissionTests(TestCase):
+class RolePermissionTests(TenantTestCase):
     def setUp(self):
         # first user ever becomes owner, so seed the owner before the member
         self.owner = User.objects.create_user(username='owner', password='pass12345')
@@ -159,7 +159,7 @@ class RolePermissionTests(TestCase):
         self.assertIn('boss@shailog.com', workspace_state(self.owner))
 
 
-class TokenLifecycleTests(TestCase):
+class TokenLifecycleTests(TenantTestCase):
     """Tokens expire, die on logout and on password change."""
 
     def setUp(self):

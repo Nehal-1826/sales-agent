@@ -152,20 +152,32 @@ def change_password(request):
 
 class LeadViewSet(viewsets.ModelViewSet):
     permission_classes = [IsWorkspaceAdminOrReadOnly]
-    queryset = Lead.objects.all()
+    # import-time placeholder (router basename only); rows are scoped per request
+    queryset = Lead.all_tenants.none()
     serializer_class = LeadSerializer
+
+    def get_queryset(self):
+        return Lead.objects.all()
 
 
 class PotentialViewSet(viewsets.ModelViewSet):
     permission_classes = [IsWorkspaceAdminOrReadOnly]
-    queryset = Potential.objects.all()
+    # import-time placeholder (router basename only); rows are scoped per request
+    queryset = Potential.all_tenants.none()
     serializer_class = PotentialSerializer
+
+    def get_queryset(self):
+        return Potential.objects.all()
 
 
 class ReplyViewSet(viewsets.ModelViewSet):
     permission_classes = [IsWorkspaceAdminOrReadOnly]
-    queryset = Reply.objects.all()
+    # import-time placeholder (router basename only); rows are scoped per request
+    queryset = Reply.all_tenants.none()
     serializer_class = ReplySerializer
+
+    def get_queryset(self):
+        return Reply.objects.all()
 
 
 # ------------------------------------------------------------------

@@ -7,7 +7,7 @@ operator would type them.
 
 from unittest import mock
 
-from django.test import TestCase
+from core.tests.base import TenantTestCase
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
@@ -33,7 +33,7 @@ def fresh_settings():
     return s
 
 
-class OnboardingStatusTests(TestCase):
+class OnboardingStatusTests(TenantTestCase):
     def test_new_user_needs_onboarding(self):
         u = User.objects.create_user(username='newop', password='pass12345')
         status = onboarding_status(u, fresh_settings())
@@ -63,7 +63,7 @@ class OnboardingStatusTests(TestCase):
         self.assertFalse(status['needed'])
 
 
-class OnboardingFlowTests(TestCase):
+class OnboardingFlowTests(TenantTestCase):
     """Drive the whole wizard with messy, human answers."""
 
     def setUp(self):
@@ -217,7 +217,7 @@ class OnboardingFlowTests(TestCase):
         self.assertEqual(onboarding_status(self.u, self.s)['stepIndex'], 0)
 
 
-class OnboardingChatApiTests(TestCase):
+class OnboardingChatApiTests(TenantTestCase):
     def setUp(self):
         self.user = User.objects.create_user(
             username='tester', password='testpass1234', role=User.Roles.OWNER)
@@ -247,7 +247,8 @@ class OnboardingChatApiTests(TestCase):
         self.assertTrue(resp.json()['needed'])
 
 
-class SwitchProfileActionTests(TestCase):
+class SwitchProfileActionTests(TenantTestCase):
+    workspace_slug = 'shailog'  # relies on rows the data migrations seeded
     def test_regex_detects_switch(self):
         spec = detect_action_regex('switch to the backup profile')
         self.assertEqual(spec['action'], 'switch_profile')
@@ -287,7 +288,7 @@ class SwitchProfileActionTests(TestCase):
         self.assertIn('Switched to "Backup', result)
 
 
-class ApproveAllActionTests(TestCase):
+class ApproveAllActionTests(TenantTestCase):
     """Chat bulk approval — 'approve all drafts' sends the whole queue."""
 
     def _draft(self, company, to):
@@ -317,7 +318,7 @@ class ApproveAllActionTests(TestCase):
         self.assertIn('Nothing is waiting', result)
 
 
-class PendingApprovalReplyTests(TestCase):
+class PendingApprovalReplyTests(TenantTestCase):
     """'What needs my approval?' gets a concrete answer, keyless mode too."""
 
     def test_keyword_reply_lists_pending(self):
@@ -336,7 +337,7 @@ class PendingApprovalReplyTests(TestCase):
         self.assertIn('empty', reply)
 
 
-class SetReportEmailActionTests(TestCase):
+class SetReportEmailActionTests(TenantTestCase):
     """The exact flow from the field: tell the recipient in chat, then send."""
 
     def test_regex_detects_recipient_statement(self):
@@ -386,7 +387,7 @@ class SetReportEmailActionTests(TestCase):
         self.assertEqual(spec['action'], 'send_report')
 
 
-class ManualDraftTests(TestCase):
+class ManualDraftTests(TenantTestCase):
     """On-demand outreach drafts for ANY lead — qualified or not."""
 
     def setUp(self):
@@ -443,7 +444,7 @@ class ManualDraftTests(TestCase):
         self.assertIn('No lead matching', result)
 
 
-class IcpStepTests(TestCase):
+class IcpStepTests(TenantTestCase):
     """The ICP step: typed or uploaded ideal-client description."""
 
     def setUp(self):

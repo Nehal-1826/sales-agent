@@ -1,6 +1,8 @@
+from django import forms
 from django.contrib import admin, messages
 
 from .mailer import NO_RECIPIENT_ERROR, claim_draft_for_send, send_draft, valid_recipient
+from .tenancy import TenantOwned, workspace_context
 from .models import (
     AgentConfig,
     AppSettings,
@@ -17,6 +19,12 @@ from .models import (
 )
 
 
+# Cross-tenant views and plaintext secrets: platform operators only. A
+# tenant user (even is_staff) must never reach /admin/.
+admin.site.has_permission = lambda request: bool(
+    request.user.is_active and request.user.is_superuser and request.user.workspace_id is None)
+
+
 class TenantAdmin(admin.ModelAdmin):
     """Admin is the platform operator's view: it must see every tenant, so it
     uses the explicit unscoped manager (the default one raises without a
@@ -26,6 +34,18 @@ class TenantAdmin(admin.ModelAdmin):
         qs = self.model.all_tenants.all()
         ordering = self.get_ordering(request)
         return qs.order_by(*ordering) if ordering else qs
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        # FK pickers would use the scoped default manager, which raises with no
+        # workspace context; the operator picks from the explicit unscoped one.
+        target = db_field.related_model
+        if issubclass(target, TenantOwned):
+            # ForeignKey.formfield() evaluates _default_manager eagerly even when
+            # a queryset is passed, so the field is built here instead.
+            return forms.ModelChoiceField(
+                queryset=target.all_tenants.all(), required=not db_field.blank,
+                label=db_field.verbose_name.capitalize(), help_text=db_field.help_text)
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
 
 @admin.register(Workspace)
@@ -87,12 +107,15 @@ class EmailDraftAdmin(TenantAdmin):
                                   level=messages.WARNING)
                 failed += 1
                 continue
-            claimed = claim_draft_for_send(draft.id)
-            if claimed is None:  # another request already took it
-                skipped += 1
-                continue
-            send_draft(claimed)  # updates status/sent_via/error itself
-            claimed.refresh_from_db()
+            # the claim, the sender and AppSettings.load() are all tenant-scoped:
+            # run each draft inside its own company's context
+            with workspace_context(draft.workspace):
+                claimed = claim_draft_for_send(draft.id)
+                if claimed is None:  # another request already took it
+                    skipped += 1
+                    continue
+                send_draft(claimed)  # updates status/sent_via/error itself
+                claimed.refresh_from_db()
             if claimed.status == EmailDraft.Statuses.SENT:
                 sent += 1
             else:

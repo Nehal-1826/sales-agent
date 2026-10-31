@@ -4,6 +4,7 @@ Uses the same Search (DuckDuckGo) → Profile (site audit) logic as the
 orchestrator pipeline, but with a fixed Salem query set instead of the
 worldwide rotation. Safe to re-run: dedupes against existing leads.
 """
+import argparse
 import os
 import random
 
@@ -14,6 +15,8 @@ django.setup()
 
 from core.models import Lead, Potential          # noqa: E402
 from core.scraper import analyze_website, region_from_query, search_companies  # noqa: E402
+from core.tenancy import workspace_context      # noqa: E402
+from core.workspaces import WorkspaceChoiceError, resolve_workspace  # noqa: E402
 from django.conf import settings                  # noqa: E402
 
 POTENTIAL_THRESHOLD = 65  # mirrors pipeline.POTENTIAL_THRESHOLD
@@ -106,4 +109,14 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(description='Salem discovery for one workspace')
+    parser.add_argument('--workspace', default='',
+                        help='workspace slug (required when more than one workspace exists)')
+    args = parser.parse_args()
+    try:
+        ws = resolve_workspace(args.workspace)
+    except WorkspaceChoiceError as exc:
+        parser.error(str(exc))
+    # leads/potentials are tenant-scoped: the whole run belongs to one company
+    with workspace_context(ws):
+        main()

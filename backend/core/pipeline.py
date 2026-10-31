@@ -34,6 +34,7 @@ from .icp import agency_mode, buyer_industries, looks_like_competitor, our_servi
 from .models import AgentConfig, AppSettings, EmailDraft, EmailTemplate, Lead, PipelineRun, Potential
 from .runlock import acquire_run_lock, release_run_lock, running_since
 from .scalelist import scalelist_phone_find
+from .tenancy import current_workspace, workspace_context
 from .scraper import (
     analyze_website,
     region_from_query,
@@ -408,17 +409,23 @@ def start_pipeline_async(triggered_by='manual'):
     if not token:
         return False
 
+    # a new thread starts with NO tenant context (ContextVars are not
+    # inherited): capture the caller's workspace and re-enter it so the cycle
+    # and the lock release both act on this tenant only
+    workspace = current_workspace()
+
     def _target():
         from django.db import connection
         try:
-            _run_cycle(triggered_by)
-        except Exception:
-            log.exception('Background pipeline cycle failed')
+            with workspace_context(workspace):
+                try:
+                    _run_cycle(triggered_by)
+                except Exception:
+                    log.exception('Background pipeline cycle failed')
+                finally:
+                    release_run_lock(token)
         finally:
-            try:
-                release_run_lock(token)
-            finally:
-                connection.close()  # thread-local connection — don't leak it
+            connection.close()  # thread-local connection — don't leak it
 
     try:
         threading.Thread(target=_target, name='pipeline-cycle', daemon=True).start()

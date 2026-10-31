@@ -5,6 +5,7 @@ pattern: calls django.setup() itself, runs anywhere the app code lives).
     python backup_crm.py             # export only
     python backup_crm.py --wipe      # export, then delete everything exported
     python backup_crm.py --out DIR   # where to write (default ./backups)
+    python backup_crm.py --workspace SLUG   # required when several workspaces exist
 
 Exports every CRM row (leads, email drafts, potentials, replies, pipeline
 runs) to a timestamped JSON file plus a human-readable leads CSV.  --wipe
@@ -35,6 +36,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 django.setup()
 
 from core.models import AppSettings, ChatMessage, EmailDraft, Lead, PipelineRun, Potential, Reply  # noqa: E402
+from core.tenancy import workspace_context  # noqa: E402
+from core.workspaces import WorkspaceChoiceError, resolve_workspace  # noqa: E402
 
 
 def dump():
@@ -105,8 +108,19 @@ def main():
     parser = argparse.ArgumentParser(description='CRM backup (and optional wipe)')
     parser.add_argument('--out', default=os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backups'))
     parser.add_argument('--wipe', action='store_true', help='delete CRM rows after the export')
+    parser.add_argument('--workspace', default='',
+                        help='workspace slug (required when more than one workspace exists)')
     args = parser.parse_args()
+    try:
+        ws = resolve_workspace(args.workspace)
+    except WorkspaceChoiceError as exc:
+        parser.error(str(exc))
+    # every query below is tenant-scoped: run the whole backup inside the context
+    with workspace_context(ws):
+        run(args)
 
+
+def run(args):
     now, payload = dump()
     json_path, csv_path = write_outputs(args.out, now, payload)
     counts = payload['meta']['counts']

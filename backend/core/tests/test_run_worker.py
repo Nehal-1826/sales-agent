@@ -6,6 +6,7 @@ from django.core.management import call_command
 from core.tests.base import TenantTestCase
 
 from core.management.commands import run_worker
+from core.models import Workspace
 from core.pipeline import PipelineBusy
 
 MODULE = 'core.management.commands.run_worker'
@@ -29,6 +30,10 @@ def stop_after(n):
 class WorkerLoopTests(TenantTestCase):
     """Drives Command.handle for a bounded number of 30 s ticks."""
 
+    def setUp(self):
+        # the worker loops over every ACTIVE workspace; keep only this test's
+        Workspace.all_tenants.exclude(pk=self.workspace.pk).update(is_active=False)
+
     def run_ticks(self, ticks, run_pipeline):
         out, err = StringIO(), StringIO()
         # close_old_connections would close the test transaction's connection;
@@ -47,7 +52,7 @@ class WorkerLoopTests(TenantTestCase):
         _, err, _ = self.run_ticks(2, run_pipeline)
         # tick 1 ran (and failed); tick 2 is still inside the retry backoff
         self.assertEqual(run_pipeline.call_count, 1)
-        self.assertIn('Pipeline cycle failed: bad api key', err)
+        self.assertIn('Pipeline cycle failed [test]: bad api key', err)
 
     def test_busy_cycle_is_skipped_quietly_and_retried_next_tick(self):
         run_pipeline = mock.Mock(side_effect=PipelineBusy('already running'))

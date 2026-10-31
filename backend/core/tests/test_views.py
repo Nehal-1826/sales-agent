@@ -48,29 +48,15 @@ class HealthTests(TenantTestCase):
 class AuthTests(TenantTestCase):
     """Registration, login, me, password change."""
 
-    def test_register_and_login(self):
-        # Register
-        resp = self.client.post('/api/auth/register/', {
-            'username': 'newuser',
-            'password': 'securepass123',
-        }, content_type='application/json')
-        self.assertEqual(resp.status_code, 201)
-        token = resp.json()['token']
-        self.assertTrue(len(token) > 0)
-
-        # Login
-        resp = self.client.post('/api/auth/login/', {
-            'username': 'newuser',
-            'password': 'securepass123',
-        }, content_type='application/json')
-        self.assertEqual(resp.status_code, 200)
-        self.assertIn('token', resp.json())
-
-    def test_register_short_password(self):
-        resp = self.client.post('/api/auth/register/', {
-            'username': 'user', 'password': 'short',
-        }, content_type='application/json')
-        self.assertEqual(resp.status_code, 400)
+    def test_register_is_closed_in_every_state(self):
+        # accounts and workspaces are created by the platform operator; an open
+        # endpoint would let anyone burn scraping, AI and email credits
+        for payload in ({'username': 'a', 'password': 'securepass123'},
+                        {'username': 'b', 'password': 'short'},
+                        {}):
+            resp = self.client.post('/api/auth/register/', payload, content_type='application/json')
+            self.assertEqual(resp.status_code, 403)
+        self.assertFalse(User.objects.filter(username__in=['a', 'b']).exists())
 
     def test_login_invalid(self):
         resp = self.client.post('/api/auth/login/', {
@@ -82,16 +68,6 @@ class AuthTests(TenantTestCase):
         resp = self.client.get('/api/auth/me/')
         self.assertEqual(resp.status_code, 401)
 
-    def test_register_closed_once_a_user_exists(self):
-        first = self.client.post('/api/auth/register/', {
-            'username': 'owner1', 'password': 'securepass123',
-        }, content_type='application/json')
-        self.assertEqual(first.status_code, 201)
-        second = self.client.post('/api/auth/register/', {
-            'username': 'intruder', 'password': 'securepass123',
-        }, content_type='application/json')
-        self.assertEqual(second.status_code, 403)
-        self.assertFalse(User.objects.filter(username='intruder').exists())
 
 
 class LeadViewTests(SetupMixin, TenantTestCase):

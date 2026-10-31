@@ -45,14 +45,28 @@ VPS. Local work runs only via `npm run dev` + `runserver`; do not run
 `docker compose`, touch `.env`, `Caddyfile`, `nginx.conf` or tunnel config
 unless explicitly asked.
 
+## Multi-tenancy (do not weaken)
+
+One DB, one `Workspace` per company. Every tenant model inherits
+`core/tenancy.py::TenantOwned`: default `objects` filters by the ContextVar
+workspace and **raises `TenantContextMissing` when none is active**;
+`all_tenants` is the explicit unscoped manager (operator tools only — grep it).
+Context comes from the DRF auth class (user.workspace), is reset per request by
+middleware, and is passed explicitly into threads; the worker/report loops run
+each active workspace inside `workspace_context(ws)`. Env API keys fall back
+only for the `DEFAULT_TENANT_SLUG` workspace. `/admin/` is superuser-only.
+Operator commands: `create_workspace`, `split_tenants` (dry run by default),
+`bootstrap_admin`. Design: `docs/superpowers/specs/2026-10-29-multi-tenant-design.md`.
+Isolation tests: `core/tests/test_isolation_api.py`, `test_admin_tenancy.py`.
+
 ## Architecture
 
 ### The pipeline (`backend/core/pipeline.py::run_pipeline`)
 
 One cycle = SEARCH → PROFILE → ENRICH → COPYWRIGHT → RESPONDER, writing one
 `PipelineRun` row at the end (its `started_at` is back-filled to the real start).
-It only ever reads targeting from the `AppSettings` singleton (pk=1,
-`AppSettings.load()`).
+It only ever reads targeting from the current workspace's `AppSettings`
+(`AppSettings.load()`).
 
 Only one cycle runs at a time: `core/runlock.py` holds an atomic lock in
 `AppSettings.pipeline_running_since` (stale after 45 min). `run_pipeline()`
@@ -197,3 +211,14 @@ refuses to boot without `DJANGO_SECRET_KEY` and `ALLOWED_HOSTS`.
 - `backend/salem_discovery.py` is a standalone one-off script, not pipeline code.
 - `.gitattributes` normalizes to LF; CRLF warnings on Windows are expected.
 - Branch per change, never commit to `master` directly (see `CONTRIBUTING.md`).
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- When graphify-out/graph.json exists, run `graphify query "<question>"` before your first grep, search or source-file read for a codebase question, and put this rule in every subagent prompt that explores code. Read raw files only for lines the graph or an earlier read already located. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+- A committed graphify-out/graph.json is rewritten whole on every build, so a large diff to it in a pull request is expected. Do not flag it as churn or suggest skipping the graph rebuild or its hooks.

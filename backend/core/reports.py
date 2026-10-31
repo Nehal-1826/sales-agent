@@ -15,6 +15,7 @@ from django.utils import timezone
 
 from .mailer import branded_email_html, send_email_message, smtp_configured, text_to_email_html
 from .models import AppSettings, Lead, PipelineRun, Potential, User
+from .tenancy import current_workspace
 
 log = logging.getLogger(__name__)
 
@@ -46,7 +47,9 @@ def _resolve_recipients():
     explicit = [e.strip() for e in (s.report_email or '').split(',') if e.strip()]
     if explicit:
         return explicit
-    staff = User.objects.filter(is_superuser=True) | User.objects.filter(is_staff=True)
+    # THIS workspace's owners/admins only: a report must never reach another
+    # company's staff or the platform operator
+    staff = User.objects.filter(workspace=current_workspace(), role__in=('owner', 'admin'))
     return sorted({u.email for u in staff if u.email})
 
 

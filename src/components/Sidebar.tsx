@@ -47,9 +47,15 @@ export function Sidebar({
 
   return (
     <aside className={`sidebar${open ? ' open' : ''}`} aria-label="Main navigation">
-      <button className="sidebar-brand" onClick={() => navigate('home')} aria-label="Shailog — go to Home">
+      <button className="sidebar-brand" onClick={() => navigate('home')} aria-label="Go to Home">
         <img src="/logo.png" alt="" className="brand-logo" />
       </button>
+      {user?.workspace && (
+        <div className="workspace-badge" title="Your company workspace. Everything here is private to it.">
+          <small>Workspace</small>
+          <strong>{user.workspace.name}</strong>
+        </div>
+      )}
 
       <nav className="side-nav">
         {NAV.filter(({ key }) => key !== 'settings' || user?.role === 'owner' || user?.role === 'admin').map(({ key, label, icon: Icon }) => (

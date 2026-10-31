@@ -39,12 +39,14 @@ const demoFail = <T>(): Result<T> => ({ ok: false, error: DEMO_ONLY });
 export interface CurrentUser {
   name: string;
   role: string;
+  /** The company workspace this account belongs to (null for platform operators). */
+  workspace: { name: string; slug: string } | null;
 }
 
 export async function getCurrentUser(): Promise<CurrentUser> {
-  if (await inDemo()) return { name: 'Demo', role: 'owner' };
-  const me = await request<{ username: string; role: string }>('/auth/me/');
-  return { name: me.username, role: me.role };
+  if (await inDemo()) return { name: 'Demo', role: 'owner', workspace: { name: 'Demo Co', slug: 'demo' } };
+  const me = await request<{ username: string; role: string; workspace?: { name: string; slug: string } | null }>('/auth/me/');
+  return { name: me.username, role: me.role, workspace: me.workspace ?? null };
 }
 
 export async function changePassword(current: string, next: string, confirm: string): Promise<Result<unknown>> {

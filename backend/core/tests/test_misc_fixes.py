@@ -1,4 +1,5 @@
 """Small correctness fixes + fields the new UI relies on."""
+from rest_framework.authtoken.models import Token
 from datetime import date
 from io import StringIO
 from unittest import mock
@@ -63,9 +64,9 @@ class MiscTests(TenantTestCase):
 
 class ApiFieldTests(TenantTestCase):
     def setUp(self):
-        self.user = User.objects.create_user(username='o', password='pass12345', role='owner')
+        self.user = User.objects.create_user(workspace=self.workspace, username='o', password='pass12345', role='owner')
         self.c = APIClient()
-        self.c.force_authenticate(self.user)
+        self.c.credentials(HTTP_AUTHORIZATION=f'Token {Token.objects.create(user=self.user).key}')
 
     def test_outreach_status_has_approved(self):
         EmailDraft.objects.create(company='A', to_email='a@a.com', subject='s', body='b',
@@ -135,8 +136,8 @@ class TeammateOnboardingTests(TenantTestCase):
     """A teammate must never be sent into a wizard they cannot use."""
 
     def setUp(self):
-        User.objects.create_user(username='owner1', password='pass12345', role='owner')
-        self.member = User.objects.create_user(username='mate', password='pass12345', role='member')
+        User.objects.create_user(workspace=self.workspace, username='owner1', password='pass12345', role='owner')
+        self.member = User.objects.create_user(workspace=self.workspace, username='mate', password='pass12345', role='member')
         s = AppSettings.load()
         s.company_name = 'Shailog'
         s.save(update_fields=['company_name'])

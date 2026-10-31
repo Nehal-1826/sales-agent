@@ -254,6 +254,8 @@ class SettingsSerializer(serializers.ModelSerializer):
                 # never echo the full key back; empty means "unchanged" on write
                 'apiKey': '••••' + instance.ai_key[-4:] if instance.ai_key else '',
                 'apolloApiKey': '••••' + instance.apollo_api_key[-4:] if instance.apollo_api_key else '',
+                'scalelistApiKey': '••••' + instance.scalelist_api_key[-4:] if instance.scalelist_api_key else '',
+                'apifyApiKey': '••••' + instance.apify_api_key[-4:] if instance.apify_api_key else '',
             },
             'smtp': {
                 'host': instance.smtp_host,
@@ -291,6 +293,10 @@ class SettingsSerializer(serializers.ModelSerializer):
         incoming_apollo = ai_key.get('apolloApiKey')
         if incoming_apollo and not incoming_apollo.startswith('••••'):
             instance.apollo_api_key = incoming_apollo
+        for field, key in (('scalelist_api_key', 'scalelistApiKey'), ('apify_api_key', 'apifyApiKey')):
+            incoming = ai_key.get(key)
+            if incoming and not incoming.startswith('••••'):
+                setattr(instance, field, incoming)
         instance.smtp_host = smtp.get('host', instance.smtp_host)
         if smtp.get('port') not in (None, ''):
             instance.smtp_port = int(smtp['port'] or 0) or None
@@ -359,3 +365,9 @@ class UserSerializer(serializers.Serializer):
     id = serializers.IntegerField(read_only=True)
     username = serializers.CharField(read_only=True)
     role = serializers.CharField(read_only=True)
+    # operators (superusers) have no workspace; name/slug only — never the id
+    workspace = serializers.SerializerMethodField()
+
+    def get_workspace(self, user):
+        ws = user.workspace
+        return {'name': ws.name, 'slug': ws.slug} if ws else None

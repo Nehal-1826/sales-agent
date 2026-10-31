@@ -12,6 +12,8 @@ interface KeysForm {
   provider: string;
   apiKey: string; // blank = keep the stored key
   apolloApiKey: string;
+  scalelistApiKey: string;
+  apifyApiKey: string;
   host: string;
   port: string;
   user: string;
@@ -29,6 +31,8 @@ export function AdvancedSection({ settings, onSaved }: { settings: SettingsState
       provider: AI_PROVIDERS.find((p) => settings.aiKey.provider.toLowerCase().includes(p.split(' ')[0].toLowerCase())) ?? 'Gemini',
       apiKey: '',
       apolloApiKey: '',
+      scalelistApiKey: '',
+      apifyApiKey: '',
       host: settings.smtp.host,
       port: String(settings.smtp.port || ''),
       user: settings.smtp.user,
@@ -38,7 +42,13 @@ export function AdvancedSection({ settings, onSaved }: { settings: SettingsState
     async (v) => {
       // secrets are only sent when typed — an empty box keeps the stored value
       const res = await putSettings({
-        aiKey: { provider: v.provider, apiKey: v.apiKey, apolloApiKey: v.apolloApiKey },
+        aiKey: {
+          provider: v.provider,
+          apiKey: v.apiKey,
+          apolloApiKey: v.apolloApiKey,
+          scalelistApiKey: v.scalelistApiKey,
+          apifyApiKey: v.apifyApiKey,
+        },
         smtp: { host: v.host, port: v.port, user: v.user, password: v.password, from: v.from },
       });
       if (res.ok) onSaved(res.data);
@@ -92,6 +102,18 @@ export function AdvancedSection({ settings, onSaved }: { settings: SettingsState
               onChange={(e) => set({ apolloApiKey: e.target.value })}
               autoComplete="off"
             />
+          </Field>
+          <Field
+            label="Scalelist key (optional)"
+            hint={settings.aiKey.scalelistApiKey ? `Saved (${settings.aiKey.scalelistApiKey}). Leave blank to keep it.` : 'Another source for phone numbers. Your own key: it is never shared with other companies.'}
+          >
+            <input type="password" value={v.scalelistApiKey} onChange={(e) => set({ scalelistApiKey: e.target.value })} autoComplete="off" />
+          </Field>
+          <Field
+            label="Apify key (optional)"
+            hint={settings.aiKey.apifyApiKey ? `Saved (${settings.aiKey.apifyApiKey}). Leave blank to keep it.` : 'Google Maps lookups for phone numbers. Your own key.'}
+          >
+            <input type="password" value={v.apifyApiKey} onChange={(e) => set({ apifyApiKey: e.target.value })} autoComplete="off" />
           </Field>
         </div>
       </section>

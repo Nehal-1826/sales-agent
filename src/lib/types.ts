@@ -142,6 +142,8 @@ export interface AiKeyConfig {
   provider: string;
   apiKey: string;
   apolloApiKey?: string; // Apollo.io — lead phone/company enrichment (masked on read)
+  scalelistApiKey?: string; // Scalelist phone lookup (masked on read) — each company brings its own
+  apifyApiKey?: string; // Apify Google Maps actor (masked on read)
 }
 
 export interface SmtpConfig {

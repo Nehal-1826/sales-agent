@@ -7,19 +7,23 @@ never touched, and the module cache makes repeat runs cheap.
     python manage.py backfill_phones                # top 100 by score
     python manage.py backfill_phones --limit 500    # more
     python manage.py backfill_phones --delay 3.0    # extra politeness
+    python manage.py backfill_phones --workspace acme   # one tenant (default: all)
 """
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from core.gmaps import enrich_leads_via_gmaps, gmaps_available
-from core.models import Lead
+from core.models import Lead, Workspace
+from core.tenancy import workspace_context
 
 
 class Command(BaseCommand):
     help = 'Backfill missing lead phone numbers from Google Maps listings'
 
     def add_arguments(self, parser):
+        parser.add_argument('--workspace', default='',
+                            help='workspace slug (default: every active workspace)')
         parser.add_argument('--limit', type=int, default=100,
                             help='max leads to try (highest score first)')
         parser.add_argument('--delay', type=float, default=2.0,
@@ -29,6 +33,17 @@ class Command(BaseCommand):
         if not gmaps_available():
             self.stderr.write('Google Maps scraper disabled (GMAPS_SCRAPER=0)')
             return
+        workspaces = Workspace.all_tenants.filter(is_active=True).order_by('id')
+        if options['workspace']:
+            workspaces = workspaces.filter(slug=options['workspace'])
+            if not workspaces.exists():
+                raise CommandError(f'No active workspace "{options["workspace"]}".')
+        for ws in workspaces:
+            self.stdout.write(f'[backfill] workspace {ws.slug}')
+            with workspace_context(ws):
+                self._backfill(options)
+
+    def _backfill(self, options):
         missing = (Lead.objects.filter(profiled=True, contact_phone='')
                    .order_by('-score'))
         total_missing = missing.count()

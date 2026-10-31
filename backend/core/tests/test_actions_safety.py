@@ -1,4 +1,5 @@
 """Chat actions: questions never act, destructive actions need an explicit yes."""
+from rest_framework.authtoken.models import Token
 from core.tests.base import TenantTestCase
 
 from core.actions import detect_action_regex, handle_command, is_question_or_negation
@@ -16,7 +17,7 @@ class GuardTests(TenantTestCase):
 
 class ConfirmFlowTests(TenantTestCase):
     def setUp(self):
-        self.user = User.objects.create_user(username='o', password='pass12345', role='owner')
+        self.user = User.objects.create_user(workspace=self.workspace, username='o', password='pass12345', role='owner')
         self.d1 = EmailDraft.objects.create(company='Acme', to_email='a@acme.com', subject='s', body='b')
         self.d2 = EmailDraft.objects.create(company='Beta', to_email='b@beta.com', subject='s', body='b')
 
@@ -60,7 +61,7 @@ class ConfirmFlowTests(TenantTestCase):
 
 class ChatWiringTests(TenantTestCase):
     def setUp(self):
-        self.user = User.objects.create_user(username='o', password='pass12345', role='owner')
+        self.user = User.objects.create_user(workspace=self.workspace, username='o', password='pass12345', role='owner')
         EmailDraft.objects.create(company='Acme', to_email='a@acme.com', subject='s', body='b')
 
     def test_prompt_verbatim_and_ambiguous_delete(self):
@@ -81,7 +82,7 @@ class ChatWiringTests(TenantTestCase):
         U.objects.filter(pk=self.user.pk).update(onboarding={'done': True})
         self.user.refresh_from_db()
         c = APIClient()
-        c.force_authenticate(self.user)
+        c.credentials(HTTP_AUTHORIZATION=f'Token {Token.objects.create(user=self.user).key}')
         r = c.post('/api/chat/', {'text': 'approve all drafts'}, format='json')
         self.assertEqual(r.status_code, 200)
         self.assertIsInstance(r.data['pendingAction'], str)
@@ -90,7 +91,7 @@ class ChatWiringTests(TenantTestCase):
 
 class PendingHardeningTests(TenantTestCase):
     def setUp(self):
-        self.user = User.objects.create_user(username='o', password='pass12345', role='owner')
+        self.user = User.objects.create_user(workspace=self.workspace, username='o', password='pass12345', role='owner')
         EmailDraft.objects.create(company='Acme', to_email='a@acme.com', subject='s', body='b')
 
     def _client(self, done=True):
@@ -98,7 +99,7 @@ class PendingHardeningTests(TenantTestCase):
         User.objects.filter(pk=self.user.pk).update(onboarding={'done': done})
         self.user.refresh_from_db()
         c = APIClient()
-        c.force_authenticate(self.user)
+        c.credentials(HTTP_AUTHORIZATION=f'Token {Token.objects.create(user=self.user).key}')
         return c
 
     def test_yes_after_ttl_does_nothing_and_says_so(self):
@@ -168,11 +169,11 @@ class PostSetupRedactionTests(TenantTestCase):
 
     def setUp(self):
         from rest_framework.test import APIClient
-        self.user = User.objects.create_user(username='o', password='pass12345', role='owner')
+        self.user = User.objects.create_user(workspace=self.workspace, username='o', password='pass12345', role='owner')
         User.objects.filter(pk=self.user.pk).update(onboarding={'done': True})
         self.user.refresh_from_db()
         self.c = APIClient()
-        self.c.force_authenticate(self.user)
+        self.c.credentials(HTTP_AUTHORIZATION=f'Token {Token.objects.create(user=self.user).key}')
 
     def _stored(self):
         from core.models import ChatMessage
@@ -194,9 +195,9 @@ class PostSetupRedactionTests(TenantTestCase):
 class DraftRejectRaceTests(TenantTestCase):
     def setUp(self):
         from rest_framework.test import APIClient
-        self.user = User.objects.create_user(username='o', password='pass12345', role='owner')
+        self.user = User.objects.create_user(workspace=self.workspace, username='o', password='pass12345', role='owner')
         self.c = APIClient()
-        self.c.force_authenticate(self.user)
+        self.c.credentials(HTTP_AUTHORIZATION=f'Token {Token.objects.create(user=self.user).key}')
 
     def _draft(self, status):
         return EmailDraft.objects.create(company='Acme', to_email='a@acme.com', subject='s',

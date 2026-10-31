@@ -21,9 +21,9 @@ def client_for(user):
 class RolePermissionTests(TenantTestCase):
     def setUp(self):
         # first user ever becomes owner, so seed the owner before the member
-        self.owner = User.objects.create_user(username='owner', password='pass12345')
-        self.member = User.objects.create_user(username='support', password='pass12345', role='member')
-        self.admin = User.objects.create_user(username='adm', password='pass12345', role='admin')
+        self.owner = User.objects.create_user(workspace=self.workspace, username='owner', password='pass12345')
+        self.member = User.objects.create_user(workspace=self.workspace, username='support', password='pass12345', role='member')
+        self.admin = User.objects.create_user(workspace=self.workspace, username='adm', password='pass12345', role='admin')
         s = AppSettings.load()
         s.report_email = 'boss@shailog.com'
         s.save(update_fields=['report_email'])
@@ -99,7 +99,7 @@ class RolePermissionTests(TenantTestCase):
             self.assertEqual(c.get('/api/settings/').status_code, 200)
             self.assertEqual(c.get('/api/profiles/').status_code, 200)
             self.assertEqual(c.get('/api/leads/export/').status_code, 200)
-        su = User.objects.create_superuser(username='root', password='pass12345', email='r@x.com')
+        su = User.objects.create_superuser(workspace=self.workspace, username='root', password='pass12345', email='r@x.com')
         su.role = 'member'   # default role on a Django-created account
         su.save(update_fields=['role'])
         self.assertEqual(client_for(su).get('/api/settings/').status_code, 200)
@@ -163,7 +163,7 @@ class TokenLifecycleTests(TenantTestCase):
     """Tokens expire, die on logout and on password change."""
 
     def setUp(self):
-        self.user = User.objects.create_user(username='u1', password='pass12345', role='owner')
+        self.user = User.objects.create_user(workspace=self.workspace, username='u1', password='pass12345', role='owner')
         self.token = Token.objects.create(user=self.user)
 
     def _get(self, key=None):

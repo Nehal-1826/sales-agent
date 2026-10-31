@@ -6,12 +6,13 @@ owner password is never echoed back."""
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from core.models import AppSettings, User, Workspace
+from core.models import User, Workspace
 from core.tenancy import workspace_context
+from core.workspaces import provision_workspace
 
 
 class Command(BaseCommand):
-    help = 'Create a workspace and its owner user (+ an empty AppSettings row).'
+    help = 'Create a workspace and its owner user (+ default agents and an empty AppSettings row).'
 
     def add_arguments(self, parser):
         parser.add_argument('--name', required=True)
@@ -35,7 +36,7 @@ class Command(BaseCommand):
                     password=opts['owner_password'],
                     role=User.Roles.OWNER,
                 )
-                # fresh tenants start with empty keys; env secrets only seed the default tenant
-                AppSettings.load()
+            # fresh tenants start with empty keys; env secrets only seed the default tenant
+            provision_workspace(ws)
         self.stdout.write(self.style.SUCCESS(
             f'Created workspace "{ws.name}" ({ws.slug}) with owner "{opts["owner_username"]}".'))

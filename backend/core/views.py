@@ -82,12 +82,12 @@ def health(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def register(request):
-    # First-boot only: the very first account becomes the owner.  After that
-    # sign-up is closed — the app is reachable on a public URL and every
-    # account sees the whole CRM, SMTP setup and send buttons.
-    if User.objects.exists():
-        return Response({'detail': 'Sign-up is closed — ask the workspace owner for an account.'},
-                        status=403)
+    # Multi-tenant: a company's workspace and its owner are created by the
+    # platform operator (manage.py create_workspace), never by anonymous
+    # sign-up — an account with no workspace could not use the app anyway, and
+    # open sign-up would let anyone spend scraping, AI and email credits.
+    return Response({'detail': 'Sign-up is closed — accounts are created by the platform operator.'},
+                    status=403)
     username = (request.data.get('username') or '').strip()
     password = request.data.get('password') or ''
     if not username or len(password) < 8:
@@ -109,6 +109,8 @@ def login(request):
     )
     if user is None:
         return Response({'detail': 'invalid credentials'}, status=401)
+    if user.workspace is not None and not user.workspace.is_active:
+        return Response({'detail': 'This workspace is suspended.'}, status=403)
     token, _ = Token.objects.get_or_create(user=user)
     if token_expired(token):   # an expired token is dead — issue a fresh one
         token.delete()

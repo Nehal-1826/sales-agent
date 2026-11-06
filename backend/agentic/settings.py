@@ -137,6 +137,11 @@ CORS_ALLOW_CREDENTIALS = True
 # CSRF_TRUSTED_ORIGINS=https://yourdomain.com
 CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',') if o.strip()]
 
+# Public origin used for absolute links in outgoing email (unsubscribe).
+# PUBLIC_BASE_URL=https://yourdomain.com — falls back to the first trusted origin.
+PUBLIC_BASE_URL = (os.environ.get('PUBLIC_BASE_URL', '').strip()
+                   or (CSRF_TRUSTED_ORIGINS[0] if CSRF_TRUSTED_ORIGINS else 'http://127.0.0.1:8000'))
+
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'UTC'
 USE_I18N = True

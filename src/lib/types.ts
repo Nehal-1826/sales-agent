@@ -136,6 +136,8 @@ export interface CompanyProfile {
   website: string;
   description: string;
   services: string[];
+  /** Postal address printed in every cold-email footer (anti-spam law). */
+  address: string;
 }
 
 export interface AiKeyConfig {

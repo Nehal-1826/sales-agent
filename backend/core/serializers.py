@@ -248,6 +248,7 @@ class SettingsSerializer(serializers.ModelSerializer):
                 'website': instance.company_website,
                 'description': instance.company_description,
                 'services': instance.services or [],
+                'address': instance.company_address,
             },
             'aiKey': {
                 'provider': instance.ai_provider,
@@ -283,6 +284,7 @@ class SettingsSerializer(serializers.ModelSerializer):
         instance.company_name = company.get('name', instance.company_name)
         instance.company_website = company.get('website', instance.company_website)
         instance.company_description = company.get('description', instance.company_description)
+        instance.company_address = str(company.get('address', instance.company_address) or '')[:300]
         if 'services' in company:
             instance.services = company.get('services') or []
         instance.ai_provider = ai_key.get('provider', instance.ai_provider)

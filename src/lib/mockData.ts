@@ -426,6 +426,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
     description:
       'Custom software engineering team building SaaS platforms, web applications and React Native mobile apps for founders — MVPs shipped in 8–14 weeks with fixed quotes, full IP handover and post-launch support.',
     services: ['Custom SaaS platform development', 'MVP & product engineering', 'Mobile apps (React Native)', 'API & integrations'],
+    address: 'Uthayapuri Colony, Narasothipatti, Salem, Tamil Nadu 636004, India',
   },
   aiKey: { provider: 'Google AI', apiKey: '' },
   smtp: { host: '', port: '587', user: '', password: '', from: '' },

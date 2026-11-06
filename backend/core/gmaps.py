@@ -317,6 +317,13 @@ def _norm(domain):
     return d[4:] if d.startswith('www.') else d
 
 
+def discover_places_with_website(query, limit=8):
+    """Places from a Maps search that DO have a real website — companies to
+    profile (site audit + AI gate decide if they are buyers)."""
+    return [p for p in gmaps_search(query, limit=limit * 5)
+            if has_real_website(p)][:limit]
+
+
 def discover_no_website_places(query, limit=3):
     """Places from a Maps search that have NO real website — new-website
     leads with phone + address from the listing itself."""

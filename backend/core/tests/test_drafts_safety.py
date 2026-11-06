@@ -283,9 +283,10 @@ class DraftFixRound1Tests(TenantTestCase):
     def test_copywright_ties_break_by_id(self):
         self._drop_setup_lead()
         leads = [self._lead(f'Tie{i}', score=50) for i in range(5)]
-        self._run_copywright()
+        with mock.patch('core.pipeline.MAX_DRAFTS_PER_CYCLE', 3):
+            self._run_copywright()
         drafted = set(EmailDraft.objects.values_list('lead_id', flat=True))
-        self.assertEqual(drafted, {l.pk for l in leads[:3]})  # 3 per cycle, lowest ids first
+        self.assertEqual(drafted, {l.pk for l in leads[:3]})  # cap per cycle, lowest ids first
 
     # -- 5. lost claim: nothing is sent ---------------------------------------
     def test_approve_with_lost_claim_is_409_and_sends_nothing(self):

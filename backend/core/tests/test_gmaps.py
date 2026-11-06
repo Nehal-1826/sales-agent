@@ -7,6 +7,8 @@ business record).  Malformed/missing fields degrade to '' — never a crash.
 
 import json
 
+from unittest import mock
+
 from django.test import SimpleTestCase
 
 from core import gmaps
@@ -191,3 +193,16 @@ class NormTests(SimpleTestCase):
         }
         for raw, expected in cases.items():
             self.assertEqual(gmaps._norm(raw), expected, msg=raw)
+
+
+class SitePlacesDiscoveryTests(SimpleTestCase):
+    def test_keeps_only_listings_with_a_real_website(self):
+        from core import gmaps
+        places = [
+            {'name': 'Agency A', 'website': 'https://agency-a.ae/', 'phone': '+971 4 1'},
+            {'name': 'No Site', 'website': '', 'phone': '+971 4 2'},
+            {'name': 'Social Only', 'website': 'https://www.facebook.com/x', 'phone': '+971 4 3'},
+        ]
+        with mock.patch.object(gmaps, 'gmaps_search', return_value=places):
+            found = gmaps.discover_places_with_website('real estate agency in Dubai', limit=5)
+        self.assertEqual([p['name'] for p in found], ['Agency A'])

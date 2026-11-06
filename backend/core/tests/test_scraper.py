@@ -79,14 +79,24 @@ class CityTargetingTests(SimpleTestCase):
             self.assertIn(industry, ('catering service', 'gym'))
 
     def test_city_industry_rotation(self):
+        # every (city, industry) pair is searched once per pass
         cities = ['Salem', 'Omalur', 'Mettur']
         inds = ['gym', 'spa', 'law firm']
-        for cycle in range(6):
+        # first full city × industry pass only (9 slices); later passes rotate phrasing
+        for cycle in range(3):
             for k, (query, industry) in enumerate(
                     search_queries_for_cycle(cycle, cities=cities, industries=inds)):
                 city = query.rsplit(' in ', 1)[-1]
-                self.assertEqual(city, cities[(cycle * 3 + k) % 3])
-                self.assertEqual(industry, inds[(cycle * 3 + k) % 3])
+                i = cycle * 3 + k
+                self.assertEqual(city, cities[i % 3])
+                self.assertEqual(industry, inds[(i // 3) % 3])
+
+    def test_later_passes_rotate_query_phrasing(self):
+        cities, inds = ['Salem', 'Omalur', 'Mettur'], ['gym', 'spa', 'law firm']
+        queries = [q for q, _ in search_queries_for_cycle(
+            1, n=9, cities=cities, industries=inds)]  # slices 9..17 = second pass
+        self.assertTrue(all(q.startswith('best ') for q in queries))
+        self.assertEqual(len(set(queries)), 9)  # all 3 × 3 pairs, no repeats
 
     def test_city_queries_never_contain_agency_terms(self):
         buyers = icp.BUYER_INDUSTRIES[:6]

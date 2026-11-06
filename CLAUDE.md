@@ -133,6 +133,13 @@ a user's screen:
 - **Never send without approval.** Drafts only leave on an explicit user
   action; `sent_via='console'` means logged, **not delivered** — the UI must
   say so.
+- **Every cold email can be unsubscribed, permanently.** `send_draft` adds a
+  signed per-recipient link (footer, with `AppSettings.company_address`) and
+  RFC 8058 `List-Unsubscribe` / `List-Unsubscribe-Post` headers, and refuses
+  any address in `Suppression` (draft → rejected). The public
+  `/api/unsubscribe/<token>/` (`core/unsubscribe.py`) writes only on POST, as
+  link scanners prefetch GET. Links use `PUBLIC_BASE_URL` (falls back to the
+  first `CSRF_TRUSTED_ORIGINS`).
 - **Questions are not commands.** `actions.is_question_or_negation()` runs
   before any classification; destructive actions store `User.pending_action`
   and run only after an explicit "yes".

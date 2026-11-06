@@ -38,6 +38,17 @@ export function BusinessSection({ settings, onSaved }: { settings: SettingsState
       <Field label="What you do" hint="Two or three sentences, the way you'd describe it to a customer.">
         <textarea rows={4} value={c.description} onChange={(e) => set({ description: e.target.value })} />
       </Field>
+      <Field
+        label="Business address"
+        hint="Printed at the bottom of every email you send. Anti-spam laws require a real postal address."
+      >
+        <input
+          value={c.address}
+          onChange={(e) => set({ address: e.target.value })}
+          placeholder="Street, city, PIN code, country"
+          autoComplete="street-address"
+        />
+      </Field>
       <TagInput
         label="What you sell"
         values={c.services}

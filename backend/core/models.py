@@ -219,6 +219,47 @@ class Reply(TenantOwned, Timestamped):
         return f'{self.company} — {self.get_status_display()}'
 
 
+class Suppression(TenantOwned, Timestamped):
+    """Outreach — an address that must never be emailed again by this workspace.
+
+    Written by the public unsubscribe endpoint (link + RFC 8058 one-click) or
+    by an operator.  mailer.send_draft refuses any draft whose recipient is
+    here.  Emails are stored lowercased; lookups go through is_suppressed()."""
+
+    class Reasons(models.TextChoices):
+        UNSUBSCRIBE = 'unsubscribe', 'Unsubscribed'
+        BOUNCE = 'bounce', 'Bounced'
+        COMPLAINT = 'complaint', 'Spam complaint'
+        MANUAL = 'manual', 'Added manually'
+
+    email = models.CharField(max_length=200)
+    reason = models.CharField(max_length=20, choices=Reasons.choices, default=Reasons.UNSUBSCRIBE)
+    source = models.CharField(max_length=200, blank=True)  # e.g. 'link', 'one-click', admin user
+
+    class Meta(TenantOwned.Meta):
+        ordering = ['-created_at']
+        unique_together = [('workspace', 'email')]
+
+    def __str__(self):
+        return f'{self.email} — {self.get_reason_display()}'
+
+    @staticmethod
+    def normalize(email):
+        return (email or '').strip().lower()
+
+    @classmethod
+    def is_suppressed(cls, email):
+        email = cls.normalize(email)
+        return bool(email) and cls.objects.filter(email=email).exists()
+
+    @classmethod
+    def add(cls, email, reason=Reasons.UNSUBSCRIBE, source=''):
+        """Idempotent: an existing row keeps its first reason."""
+        obj, _ = cls.objects.get_or_create(
+            email=cls.normalize(email), defaults={'reason': reason, 'source': source[:200]})
+        return obj
+
+
 class AgentConfig(TenantOwned, Timestamped):
     """AGENTS page — per-agent configuration (DB / API / prompts / model)."""
 
@@ -264,6 +305,8 @@ class AppSettings(TenantOwned, Timestamped):
     company_website = models.CharField(max_length=300, blank=True)
     company_description = models.TextField(blank=True)
     services = models.JSONField(default=list, blank=True)
+    # Physical postal address printed in every cold-email footer (CAN-SPAM).
+    company_address = models.CharField(max_length=300, blank=True)
 
     # AI Key (never returned in full by the API)
     ai_provider = models.CharField(max_length=50, default='OpenAI')

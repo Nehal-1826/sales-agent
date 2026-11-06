@@ -21,18 +21,66 @@ from email.utils import formataddr, formatdate
 from pathlib import Path
 
 from django.conf import settings as django_settings
+from django.core import signing
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.db.models import Q
 from django.utils import timezone
 
-from .models import AppSettings, EmailDraft
+from .models import AppSettings, EmailDraft, Suppression
 
 log = logging.getLogger(__name__)
 
 SMTP_TIMEOUT = 30
 
 NO_RECIPIENT_ERROR = 'No recipient email — add one before sending.'
+SUPPRESSED_ERROR = 'Recipient unsubscribed — this address is never emailed again.'
+
+
+# ------------------------------------------------------------------
+# Unsubscribe — every cold email carries a signed, per-recipient link
+# (footer) and RFC 8058 one-click headers.  The token binds workspace +
+# address, so a link can only ever suppress that one address in that one
+# workspace; it never expires (an unsubscribe must keep working).
+# ------------------------------------------------------------------
+
+UNSUBSCRIBE_SALT = 'core.unsubscribe'
+
+
+def unsubscribe_token(email, workspace_id):
+    return signing.dumps({'w': workspace_id, 'e': Suppression.normalize(email)},
+                         salt=UNSUBSCRIBE_SALT, compress=True)
+
+
+def read_unsubscribe_token(token):
+    """(workspace_id, email) for a valid token, else None.  Never raises."""
+    try:
+        data = signing.loads(token, salt=UNSUBSCRIBE_SALT)
+        return int(data['w']), Suppression.normalize(data['e'])
+    except (signing.BadSignature, KeyError, TypeError, ValueError):
+        return None
+
+
+def unsubscribe_url(email, workspace_id):
+    base = django_settings.PUBLIC_BASE_URL.rstrip('/')
+    return f'{base}/api/unsubscribe/{unsubscribe_token(email, workspace_id)}/'
+
+
+def unsubscribe_headers(url):
+    """RFC 2369 + RFC 8058 one-click — required by Gmail/Yahoo bulk-sender rules."""
+    return {'List-Unsubscribe': f'<{url}>',
+            'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click'}
+
+
+def compliance_footer_text(s, url):
+    """Plain-text footer: sender identity, postal address, opt-out (CAN-SPAM)."""
+    who = ', '.join(p for p in (s.company_name, s.company_address) if p)
+    lines = ['', '--']
+    if who:
+        lines.append(who)
+    lines.append(f'Not interested? Unsubscribe and we will never email you again: {url}')
+    return '\n'.join(lines)
+
 
 # Inline logo attached to every HTML email (referenced as cid:agentic-logo).
 LOGO_PATH = Path(__file__).resolve().parent / 'assets' / 'logo.png'
@@ -176,9 +224,10 @@ def _open_smtp(s):
     raise last_error
 
 
-def send_email_message(subject, body, recipients, s=None, html=None):
+def send_email_message(subject, body, recipients, s=None, html=None, headers=None):
     """Send one email via the configured SMTP — plain text, plus an optional
-    branded HTML part (logo header) with the logo attached inline. True on success."""
+    branded HTML part (logo header) with the logo attached inline, plus any
+    extra headers (List-Unsubscribe). True on success."""
     s = s or AppSettings.load()
     from_email = s.from_email or s.smtp_user or 'outreach@shailog.com'
     sender_name = s.company_name or 'Agentic AI'
@@ -187,6 +236,8 @@ def send_email_message(subject, body, recipients, s=None, html=None):
     msg['To'] = ', '.join(recipients)
     msg['Subject'] = subject
     msg['Date'] = formatdate(localtime=True)
+    for name, value in (headers or {}).items():
+        msg[name] = value
     msg.set_content(body)
     if html:
         msg.add_alternative(html, subtype='html')
@@ -202,8 +253,10 @@ def send_email_message(subject, body, recipients, s=None, html=None):
 # Branded HTML wrappers — inline styles only (email clients strip CSS)
 # ------------------------------------------------------------------
 
-def branded_email_html(content_html, s=None):
-    """Logo header bar + content + footer, ready for send_email_message(html=…)."""
+def branded_email_html(content_html, s=None, unsubscribe=None):
+    """Logo header bar + content + footer, ready for send_email_message(html=…).
+    With an `unsubscribe` URL (cold emails) the footer also carries the postal
+    address and the opt-out link."""
     s = s or AppSettings.load()
     name = s.company_name or 'Agentic AI'
     logo = _logo_bytes()
@@ -216,6 +269,13 @@ def branded_email_html(content_html, s=None):
         brand = (f'<span style="font-family:Arial,Helvetica,sans-serif;font-size:18px;'
                  f'font-weight:bold;color:#ffffff;letter-spacing:2px">{html_lib.escape(name).upper()}</span>')
     company = html_lib.escape(s.company_name) if s.company_name else 'Shailog Technologies'
+    footer = f'A {company} product · autonomous sales pipeline'
+    if unsubscribe:
+        who = ', '.join(html_lib.escape(p) for p in (s.company_name, s.company_address) if p)
+        footer = ((f'{who}<br>' if who else '')
+                  + 'Not interested? <a href="' + html_lib.escape(unsubscribe)
+                  + '" style="color:#6b7280;text-decoration:underline">Unsubscribe</a>'
+                  ' and we will never email you again.')
     return (
         '<div style="margin:0;padding:24px 8px;background:#f3f4f6">'
         '<div style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:8px;overflow:hidden">'
@@ -223,7 +283,7 @@ def branded_email_html(content_html, s=None):
         '<div style="padding:24px 28px;font-family:Arial,Helvetica,sans-serif;font-size:14px;'
         f'line-height:1.65;color:#1f2937">{content_html}</div>'
         '<div style="padding:14px 28px;border-top:1px solid #e5e7eb;font-family:Arial,Helvetica,sans-serif;'
-        f'font-size:12px;color:#6b7280">A {company} product · autonomous sales pipeline</div>'
+        f'font-size:12px;color:#6b7280">{footer}</div>'
         '</div></div>'
     )
 
@@ -374,9 +434,20 @@ def send_draft(draft):
         draft.save(update_fields=['to_email', 'status', 'error', 'updated_at'])
         return draft
 
+    if Suppression.is_suppressed(draft.to_email):
+        # an unsubscribe is permanent — reject, so the draft leaves the queue
+        draft.status = EmailDraft.Statuses.REJECTED
+        draft.error = SUPPRESSED_ERROR
+        draft.save(update_fields=['to_email', 'status', 'error', 'updated_at'])
+        log.info('Blocked send to suppressed address %s (%s)', draft.to_email, draft.company)
+        return draft
+
     try:
         s = AppSettings.load()
         from_email = s.from_email or s.smtp_user or 'outreach@shailog.com'
+        unsub = unsubscribe_url(draft.to_email, draft.workspace_id)
+        if not s.company_address:
+            log.warning('No postal address in Settings → Business; cold-email footer omits it')
         if not smtp_configured(s):
             _log_console_delivery(draft, from_email)
             draft.status = EmailDraft.Statuses.SENT
@@ -385,8 +456,10 @@ def send_draft(draft):
             draft.error = ''
         else:
             send_email_message(
-                draft.subject, draft.body, [draft.to_email], s,
-                html=branded_email_html(designed_email_html(draft.body, s), s),
+                draft.subject, draft.body + '\n' + compliance_footer_text(s, unsub),
+                [draft.to_email], s,
+                html=branded_email_html(designed_email_html(draft.body, s), s, unsubscribe=unsub),
+                headers=unsubscribe_headers(unsub),
             )
             draft.status = EmailDraft.Statuses.SENT
             draft.sent_via = EmailDraft.Via.SMTP

@@ -3,7 +3,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from . import views
+from . import unsubscribe, views
 
 router = DefaultRouter()
 router.register('leads', views.LeadViewSet, basename='lead')
@@ -13,6 +13,8 @@ router.register('replies', views.ReplyViewSet, basename='reply')
 urlpatterns = [
     # health & meta
     path('health/', views.health, name='health'),
+    # public, token-signed opt-out (email footer link + RFC 8058 one-click)
+    path('unsubscribe/<str:token>/', unsubscribe.unsubscribe_view, name='unsubscribe'),
     # users / roles
     path('auth/register/', views.register, name='register'),
     path('auth/login/', views.login, name='login'),

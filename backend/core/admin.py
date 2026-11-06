@@ -14,6 +14,7 @@ from .models import (
     Potential,
     Reply,
     SearchProfile,
+    Suppression,
     User,
     Workspace,
 )
@@ -150,7 +151,7 @@ class AppSettingsAdmin(TenantAdmin):
     list_filter = ('workspace',)
     fieldsets = (
         ('Workspace', {'fields': ('workspace',)}),
-        ('Company Profile', {'fields': ('company_name', 'company_website', 'company_description', 'services')}),
+        ('Company Profile', {'fields': ('company_name', 'company_website', 'company_description', 'company_address', 'services')}),
         ('AI Key', {'fields': ('ai_provider', 'ai_key')}),
         ('Data-enrichment keys', {'fields': ('apollo_api_key', 'scalelist_api_key', 'apify_api_key')}),
         ('SMTP — outbound email', {'fields': ('smtp_host', 'smtp_port', 'smtp_user', 'smtp_password', 'from_email')}),
@@ -169,6 +170,13 @@ class AppSettingsAdmin(TenantAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+@admin.register(Suppression)
+class SuppressionAdmin(TenantAdmin):
+    list_display = ('email', 'reason', 'source', 'created_at')
+    search_fields = ('email',)
+    list_filter = ('reason',)
 
 
 @admin.register(ChatMessage)

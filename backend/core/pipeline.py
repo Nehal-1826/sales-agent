@@ -28,7 +28,10 @@ from .ai import llm_available, llm_complete
 from .apify_maps import apify_available as apify_maps_available
 from .apify_maps import enrich_leads_via_apify
 from .enrichment import apollo_enrich_domain
-from .gmaps import discover_no_website_places, enrich_leads_via_gmaps, gmaps_available
+from .maps_funnel import ai_fit_batch, nlp_prefilter
+from .gmaps import (
+    discover_no_website_places, discover_places_with_website, enrich_leads_via_gmaps, gmaps_available,
+)
 from .health import status_of
 from .icp import agency_mode, buyer_industries, looks_like_competitor, our_services_text, vertical
 from .models import AgentConfig, AppSettings, EmailDraft, EmailTemplate, Lead, PipelineRun, Potential
@@ -45,11 +48,14 @@ from .scraper import search_query_for_cycle  # noqa: F401 — re-exported for sc
 
 log = logging.getLogger(__name__)
 
-MAX_LEADS_PER_CYCLE = 6      # new companies discovered per cycle (across all region queries)
-MAX_PROFILE_PER_CYCLE = 6    # sites scraped+audited per cycle
-MAX_DRAFTS_PER_CYCLE = 3     # cold emails drafted per cycle
+MAX_LEADS_PER_CYCLE = 100     # new companies discovered per cycle (across all region queries)
+MAX_PROFILE_PER_CYCLE = 100   # sites scraped+audited per cycle
+MAX_DRAFTS_PER_CYCLE = 100    # cold emails drafted per cycle
 APOLLO_SWEEP_PER_CYCLE = 5   # phone-enrichment retries per cycle (quota-friendly)
-MAPS_LEADS_PER_CYCLE = 3     # no-website leads from the free Google Maps scraper
+MAPS_LEADS_PER_CYCLE = 4     # no-website leads per Maps query term
+MAPS_QUERIES_PER_CYCLE = 8   # distinct query terms sent to Google Maps per round
+MAPS_SITE_LEADS_PER_TERM = 10  # Maps listings WITH a website, per query term
+DISCOVERY_QUERIES_PER_CYCLE = 24  # DDG search slices per round (≈ 100 leads with the caps above)
 ENRICH_RETRY_HOURS = 72      # paid phone lookups: at most one per lead per this many hours
 
 # Score at which Profile flags a POTENTIAL opportunity.
@@ -467,6 +473,7 @@ def _run_cycle(triggered_by):
             f'{our_services_text(settings)}; peer/competitor agencies are filtered out')
     queries = search_queries_for_cycle(
         cycle,
+        n=DISCOVERY_QUERIES_PER_CYCLE,
         regions=[c.strip() for c in settings.target_countries.split(',') if c.strip()],
         industries=icp_industries,
         cities=target_cities,
@@ -524,39 +531,100 @@ def _run_cycle(triggered_by):
     # Skipped in agency mode — a boutique agency without a website is never a
     # project partner; those slots go to real agency discoveries instead.
     if gmaps_available() and not agency_mode(settings):
-        maps_query, maps_industry = queries[0]
-        try:
-            no_site_places = discover_no_website_places(maps_query, limit=MAPS_LEADS_PER_CYCLE)
-        except Exception as exc:  # never let Maps kill the cycle
-            log.warning('Google Maps discovery failed for %r: %s', maps_query, exc)
-            no_site_places = []
-        for place in no_site_places:
+        # Maps-first funnel for listings WITH a website: collect → simple NLP →
+        # one batched AI fit check → only FIT ones become leads (Profile + drafts follow)
+        maps_terms, seen_terms = [], set()
+        for q, ind in queries:
+            if q not in seen_terms:
+                seen_terms.add(q)
+                maps_terms.append((q, ind))
+        maps_terms = maps_terms[:MAPS_QUERIES_PER_CYCLE]
+        site_candidates, industry_of = [], {}
+        for maps_query, maps_industry in maps_terms:
+            try:
+                found = discover_places_with_website(maps_query, limit=MAPS_SITE_LEADS_PER_TERM)
+            except Exception as exc:  # never let Maps kill the cycle
+                log.warning('Google Maps site discovery failed for %r: %s', maps_query, exc)
+                found = []
+            for place in found:
+                industry_of.setdefault(id(place), (maps_query, maps_industry))
+                site_candidates.append(place)
+        nlp_kept = nlp_prefilter(site_candidates)
+        verdicts = ai_fit_batch(nlp_kept, goal=(
+            f'We sell: {our_services_text(settings)}. Our ideal client: {settings.icp_notes[:400] or "businesses that run on customers, leads and bookings"}.'))
+        fit_n = sum(1 for _, fit in verdicts if fit)
+        summary['notes'].append(
+            f'Maps funnel: {len(site_candidates)} listings → {len(nlp_kept)} after NLP → '
+            f'{fit_n} FIT, {len(verdicts) - fit_n} NOT_FIT, {len(nlp_kept) - len(verdicts)} held (AI unanswered)')
+        for place, fit in verdicts:
+            domain = _norm_domain(place.get('website', ''))
+            if not fit:
+                if domain and domain not in (settings.rejected_domains or []):
+                    settings.rejected_domains = list(settings.rejected_domains or []) + [domain]
+                    settings.save(update_fields=['rejected_domains'])
+                    known.add(domain)
+                continue
             name_l = place['name'].lower()
-            if name_l in known:
+            if domain in known or name_l in known:
                 continue
-            if Lead.objects.filter(contact_phone=place['phone']).exists():
+            if place.get('phone') and Lead.objects.filter(contact_phone=place['phone']).exists():
                 continue
+            maps_query, maps_industry = industry_of.get(id(place), ('', 'business'))
+            known.add(domain)
             known.add(name_l)
-            state, country = region_from_query(maps_query)
-            desc = ', '.join(filter(None, [place.get('category'), place.get('address')]))[:600]
+            state, country = region_from_query(maps_query, domain)
             lead = Lead.objects.create(
                 company=place['name'][:200],
                 industry=maps_industry,
-                website='',
-                contact_phone=place['phone'],
-                description=desc,
+                website=domain,
+                contact_phone=place.get('phone', ''),
+                description=', '.join(filter(None, [place.get('category'), place.get('address')]))[:600],
                 source=f'Search · Google Maps · {maps_query}',
                 state=state,
                 country=country,
-                score=95,  # no website at all — Profile re-audits and confirms
-                analysis={'phone_source': 'google-maps',
-                          'gmaps_address': place.get('address', ''),
+                score=50,  # provisional, Profile replaces it
+                analysis={'gmaps_address': place.get('address', ''),
                           'gmaps_rating': place.get('rating'),
                           'gmaps_reviews': place.get('reviews')},
             )
             new_leads.append(lead)
-            summary['notes'].append(
-                f'Search (Google Maps): {lead.company} — no website, phone {place["phone"]}')
+            summary['notes'].append(f'Search (Google Maps, AI fit): {lead.company} ({domain})')
+            if len(new_leads) >= MAX_LEADS_PER_CYCLE:
+                break
+        # one Maps search per distinct query term (polite cap: MAPS_QUERIES_PER_CYCLE)
+        for maps_query, maps_industry in maps_terms:
+            try:
+                no_site_places = discover_no_website_places(maps_query, limit=MAPS_LEADS_PER_CYCLE)
+            except Exception as exc:  # never let Maps kill the cycle
+                log.warning('Google Maps discovery failed for %r: %s', maps_query, exc)
+                no_site_places = []
+            for place in no_site_places:
+                name_l = place['name'].lower()
+                if name_l in known:
+                    continue
+                if Lead.objects.filter(contact_phone=place['phone']).exists():
+                    continue
+                known.add(name_l)
+                state, country = region_from_query(maps_query)
+                desc = ', '.join(filter(None, [place.get('category'), place.get('address')]))[:600]
+                lead = Lead.objects.create(
+                    company=place['name'][:200],
+                    industry=maps_industry,
+                    website='',
+                    contact_phone=place['phone'],
+                    description=desc,
+                    source=f'Search · Google Maps · {maps_query}',
+                    state=state,
+                    country=country,
+                    score=95,  # no website at all — Profile re-audits and confirms
+                    analysis={'phone_source': 'google-maps',
+                              'gmaps_address': place.get('address', ''),
+                              'gmaps_rating': place.get('rating'),
+                              'gmaps_reviews': place.get('reviews')},
+                )
+                new_leads.append(lead)
+                summary['notes'].append(
+                    f'Search (Google Maps): {lead.company} — no website, phone {place["phone"]}')
 
     # --- PROFILE: scrape + audit up to N unprofiled leads ------------------
     potentials_created = 0

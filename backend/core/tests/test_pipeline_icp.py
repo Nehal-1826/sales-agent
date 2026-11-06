@@ -54,6 +54,7 @@ def pipeline_patches():
         mock.patch('core.pipeline.analyze_website', side_effect=fake_audit),
         mock.patch('core.pipeline.discover_no_website_places',
                    return_value=[MAPS_PLACE]),
+        mock.patch('core.pipeline.discover_places_with_website', return_value=[]),
         mock.patch('core.pipeline.enrich_leads_via_gmaps', return_value=[]),
         mock.patch('core.pipeline.gmaps_available', return_value=True),
         mock.patch('core.pipeline.llm_available', return_value=False),

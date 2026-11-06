@@ -22,3 +22,6 @@ htmlcov/
 .idea/
 .vscode/
 *.swp
+
+# graphify output (rebuild: graphify update .)
+graphify-out/

@@ -188,6 +188,17 @@ INDUSTRY_QUERIES = [
     'restaurant group', 'logistics company', 'architecture studio',
 ]
 
+# Query phrasings rotated once a full city × industry pass is done. The first
+# is the historical 'X in Y'; the others reach directory and listing pages
+# (whose company homepages DDG surfaces under different wording).
+QUERY_TEMPLATES = [
+    '{industry} in {place}',
+    'best {industry} {place}',
+    '{industry} directory {place}',
+    'top {industry} companies {place}',
+    '{industry} companies list {place}',
+]
+
 # India priority market — every cycle dedicates its first query to an Indian
 # metro (metro × industry both rotate), so roughly 1/3 of all discovery is
 # India-focused while the remaining slices keep sweeping the world.
@@ -411,12 +422,18 @@ def search_queries_for_cycle(cycle_index, n=REGIONS_PER_CYCLE, regions=None,
     inds = industries or INDUSTRY_QUERIES
     if cities:
         # city × industry rotation — every slice pairs a buyer industry with
-        # one of the user's towns
+        # one of the user's towns; once every pair has been searched, the next
+        # pass switches to the next query phrasing (directories, listings…)
         slices = []
+        per_pass = len(cities) * len(inds)
         for k in range(n):
-            city = cities[(start + k) % len(cities)]
-            industry = inds[(start + k) % len(inds)]
-            slices.append((f'{industry} in {city}', industry))
+            i = start + k
+            # city fastest, industry slower: every (city, industry) pair is hit
+            # once per pass. (Stepping both by the same index only ever paired 3 of 9.)
+            city = cities[i % len(cities)]
+            industry = inds[(i // len(cities)) % len(inds)]
+            template = QUERY_TEMPLATES[(i // per_pass) % len(QUERY_TEMPLATES)]
+            slices.append((template.format(industry=industry, place=city), industry))
         return slices
     pool = _region_pool(regions)
     if pool:

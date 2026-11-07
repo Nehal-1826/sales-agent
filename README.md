@@ -11,7 +11,8 @@ USER → ORCHESTRATOR → SEARCH (SCRAPE) → PROFILE → COPYWRIGHT → RESPOND
 - **Frontend (`/`)** — React + TypeScript + Vite, dark SaaS theme, branded
   login (no shipped credentials)
 - **Backend (`/backend`)** — Django + DRF + PostgreSQL; real pipeline:
-  live DuckDuckGo discovery → Gemini reads each site and writes the company
+  free multi-engine discovery (DuckDuckGo, Brave, Mojeek, Yahoo, Bing, … via
+  `ddgs`, plus a free Google Maps scrape) → Gemini reads each site and writes the company
   description → site audit (flaws + potential score) → cold-email drafts from
   your template (Settings → Email Templates) → human **Approve & send** via
   SMTP with the branded designer email layout
@@ -53,6 +54,17 @@ Slice #0 of every cycle targets an Indian metro (16 metros × 14 industries,
 rotating — Mumbai, Delhi, Bengaluru, Hyderabad, Chennai, Pune, …), so roughly
 ⅓ of new leads are Indian with correct state tagging (`GLOBAL_CITY_STATE`);
 the remaining slices keep the 120-region worldwide sweep running.
+
+Discovery uses free sources only (no SERP API key). Search engines rotate:
+a rate-limited or empty engine is parked with an exponential cooldown and the
+query moves to the next one. Each query also gets rotated phrasing variants
+("best dentist Salem", "dentist near Salem"…). When a cycle finds mostly
+known companies, the next one widens (more variants, then neighbouring cities
+of the same state), up to 60 queries per cycle. The Google Maps scrape adds
+businesses with a website (AI fit check) and, in buyer mode, businesses with
+no website but a listed phone number. A cycle stops starting new work after
+35 minutes; leftover leads are profiled next cycle. Audits older than 90 days
+are refreshed a few leads per cycle (leads already emailed are skipped).
 
 ## Product mode vs demo mode
 

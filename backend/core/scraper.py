@@ -1,7 +1,7 @@
 """
 Search (Scrape) + Profile agent plumbing — real implementation.
 
-    search_companies()      → DuckDuckGo web search (ddgs), no API key needed
+    search_companies()      → free multi-engine web search (ddgs), no API key needed
     scrape_company()        → plain HTTP fetch with a time budget
     extract_contact_email() → mailto:/regex scan of the homepage + contact page
     analyze_website()       → heuristic audit → findings + potential score
@@ -529,60 +529,66 @@ def _generic_serp_title(name, query):
     return bool(phrase) and (title == phrase or title == norm(query))
 
 
-def search_companies(query, n=8):
-    """Real DuckDuckGo search → [{name, website, snippet}] for company homepages.
-
-    DDG rate-limits rapid consecutive queries (they return 0 results, not an
-    error), so an empty first response is retried once after a short pause.
-    """
-    from ddgs import DDGS
-
-    def _run_once():
-        results = []
-        try:
-            with DDGS() as ddgs:
-                for r in ddgs.text(query, max_results=n * 4):
-                    url = (r.get('href') or r.get('url') or '').strip()
-                    if not url:
-                        continue
-                    parsed = urlparse(url)
-                    domain = parsed.netloc.lower()
-                    domain = domain.split(':')[0]  # strip :port — 'awwwards.com:8080'
-                    domain = domain[4:] if domain.startswith('www.') else domain
-                    if not domain or any(domain == b or domain.endswith('.' + b) for b in BLOCKED_DOMAINS):
-                        continue
-                    if domain == 'google' or domain.endswith('.google'):  # Google's own .google TLD
-                        continue
-                    if domain.endswith(('.gov', '.gov.uk', '.mil', '.edu', '.ac.uk')):  # institutions
-                        continue
-                    # deep subdomains of a .com/.net/.org parent (x.y.z.com) are
-                    # directory/stats pages, never a company homepage
-                    if (domain.count('.') >= 3
-                            and domain.split('.')[-1] in ('com', 'net', 'org')):
-                        continue
-                    path = parsed.path or '/'
-                    # deep links are job listings / articles, not company homepages
-                    if len(path) > 40 or path.count('/') > 2 or '?' in url:
-                        continue
-                    title = (r.get('title') or '').strip()
-                    # 'Company Name | Services…' / 'Company Name — Home' → keep the brand part
-                    name = re.split(r'\s*[|–—·-]\s*', title)[0].strip()
-                    if _generic_serp_title(name, query):
-                        continue  # SEO landing page echoing the query — not a company
-                    if not _plausible_company_name(name, domain):
-                        name = name_from_domain(domain)
-                    results.append({'name': name, 'website': domain, 'snippet': r.get('body', '')[:200]})
-                    if len(results) >= n:
-                        break
-        except Exception as exc:  # network hiccup, rate limit — never kill a cycle
-            log.warning('DDG search failed for %r: %s', query, exc)
-        return results
-
-    results = _run_once()
-    if not results:
-        time.sleep(6)  # rate-limited — one patient retry before giving up
-        results = _run_once()
+def _serp_companies(raw, query, n):
+    """Filter raw engine results down to plausible company homepages,
+    deduped by registrable domain."""
+    results, seen = [], set()
+    for r in raw:
+        url = (r.get('href') or r.get('url') or '').strip()
+        if not url:
+            continue
+        parsed = urlparse(url)
+        domain = parsed.netloc.lower()
+        domain = domain.split(':')[0]  # strip :port — 'awwwards.com:8080'
+        domain = domain[4:] if domain.startswith('www.') else domain
+        if not domain or any(domain == b or domain.endswith('.' + b) for b in BLOCKED_DOMAINS):
+            continue
+        if domain == 'google' or domain.endswith('.google'):  # Google's own .google TLD
+            continue
+        if domain.endswith(('.gov', '.gov.uk', '.mil', '.edu', '.ac.uk')):  # institutions
+            continue
+        # deep subdomains of a .com/.net/.org parent (x.y.z.com) are
+        # directory/stats pages, never a company homepage
+        if (domain.count('.') >= 3
+                and domain.split('.')[-1] in ('com', 'net', 'org')):
+            continue
+        path = parsed.path or '/'
+        # deep links are job listings / articles, not company homepages
+        if len(path) > 40 or path.count('/') > 2 or '?' in url:
+            continue
+        reg = _registrable(domain)
+        if reg in seen:  # shop.acme.com + acme.com = one company
+            continue
+        title = (r.get('title') or '').strip()
+        # 'Company Name | Services…' / 'Company Name — Home' → keep the brand part
+        name = re.split(r'\s*[|–—·-]\s*', title)[0].strip()
+        if _generic_serp_title(name, query):
+            continue  # SEO landing page echoing the query — not a company
+        if not _plausible_company_name(name, domain):
+            name = name_from_domain(domain)
+        seen.add(reg)
+        results.append({'name': name, 'website': domain, 'snippet': (r.get('body') or '')[:200]})
+        if len(results) >= n:
+            break
     return results
+
+
+def search_companies(query, n=8, with_source=False):
+    """Free web search → [{name, website, snippet, source}] for company homepages.
+
+    Engines rotate with health tracking (core.search_backends): a rate-limited
+    or empty engine is parked with an exponential cooldown and the query falls
+    through to the next one (DuckDuckGo, Brave, Mojeek, Yahoo, Bing, …).  An
+    engine whose page holds no usable company homepage also counts as a miss.
+    with_source=True returns (results, backend)."""
+    from .search_backends import text_search
+
+    raw, backend = text_search(query, max_results=max(10, n * 3),
+                               accept=lambda rows: bool(_serp_companies(rows, query, 1)))
+    results = _serp_companies(raw, query, n)
+    for r in results:
+        r['source'] = backend
+    return (results, backend) if with_source else results
 
 
 def scrape_company(url):

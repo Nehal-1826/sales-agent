@@ -25,3 +25,4 @@ htmlcov/
 
 # graphify output (rebuild: graphify update .)
 graphify-out/
+dist-ssr

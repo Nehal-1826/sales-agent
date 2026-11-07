@@ -57,17 +57,17 @@ const STEPS = [
   {
     Icon: IconSearch,
     title: 'Find the Lead',
-    text: 'The Search agent sweeps the web around the clock and surfaces real companies that match your ideal customer profile — worldwide, with a focus on India.',
+    text: 'Pick an industry and a city. The Search agent finds real businesses that match — India metros first, any city worldwide — and skips directories and listing sites.',
   },
   {
     Icon: IconScan,
     title: 'Spot the Gap',
-    text: 'The Profile agent reads each prospect’s own website with AI — auditing speed, SEO, mobile and content — and keeps only genuine, relevant businesses.',
+    text: 'The Profile agent reads each prospect’s own website with AI — auditing speed, SEO, mobile and content — scores the gap 0–100, and keeps only genuine, relevant businesses.',
   },
   {
     Icon: IconPhone,
     title: 'Arm the Contact',
-    text: 'Emails and phone numbers are pulled from the site, then verified across Scalelist, Apollo and Google Maps, so every lead is actually reachable.',
+    text: 'Emails and phone numbers come from the business’s own site and Google Maps, with optional Apollo or Scalelist lookups. No contact found means no email — we never guess an address.',
   },
   {
     Icon: IconPen,
@@ -77,7 +77,7 @@ const STEPS = [
   {
     Icon: IconTrophy,
     title: 'Win the Deal',
-    text: 'You approve and send in one click; the Responder tracks replies and follows up on its own — so no conversation ever goes cold.',
+    text: 'You read each draft and approve it in one click. It sends from your own mailbox with an unsubscribe link, polite follow-ups go in the same thread until they reply (each one waits for your approval unless you say otherwise), replies land in your inbox, and a report arrives every evening at 8 PM IST.',
   },
 ];
 

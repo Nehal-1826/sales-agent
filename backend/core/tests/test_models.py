@@ -91,7 +91,7 @@ class EmailDraftModelTests(TenantTestCase):
 
     def test_draft_status_choices(self):
         values = {c[0] for c in EmailDraft.Statuses.choices}
-        self.assertEqual(values, {'draft', 'approved', 'sent', 'rejected', 'failed'})
+        self.assertEqual(values, {'draft', 'approved', 'queued', 'sent', 'rejected', 'failed'})
 
     def test_draft_str(self):
         draft = EmailDraft.objects.create(company='Co', status='draft')
@@ -113,7 +113,7 @@ class PotentialModelTests(TenantTestCase):
 
     def test_potential_stage_choices(self):
         values = {c[0] for c in Potential.Stages.choices}
-        self.assertEqual(values, {'discovery', 'qualified', 'proposal', 'negotiation'})
+        self.assertEqual(values, {'discovery', 'qualified', 'proposal', 'negotiation', 'won', 'lost'})
 
 
 class ReplyModelTests(TenantTestCase):

@@ -199,9 +199,14 @@ class CrossTenantObjectTests(IsolationBase):
             self.assertEqual(r.status_code, 404, action)
 
     def test_bulk_approve_mixed_ids_only_touches_alpha(self):
-        with mock.patch('core.views.send_draft') as send:
+        from core.outbox import drain_outbox
+        with mock.patch('core.outbox.send_draft') as send:
             r = self.ca.post('/api/drafts/bulk_approve/',
                              {'ids': [self.A['draft'].id, self.B['draft'].id]}, format='json')
+            with workspace_context(self.wa):
+                drain_outbox()
+        self.B['draft'].refresh_from_db()
+        self.assertEqual(self.B['draft'].status, EmailDraft.Statuses.DRAFT)
         self.assertEqual(r.status_code, 200)
         by_id = {x['id']: x for x in r.json()['results']}
         self.assertEqual(by_id[self.B['draft'].id], {'id': self.B['draft'].id, 'ok': False,

@@ -11,17 +11,20 @@ export type AgentKey = 'search' | 'profile' | 'copywright' | 'responder';
 export type Id = string | number;
 
 /** Top-level pages — Home · Approvals · Leads · Activity · Assistant · Settings. */
-export type PageKey = 'home' | 'approvals' | 'leads' | 'activity' | 'assistant' | 'settings';
+export type PageKey = 'home' | 'approvals' | 'replies' | 'tasks' | 'leads' | 'activity' | 'assistant' | 'settings';
 
 /** Tabs inside the Leads page. */
 export type LeadsTab = 'all' | 'board' | 'reports';
 
 /** Sections of the Settings page (left-hand section list). */
 export type SettingsSection =
+  | 'followups'
+  | 'whatsapp'
   | 'business'
   | 'targeting'
   | 'email'
   | 'templates'
+  | 'mailboxes'
   | 'schedule'
   | 'account'
   | 'advanced';
@@ -74,11 +77,92 @@ export interface EmailDraft {
   subject: string;
   body: string;
   findings: Finding[];
-  status: 'Draft' | 'Approved' | 'Sent' | 'Rejected' | 'Failed';
+  status: 'Draft' | 'Approved' | 'Queued' | 'Sent' | 'Rejected' | 'Failed';
   sentVia: string; // 'smtp' | 'console' | ''
   error: string;
   lastActivity: string;
   sentAt?: string | null;
+  /** Queued: when the outbox plans to send it (ISO). */
+  scheduledFor?: string | null;
+  /** Address of the mailbox it goes out from ('' = none yet / console). */
+  mailbox?: string;
+  /** 'cold' first email, 'followup' sequence step, 'answer' reply to a prospect. */
+  kind?: 'cold' | 'followup' | 'answer';
+  /** Follow-up step number (0 = the cold email). */
+  sequenceStep?: number;
+}
+
+/** One DNS check line (SPF / DKIM / DMARC / MX) with a plain-language fix. */
+export interface DnsCheckItem {
+  ok: boolean;
+  hint: string;
+  record?: string;
+  policy?: string;
+  selectors?: string[];
+  hosts?: string[];
+}
+
+export interface MailboxDns {
+  domain?: string;
+  error?: string;
+  spf?: DnsCheckItem;
+  dkim?: DnsCheckItem;
+  dmarc?: DnsCheckItem;
+  mx?: DnsCheckItem;
+}
+
+/** Sending mailbox — GET/POST /api/mailboxes/ (password masked on read). */
+export interface Mailbox {
+  id: number;
+  label: string;
+  fromEmail: string;
+  fromName: string;
+  smtpHost: string;
+  smtpPort: number;
+  smtpUser: string;
+  smtpPassword: string;
+  imapHost: string;
+  imapPort: number | null;
+  /** Separate login for reading replies (blank = same as sending). */
+  imapUser?: string;
+  imapPassword?: string;
+  /** Last time replies were read from this mailbox, and any problem. */
+  imapCheckedAt?: string | null;
+  imapError?: string;
+  dailyCap: number;
+  rampStart: string | null;
+  isActive: boolean;
+  configured: boolean;
+  paused: boolean;
+  pausedUntil: string | null;
+  pausedReason: string;
+  effectiveCap: number;
+  sentToday: number;
+  queued: number;
+  dns: MailboxDns;
+  dnsCheckedAt: string | null;
+  warmupStatus: string;
+  healthScore: number | null;
+  warmpulseSyncedAt: string | null;
+  stillWarming: boolean;
+}
+
+export type MailboxInput = Partial<Pick<Mailbox,
+  'label' | 'fromEmail' | 'fromName' | 'smtpHost' | 'smtpPort' | 'smtpUser' | 'smtpPassword' |
+  'imapHost' | 'imapPort' | 'dailyCap' | 'rampStart' | 'isActive'>>;
+
+/** Outbox sending window (Asia/Kolkata hours). */
+export interface OutboxConfig {
+  windowStart: number;
+  windowEnd: number;
+  weekdaysOnly: boolean;
+}
+
+/** WarmPulse warmup-service link (key masked on read). */
+export interface WarmPulseConfig {
+  apiUrl: string;
+  apiKey: string;
+  syncedAt?: string | null;
 }
 
 /** SETTINGS — user cold-email template (written manually or uploaded).
@@ -102,7 +186,27 @@ export interface Potential {
   owner: string; // which agent is driving it
 }
 
-/** CRM — REPLY: responses handled by the Responder (Chatbot). */
+export type ReplyClassification =
+  | 'interested'
+  | 'not_now'
+  | 'not_interested'
+  | 'unsubscribe'
+  | 'out_of_office'
+  | 'question'
+  | 'other'
+  | '';
+
+/** The approved answer to a reply, as it moves through the outbox. */
+export interface ReplyAnswer {
+  id: Id;
+  status: EmailDraft['status'];
+  scheduledFor: string | null;
+  sentAt: string | null;
+  sentVia: string;
+  error: string;
+}
+
+/** A prospect's answer to our email, read from the mailbox (core.inbox). */
 export interface Reply {
   id: Id;
   company: string;
@@ -111,6 +215,23 @@ export interface Reply {
   status: 'Replied' | 'Awaiting' | 'Meeting booked';
   summary: string;
   lastActivity: string;
+  fromEmail: string;
+  subject: string;
+  /** Their new text, quoted history removed. */
+  bodyText: string;
+  receivedAt: string | null;
+  classification: ReplyClassification;
+  /** Plain-language label, e.g. "Interested", "Asked to stop". */
+  classificationLabel: string;
+  confidence: number | null;
+  /** Answer the Responder suggests — sent only after you approve it. */
+  suggestedReply: string;
+  handled: boolean;
+  needsAttention: boolean;
+  draftId: Id | null;
+  leadId: Id | null;
+  originalSubject: string;
+  answer: ReplyAnswer | null;
 }
 
 /** AGENTS page — per-agent configuration (API / SYSTEM PROMPTS / NEGATIVE / MODEL).
@@ -175,6 +296,96 @@ export interface SettingsState {
   runs: FrequentRuns;
   report: ReportConfig;
   targeting: TargetingState;
+  outbox: OutboxConfig;
+  warmpulse: WarmPulseConfig;
+  followups: FollowupsConfig;
+  whatsapp: WhatsAppConfig;
+}
+
+/** Settings → Follow-ups (core.sequences). */
+export interface FollowupsConfig {
+  enabled: boolean;
+  /** Email follow-ups only — WhatsApp always needs an approval. */
+  autoApprove: boolean;
+}
+
+/** Settings → WhatsApp (opt-in open-wa sidecar, core.whatsapp). */
+export interface WhatsAppConfig {
+  enabled: boolean;
+  sidecarUrl: string;
+  secret: string; // masked on read — write only when changed
+  dailyCap: number;
+}
+
+export type SequenceChannel = 'email' | 'whatsapp' | 'linkedin_task' | 'call_task';
+
+export interface SequenceStep {
+  id?: number;
+  order: number;
+  channel: SequenceChannel;
+  delayDays: number;
+  businessDays: boolean;
+  subject: string;
+  body: string;
+  personalize: boolean;
+  enabled: boolean;
+}
+
+export interface Sequence {
+  id: number;
+  name: string;
+  isDefault: boolean;
+  active: boolean;
+  steps: SequenceStep[];
+}
+
+export interface Enrollment {
+  id: number;
+  leadId: number;
+  company: string;
+  sequence: string;
+  status: 'active' | 'paused' | 'completed' | 'stopped';
+  currentStep: number;
+  pendingStep: number | null;
+  totalSteps: number;
+  stopReason: string;
+  nextDueAt: string | null;
+  startedAt: string;
+}
+
+export interface OutreachTask {
+  id: number;
+  leadId: number | null;
+  company: string;
+  channel: 'linkedin' | 'call' | 'whatsapp';
+  message: string;
+  url: string;
+  phone: string;
+  dueAt: string | null;
+  status: 'open' | 'done' | 'skipped';
+}
+
+export interface WhatsAppMessage {
+  id: number;
+  leadId: number | null;
+  company: string;
+  toPhone: string;
+  text: string;
+  status: 'draft' | 'queued' | 'sending' | 'sent' | 'rejected' | 'failed';
+  scheduledFor: string | null;
+  sentAt: string | null;
+  error: string;
+  waMeLink: string;
+}
+
+export interface WhatsAppStatus {
+  enabled: boolean;
+  reachable: boolean;
+  connected: boolean;
+  state: string;
+  error: string;
+  sentToday: number;
+  dailyCap: number;
 }
 
 /** Who the ICP engine hunts: buyers of our services, or peer agencies as
@@ -246,7 +457,26 @@ export interface OutreachStatus {
   approved: number;
   sent: number;
   failed: number;
+  /** Approved and waiting in the outbox. */
+  queued?: number;
+  nextSendAt?: string | null;
+  inSendingWindow?: boolean;
+  mailboxes?: OutreachMailbox[];
   smtpConfigured: boolean;
+  /** Prospect replies waiting on you (not handled, not auto-replies). */
+  repliesNeedingAttention?: number;
+  repliesTotal?: number;
+}
+
+export interface OutreachMailbox {
+  id: number;
+  fromEmail: string;
+  label: string;
+  sentToday: number;
+  cap: number;
+  dailyCap: number;
+  paused: boolean;
+  isActive: boolean;
 }
 
 /** One past cycle — GET /api/pipeline/runs/. */

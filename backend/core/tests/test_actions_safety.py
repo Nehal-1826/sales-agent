@@ -30,7 +30,7 @@ class ConfirmFlowTests(TenantTestCase):
         self.assertIn('yes', reply.lower())
         self.assertEqual(EmailDraft.objects.filter(status='draft').count(), 2)
         handle_command('yes', self.user)
-        self.assertEqual(EmailDraft.objects.filter(status='sent').count(), 2)
+        self.assertEqual(EmailDraft.objects.filter(status='queued').count(), 2)
 
     def test_no_cancels(self):
         handle_command('approve all drafts', self.user)
@@ -132,7 +132,7 @@ class PendingHardeningTests(TenantTestCase):
     def test_yes_please_confirms(self):
         handle_command('approve all drafts', self.user)
         handle_command('Yes, please', self.user)
-        self.assertEqual(EmailDraft.objects.filter(status='sent').count(), 1)
+        self.assertEqual(EmailDraft.objects.filter(status='queued').count(), 1)
 
     def test_no_thanks_cancels_and_no_never_means_yes(self):
         from core.actions import _NO, _YES

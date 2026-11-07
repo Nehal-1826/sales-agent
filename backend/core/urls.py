@@ -3,7 +3,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from . import unsubscribe, views
+from . import unsubscribe, views, views_sequences as vs
 
 router = DefaultRouter()
 router.register('leads', views.LeadViewSet, basename='lead')
@@ -49,6 +49,29 @@ urlpatterns = [
     path('drafts/<int:draft_id>/reject/', views.draft_reject, name='draft-reject'),
     path('drafts/<int:draft_id>/send/', views.draft_send, name='draft-send'),
     path('outreach/status/', views.outreach_status, name='outreach-status'),
+    # outbox — sending mailboxes, DNS health, pause/resume, WarmPulse
+    path('outbox/drain/', views.outbox_drain, name='outbox-drain'),
+    # inbox — read replies + bounces from the mailboxes now (core.inbox)
+    path('inbox/poll/', views.inbox_poll, name='inbox-poll'),
+    path('mailboxes/', views.mailboxes, name='mailboxes'),
+    path('mailboxes/<int:mailbox_id>/', views.mailbox_detail, name='mailbox-detail'),
+    path('mailboxes/<int:mailbox_id>/dns_check/', views.mailbox_dns_check, name='mailbox-dns-check'),
+    path('mailboxes/<int:mailbox_id>/resume/', views.mailbox_resume, name='mailbox-resume'),
+    path('warmpulse/sync/', views.warmpulse_sync, name='warmpulse-sync'),
+    # follow-up sequences, assisted tasks, WhatsApp (core.sequences / core.whatsapp)
+    path('sequences/', vs.sequences_list, name='sequences'),
+    path('sequences/<int:seq_id>/', vs.sequence_detail, name='sequence-detail'),
+    path('enrollments/', vs.enrollments_list, name='enrollments'),
+    path('enrollments/<int:enrollment_id>/stop/', vs.enrollment_stop, name='enrollment-stop'),
+    path('tasks/', vs.tasks_list, name='tasks'),
+    path('tasks/<int:task_id>/<str:action>/', vs.task_update, name='task-update'),
+    path('whatsapp/messages/', vs.whatsapp_messages, name='whatsapp-messages'),
+    path('whatsapp/messages/<int:msg_id>/<str:action>/', vs.whatsapp_message_action,
+         name='whatsapp-message-action'),
+    path('whatsapp/status/', vs.whatsapp_status, name='whatsapp-status'),
+    path('whatsapp/qr/', vs.whatsapp_qr, name='whatsapp-qr'),
+    path('whatsapp/test/', vs.whatsapp_test, name='whatsapp-test'),
+    path('whatsapp/opt_out/', vs.whatsapp_opt_out, name='whatsapp-opt-out'),
     # chat
     path('chat/', views.chat, name='chat'),
     # first-login setup wizard state (drives the chat onboarding UI)

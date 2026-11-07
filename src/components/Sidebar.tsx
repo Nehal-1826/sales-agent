@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { IconBot, IconBuilding, IconHome, IconInbox, IconLogout, IconPulse, IconSettings } from './icons';
+import { IconBot, IconBuilding, IconCheck, IconHome, IconInbox, IconMail, IconLogout, IconPulse, IconSettings } from './icons';
 import type { IconProps } from './icons';
 import { AutopilotPill } from './AutopilotPill';
 import { getCurrentUser } from '../lib/api';
@@ -11,6 +11,8 @@ import type { PageKey } from '../lib/types';
 const NAV: { key: PageKey; label: string; icon: (p: IconProps) => JSX.Element }[] = [
   { key: 'home', label: 'Home', icon: IconHome },
   { key: 'approvals', label: 'Approvals', icon: IconInbox },
+  { key: 'replies', label: 'Replies', icon: IconMail },
+  { key: 'tasks', label: 'Tasks', icon: IconCheck },
   { key: 'leads', label: 'Leads', icon: IconBuilding },
   { key: 'activity', label: 'Activity', icon: IconPulse },
   { key: 'assistant', label: 'Assistant', icon: IconBot },
@@ -33,6 +35,7 @@ export function Sidebar({
   const { outreach } = useWorkspaceStatus();
   const [user, setUser] = useState<CurrentUser | null>(null);
   const waiting = outreach?.drafts ?? 0;
+  const unreadReplies = outreach?.repliesNeedingAttention ?? 0;
 
   useEffect(() => {
     getCurrentUser().then(setUser).catch(() => setUser(null));
@@ -70,6 +73,11 @@ export function Sidebar({
             {key === 'approvals' && waiting > 0 && (
               <span className="nav-badge" aria-label={`${waiting} waiting`}>
                 {waiting > 99 ? '99+' : waiting}
+              </span>
+            )}
+            {key === 'replies' && unreadReplies > 0 && (
+              <span className="nav-badge" aria-label={`${unreadReplies} replies need you`}>
+                {unreadReplies > 99 ? '99+' : unreadReplies}
               </span>
             )}
           </button>

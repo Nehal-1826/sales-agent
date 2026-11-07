@@ -1,15 +1,17 @@
 from django import forms
 from django.contrib import admin, messages
 
-from .mailer import NO_RECIPIENT_ERROR, claim_draft_for_send, send_draft, valid_recipient
+from .mailer import NO_RECIPIENT_ERROR, valid_recipient
+from .outbox import enqueue_draft
 from .tenancy import TenantOwned, workspace_context
-from .models import (
+from .models import (Enrollment, OutreachTask, Sequence, WhatsAppMessage,
     AgentConfig,
     AppSettings,
     ChatMessage,
     EmailDraft,
     EmailTemplate,
     Lead,
+    Mailbox,
     PipelineRun,
     Potential,
     Reply,
@@ -94,7 +96,7 @@ class EmailDraftAdmin(TenantAdmin):
     ordering = ('-updated_at',)
     actions = ('approve_and_send', 'reject_drafts')
 
-    @admin.action(description='✅ Approve & send selected drafts')
+    @admin.action(description='✅ Approve & queue selected drafts')
     def approve_and_send(self, request, queryset):
         # same guards as the API: only DRAFT/FAILED, a real recipient, and the
         # atomic claim — so an admin click can never double-send or guess an address
@@ -111,20 +113,15 @@ class EmailDraftAdmin(TenantAdmin):
             # the claim, the sender and AppSettings.load() are all tenant-scoped:
             # run each draft inside its own company's context
             with workspace_context(draft.workspace):
-                claimed = claim_draft_for_send(draft.id)
+                claimed = enqueue_draft(draft.id)  # claim + queue (core.outbox)
                 if claimed is None:  # another request already took it
                     skipped += 1
                     continue
-                send_draft(claimed)  # updates status/sent_via/error itself
-                claimed.refresh_from_db()
-            if claimed.status == EmailDraft.Statuses.SENT:
-                sent += 1
-            else:
-                failed += 1
-        msg = f'{sent} sent, {failed} failed' + (
+            sent += 1
+        msg = f'{sent} queued, {failed} failed' + (
             f', {skipped} skipped (not sendable: already sent, approved or rejected)' if skipped else '')
         level = messages.SUCCESS if failed == 0 else messages.WARNING
-        self.message_user(request, f'Approve & send: {msg}.', level=level)
+        self.message_user(request, f'Approve & queue: {msg}.', level=level)
 
     @admin.action(description='❌ Reject selected drafts')
     def reject_drafts(self, request, queryset):
@@ -160,6 +157,9 @@ class AppSettingsAdmin(TenantAdmin):
                         'Blank → superuser/staff emails. Delivered via SMTP when configured, '
                         'otherwise printed to the server console.'}),
         ('Frequent Runs', {'fields': ('runs_enabled', 'run_frequency')}),
+        ('Outbox sending window (IST)', {'fields': ('send_window_start', 'send_window_end',
+                                                    'send_weekdays_only')}),
+        ('WarmPulse', {'fields': ('warmpulse_api_url', 'warmpulse_api_key', 'warmpulse_synced_at')}),
     )
 
     # One row per workspace (created by create_workspace / AppSettings.load()).
@@ -172,10 +172,18 @@ class AppSettingsAdmin(TenantAdmin):
         return False
 
 
+@admin.register(Mailbox)
+class MailboxAdmin(TenantAdmin):
+    list_display = ('from_email', 'workspace', 'daily_cap', 'ramp_start', 'is_active',
+                    'paused_until', 'warmup_status')
+    list_filter = ('workspace', 'is_active')
+    search_fields = ('from_email', 'label')
+
+
 @admin.register(Suppression)
 class SuppressionAdmin(TenantAdmin):
-    list_display = ('email', 'reason', 'source', 'created_at')
-    search_fields = ('email',)
+    list_display = ('email', 'phone', 'reason', 'source', 'created_at')
+    search_fields = ('email', 'phone')
     list_filter = ('reason',)
 
 
@@ -201,3 +209,26 @@ class EmailTemplateAdmin(TenantAdmin):
 class SearchProfileAdmin(TenantAdmin):
     list_display = ('workspace', 'name', 'icp_mode', 'is_active', 'updated_at')
     list_filter = ('workspace', 'is_active', 'icp_mode')
+
+
+@admin.register(Sequence)
+class SequenceAdmin(TenantAdmin):
+    list_display = ('name', 'is_default', 'active')
+
+
+@admin.register(Enrollment)
+class EnrollmentAdmin(TenantAdmin):
+    list_display = ('lead', 'sequence', 'status', 'current_step', 'next_due_at', 'stop_reason')
+    list_filter = ('status',)
+
+
+@admin.register(OutreachTask)
+class OutreachTaskAdmin(TenantAdmin):
+    list_display = ('lead', 'channel', 'status', 'due_at')
+    list_filter = ('channel', 'status')
+
+
+@admin.register(WhatsAppMessage)
+class WhatsAppMessageAdmin(TenantAdmin):
+    list_display = ('company', 'to_phone', 'status', 'scheduled_for', 'sent_at')
+    list_filter = ('status',)

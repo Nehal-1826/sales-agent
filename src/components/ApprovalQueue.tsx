@@ -5,9 +5,17 @@ import { navigate } from '../lib/router';
 import { useWorkspaceStatus } from '../lib/status';
 import type { EmailDraft, Id } from '../lib/types';
 import { DraftModal } from './DraftModal';
-import { DraftStatusChip, isUnsent, isValidEmail } from './draftUtils';
+import { DraftStatusChip, approveOutcome, isUnsent, isValidEmail, sendTimeLabel } from './draftUtils';
 import { Banner, EmptyState, LoadError, Skeleton, StaleNotice, toast } from './feedback';
 import { IconCheck } from './icons';
+import { Chip } from './ui';
+
+/** "Follow-up 1" / "Answer" label — a cold email shows none. */
+function KindChip({ draft }: { draft: EmailDraft }) {
+  if (draft.kind === 'followup') return <Chip tone="accent">{`Email follow-up ${draft.sequenceStep ?? ''}`.trim()}</Chip>;
+  if (draft.kind === 'answer') return <Chip>Answer to a reply</Chip>;
+  return null;
+}
 
 const PROCESSED_PAGE = 10;
 
@@ -49,9 +57,8 @@ export function ApprovalQueue({ limit }: { limit?: number }) {
     });
     afterChange();
     if (!res.ok) return toast.error(`${d.company}: ${res.error}`);
-    if (res.data.status !== 'Sent') return toast.error(`${d.company}: ${res.data.error || 'could not be sent.'}`);
-    if (res.data.sentVia === 'console') toast.warn(`${d.company}: approved, but not delivered (email isn't connected).`);
-    else toast.success(`Sent to ${d.company}.`);
+    const out = approveOutcome(res.data, !smtpMissing);
+    toast[out.tone](out.text);
   };
 
   // no opening the review window mid-bulk: its Approve would race the bulk run
@@ -73,23 +80,26 @@ export function ApprovalQueue({ limit }: { limit?: number }) {
   const approveSelected = async () => {
     const queue = sendable;
     const skipped = pending.filter((d) => selected.has(d.id)).length - queue.length;
-    let sent = 0;
-    let notDelivered = 0; // approved, but the console backend never mailed it
+    let queued = 0; // approved: the outbox sends them gradually
+    let notDelivered = 0; // approved, but the console backend never mails it
+    let last: string | null | undefined = null;
     const failed: string[] = [];
     setBulk({ done: 0, total: queue.length });
     for (const [i, d] of queue.entries()) {
       const res = d.status === 'Failed' ? await sendDraft(d.id) : await approveDraft(d.id);
-      if (res.ok && res.data.status === 'Sent') {
-        if (res.data.sentVia === 'console') notDelivered += 1;
-        else sent += 1;
-      }
-      else failed.push(d.company);
+      if (res.ok && (res.data.status === 'Queued' || res.data.status === 'Sent')) {
+        if (smtpMissing || res.data.sentVia === 'console') notDelivered += 1;
+        else {
+          queued += 1;
+          if (res.data.scheduledFor && (!last || res.data.scheduledFor > last)) last = res.data.scheduledFor;
+        }
+      } else failed.push(d.company);
       setBulk({ done: i + 1, total: queue.length });
     }
     setBulk(null);
     setSelected(new Set());
     afterChange();
-    const parts = [`${sent} sent`];
+    const parts = [`${queued} queued${queued && last ? ` — the last one sends at ${sendTimeLabel(last)}` : ''}`];
     if (notDelivered) parts.push(`${notDelivered} approved but not delivered (email isn't connected)`);
     if (failed.length) parts.push(`${failed.length} failed (${failed.slice(0, 3).join(', ')})`);
     if (skipped > 0) parts.push(`${skipped} skipped: no email address`);
@@ -122,6 +132,12 @@ export function ApprovalQueue({ limit }: { limit?: number }) {
           }
         >
           Approved emails won't actually be delivered until you connect a mailbox.
+        </Banner>
+      )}
+      {!smtpMissing && !preview && (status.outreach?.queued ?? 0) > 0 && (
+        <Banner tone="info" title={`${status.outreach?.queued} approved email(s) waiting to go out`}>
+          They leave a few minutes apart during sending hours, within each mailbox's daily limit
+          {status.outreach?.nextSendAt ? ` — next one at ${sendTimeLabel(status.outreach.nextSendAt)}` : ''}.
         </Banner>
       )}
 
@@ -171,6 +187,7 @@ export function ApprovalQueue({ limit }: { limit?: number }) {
                   <button className="queue-card-main" disabled={!!bulk} onClick={() => openDraft(d)}>
                     <span className="queue-card-top">
                       <strong>{d.company}</strong>
+                      <KindChip draft={d} />
                       <DraftStatusChip draft={d} />
                     </span>
                     <span className={`queue-to${hasRecipient ? '' : ' missing'}`}>
@@ -183,7 +200,7 @@ export function ApprovalQueue({ limit }: { limit?: number }) {
                   <div className="queue-card-actions">
                     {hasRecipient ? (
                       <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void approveOne(d)}>
-                        {busyId === d.id ? 'Sending…' : d.status === 'Failed' ? 'Try again' : 'Approve & send'}
+                        {busyId === d.id ? 'Queuing…' : d.status === 'Failed' ? 'Try again' : 'Approve & send'}
                       </button>
                     ) : (
                       <button className="btn btn-sm" disabled={busy} onClick={() => openDraft(d)}>
@@ -257,6 +274,7 @@ function ProcessedList({
           <li key={d.id}>
             <button className="queue-row" onClick={() => onOpen(d)}>
               <DraftStatusChip draft={d} />
+              <KindChip draft={d} />
               <strong>{d.company}</strong>
               <span className="queue-row-subject">{d.subject}</span>
               <small className="dim">{d.lastActivity}</small>

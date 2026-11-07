@@ -40,6 +40,8 @@ class WorkerLoopTests(TenantTestCase):
         # patched so the loop can be asserted to call it once per tick
         with mock.patch(f'{MODULE}.start_report_scheduler'), \
                 mock.patch(f'{MODULE}._heartbeat_forever'), \
+                mock.patch(f'{MODULE}._drain_forever'), \
+                mock.patch(f'{MODULE}._inbox_forever'), \
                 mock.patch(f'{MODULE}.close_old_connections') as close_old, \
                 mock.patch(f'{MODULE}.run_pipeline', run_pipeline), \
                 mock.patch(f'{MODULE}.time.sleep', side_effect=stop_after(ticks)):

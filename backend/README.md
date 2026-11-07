@@ -34,9 +34,31 @@ COPYWRIGHT → RESPONDER (CHATBOT) → LOOP`) is **real** (`core/pipeline.py`):
   (`core/ai.py`, OpenAI-compatible: OpenAI/Gemini/GLM/DeepSeek/Groq/Ollama),
   strong template otherwise. Only leads with a real scraped email get a
   draft — nothing is written to a missing address
-- **OUTREACH** — drafts wait in the CRM OUTREACH column; **Approve & send**
-  delivers immediately via the SMTP account from Settings (`core/mailer.py`),
-  or prints to the server console when SMTP is not configured
+- **OUTREACH** — drafts wait in the CRM OUTREACH column; **Approve** claims the
+  draft and queues it in the outbox (`core/outbox.py`): it leaves 45–180 s after
+  the previous one from the mailbox with most room today, inside the sending
+  window (default 09–18 IST, weekdays), within each `Mailbox` daily cap (warmup
+  ramp 5 → cap over 14 days). `run_worker` drains every ~30 s; or
+  `manage.py drain_outbox`. Without any mailbox/SMTP it prints to the console
+  (not delivered)
+- **REPLIES** (`core/inbox.py`) — `run_worker` reads each active mailbox over
+  IMAP every ~3 min (or `manage.py poll_inbox`): read-only (`BODY.PEEK`, never
+  deletes/moves), UID high-water mark per mailbox. Replies are matched to our
+  sent draft (In-Reply-To/References, else sender address) and classified (LLM
+  JSON or keyword heuristic, keyless). Hard bounces suppress the address and
+  can auto-pause the mailbox; "stop/unsubscribe" replies suppress and reject
+  queued mail; interested/question replies get a suggested answer that a human
+  approves (`approve_suggestion` → threaded draft → outbox). Never auto-sent.
+- **FOLLOW-UPS** (`core/sequences.py`) — a SENT cold email enrolls its lead in
+  the workspace's default `Sequence` (Settings → Follow-ups). run_worker's
+  outbox thread ticks it: due steps become threaded `EmailDraft(status=draft)`
+  (or queued when "send without asking" is on), LinkedIn / call / wa.me
+  `OutreachTask`s, or `WhatsAppMessage` drafts. A reply (OOO only delays),
+  bounce, unsubscribe, won/lost, do-not-contact or manual stop ends it and
+  rejects every unsent item; `send_draft` re-checks right before sending.
+- **WHATSAPP** (`core/whatsapp.py`, opt-in) — sends approved messages through
+  the open-wa sidecar (`../whatsapp-sidecar/`) inside the sending window under
+  `whatsapp_daily_cap`. Every message needs a human approval, always.
 
 Automatic cadence: `python manage.py pipeline_loop` honors Settings →
 FREQUENT RUNS (toggle + frequency) without restarts.
@@ -88,10 +110,27 @@ The frontend auto-logs in with this account when it detects the backend.
 | CRUD | `/api/leads/` `/api/potential/` `/api/replies/` | CRM — LEADS / POTENTIAL / REPLY |
 | GET | `/api/drafts/` | OUTREACH — cold-email drafts with findings |
 | PUT | `/api/drafts/{id}/` | edit subject/body/recipient while still a draft |
-| POST | `/api/drafts/{id}/approve/` | approve → send immediately (SMTP or console) |
+| POST | `/api/drafts/bulk_approve/` | approve many → each queued (`{ids}` → `{results, queued, failed}`) |
+| POST | `/api/drafts/{id}/approve/` | approve → claim + queue (status `Queued`, `scheduledFor`, `mailbox`) |
 | POST | `/api/drafts/{id}/reject/` | discard a draft |
-| POST | `/api/drafts/{id}/send/` | retry an approved/failed draft |
-| GET | `/api/outreach/status/` | draft/sent/failed counts + SMTP configured? |
+| POST | `/api/drafts/{id}/send/` | retry a failed draft (requeued) |
+| GET | `/api/outreach/status/` | draft/queued/sent/failed counts, next send, per-mailbox sent today / cap |
+| GET/POST | `/api/mailboxes/` | sending mailboxes (admin writes; password masked) |
+| GET/PATCH/DELETE | `/api/mailboxes/{id}/` | one mailbox |
+| POST | `/api/mailboxes/{id}/dns_check/` | re-run SPF / DKIM / DMARC / MX check |
+| POST | `/api/mailboxes/{id}/resume/` | lift an auto-pause |
+| POST | `/api/outbox/drain/` | send due queued email now (best effort) |
+| POST | `/api/inbox/poll/` | read replies + bounces from the mailboxes now (admin) |
+| GET/PUT | `/api/sequences/`, `/api/sequences/<id>/` | follow-up sequences + steps (admin writes) |
+| GET | `/api/enrollments/?lead=<id>` | follow-up progress; POST `…/<id>/stop/` stops it (admin) |
+| GET | `/api/tasks/` | open LinkedIn / call / WhatsApp-link tasks; POST `…/<id>/done/` or `/skip/` |
+| GET | `/api/whatsapp/messages/?status=draft` | WhatsApp drafts; POST `…/<id>/approve/` or `/reject/` (admin) |
+| GET | `/api/whatsapp/status/`, `/api/whatsapp/qr/` | sidecar state + login QR (admin) |
+| POST | `/api/whatsapp/test/`, `/api/whatsapp/opt_out/` | test send / never WhatsApp a number (admin) |
+| GET | `/api/replies/?attention=1` | prospect replies (classification, suggested answer) |
+| POST | `/api/replies/{id}/approve_suggestion/` | `{text?}` → threaded answer queued in the outbox |
+| POST | `/api/replies/{id}/mark_handled/` | `{handled?: bool}` |
+| POST | `/api/warmpulse/sync/` | pull warmup status from WarmPulse now |
 | GET | `/api/agents/` | pipeline cards with live stats |
 | GET/PUT | `/api/agents/{search\|profile\|copywright\|responder}/config/` | DB · API · SYSTEM PROMPTS · NEGATIVE · MODEL |
 | GET/PUT | `/api/settings/` | COMPANY PROFILE · AI KEY (masked) · FREQUENT RUNS |

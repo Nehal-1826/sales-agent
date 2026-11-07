@@ -58,13 +58,15 @@ class AdminTenancyTests(TestCase):
         from core.admin import EmailDraftAdmin
         seen = []
 
-        def fake_send(draft):
+        from core.outbox import enqueue_draft
+
+        def spy_enqueue(draft_id, *args, **kwargs):
             from core.tenancy import current_workspace
             seen.append(current_workspace().pk)
-            EmailDraft.all_tenants.filter(pk=draft.pk).update(status=EmailDraft.Statuses.SENT)
+            return enqueue_draft(draft_id, *args, **kwargs)
 
         ma = EmailDraftAdmin(EmailDraft, admin.site)
-        with mock.patch('core.admin.send_draft', fake_send), \
+        with mock.patch('core.admin.enqueue_draft', spy_enqueue), \
                 mock.patch.object(ma, 'message_user'):
             ma.approve_and_send(None, EmailDraft.all_tenants.filter(pk=self.draft.pk))
         self.assertEqual(seen, [self.b.pk])

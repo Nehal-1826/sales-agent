@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { approveDraft, rejectDraft, sendDraft, updateDraft } from '../lib/api';
+import { isDemo } from '../lib/api';
+import { useWorkspaceStatus } from '../lib/status';
 import type { EmailDraft } from '../lib/types';
 import { toast } from './feedback';
 import { ConfirmButton, Modal } from './overlay';
-import { DraftStatusChip, isValidEmail } from './draftUtils';
+import { DraftStatusChip, approveOutcome, isValidEmail } from './draftUtils';
 
 /**
  * Full email view. Unsent drafts (Draft / Failed) are editable in place —
@@ -19,6 +21,9 @@ export function DraftModal({
   onChanged: () => void;
 }) {
   const editable = draft.status === 'Draft' || draft.status === 'Failed';
+  const status = useWorkspaceStatus();
+  // console mode: approved email is only logged on the server, never delivered
+  const emailConnected = isDemo() || status.outreach === null || status.outreach.smtpConfigured;
   const [to, setTo] = useState(draft.toEmail || '');
   const [subject, setSubject] = useState(draft.subject);
   const [body, setBody] = useState(draft.body);
@@ -65,13 +70,9 @@ export function DraftModal({
       const res = draft.status === 'Failed' ? await sendDraft(draft.id) : await approveDraft(draft.id);
       onChanged();
       if (!res.ok) return toast.error(res.error);
-      if (res.data.status === 'Sent') {
-        if (res.data.sentVia === 'console') toast.warn(`Approved, but not delivered: email isn't connected yet.`);
-        else toast.success(`Sent to ${res.data.company}.`);
-        onClose();
-      } else {
-        toast.error(res.data.error || 'The email could not be sent.');
-      }
+      const out = approveOutcome(res.data, emailConnected);
+      toast[out.tone](out.text);
+      if (out.tone !== 'error') onClose();
     });
 
   const onReject = () =>
@@ -113,6 +114,16 @@ export function DraftModal({
               {busy ? 'Working…' : draft.status === 'Failed' ? 'Try sending again' : 'Approve & send'}
             </button>
           </>
+        ) : draft.status === 'Queued' ? (
+          <>
+            <ConfirmButton className="btn" confirmLabel="Stop this email?" onConfirm={onReject} disabled={busy}>
+              Don't send
+            </ConfirmButton>
+            <span className="spacer" />
+            <button className="btn" onClick={onClose} data-autofocus>
+              Close
+            </button>
+          </>
         ) : (
           <button className="btn" onClick={onClose} data-autofocus>
             Close
@@ -121,6 +132,13 @@ export function DraftModal({
       }
     >
       {draft.error && <div className="modal-error">{draft.error}</div>}
+      {draft.status === 'Queued' && (
+        <p className="field-hint">
+          {emailConnected
+            ? `Approved and waiting its turn${draft.mailbox ? ` to go out from ${draft.mailbox}` : ''}. Emails leave a few minutes apart during sending hours so your mailbox stays healthy.`
+            : "Approved, but email isn't connected — it will only be logged, not delivered."}
+        </p>
+      )}
       {editable ? (
         <div className="draft-form">
           <label className="field">

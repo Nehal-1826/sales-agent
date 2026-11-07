@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { draftLeadEmail } from '../lib/api';
+import { draftLeadEmail, getEnrollments, optOutWhatsApp, stopEnrollment } from '../lib/api';
+import { useAsync } from '../lib/hooks';
 import { navigate } from '../lib/router';
-import type { EmailDraft, Lead } from '../lib/types';
+import type { EmailDraft, Enrollment, Lead } from '../lib/types';
 import { DraftStatusChip } from './draftUtils';
 import { toast } from './feedback';
 import { Drawer } from './overlay';
@@ -141,7 +142,67 @@ export function LeadDrawer({
         )}
       </section>
 
+      <FollowupProgress leadId={Number(lead.id)} />
+      {lead.contactPhone && (
+        <section className="drawer-section">
+          <button
+            className="btn btn-ghost"
+            onClick={async () => {
+              const res = await optOutWhatsApp({ leadId: Number(lead.id) });
+              if (!res.ok) return toast.error(res.error);
+              toast.success(`${res.data.phone} will never get a WhatsApp message from us.`);
+            }}
+          >
+            Never WhatsApp this number
+          </button>
+        </section>
+      )}
+
       <p className="drawer-footnote dim">Found {lead.discovered} · {lead.source}</p>
     </Drawer>
+  );
+}
+
+const ENROLLMENT_LABEL: Record<Enrollment['status'], string> = {
+  active: 'Following up',
+  paused: 'Paused',
+  completed: 'All follow-ups done',
+  stopped: 'Stopped',
+};
+
+/** Follow-up progress for one company + a Stop button. */
+function FollowupProgress({ leadId }: { leadId: number }) {
+  const [version, setVersion] = useState(0);
+  const loaded = useAsync(() => getEnrollments(leadId), [leadId, version]);
+  const enr = loaded.data?.[0];
+  if (!enr) return null;
+  const stop = async () => {
+    const res = await stopEnrollment(enr.id);
+    if (!res.ok) return toast.error(res.error);
+    toast.success('Follow-ups stopped for this company.');
+    setVersion((v) => v + 1);
+  };
+  const live = enr.status === 'active' || enr.status === 'paused';
+  return (
+    <section className="drawer-section">
+      <h3 className="section-title">Follow-ups</h3>
+      <div className="seq-progress">
+        <Chip tone={live ? 'accent' : enr.status === 'completed' ? 'success' : 'neutral'}>
+          {ENROLLMENT_LABEL[enr.status]}
+        </Chip>
+        <span>
+          Step {enr.currentStep} of {enr.totalSteps}
+        </span>
+        {live && enr.nextDueAt && (
+          <small className="dim">next on {new Date(enr.nextDueAt).toLocaleDateString()}</small>
+        )}
+      </div>
+      {enr.stopReason && <small className="dim">{enr.stopReason}</small>}
+      {live && (
+        <button className="btn btn-ghost" onClick={() => void stop()}>
+          Stop follow-ups
+        </button>
+      )}
+    </section>
   );
 }

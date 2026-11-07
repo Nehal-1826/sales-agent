@@ -69,7 +69,8 @@ def unsubscribe_view(request, token):
         # pending drafts to this address must never go out
         EmailDraft.objects.filter(
             to_email__iexact=email,
-            status__in=[EmailDraft.Statuses.DRAFT, EmailDraft.Statuses.FAILED],
+            status__in=[EmailDraft.Statuses.DRAFT, EmailDraft.Statuses.FAILED,
+                        EmailDraft.Statuses.QUEUED],
         ).update(status=EmailDraft.Statuses.REJECTED, error='Recipient unsubscribed.')
     log.info('Unsubscribed %s from workspace %s', email, ws.pk)
     return _page('You are unsubscribed',

@@ -18,7 +18,8 @@ from datetime import timedelta
 from django.utils import timezone
 
 from .ai import llm_available, llm_complete
-from .mailer import claim_draft_for_send, send_draft, valid_recipient
+from .mailer import valid_recipient
+from .outbox import enqueue_draft, kick_drain, queued_phrase
 from .models import AppSettings, EmailDraft, Lead, SearchProfile
 from .permissions import is_privileged
 from .reports import send_daily_report
@@ -280,16 +281,13 @@ def execute(spec, username='chat'):
         if not valid_recipient(draft.to_email):
             return (f'The draft for {company} has no valid recipient email — add one in '
                     'Approvals, then approve it.')
-        draft = claim_draft_for_send(draft.id)
+        draft = enqueue_draft(draft.id)  # claim + queue — the outbox paces sending
         if draft is None:
             return f'The email to {company} is already being sent.'
-        draft = send_draft(draft)
+        kick_drain()
         remaining = EmailDraft.objects.filter(status=EmailDraft.Statuses.DRAFT, company=company).count()
         extra = f' {remaining} more draft(s) waiting for this company.' if remaining else ''
-        if draft.status == EmailDraft.Statuses.SENT:
-            via = 'console (SMTP not configured)' if draft.sent_via == EmailDraft.Via.CONSOLE else 'via SMTP'
-            return f'Approved and sent the email to {company} ({draft.to_email}) {via}.{extra}'
-        return f'Tried to send the email to {company} but it failed: {draft.error}'
+        return f'Approved the email to {company} ({draft.to_email}) — {queued_phrase(draft)}.{extra}'
 
     if action == 'approve_all':
         drafts = EmailDraft.objects.filter(status=EmailDraft.Statuses.DRAFT)
@@ -304,15 +302,14 @@ def execute(spec, username='chat'):
             if not valid_recipient(draft.to_email):
                 skipped.append(draft.company)  # never guess an address
                 continue
-            claimed = claim_draft_for_send(draft.id)
+            claimed = enqueue_draft(draft.id)
             if claimed is None:
                 continue  # another request already took it
-            draft = send_draft(claimed)
-            if draft.status == EmailDraft.Statuses.SENT:
-                sent += 1
-            else:
-                failed.append(f'{draft.company} ({(draft.error or "")[:60]})')
-        summary = f'Approved and sent {sent} of {len(drafts)} draft(s)'
+            sent += 1
+        if sent:
+            kick_drain()
+        summary = (f'Approved {sent} of {len(drafts)} draft(s) — they are queued and go out '
+                   'gradually during sending hours to protect your mailbox')
         if skipped:
             summary += (f'. Skipped {len(skipped)} with no recipient email: '
                         + ', '.join(skipped[:3]) + (' …' if len(skipped) > 3 else ''))
@@ -345,7 +342,8 @@ def execute(spec, username='chat'):
         for lead in Lead.objects.filter(company=matches[0]):
             # unsent mail must not go out, and the domain must not be rediscovered
             lead.drafts.filter(status__in=[EmailDraft.Statuses.DRAFT,
-                                           EmailDraft.Statuses.FAILED]).update(status=EmailDraft.Statuses.REJECTED)
+                                           EmailDraft.Statuses.FAILED,
+                                           EmailDraft.Statuses.QUEUED]).update(status=EmailDraft.Statuses.REJECTED)
             domain = _norm_domain(lead.website)
             if domain:
                 settings = AppSettings.load()
@@ -404,7 +402,8 @@ def execute(spec, username='chat'):
             return f'No lead matching "{spec.get("company")}". Leads in the CRM: {recent}.'
         lead = Lead.objects.filter(company=company).first()
         active = lead.drafts.filter(status__in=[EmailDraft.Statuses.DRAFT,
-                                                EmailDraft.Statuses.APPROVED])
+                                                EmailDraft.Statuses.APPROVED,
+                                                EmailDraft.Statuses.QUEUED])
         if active.exists():
             return (f'{lead.company} already has an email waiting for approval — find it in '
                     f'Approvals, or say "approve the draft for {lead.company}".')

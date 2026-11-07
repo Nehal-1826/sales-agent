@@ -164,3 +164,10 @@ if not DEBUG:
         SECURE_SSL_REDIRECT = True
         SECURE_HSTS_SECONDS = 31536000
         SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+
+# Outbox (core.outbox): after an API approve, drain due email in a background
+# thread instead of waiting for run_worker's next tick.  Off under `manage.py
+# test` (threads can't see a test transaction) and with OUTBOX_API_DRAIN=0.
+import sys as _sys  # noqa: E402
+OUTBOX_API_DRAIN = (os.environ.get('OUTBOX_API_DRAIN', '1') == '1'
+                    and not (len(_sys.argv) > 1 and _sys.argv[1] == 'test'))

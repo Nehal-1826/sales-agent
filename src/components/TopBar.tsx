@@ -5,6 +5,8 @@ import type { PageKey } from '../lib/types';
 const TITLES: Record<PageKey, string> = {
   home: 'Home',
   approvals: 'Approvals',
+  replies: 'Replies',
+  tasks: 'Tasks',
   leads: 'Leads',
   activity: 'Activity',
   assistant: 'Assistant',

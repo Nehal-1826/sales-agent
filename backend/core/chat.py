@@ -95,7 +95,6 @@ def _crm_snapshot():
     """Build a compact CRM context string for the LLM."""
     leads = Lead.objects.order_by('-created_at')[:5]
     potentials = Potential.objects.order_by('-created_at')[:5]
-    replies = Reply.objects.order_by('-updated_at')[:5]
     drafts_pending_qs = EmailDraft.objects.filter(status=EmailDraft.Statuses.DRAFT)
     drafts_pending = drafts_pending_qs.count()
     drafts_sent = EmailDraft.objects.filter(status=EmailDraft.Statuses.SENT).count()
@@ -103,7 +102,7 @@ def _crm_snapshot():
 
     lead_lines = [f'  - {l.company} ({l.industry}, score {l.score}, {"website" if l.has_website else "NO website"})' for l in leads]
     pot_lines = [f'  - {p.company}: {p.opportunity} ({p.value}, {p.get_stage_display()})' for p in potentials]
-    reply_lines = [f'  - {r.company}: {r.get_status_display()} — {r.summary[:80]}' for r in replies]
+    from .inbox import replies_digest
 
     return (
         f'CRM SNAPSHOT:\n'
@@ -111,7 +110,8 @@ def _crm_snapshot():
         f'{Reply.objects.count()} replies, {drafts_pending} draft(s) pending, {drafts_sent} sent.\n'
         f'Recent leads:\n' + '\n'.join(lead_lines or ['  (none)']) + '\n'
         f'Recent potentials:\n' + '\n'.join(pot_lines or ['  (none)']) + '\n'
-        f'Recent replies:\n' + '\n'.join(reply_lines or ['  (none)']) + '\n'
+        f'Prospect replies (read from the mailboxes; an answer goes out only after the user '
+        f'approves it on the Replies page):\n{replies_digest()}\n'
         f'Outreach: {drafts_pending} cold email(s) awaiting approval, {drafts_sent} sent.\n'
         f'Drafts awaiting approval (company <email>): '
         + (', '.join(f'{c} <{e}>' for c, e in pending_names) if pending_names else '(none)')
@@ -227,11 +227,9 @@ def _keyword_reply(text, turn=0):
         return 'Copywright has no profiled leads yet — run the pipeline first.'
 
     if 'reply' in q or 'repl' in q or 'respond' in q or 'answer' in q:
-        awaiting = Reply.objects.filter(status='awaiting')
-        if awaiting.exists():
-            names = ', '.join(r.company for r in awaiting[:3])
-            return f'{awaiting.count()} repl{"ies" if awaiting.count() != 1 else "y"} awaiting handling: {names}. I can draft responses for review.'
-        return 'No replies are awaiting — the Responder is all caught up.'
+        from .inbox import replies_digest
+        return (replies_digest() + '\nOpen the Replies page to read them and approve the '
+                'suggested answers — nothing is sent to a prospect until you approve it.')
 
     if any(w in q for w in ('run', 'schedule', 'frequent', 'next')):
         freq = settings.get_run_frequency_display()

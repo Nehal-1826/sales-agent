@@ -71,7 +71,7 @@ class RolePermissionTests(TenantTestCase):
             ('post', '/api/potential/', {'company': 'x', 'opportunity': 'y'}),
             ('post', '/api/replies/', {'company': 'x'}),
         ]
-        with mock.patch('core.views.send_draft') as send, mock.patch('core.actions.send_draft') as send2:
+        with mock.patch('core.outbox.send_draft') as send, mock.patch('core.mailer.send_draft') as send2:
             for method, url, body in calls:
                 r = getattr(self.m, method)(url, body, format='json') if body is not None \
                     else getattr(self.m, method)(url)

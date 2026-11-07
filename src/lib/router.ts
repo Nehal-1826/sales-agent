@@ -7,7 +7,7 @@ import type { PageKey } from './types';
  * links can deep-link into a tab or settings section.
  */
 
-const PAGES: PageKey[] = ['home', 'approvals', 'leads', 'activity', 'assistant', 'settings'];
+const PAGES: PageKey[] = ['home', 'approvals', 'replies', 'tasks', 'leads', 'activity', 'assistant', 'settings'];
 
 export interface Route {
   page: PageKey;

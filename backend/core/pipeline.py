@@ -5,7 +5,8 @@ The autonomous pipeline — orchestrator dispatching the agents from the notes:
                        → RESPONDER (CHATBOT) → LOOP back to SEARCH
 
 Real implementation:
-    SEARCH      live DuckDuckGo discovery, worldwide industry × region rotation
+    SEARCH      free multi-engine web discovery (DuckDuckGo, Brave, Mojeek, …) +
+                Google Maps, industry × region rotation
     PROFILE     scrapes each lead's site, categorizes website / no-website,
                 extracts contact email, produces flaw findings + potential score
     COPYWRIGHT  drafts a personalized cold email per lead (LLM when an AI key
@@ -20,8 +21,11 @@ import random
 import re
 import threading
 import time
+from contextvars import ContextVar
+from datetime import timedelta
 
 from django.db.models import Q
+from django.db.models.functions import Lower, Trim
 from django.utils import timezone
 
 from .ai import llm_available, llm_complete
@@ -34,11 +38,15 @@ from .gmaps import (
 )
 from .health import status_of
 from .icp import agency_mode, buyer_industries, looks_like_competitor, our_services_text, vertical
-from .models import AgentConfig, AppSettings, EmailDraft, EmailTemplate, Lead, PipelineRun, Potential
-from .runlock import acquire_run_lock, release_run_lock, running_since
+from .models import (AgentConfig, AppSettings, EmailDraft, EmailTemplate, Lead, PipelineRun, Potential,
+                     Suppression)
+from .discovery import QUERIES_HARD_CAP, expand_queries, last_discovery_stats, next_widen_level
+from .runlock import acquire_run_lock, heartbeat_run_lock, release_run_lock, running_since
+from .search_backends import cycle_stats, engine_label, reset_cycle_stats
 from .scalelist import scalelist_phone_find
 from .tenancy import current_workspace, workspace_context
 from .scraper import (
+    _registrable,
     analyze_website,
     region_from_query,
     search_companies,
@@ -55,8 +63,35 @@ APOLLO_SWEEP_PER_CYCLE = 5   # phone-enrichment retries per cycle (quota-friendl
 MAPS_LEADS_PER_CYCLE = 4     # no-website leads per Maps query term
 MAPS_QUERIES_PER_CYCLE = 8   # distinct query terms sent to Google Maps per round
 MAPS_SITE_LEADS_PER_TERM = 10  # Maps listings WITH a website, per query term
-DISCOVERY_QUERIES_PER_CYCLE = 24  # DDG search slices per round (≈ 100 leads with the caps above)
+DISCOVERY_QUERIES_PER_CYCLE = 24  # base search slices per round; core.discovery adds variants
+DISCOVERY_QUERIES_HARD_CAP = QUERIES_HARD_CAP  # adaptive widening never exceeds this
+DISCOVERY_RESULTS_PER_QUERY = 15  # company homepages kept per search query
+CYCLE_BUDGET_SECONDS = 35 * 60   # after this a cycle starts no new expensive work
+SEARCH_BUDGET_SECONDS = 12 * 60  # the web-search sweep's own share of that budget
+HEARTBEAT_EVERY_LEADS = 5        # refresh the run lock every N profiled leads
+REPROFILE_AFTER_DAYS = 90        # profiled data older than this is refreshed …
+REPROFILE_PER_CYCLE = 5          # … a few leads per cycle
 ENRICH_RETRY_HOURS = 72      # paid phone lookups: at most one per lead per this many hours
+
+# the running cycle's lock token (set by run_pipeline / start_pipeline_async)
+_LOCK_TOKEN = ContextVar('pipeline_lock_token', default=None)
+
+
+def _heartbeat():
+    """Keep this cycle's run lock fresh (only the owner can refresh it)."""
+    token = _LOCK_TOKEN.get()
+    if token is None:
+        return
+    try:
+        if not heartbeat_run_lock(token):
+            log.warning('Pipeline run lock no longer ours — another cycle took it over')
+    except Exception:
+        log.exception('Could not refresh the pipeline run lock')
+
+
+def _out_of_time(deadline):
+    return time.monotonic() > deadline
+
 
 # Score at which Profile flags a POTENTIAL opportunity.
 POTENTIAL_THRESHOLD = 65
@@ -167,6 +202,57 @@ def _enrich_due(lead):
     except (TypeError, ValueError):
         return True
     return timezone.now() - last >= timezone.timedelta(hours=ENRICH_RETRY_HOURS)
+
+
+def _profiled_at(lead):
+    """When the lead's audit was last done: analysis.profiled_at, else (older
+    leads, stamped before this field existed) its last update."""
+    stamp = (lead.analysis or {}).get('profiled_at')
+    if stamp:
+        try:
+            from datetime import datetime  # noqa: PLC0415
+            return datetime.fromisoformat(stamp)
+        except ValueError:
+            pass
+    return lead.updated_at
+
+
+def reprofile_candidates(limit=REPROFILE_PER_CYCLE):
+    """Profiled website leads whose audit is older than REPROFILE_AFTER_DAYS
+    and who were never emailed (no SENT draft) — oldest first, bounded."""
+    cutoff = timezone.now() - timedelta(days=REPROFILE_AFTER_DAYS)
+    sent = EmailDraft.objects.filter(status=EmailDraft.Statuses.SENT,
+                                     lead__isnull=False).values('lead_id')
+    # updated_at >= profiled_at, so this prefilter never drops a stale audit
+    pool = (Lead.objects.filter(profiled=True, updated_at__lt=cutoff)
+            .exclude(website='').exclude(pk__in=sent).order_by('updated_at')[:limit * 4])
+    out = [lead for lead in pool if _profiled_at(lead) < cutoff]
+    return out[:limit]
+
+
+def _reprofile(lead):
+    """Refresh an old audit in place.  No gates, no deletion, no new drafts:
+    the lead already passed vetting; only site-derived data is refreshed and
+    contact fields are only FILLED, never overwritten (a draft may use them).
+    Copywright still skips any lead that has drafts (rejected stays rejected)."""
+    audit = analyze_website(lead.company, lead.website, prefer_country=lead.country)
+    if not audit.get('analysis') and not audit.get('findings'):
+        return False
+    fields = ['findings', 'score', 'has_website', 'analysis', 'updated_at']
+    lead.has_website = audit['has_website']
+    lead.findings = audit['findings']
+    lead.score = audit['score']
+    lead.analysis = {**(lead.analysis or {}), **(audit['analysis'] or {}),
+                     'profiled_at': timezone.now().isoformat(),
+                     'reprofiled': int((lead.analysis or {}).get('reprofiled', 0)) + 1}
+    if not lead.contact_email and audit.get('contact_email'):
+        lead.contact_email = audit['contact_email']
+        fields.append('contact_email')
+    if not lead.contact_phone and audit.get('contact_phone'):
+        lead.contact_phone = audit['contact_phone']
+        fields.append('contact_phone')
+    lead.save(update_fields=fields)
+    return True
 
 
 def _paid_lookup_configured():
@@ -397,9 +483,11 @@ def run_pipeline(triggered_by='manual'):
     token = acquire_run_lock()
     if not token:
         raise PipelineBusy('A pipeline cycle is already running.')
+    ctx = _LOCK_TOKEN.set(token)
     try:
         return _run_cycle(triggered_by)
     finally:
+        _LOCK_TOKEN.reset(ctx)
         try:
             release_run_lock(token)
         except Exception:
@@ -424,6 +512,7 @@ def start_pipeline_async(triggered_by='manual'):
         from django.db import connection
         try:
             with workspace_context(workspace):
+                _LOCK_TOKEN.set(token)  # fresh thread context — no reset needed
                 try:
                     _run_cycle(triggered_by)
                 except Exception:
@@ -446,6 +535,7 @@ def _run_cycle(triggered_by):
     Callers hold the run lock (see run_pipeline / start_pipeline_async)."""
 
     cycle_started = timezone.now()
+    deadline = time.monotonic() + CYCLE_BUDGET_SECONDS
     summary = {'agents': [], 'notes': []}
     cycle = PipelineRun.objects.count()
 
@@ -471,22 +561,39 @@ def _run_cycle(triggered_by):
         summary['notes'].append(
             'Search: ICP buyer-targeting on — searching businesses that BUY '
             f'{our_services_text(settings)}; peer/competitor agencies are filtered out')
-    queries = search_queries_for_cycle(
+    base_queries = search_queries_for_cycle(
         cycle,
         n=DISCOVERY_QUERIES_PER_CYCLE,
         regions=[c.strip() for c in settings.target_countries.split(',') if c.strip()],
         industries=icp_industries,
         cities=target_cities,
     )
+    # adaptive volume (core.discovery): the last cycle's new-vs-known ratio
+    # decides how many phrasing variants / neighbouring cities to add
+    widen_level = next_widen_level(last_discovery_stats())
+    queries = expand_queries(base_queries, cycle, level=widen_level,
+                             cap=DISCOVERY_QUERIES_HARD_CAP)
+    reset_cycle_stats()
+    search_deadline = time.monotonic() + SEARCH_BUDGET_SECONDS
     results, query_labels = [], []
     for i, (query, industry) in enumerate(queries):
+        if _out_of_time(deadline) or time.monotonic() > search_deadline:
+            summary['notes'].append(
+                f'Search: time budget reached — {len(queries) - i} query(s) left for next cycle')
+            break
         if i:
-            time.sleep(8)  # DDG rate-limits back-to-back queries — pace the sweep
-        found = search_companies(query, n=6)
+            # engines rotate (core.search_backends), so a short jittered pause
+            # is enough to stay polite on the shared IP
+            time.sleep(random.uniform(3, 6))
+        found = search_companies(query, n=DISCOVERY_RESULTS_PER_QUERY)
         results.extend({'industry': industry, 'query_label': query, **r} for r in found)
         query_labels.append(query)
-        summary['notes'].append(f'Search: “{query}” → {len(found)} candidates')
+        engine = (found[0].get('source') if found else None) or '-'
+        summary['notes'].append(f'Search: “{query}” → {len(found)} candidates ({engine})')
+        if i % 5 == 4:
+            _heartbeat()
     summary['query'] = ' | '.join(query_labels)
+    _heartbeat()
 
     known = {_norm_domain(w) for w in Lead.objects.exclude(website='').values_list('website', flat=True)}
     known |= {c.lower() for c in Lead.objects.values_list('company', flat=True)}
@@ -496,15 +603,22 @@ def _run_cycle(triggered_by):
     new_leads = []
     profiled_now = []  # pks profiled THIS cycle — scopes the per-cycle Copywright notes
     seen_domains = set()
+    known_hits = 0
     per_region_cap = max(2, MAX_LEADS_PER_CYCLE // max(1, len(queries)))  # spread across regions
     taken_per_query = {}
     for r in results:
         if len(new_leads) >= MAX_LEADS_PER_CYCLE:
             break
         domain = _norm_domain(r['website'])
-        if not domain or domain in seen_domains or domain in known or r['name'].lower() in known:
+        if not domain:
             continue
-        seen_domains.add(domain)
+        reg = _registrable(domain)
+        if reg in seen_domains:
+            continue  # same company from another query / engine
+        seen_domains.add(reg)
+        if domain in known or reg in known or r['name'].lower() in known:
+            known_hits += 1
+            continue
         query_label = r['query_label']
         if taken_per_query.get(query_label, 0) >= per_region_cap:
             continue  # don't let one region swallow the whole cycle
@@ -514,7 +628,7 @@ def _run_cycle(triggered_by):
             company=r['name'],
             industry=r['industry'],
             website=r['website'],
-            source=f'Search · DuckDuckGo · {query_label}',
+            source=f'Search · {engine_label(r.get("source"))} · {query_label}',
             state=state,
             country=country,
             score=random.randint(45, 60),  # provisional, Profile replaces it
@@ -523,6 +637,20 @@ def _run_cycle(triggered_by):
         )
         new_leads.append(lead)
         summary['notes'].append(f'Search discovered {lead.company} ({lead.website})')
+    web_new = len(new_leads)
+    sources = cycle_stats()
+    hits = ', '.join(f'{engine_label(b)} {n}' for b, n in sorted(sources.items()) if ':' not in b
+                     and b != 'exhausted') or 'none'
+    misses = sum(n for b, n in sources.items() if b.endswith(':fail'))
+    summary['notes'].append(
+        f'Search sources: {hits} answered query(s); {misses} engine miss(es) '
+        f'(rate-limit/empty → next engine), {sources.get("exhausted", 0)} query(s) with no engine left; '
+        f'{len(queries)} queries at widen level {widen_level}: {len(seen_domains)} unique domains → '
+        f'{web_new} new, {known_hits} already known')
+    discovery_stats = {'widen_level': widen_level, 'queries': len(query_labels),
+                       'candidates': len(seen_domains), 'new': web_new,
+                       'known': known_hits, 'sources': sources}
+    _heartbeat()
 
     # --- SEARCH (GOOGLE MAPS): no-website local businesses — top leads -----
     # Free keyless Maps scraper (core.gmaps).  A business listed on Maps with
@@ -530,7 +658,7 @@ def _run_cycle(triggered_by):
     # phone + address from the listing, nothing to audit, everything to build.
     # Skipped in agency mode — a boutique agency without a website is never a
     # project partner; those slots go to real agency discoveries instead.
-    if gmaps_available() and not agency_mode(settings):
+    if gmaps_available() and not agency_mode(settings) and not _out_of_time(deadline):
         # Maps-first funnel for listings WITH a website: collect → simple NLP →
         # one batched AI fit check → only FIT ones become leads (Profile + drafts follow)
         maps_terms, seen_terms = [], set()
@@ -626,6 +754,9 @@ def _run_cycle(triggered_by):
                 summary['notes'].append(
                     f'Search (Google Maps): {lead.company} — no website, phone {place["phone"]}')
 
+    discovery_stats['maps_new'] = len(new_leads) - web_new
+    _heartbeat()
+
     # --- PROFILE: scrape + audit up to N unprofiled leads ------------------
     potentials_created = 0
     rejected = 0
@@ -633,7 +764,18 @@ def _run_cycle(triggered_by):
     # discoveries, so held leads are never starved by a stream of new ones
     to_profile = list(Lead.objects.filter(profiled=False)
                       .order_by('created_at')[:MAX_PROFILE_PER_CYCLE])
-    for lead in to_profile:
+    budget_left_unprofiled = 0
+    for idx, lead in enumerate(to_profile):
+        if _out_of_time(deadline):
+            # wall-clock budget spent: stop starting new site fetches — the
+            # rest stay profiled=False and are picked up first next cycle
+            budget_left_unprofiled = len(to_profile) - idx
+            summary['notes'].append(
+                f'Profile: cycle time budget reached — {budget_left_unprofiled} lead(s) '
+                f'left unprofiled for the next cycle')
+            break
+        if idx and idx % HEARTBEAT_EVERY_LEADS == 0:
+            _heartbeat()
         if lead != to_profile[0]:
             time.sleep(1)  # politeness pause between site fetches
         audit = analyze_website(lead.company, lead.website, prefer_country=lead.country)
@@ -706,6 +848,7 @@ def _run_cycle(triggered_by):
         if phone:
             lead.contact_phone = phone
         lead.profiled = True
+        lead.analysis['profiled_at'] = timezone.now().isoformat()
         lead.save()
         profiled_now.append(lead.pk)
         # Phone rescue — a lead without a number is unusable for outreach.
@@ -753,6 +896,22 @@ def _run_cycle(triggered_by):
         summary['notes'].append(
             f'Profile: {rejected} discovery result(s) removed — AI review found them not '
             f'relevant businesses (kept the CRM strictly relevant)')
+
+    # --- RE-PROFILE: refresh stale audits (a few per cycle) ----------------
+    refreshed = 0
+    if not _out_of_time(deadline):
+        for lead in reprofile_candidates(REPROFILE_PER_CYCLE):
+            if _out_of_time(deadline):
+                break
+            try:
+                if _reprofile(lead):
+                    refreshed += 1
+            except Exception as exc:  # never let a refresh kill the cycle
+                log.warning('re-profile failed for %s: %s', lead.company, exc)
+    if refreshed:
+        summary['notes'].append(
+            f'Profile refreshed {refreshed} lead(s) audited over {REPROFILE_AFTER_DAYS} days ago')
+    _heartbeat()
 
     # --- ENRICH: Scalelist + Apollo + Google Maps phone sweep (every cycle) -
     # Profiled leads whose phone field is still empty are retried:
@@ -837,7 +996,11 @@ def _run_cycle(triggered_by):
     # 'blocked' key (NULL = true), on SQLite and Postgres alike.
     # '-score' then 'id' keeps the pick deterministic.
     blocked = Lead.objects.filter(analysis__blocked=True).values('pk')
+    # an unsubscribed address never gets a new draft (Suppression is lowercased)
+    suppressed = Suppression.objects.values('email')
     candidates = (reachable.exclude(pk__in=blocked)
+                  .annotate(_email_lc=Lower(Trim('contact_email')))
+                  .exclude(_email_lc__in=suppressed)
                   .order_by('-score', 'id')[:MAX_DRAFTS_PER_CYCLE * 3])
     # per-cycle notes: count only leads profiled in THIS cycle (all-time DB counts
     # would inflate every cycle summary and the daily report)
@@ -867,13 +1030,17 @@ def _run_cycle(triggered_by):
             f'Copywright: {no_email} lead(s) without a contact email held for manual outreach — '
             f'no draft is written to a missing address')
 
-    # --- RESPONDER: report the outreach queue ------------------------------
+    # --- RESPONDER: report the outreach queue + prospect replies ----------
+    # (replies themselves are read by core.inbox on its own worker thread)
+    from .inbox import needs_attention_qs
+    replies_waiting = needs_attention_qs().count()
     queue = EmailDraft.objects.filter(status=EmailDraft.Statuses.DRAFT).count()
     awaiting_contact = Lead.objects.filter(
         profiled=True, has_website=True, contact_email='').count()
     summary['notes'].append(
         f'Responder: {queue} draft(s) awaiting approval, '
-        f'{awaiting_contact} lead(s) still missing a contact email')
+        f'{awaiting_contact} lead(s) still missing a contact email, '
+        f'{replies_waiting} prospect repl{"y" if replies_waiting == 1 else "ies"} waiting on you')
 
     run = PipelineRun.objects.create(
         triggered_by=triggered_by,
@@ -884,6 +1051,7 @@ def _run_cycle(triggered_by):
             'notes': summary['notes'],
             'query': summary.get('query', ''),
             'drafts_created': drafts_created,
+            'discovery': discovery_stats,
             'agents': [
                 {'agent': 'search', 'action': f'{len(new_leads)} new lead(s) via DuckDuckGo'
                     + (' + Google Maps' if gmaps_available() and not agency_mode(settings) else '')
@@ -891,7 +1059,8 @@ def _run_cycle(triggered_by):
                        else ' (ICP buyer targeting)')},
                 {'agent': 'profile', 'action': f'{len(to_profile)} site(s) audited'},
                 {'agent': 'copywright', 'action': f'{drafts_created} draft(s) created'},
-                {'agent': 'responder', 'action': f'{queue} draft(s) awaiting approval'},
+                {'agent': 'responder', 'action': f'{queue} draft(s) awaiting approval, '
+                    f'{replies_waiting} repl{"y" if replies_waiting == 1 else "ies"} waiting'},
             ],
         },
     )

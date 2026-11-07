@@ -5,7 +5,7 @@ from django.db import connection
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.authtoken.models import Token
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -14,10 +14,11 @@ from .actions import pending_summary
 from .chat import responder_reply
 from .guide import guide_answer
 from .health import status_of
-from .mailer import NO_RECIPIENT_ERROR, claim_draft_for_send, send_draft, smtp_configured, valid_recipient
+from .mailer import NO_RECIPIENT_ERROR, smtp_configured, valid_recipient
+from .outbox import enqueue_draft, kick_drain
 from .authentication import token_expired
 from .permissions import IsWorkspaceAdmin, IsWorkspaceAdminOrReadOnly
-from .models import AgentConfig, AppSettings, ChatMessage, EmailDraft, EmailTemplate, Lead, PipelineRun, Potential, Reply, SearchProfile, User
+from .models import AgentConfig, AppSettings, ChatMessage, EmailDraft, EmailTemplate, Lead, Mailbox, PipelineRun, Potential, Reply, SearchProfile, User
 from .pipeline import PipelineBusy, pipeline_status, run_pipeline, start_pipeline_async
 from .reports import _resolve_recipients, send_daily_report
 from .runlock import running_since
@@ -28,6 +29,7 @@ from .serializers import (
     EmailDraftSerializer,
     EmailTemplateSerializer,
     LeadSerializer,
+    MailboxSerializer,
     PipelineRunSerializer,
     PotentialSerializer,
     ReplySerializer,
@@ -179,7 +181,44 @@ class ReplyViewSet(viewsets.ModelViewSet):
     serializer_class = ReplySerializer
 
     def get_queryset(self):
-        return Reply.objects.all()
+        qs = Reply.objects.select_related('draft', 'answer_draft').order_by(
+            'handled', '-received_at', '-updated_at')
+        if self.request.query_params.get('attention') in ('1', 'true'):
+            from .inbox import needs_attention_qs
+            qs = qs.filter(pk__in=needs_attention_qs().values('pk'))
+        return qs
+
+    @action(detail=True, methods=['post'], permission_classes=[IsWorkspaceAdmin])
+    def approve_suggestion(self, request, pk=None):
+        """Human-approved answer → threaded draft → outbox queue (never inline)."""
+        from .inbox import ApproveError, approve_suggestion
+        reply = self.get_object()
+        text = request.data.get('text') if isinstance(request.data, dict) else None
+        if text is not None and not isinstance(text, str):
+            return Response({'detail': 'text must be a string'}, status=400)
+        try:
+            draft = approve_suggestion(reply, text)
+        except ApproveError as exc:
+            return Response({'detail': str(exc)}, status=400)
+        if draft.status == EmailDraft.Statuses.QUEUED:
+            kick_drain()
+        reply.refresh_from_db()
+        return Response(ReplySerializer(reply).data)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsWorkspaceAdmin])
+    def mark_handled(self, request, pk=None):
+        reply = self.get_object()
+        reply.handled = request.data.get('handled', True) is not False
+        reply.save(update_fields=['handled', 'updated_at'])
+        return Response(ReplySerializer(reply).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsWorkspaceAdmin])
+def inbox_poll(request):
+    """Read the mailboxes now (same as the worker's ~3 min poll)."""
+    from .inbox import poll_inbox
+    return Response({'mailboxes': poll_inbox()})
 
 
 # ------------------------------------------------------------------
@@ -573,22 +612,23 @@ def _get_draft(draft_id):
 
 @api_view(['GET'])
 def drafts(request):
-    objs = EmailDraft.objects.all()[:200]
+    objs = EmailDraft.objects.select_related('mailbox')[:200]
     return Response(EmailDraftSerializer(objs, many=True).data)
 
 
 @api_view(['POST'])
 @permission_classes([IsWorkspaceAdmin])
 def drafts_bulk_approve(request):
-    """Bulk approve → send. Body: { ids: [id, …] }.
+    """Bulk approve → queue. Body: { ids: [id, …] }.
 
-    Each draft is approved and sent independently; one bad id or an
+    Each draft is approved and queued independently (the outbox spaces them
+    out per mailbox, within the sending window and daily caps); one bad id or an
     already-processed draft is reported in the results and never blocks the
-    rest.  Returns { results: [{id, ok, status?, error?}], sent, failed }."""
+    rest.  Returns { results: [{id, ok, status?, scheduledFor?, error?}], queued, sent: 0, failed }."""
     raw_ids = request.data.get('ids')
     if not isinstance(raw_ids, list) or not raw_ids:
         return Response({'detail': 'ids must be a non-empty list'}, status=400)
-    results, sent, failed = [], 0, 0
+    results, queued, failed = [], 0, 0
     for raw in raw_ids:
         try:
             draft_id = int(raw)
@@ -610,21 +650,18 @@ def drafts_bulk_approve(request):
             results.append({'id': draft_id, 'ok': False, 'error': NO_RECIPIENT_ERROR})
             failed += 1
             continue
-        draft = claim_draft_for_send(draft.id)
+        # claim + queue: the outbox paces it out (core.outbox), never a burst
+        draft = enqueue_draft(draft.id)
         if draft is None:
             results.append({'id': draft_id, 'ok': False, 'error': 'already being sent'})
             failed += 1
             continue
-        send_draft(draft)
-        draft.refresh_from_db()
-        if draft.status == EmailDraft.Statuses.SENT:
-            results.append({'id': draft_id, 'ok': True, 'status': draft.status})
-            sent += 1
-        else:
-            results.append({'id': draft_id, 'ok': False, 'status': draft.status,
-                            'error': draft.error or 'send failed'})
-            failed += 1
-    return Response({'results': results, 'sent': sent, 'failed': failed})
+        results.append({'id': draft_id, 'ok': True, 'status': draft.status,
+                        'scheduledFor': draft.scheduled_for})
+        queued += 1
+    if queued:
+        kick_drain()
+    return Response({'results': results, 'queued': queued, 'sent': 0, 'failed': failed})
 
 
 @api_view(['GET', 'PUT'])
@@ -670,7 +707,8 @@ def draft_detail(request, draft_id):
 @api_view(['POST'])
 @permission_classes([IsWorkspaceAdmin])
 def draft_approve(request, draft_id):
-    """Approve → send immediately. Sent via SMTP, or console when unset."""
+    """Approve → queue (core.outbox): claimed atomically, then sent by the
+    outbox drain at its scheduled slot. Returns the QUEUED draft."""
     draft = _get_draft(draft_id)
     if draft is None:
         return Response({'detail': 'draft not found'}, status=404)
@@ -678,10 +716,10 @@ def draft_approve(request, draft_id):
         return Response({'detail': f'draft is already {draft.status}'}, status=409)
     if not valid_recipient(draft.to_email):
         return Response({'detail': NO_RECIPIENT_ERROR}, status=400)
-    draft = claim_draft_for_send(draft.id)
+    draft = enqueue_draft(draft.id)
     if draft is None:
         return Response({'detail': 'this draft is already being sent'}, status=409)
-    send_draft(draft)
+    kick_drain()
     return Response(EmailDraftSerializer(draft).data)
 
 
@@ -697,7 +735,8 @@ def draft_reject(request, draft_id):
     # send_draft is mid-SMTP and be overwritten by its SENT, telling the user
     # "rejected" while the mail still goes out
     rejected = (EmailDraft.objects
-                .filter(pk=draft.pk, status__in=[EmailDraft.Statuses.DRAFT, EmailDraft.Statuses.FAILED])
+                .filter(pk=draft.pk, status__in=[EmailDraft.Statuses.DRAFT, EmailDraft.Statuses.FAILED,
+                                                 EmailDraft.Statuses.QUEUED])
                 .update(status=EmailDraft.Statuses.REJECTED, updated_at=timezone.now()))
     if not rejected:
         draft.refresh_from_db()
@@ -711,7 +750,7 @@ def draft_reject(request, draft_id):
 @api_view(['POST'])
 @permission_classes([IsWorkspaceAdmin])
 def draft_send(request, draft_id):
-    """Retry delivery of a failed draft."""
+    """Retry delivery of a failed draft — requeued like an approve."""
     draft = _get_draft(draft_id)
     if draft is None:
         return Response({'detail': 'draft not found'}, status=404)
@@ -719,23 +758,120 @@ def draft_send(request, draft_id):
         return Response({'detail': 'only failed drafts can be retried'}, status=409)
     if not valid_recipient(draft.to_email):
         return Response({'detail': NO_RECIPIENT_ERROR}, status=400)
-    draft = claim_draft_for_send(draft.id, from_statuses=(EmailDraft.Statuses.FAILED,))
+    draft = enqueue_draft(draft.id, from_statuses=(EmailDraft.Statuses.FAILED,))
     if draft is None:
         return Response({'detail': 'this draft is already being sent'}, status=409)
-    send_draft(draft)
+    kick_drain()
     return Response(EmailDraftSerializer(draft).data)
 
 
 @api_view(['GET'])
 def outreach_status(request):
-    """One-line summary for the status strip."""
+    """One-line summary for the status strip, plus the outbox: queue size,
+    next send, and per-mailbox sent-today / cap."""
+    from . import outbox
+    from .inbox import needs_attention_qs
+    now = timezone.now()
+    today = outbox.local(now).date()
+    queued = EmailDraft.objects.filter(status=EmailDraft.Statuses.QUEUED)
+    next_due = queued.order_by('scheduled_for').values_list('scheduled_for', flat=True).first()
+    s = AppSettings.load()
+    mailboxes = [{
+        'id': mb.id, 'fromEmail': mb.from_email, 'label': mb.label,
+        'sentToday': outbox.sent_on(mb, today), 'cap': outbox.effective_cap(mb, today),
+        'dailyCap': mb.daily_cap, 'paused': outbox.is_paused(mb, now), 'isActive': mb.is_active,
+    } for mb in Mailbox.objects.all()]
     return Response({
         'drafts': EmailDraft.objects.filter(status=EmailDraft.Statuses.DRAFT).count(),
         'sent': EmailDraft.objects.filter(status=EmailDraft.Statuses.SENT).count(),
         'failed': EmailDraft.objects.filter(status=EmailDraft.Statuses.FAILED).count(),
         'approved': EmailDraft.objects.filter(status=EmailDraft.Statuses.APPROVED).count(),
-        'smtpConfigured': smtp_configured(),
+        'queued': queued.count(),
+        'nextSendAt': next_due,
+        'inSendingWindow': outbox.in_window(now, s),
+        'mailboxes': mailboxes,
+        'smtpConfigured': smtp_configured() or any(m['isActive'] for m in mailboxes),
+        'repliesNeedingAttention': needs_attention_qs().count(),
+        'repliesTotal': Reply.objects.exclude(classification='').count(),
     })
+
+
+# ------------------------------------------------------------------
+# MAILBOXES — sending accounts for the outbox (core.outbox)
+# ------------------------------------------------------------------
+
+def _get_mailbox(mailbox_id):
+    return Mailbox.objects.filter(pk=mailbox_id).first()
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsWorkspaceAdminOrReadOnly])
+def mailboxes(request):
+    if request.method == 'POST':
+        serializer = MailboxSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        mb = serializer.save()
+        return Response(MailboxSerializer(mb).data, status=status.HTTP_201_CREATED)
+    return Response(MailboxSerializer(Mailbox.objects.all(), many=True).data)
+
+
+@api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
+@permission_classes([IsWorkspaceAdminOrReadOnly])
+def mailbox_detail(request, mailbox_id):
+    mb = _get_mailbox(mailbox_id)
+    if mb is None:
+        return Response({'detail': 'mailbox not found'}, status=404)
+    if request.method == 'DELETE':
+        # its queued drafts lose their mailbox; the next drain reassigns them
+        mb.delete()
+        return Response(status=204)
+    if request.method in ('PUT', 'PATCH'):
+        serializer = MailboxSerializer(mb, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        mb = serializer.save()
+    return Response(MailboxSerializer(mb).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsWorkspaceAdmin])
+def mailbox_dns_check(request, mailbox_id):
+    from .dns_check import refresh_mailbox_dns
+    mb = _get_mailbox(mailbox_id)
+    if mb is None:
+        return Response({'detail': 'mailbox not found'}, status=404)
+    refresh_mailbox_dns(mb)
+    return Response(MailboxSerializer(mb).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsWorkspaceAdmin])
+def mailbox_resume(request, mailbox_id):
+    from .outbox import resume_mailbox
+    mb = _get_mailbox(mailbox_id)
+    if mb is None:
+        return Response({'detail': 'mailbox not found'}, status=404)
+    resume_mailbox(mb)
+    kick_drain()
+    return Response(MailboxSerializer(mb).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsWorkspaceAdmin])
+def outbox_drain(request):
+    """Best-effort 'send what is due now' (the worker does this every 30 s)."""
+    from .outbox import drain_outbox
+    return Response(drain_outbox())
+
+
+@api_view(['POST'])
+@permission_classes([IsWorkspaceAdmin])
+def warmpulse_sync(request):
+    from . import warmpulse
+    matched = warmpulse.sync(force=True)
+    if matched is None:
+        return Response({'ok': False, 'message': 'Could not reach WarmPulse with that key.'
+                         if warmpulse.enabled() else 'Add a WarmPulse API key first.'})
+    return Response({'ok': True, 'matched': matched})
 
 
 # ------------------------------------------------------------------

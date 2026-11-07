@@ -17,7 +17,7 @@ import ssl
 import sys
 from datetime import timedelta
 from email.message import EmailMessage
-from email.utils import formataddr, formatdate
+from email.utils import formataddr, formatdate, make_msgid
 from pathlib import Path
 
 from django.conf import settings as django_settings
@@ -169,6 +169,7 @@ def connect_mailbox(provider, user, password, host='', port=587):
                 settings.from_email = user
             settings.save(update_fields=['smtp_host', 'smtp_port', 'smtp_user',
                                          'smtp_password', 'from_email', 'updated_at'])
+            upsert_mailbox(host, port, user, password)
             return {'ok': True, 'host': host, 'port': port, 'provider': provider,
                     'message': f'Connected — login verified against {host}.'}
         if result == 'auth':
@@ -183,6 +184,25 @@ def connect_mailbox(provider, user, password, host='', port=587):
         return {'ok': False, 'message': hint}
     return {'ok': False,
             'message': f'Could not reach {", ".join(tried)} — check the network or host.'}
+
+
+def upsert_mailbox(host, port, user, password, from_email='', ramp=True):
+    """Create/update the Mailbox for a verified login — the outbox sends
+    from Mailbox rows (AppSettings SMTP stays as the legacy fallback).
+    A connector re-run that fixes a password also lifts an auth pause."""
+    from .models import Mailbox
+    address = (from_email or user).strip()
+    mb = Mailbox.objects.filter(from_email__iexact=address).first()
+    if mb is None:
+        return Mailbox.objects.create(
+            label=address, from_email=address, smtp_host=host, smtp_port=port or 587,
+            smtp_user=user, smtp_password=password,
+            ramp_start=timezone.localdate() if ramp else None)
+    mb.smtp_host, mb.smtp_port, mb.smtp_user, mb.smtp_password = host, port or 587, user, password
+    mb.paused_until, mb.paused_reason = None, ''
+    mb.save(update_fields=['smtp_host', 'smtp_port', 'smtp_user', 'smtp_password',
+                           'paused_until', 'paused_reason', 'updated_at'])
+    return mb
 
 
 def _ssl_contexts():
@@ -224,18 +244,29 @@ def _open_smtp(s):
     raise last_error
 
 
-def send_email_message(subject, body, recipients, s=None, html=None, headers=None):
-    """Send one email via the configured SMTP — plain text, plus an optional
-    branded HTML part (logo header) with the logo attached inline, plus any
-    extra headers (List-Unsubscribe). True on success."""
+def send_email_message(subject, body, recipients, s=None, html=None, headers=None,
+                       mailbox=None, connection=None, message_id=None):
+    """Send one email — plain text, plus an optional branded HTML part (logo
+    header) with the logo attached inline, plus any extra headers
+    (List-Unsubscribe). True on success.
+
+    `mailbox` (core.models.Mailbox) sends from that mailbox instead of the
+    legacy AppSettings SMTP; `connection` reuses an already-open SMTP session
+    (the outbox drain sends a whole batch over one login)."""
     s = s or AppSettings.load()
-    from_email = s.from_email or s.smtp_user or 'outreach@shailog.com'
-    sender_name = s.company_name or 'Agentic AI'
+    if mailbox is not None:
+        from_email = mailbox.from_email
+        sender_name = mailbox.from_name or s.company_name or 'Agentic AI'
+    else:
+        from_email = s.from_email or s.smtp_user or 'outreach@shailog.com'
+        sender_name = s.company_name or 'Agentic AI'
     msg = EmailMessage()
     msg['From'] = formataddr((sender_name, from_email))
     msg['To'] = ', '.join(recipients)
     msg['Subject'] = subject
     msg['Date'] = formatdate(localtime=True)
+    if message_id:
+        msg['Message-ID'] = message_id
     for name, value in (headers or {}).items():
         msg[name] = value
     msg.set_content(body)
@@ -244,9 +275,23 @@ def send_email_message(subject, body, recipients, s=None, html=None, headers=Non
         logo = _logo_bytes()
         if logo:
             msg.get_payload()[1].add_related(logo, 'image', 'png', cid=LOGO_CID)
-    with _open_smtp(s) as server:
+    if connection is not None:
+        connection.send_message(msg)
+        return True
+    with _open_smtp(mailbox if mailbox is not None else s) as server:
         server.send_message(msg)
     return True
+
+
+def open_mailbox_connection(mailbox):
+    """Authenticated SMTP session for one Mailbox (caller quits it)."""
+    return _open_smtp(mailbox)
+
+
+def new_message_id(from_email):
+    """RFC 5322 Message-ID on the sending domain — replies thread on it."""
+    domain = (from_email or '').rsplit('@', 1)[-1].strip().lower() or None
+    return make_msgid(domain=domain)
 
 
 # ------------------------------------------------------------------
@@ -419,8 +464,28 @@ def claim_draft_for_send(draft_id, from_statuses=(EmailDraft.Statuses.DRAFT, Ema
     return EmailDraft.objects.filter(pk=draft_id).first() if claimed else None
 
 
-def send_draft(draft):
-    """Send one EmailDraft. Updates status/sent_via/sent_at/error. Returns the draft.
+def thread_headers(draft):
+    """In-Reply-To / References for an answer to a prospect's reply
+    (core.inbox) so it lands in the same thread.  {} for a cold email."""
+    headers = {}
+    in_reply_to = (getattr(draft, 'in_reply_to', '') or '').strip()
+    if in_reply_to:
+        headers['In-Reply-To'] = in_reply_to
+        refs = (getattr(draft, 'references', '') or '').split()
+        if in_reply_to not in refs:
+            refs.append(in_reply_to)
+        headers['References'] = ' '.join(refs)
+    return headers
+
+
+def send_draft(draft, mailbox=None, connection=None):
+    """Send one EmailDraft. Updates status/sent_via/sent_at/error/message_id.
+    Returns the draft.
+
+    Callers claim first (claim_draft_for_send / outbox.claim_queued) — this
+    function itself never checks approval.  The mailbox is `mailbox`, else
+    draft.mailbox, else the legacy AppSettings SMTP; with none configured the
+    email is console-logged (sent_via='console' = NOT delivered).
 
     Never leaves the draft stuck in APPROVED: any failure on the send path —
     settings lookup, console print, SMTP — ends as FAILED with the error text."""
@@ -442,28 +507,45 @@ def send_draft(draft):
         log.info('Blocked send to suppressed address %s (%s)', draft.to_email, draft.company)
         return draft
 
+    if draft.enrollment_id and draft.sequence_step > 0:
+        from .sequences import STOPPED_ERROR, enrollment_allows_send
+        if not enrollment_allows_send(draft.enrollment_id):
+            # a reply / unsubscribe / manual stop raced this queued follow-up — it loses
+            draft.status = EmailDraft.Statuses.REJECTED
+            draft.error = STOPPED_ERROR
+            draft.save(update_fields=['to_email', 'status', 'error', 'updated_at'])
+            return draft
+
     try:
         s = AppSettings.load()
-        from_email = s.from_email or s.smtp_user or 'outreach@shailog.com'
+        if mailbox is None and draft.mailbox_id:
+            mailbox = draft.mailbox
+        if mailbox is not None and not mailbox.configured():
+            mailbox = None
+        from_email = (mailbox.from_email if mailbox is not None
+                      else s.from_email or s.smtp_user or 'outreach@shailog.com')
         unsub = unsubscribe_url(draft.to_email, draft.workspace_id)
         if not s.company_address:
             log.warning('No postal address in Settings → Business; cold-email footer omits it')
-        if not smtp_configured(s):
+        if mailbox is None and not smtp_configured(s):
             _log_console_delivery(draft, from_email)
             draft.status = EmailDraft.Statuses.SENT
             draft.sent_via = EmailDraft.Via.CONSOLE
             draft.sent_at = timezone.now()
             draft.error = ''
         else:
+            message_id = new_message_id(from_email)
             send_email_message(
                 draft.subject, draft.body + '\n' + compliance_footer_text(s, unsub),
                 [draft.to_email], s,
                 html=branded_email_html(designed_email_html(draft.body, s), s, unsubscribe=unsub),
-                headers=unsubscribe_headers(unsub),
+                headers={**unsubscribe_headers(unsub), **thread_headers(draft)},
+                mailbox=mailbox, connection=connection, message_id=message_id,
             )
             draft.status = EmailDraft.Statuses.SENT
             draft.sent_via = EmailDraft.Via.SMTP
             draft.sent_at = timezone.now()
+            draft.message_id = message_id
             draft.error = ''
             log.info('SMTP cold email sent to %s (%s)', draft.to_email, draft.company)
     except Exception as exc:
@@ -471,5 +553,9 @@ def send_draft(draft):
         draft.error = str(exc)[:500] or exc.__class__.__name__
         log.warning('Send failed for %s: %s', draft.to_email, exc)
 
-    draft.save(update_fields=['to_email', 'status', 'sent_via', 'sent_at', 'error', 'updated_at'])
+    draft.save(update_fields=['to_email', 'status', 'sent_via', 'sent_at', 'error',
+                              'message_id', 'updated_at'])
+    if draft.status == EmailDraft.Statuses.SENT:
+        from .sequences import after_send
+        after_send(draft)  # enroll the lead / advance its follow-up sequence; never raises
     return draft

@@ -3,7 +3,9 @@
 from django.utils import timezone
 from rest_framework import serializers
 
-from .models import AgentConfig, AppSettings, ChatMessage, EmailDraft, EmailTemplate, Lead, PipelineRun, Potential, Reply, SearchProfile
+from .models import (Enrollment, OutreachTask, Sequence, SequenceStep, WhatsAppMessage,
+                     AgentConfig, AppSettings, ChatMessage, EmailDraft, EmailTemplate, Lead, Mailbox,
+                     PipelineRun, Potential, Reply, SearchProfile)
 
 
 def rel_time(dt):
@@ -56,11 +58,18 @@ class EmailDraftSerializer(serializers.ModelSerializer):
     lastActivity = serializers.SerializerMethodField()
     leadId = serializers.IntegerField(source='lead_id', read_only=True)
     sentAt = serializers.DateTimeField(source='sent_at', read_only=True)
+    # outbox: when a Queued draft is due, and the mailbox it goes out from
+    scheduledFor = serializers.DateTimeField(source='scheduled_for', read_only=True)
+    mailbox = serializers.SerializerMethodField()
+    # 'cold' | 'followup' | 'answer' — Approvals shows follow-ups with their step
+    kind = serializers.SerializerMethodField()
+    sequenceStep = serializers.IntegerField(source='sequence_step', read_only=True)
 
     class Meta:
         model = EmailDraft
         fields = ['id', 'company', 'toEmail', 'subject', 'body', 'findings',
-                  'status', 'sentVia', 'error', 'lastActivity', 'leadId', 'sentAt']
+                  'status', 'sentVia', 'error', 'lastActivity', 'leadId', 'sentAt',
+                  'scheduledFor', 'mailbox', 'kind', 'sequenceStep']
         read_only_fields = ['error']
 
     def get_status(self, obj):
@@ -68,6 +77,14 @@ class EmailDraftSerializer(serializers.ModelSerializer):
 
     def get_lastActivity(self, obj):
         return rel_time(obj.updated_at)
+
+    def get_mailbox(self, obj):
+        return obj.mailbox.from_email if obj.mailbox_id and obj.mailbox else ''
+
+    def get_kind(self, obj):
+        if obj.sequence_step:
+            return 'followup'
+        return 'answer' if (obj.in_reply_to or '').strip() else 'cold'
 
 
 class PotentialSerializer(serializers.ModelSerializer):
@@ -90,9 +107,44 @@ class ReplySerializer(serializers.ModelSerializer):
     channel = serializers.SerializerMethodField()
     lastActivity = serializers.SerializerMethodField()
 
+    fromEmail = serializers.CharField(source='from_email', read_only=True)
+    bodyText = serializers.CharField(source='body_text', read_only=True)
+    receivedAt = serializers.DateTimeField(source='received_at', read_only=True)
+    classification = serializers.CharField(read_only=True)
+    classificationLabel = serializers.SerializerMethodField()
+    confidence = serializers.FloatField(read_only=True)
+    suggestedReply = serializers.CharField(source='suggested_reply', read_only=True)
+    handled = serializers.BooleanField(read_only=True)
+    needsAttention = serializers.SerializerMethodField()
+    draftId = serializers.IntegerField(source='draft_id', read_only=True)
+    leadId = serializers.IntegerField(source='lead_id', read_only=True)
+    originalSubject = serializers.SerializerMethodField()
+    answer = serializers.SerializerMethodField()
+
     class Meta:
         model = Reply
-        fields = ['id', 'company', 'contact', 'channel', 'status', 'summary', 'lastActivity']
+        fields = ['id', 'company', 'contact', 'channel', 'status', 'summary', 'lastActivity',
+                  'fromEmail', 'subject', 'bodyText', 'receivedAt', 'classification',
+                  'classificationLabel', 'confidence', 'suggestedReply', 'handled',
+                  'needsAttention', 'draftId', 'leadId', 'originalSubject', 'answer']
+        read_only_fields = ['subject']
+
+    def get_classificationLabel(self, obj):
+        return obj.get_classification_display() if obj.classification else ''
+
+    def get_needsAttention(self, obj):
+        return obj.needs_attention
+
+    def get_originalSubject(self, obj):
+        return obj.draft.subject if obj.draft_id and obj.draft else ''
+
+    def get_answer(self, obj):
+        """The approved answer's outbox state (None until approved)."""
+        d = obj.answer_draft if obj.answer_draft_id else None
+        if d is None:
+            return None
+        return {'id': d.id, 'status': d.get_status_display(), 'scheduledFor': d.scheduled_for,
+                'sentAt': d.sent_at, 'sentVia': d.sent_via, 'error': d.error}
 
     def get_status(self, obj):
         return obj.get_status_display()
@@ -225,10 +277,30 @@ class SettingsSerializer(serializers.ModelSerializer):
     runs = serializers.DictField(required=False)
     report = serializers.DictField(required=False)
     targeting = serializers.DictField(required=False)
+    outbox = serializers.DictField(required=False)
+    warmpulse = serializers.DictField(required=False)
+    followups = serializers.DictField(required=False)
+    whatsapp = serializers.DictField(required=False)
 
     class Meta:
         model = AppSettings
-        fields = ['company', 'aiKey', 'smtp', 'runs', 'report', 'targeting']
+        fields = ['company', 'aiKey', 'smtp', 'runs', 'report', 'targeting', 'outbox', 'warmpulse',
+                  'followups', 'whatsapp']
+
+    def validate_outbox(self, value):
+        value = value or {}
+        start = value.get('windowStart')
+        end = value.get('windowEnd')
+        try:
+            start = None if start in (None, '') else int(start)
+            end = None if end in (None, '') else int(end)
+        except (TypeError, ValueError):
+            raise serializers.ValidationError('Sending hours must be whole hours (0–24).')
+        if (start is not None and not 0 <= start <= 23) or (end is not None and not 1 <= end <= 24):
+            raise serializers.ValidationError('Sending hours must be between 0 and 24.')
+        if start is not None and end is not None and end <= start:
+            raise serializers.ValidationError('The sending window must end after it starts.')
+        return value
 
     def validate_aiKey(self, value):
         # An unknown provider makes llm_available() false, which silently puts the
@@ -273,6 +345,26 @@ class SettingsSerializer(serializers.ModelSerializer):
                 'industries': [i.strip() for i in instance.target_industries.split(',') if i.strip()],
                 'cities': [c.strip() for c in instance.target_cities.split(',') if c.strip()],
                 'icpMode': instance.icp_mode or 'buyer',
+            },
+            'outbox': {
+                'windowStart': instance.send_window_start,
+                'windowEnd': instance.send_window_end,
+                'weekdaysOnly': instance.send_weekdays_only,
+            },
+            'warmpulse': {
+                'apiUrl': instance.warmpulse_api_url,
+                'apiKey': _mask(instance.warmpulse_api_key),
+                'syncedAt': instance.warmpulse_synced_at,
+            },
+            'followups': {
+                'enabled': instance.followups_enabled,
+                'autoApprove': instance.followups_auto_approve,
+            },
+            'whatsapp': {
+                'enabled': instance.whatsapp_enabled,
+                'sidecarUrl': instance.whatsapp_sidecar_url,
+                'secret': _mask(instance.whatsapp_secret),
+                'dailyCap': instance.whatsapp_daily_cap,
             },
         }
 
@@ -331,11 +423,45 @@ class SettingsSerializer(serializers.ModelSerializer):
             # 'agency' = agencies/software shops are the leads (partnership
             # outreach); 'buyer' = businesses that buy our services
             instance.icp_mode = icp_mode
+        outbox = validated.get('outbox') or {}
+        if outbox.get('windowStart') not in (None, ''):
+            instance.send_window_start = int(outbox['windowStart'])
+        if outbox.get('windowEnd') not in (None, ''):
+            instance.send_window_end = int(outbox['windowEnd'])
+        if 'weekdaysOnly' in outbox:
+            instance.send_weekdays_only = bool(outbox['weekdaysOnly'])
+        if instance.send_window_end <= instance.send_window_start:
+            raise serializers.ValidationError({'outbox': 'The sending window must end after it starts.'})
+        wp = validated.get('warmpulse') or {}
+        if 'apiUrl' in wp:
+            instance.warmpulse_api_url = str(wp.get('apiUrl') or '').strip()[:300] or 'https://warmpulse.tech'
+        incoming_wp = wp.get('apiKey')
+        if incoming_wp is not None and not str(incoming_wp).startswith(MASK):
+            # unlike the other keys, an explicit empty string turns WarmPulse off
+            instance.warmpulse_api_key = str(incoming_wp).strip()[:300]
+        fu = validated.get('followups') or {}
+        if 'enabled' in fu:
+            instance.followups_enabled = bool(fu['enabled'])
+        if 'autoApprove' in fu:  # email follow-ups only — WhatsApp always needs approval
+            instance.followups_auto_approve = bool(fu['autoApprove'])
+        wa = validated.get('whatsapp') or {}
+        if 'enabled' in wa:
+            instance.whatsapp_enabled = bool(wa['enabled'])
+        if 'sidecarUrl' in wa:
+            instance.whatsapp_sidecar_url = str(wa.get('sidecarUrl') or '').strip()[:300]
+        incoming_wa = wa.get('secret')
+        if incoming_wa and not str(incoming_wa).startswith(MASK):
+            instance.whatsapp_secret = str(incoming_wa).strip()[:300]
+        if wa.get('dailyCap') not in (None, ''):
+            try:
+                instance.whatsapp_daily_cap = max(0, min(int(wa['dailyCap']), 200))
+            except (TypeError, ValueError):
+                raise serializers.ValidationError({'whatsapp': 'Daily limit must be a whole number.'})
         # never write pipeline_running_since from this (stale) copy — a bare
         # save() would clobber a live run lock held by a cycle (core.runlock)
         instance.save(update_fields=[
             f.name for f in AppSettings._meta.concrete_fields
-            if f.name not in ('id', 'pipeline_running_since')])
+            if f.name not in ('id', 'pipeline_running_since', 'warmpulse_synced_at')])
         return instance
 
 
@@ -373,3 +499,190 @@ class UserSerializer(serializers.Serializer):
     def get_workspace(self, user):
         ws = user.workspace
         return {'name': ws.name, 'slug': ws.slug} if ws else None
+
+
+class MailboxSerializer(serializers.ModelSerializer):
+    """Sending mailbox (Settings → Mailboxes). The SMTP password is masked
+    on read exactly like AppSettings.smtp_password; a masked or empty value
+    sent back never overwrites the stored one."""
+
+    fromEmail = serializers.EmailField(source='from_email')
+    fromName = serializers.CharField(source='from_name', required=False, allow_blank=True)
+    smtpHost = serializers.CharField(source='smtp_host', required=False, allow_blank=True)
+    smtpPort = serializers.IntegerField(source='smtp_port', required=False, min_value=1, max_value=65535)
+    smtpUser = serializers.CharField(source='smtp_user', required=False, allow_blank=True)
+    smtpPassword = serializers.CharField(source='smtp_password', required=False, allow_blank=True,
+                                         write_only=True)
+    imapHost = serializers.CharField(source='imap_host', required=False, allow_blank=True)
+    imapPort = serializers.IntegerField(source='imap_port', required=False, allow_null=True,
+                                        min_value=1, max_value=65535)
+    imapUser = serializers.CharField(source='imap_user', required=False, allow_blank=True)
+    imapPassword = serializers.CharField(source='imap_password', required=False, allow_blank=True,
+                                         write_only=True)
+    dailyCap = serializers.IntegerField(source='daily_cap', required=False, min_value=1, max_value=500)
+    rampStart = serializers.DateField(source='ramp_start', required=False, allow_null=True)
+    isActive = serializers.BooleanField(source='is_active', required=False)
+
+    class Meta:
+        model = Mailbox
+        fields = ['id', 'label', 'fromEmail', 'fromName', 'smtpHost', 'smtpPort', 'smtpUser',
+                  'smtpPassword', 'imapHost', 'imapPort', 'imapUser', 'imapPassword', 'dailyCap', 'rampStart', 'isActive']
+
+    def validate_fromEmail(self, value):
+        value = value.strip().lower()
+        qs = Mailbox.objects.filter(from_email__iexact=value)
+        if self.instance is not None:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError('That mailbox is already added.')
+        return value
+
+    def to_representation(self, instance):
+        from . import outbox
+        from .warmpulse import still_warming
+        now = timezone.now()
+        today = outbox.local(now).date()
+        return {
+            'id': instance.id,
+            'label': instance.label,
+            'fromEmail': instance.from_email,
+            'fromName': instance.from_name,
+            'smtpHost': instance.smtp_host,
+            'smtpPort': instance.smtp_port,
+            'smtpUser': instance.smtp_user,
+            'smtpPassword': _mask(instance.smtp_password),
+            'imapHost': instance.imap_host,
+            'imapPort': instance.imap_port,
+            'imapUser': instance.imap_user,
+            'imapPassword': _mask(instance.imap_password),
+            'imapCheckedAt': instance.imap_checked_at,
+            'imapError': instance.imap_error,
+            'dailyCap': instance.daily_cap,
+            'rampStart': instance.ramp_start.isoformat() if instance.ramp_start else None,
+            'isActive': instance.is_active,
+            'configured': instance.configured(),
+            'paused': outbox.is_paused(instance, now),
+            'pausedUntil': instance.paused_until,
+            'pausedReason': instance.paused_reason if outbox.is_paused(instance, now) else '',
+            'effectiveCap': outbox.effective_cap(instance, today),
+            'sentToday': outbox.sent_on(instance, today),
+            'queued': EmailDraft.objects.filter(mailbox=instance,
+                                                status=EmailDraft.Statuses.QUEUED).count(),
+            'dns': instance.dns or {},
+            'dnsCheckedAt': instance.dns_checked_at,
+            'warmupStatus': instance.warmup_status,
+            'healthScore': instance.health_score,
+            'warmpulseSyncedAt': instance.warmpulse_synced_at,
+            'stillWarming': still_warming(instance),
+        }
+
+    def _apply_password(self, validated, instance=None):
+        password = validated.pop('smtp_password', None)
+        if password and not password.startswith(MASK):
+            validated['smtp_password'] = password
+        imap_password = validated.pop('imap_password', None)
+        if imap_password and not imap_password.startswith(MASK):
+            validated['imap_password'] = imap_password
+        return validated
+
+    def create(self, validated):
+        validated = self._apply_password(validated)
+        if not validated.get('label'):
+            validated['label'] = validated['from_email']
+        if 'ramp_start' not in validated:  # a new mailbox warms up by default
+            validated['ramp_start'] = timezone.localdate()
+        return Mailbox.objects.create(**validated)
+
+    def update(self, instance, validated):
+        validated = self._apply_password(validated, instance)
+        for field, value in validated.items():
+            setattr(instance, field, value)
+        instance.save()
+        return instance
+
+
+# ------------------------------------------------------------------
+# Follow-up sequences, assisted tasks, WhatsApp (core.sequences / core.whatsapp)
+# ------------------------------------------------------------------
+
+class SequenceStepSerializer(serializers.ModelSerializer):
+    delayDays = serializers.IntegerField(source='delay_days', min_value=0, max_value=60)
+    businessDays = serializers.BooleanField(source='business_days', required=False)
+
+    class Meta:
+        model = SequenceStep
+        fields = ['id', 'order', 'channel', 'delayDays', 'businessDays', 'subject', 'body',
+                  'personalize', 'enabled']
+
+
+class SequenceSerializer(serializers.ModelSerializer):
+    isDefault = serializers.BooleanField(source='is_default', read_only=True)
+    steps = SequenceStepSerializer(many=True, required=False)
+
+    class Meta:
+        model = Sequence
+        fields = ['id', 'name', 'isDefault', 'active', 'steps']
+
+    def update(self, instance, validated):
+        steps = validated.pop('steps', None)
+        instance.name = validated.get('name', instance.name)
+        instance.active = validated.get('active', instance.active)
+        instance.save(update_fields=['name', 'active', 'updated_at'])
+        if steps is not None:  # replace the step list (order 1..n as sent)
+            instance.steps.all().delete()
+            for i, st in enumerate(steps, start=1):
+                st['order'] = i
+                if st.get('channel') == 'linkedin_task':
+                    st['body'] = (st.get('body') or '')[:300]
+                instance.steps.create(**st)
+        return instance
+
+
+class EnrollmentSerializer(serializers.ModelSerializer):
+    leadId = serializers.IntegerField(source='lead_id', read_only=True)
+    company = serializers.CharField(source='lead.company', read_only=True)
+    sequence = serializers.CharField(source='sequence.name', read_only=True)
+    currentStep = serializers.IntegerField(source='current_step', read_only=True)
+    pendingStep = serializers.IntegerField(source='pending_step', read_only=True)
+    totalSteps = serializers.SerializerMethodField()
+    stopReason = serializers.CharField(source='stop_reason', read_only=True)
+    nextDueAt = serializers.DateTimeField(source='next_due_at', read_only=True)
+    startedAt = serializers.DateTimeField(source='created_at', read_only=True)
+
+    class Meta:
+        model = Enrollment
+        fields = ['id', 'leadId', 'company', 'sequence', 'status', 'currentStep', 'pendingStep',
+                  'totalSteps', 'stopReason', 'nextDueAt', 'startedAt']
+
+    def get_totalSteps(self, obj):
+        return obj.sequence.steps.filter(enabled=True).count()
+
+
+class OutreachTaskSerializer(serializers.ModelSerializer):
+    leadId = serializers.IntegerField(source='lead_id', read_only=True)
+    company = serializers.SerializerMethodField()
+    dueAt = serializers.DateTimeField(source='due_at', read_only=True)
+
+    class Meta:
+        model = OutreachTask
+        fields = ['id', 'leadId', 'company', 'channel', 'message', 'url', 'phone', 'dueAt', 'status']
+
+    def get_company(self, obj):
+        return obj.lead.company if obj.lead_id and obj.lead else ''
+
+
+class WhatsAppMessageSerializer(serializers.ModelSerializer):
+    leadId = serializers.IntegerField(source='lead_id', read_only=True)
+    toPhone = serializers.CharField(source='to_phone', read_only=True)
+    scheduledFor = serializers.DateTimeField(source='scheduled_for', read_only=True)
+    sentAt = serializers.DateTimeField(source='sent_at', read_only=True)
+    waMeLink = serializers.SerializerMethodField()
+
+    class Meta:
+        model = WhatsAppMessage
+        fields = ['id', 'leadId', 'company', 'toPhone', 'text', 'status', 'scheduledFor', 'sentAt',
+                  'error', 'waMeLink']
+
+    def get_waMeLink(self, obj):
+        from .whatsapp import wa_me_link
+        return wa_me_link(obj.to_phone, obj.text)

@@ -220,7 +220,9 @@ class DraftViewTests(SetupMixin, TenantTestCase):
             status=EmailDraft.Statuses.DRAFT,
         )
 
-    def test_bulk_approve_sends_each_and_reports_the_rest(self):
+    def test_bulk_approve_queues_each_and_reports_the_rest(self):
+        # approve no longer sends inline: each draft is claimed and QUEUED for
+        # the outbox; nothing is sent by the request itself
         from unittest import mock
 
         second = EmailDraft.objects.create(
@@ -230,25 +232,20 @@ class DraftViewTests(SetupMixin, TenantTestCase):
             lead=self.lead, company='Gone', to_email='gone@draftco.com',
             subject='Old', body='Body', status=EmailDraft.Statuses.SENT)
 
-        def fake_send(draft):
-            from django.utils import timezone as tz
-            draft.status = EmailDraft.Statuses.SENT
-            draft.sent_via = EmailDraft.Via.CONSOLE
-            draft.sent_at = tz.now()
-            draft.error = ''
-            draft.save(update_fields=['status', 'sent_via', 'sent_at', 'error', 'updated_at'])
-
-        with mock.patch('core.views.send_draft', side_effect=fake_send):
+        with mock.patch('core.outbox.send_draft') as send:
             resp = self.client.post('/api/drafts/bulk_approve/', {
                 'ids': [self.draft.pk, second.pk, sent_draft.pk, 9999],
             }, format='json')
+        send.assert_not_called()
         self.assertEqual(resp.status_code, 200)
         body = resp.json()
-        self.assertEqual(body['sent'], 2)
+        self.assertEqual(body['queued'], 2)
+        self.assertEqual(body['sent'], 0)
         self.assertEqual(body['failed'], 2)  # already-sent + unknown id
         by_id = {r['id']: r for r in body['results']}
         self.assertTrue(by_id[self.draft.pk]['ok'])
         self.assertTrue(by_id[second.pk]['ok'])
+        self.assertEqual(by_id[second.pk]['status'], EmailDraft.Statuses.QUEUED)
         self.assertIn('already sent', by_id[sent_draft.pk]['error'])
         self.assertEqual(by_id[9999]['error'], 'not found')
 
@@ -272,8 +269,10 @@ class DraftViewTests(SetupMixin, TenantTestCase):
     def test_approve_draft(self):
         resp = self.client.post(f'/api/drafts/{self.draft.pk}/approve/', {}, format='json')
         self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['status'], 'Queued')
         self.draft.refresh_from_db()
-        self.assertIn(self.draft.status, (EmailDraft.Statuses.SENT, EmailDraft.Statuses.FAILED))
+        self.assertEqual(self.draft.status, EmailDraft.Statuses.QUEUED)
+        self.assertIsNotNone(self.draft.scheduled_for)
 
     def test_reject_draft(self):
         resp = self.client.post(f'/api/drafts/{self.draft.pk}/reject/', {}, format='json')

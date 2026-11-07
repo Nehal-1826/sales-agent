@@ -10,6 +10,7 @@ import {
   MOCK_DRAFTS,
   MOCK_LEADS,
   MOCK_PROFILES,
+  MOCK_REPLIES,
   MOCK_TEMPLATES,
   mockResponderReply,
 } from './mockData';
@@ -21,14 +22,22 @@ import type {
   ChatMessage,
   EmailDraft,
   EmailTemplate,
+  Enrollment,
   Id,
   Lead,
+  Mailbox,
+  MailboxInput,
   OnboardingState,
   OutreachStatus,
+  OutreachTask,
   PipelineRunRecord,
   PipelineStatus,
+  Reply,
   SearchProfile,
+  Sequence,
   SettingsState,
+  WhatsAppMessage,
+  WhatsAppStatus,
 } from './types';
 
 const DEMO_ONLY = 'This is the offline demo. Connect your workspace to do that.';
@@ -77,7 +86,7 @@ export async function getPipelineStatus(): Promise<PipelineStatus> {
 export async function getOutreachStatus(): Promise<OutreachStatus> {
   if (await inDemo()) {
     const by = (s: EmailDraft['status']) => MOCK_DRAFTS.filter((d) => d.status === s).length;
-    return { drafts: by('Draft'), approved: by('Approved'), sent: by('Sent'), failed: by('Failed'), smtpConfigured: false };
+    return { drafts: by('Draft'), approved: by('Approved'), queued: by('Queued'), sent: by('Sent'), failed: by('Failed'), smtpConfigured: false };
   }
   return request<OutreachStatus>('/outreach/status/');
 }
@@ -146,6 +155,32 @@ export async function sendTestReport(): Promise<Result<{ status: 'smtp' | 'conso
   return attempt(() => request('/report/test/', post(), 60_000));
 }
 
+/* ---------------- replies (read from the mailboxes) ---------------- */
+
+/** Prospect replies, newest first; those waiting on you come first. */
+export async function getReplies(): Promise<Reply[]> {
+  if (await inDemo()) return MOCK_REPLIES;
+  return request<Reply[]>('/replies/');
+}
+
+/** Approve the suggested answer (optionally edited). It is queued in the
+ *  outbox on the same mailbox, threaded under their email — never sent inline. */
+export async function approveReplySuggestion(id: Id, text: string): Promise<Result<Reply>> {
+  if (await inDemo()) return demoFail();
+  return attempt(() => request<Reply>(`/replies/${id}/approve_suggestion/`, post({ text })));
+}
+
+export async function markReplyHandled(id: Id, handled = true): Promise<Result<Reply>> {
+  if (await inDemo()) return demoFail();
+  return attempt(() => request<Reply>(`/replies/${id}/mark_handled/`, post({ handled })));
+}
+
+/** Check the mailboxes for new replies now (the worker does it every ~3 min). */
+export async function pollInbox(): Promise<Result<{ mailboxes: Record<string, unknown> }>> {
+  if (await inDemo()) return demoFail();
+  return attempt(() => request<{ mailboxes: Record<string, unknown> }>('/inbox/poll/', post(), 90_000));
+}
+
 /* ---------------- outreach drafts ---------------- */
 
 export async function getDrafts(): Promise<EmailDraft[]> {
@@ -161,13 +196,14 @@ export async function updateDraft(
   return attempt(() => request<EmailDraft>(`/drafts/${id}/`, put(patch)));
 }
 
-/** Approve → the backend sends immediately. SMTP can take ~30 s per message. */
+/** Approve → the backend queues it (status 'Queued' + scheduledFor); the
+ *  outbox sends it gradually inside the sending window. */
 export async function approveDraft(id: Id): Promise<Result<EmailDraft>> {
   if (await inDemo()) return demoFail();
   return attempt(() => request<EmailDraft>(`/drafts/${id}/approve/`, post(), 45_000));
 }
 
-/** Retry a failed send. */
+/** Retry a failed send — requeued like an approve. */
 export async function sendDraft(id: Id): Promise<Result<EmailDraft>> {
   if (await inDemo()) return demoFail();
   return attempt(() => request<EmailDraft>(`/drafts/${id}/send/`, post(), 45_000));
@@ -189,6 +225,54 @@ export interface DraftLeadResult {
 export async function draftLeadEmail(leadId: Id): Promise<Result<DraftLeadResult>> {
   if (await inDemo()) return demoFail();
   return attempt(() => request<DraftLeadResult>(`/leads/${leadId}/draft_email/`, post(), 60_000));
+}
+
+/** Bulk approve — every draft is queued; nothing is sent by the request. */
+export async function bulkApproveDrafts(ids: Id[]): Promise<Result<{
+  results: { id: Id; ok: boolean; status?: string; scheduledFor?: string | null; error?: string }[];
+  queued: number;
+  failed: number;
+}>> {
+  if (await inDemo()) return demoFail();
+  return attempt(() => request('/drafts/bulk_approve/', post({ ids }), 60_000));
+}
+
+/* ---------------- mailboxes (outbox) ---------------- */
+
+export async function getMailboxes(): Promise<Mailbox[]> {
+  if (await inDemo()) return [];
+  return request<Mailbox[]>('/mailboxes/');
+}
+
+export async function createMailbox(input: MailboxInput): Promise<Result<Mailbox>> {
+  if (await inDemo()) return demoFail();
+  return attempt(() => request<Mailbox>('/mailboxes/', post(input)));
+}
+
+export async function updateMailbox(id: number, input: MailboxInput): Promise<Result<Mailbox>> {
+  if (await inDemo()) return demoFail();
+  return attempt(() => request<Mailbox>(`/mailboxes/${id}/`, { ...put(input), method: 'PATCH' }));
+}
+
+export async function deleteMailbox(id: number): Promise<Result<unknown>> {
+  if (await inDemo()) return demoFail();
+  return attempt(() => request<unknown>(`/mailboxes/${id}/`, { method: 'DELETE' }));
+}
+
+/** Re-run the SPF / DKIM / DMARC / MX check for one mailbox. */
+export async function checkMailboxDns(id: number): Promise<Result<Mailbox>> {
+  if (await inDemo()) return demoFail();
+  return attempt(() => request<Mailbox>(`/mailboxes/${id}/dns_check/`, post(), 30_000));
+}
+
+export async function resumeMailbox(id: number): Promise<Result<Mailbox>> {
+  if (await inDemo()) return demoFail();
+  return attempt(() => request<Mailbox>(`/mailboxes/${id}/resume/`, post()));
+}
+
+export async function syncWarmPulse(): Promise<Result<{ ok: boolean; matched?: number; message?: string }>> {
+  if (await inDemo()) return demoFail();
+  return attempt(() => request('/warmpulse/sync/', post(), 30_000));
 }
 
 /* ---------------- settings ---------------- */
@@ -337,4 +421,76 @@ export async function askGuide(text: string, history: { from: string; text: stri
     const r = await request<{ answer: string }>('/guide/', post({ text, history: history.slice(-8) }), 90_000);
     return r.answer;
   });
+}
+
+/* ---------------- follow-ups, tasks, WhatsApp ---------------- */
+
+export async function getSequences(): Promise<Sequence[]> {
+  if (await inDemo()) return [];
+  return request<Sequence[]>('/sequences/');
+}
+
+/** Save a sequence (name / active / the whole step list, renumbered 1..n). */
+export async function saveSequence(seq: Sequence): Promise<Result<Sequence>> {
+  if (await inDemo()) return demoFail();
+  return attempt(() => request<Sequence>(`/sequences/${seq.id}/`, put(seq)));
+}
+
+export async function getEnrollments(leadId?: number): Promise<Enrollment[]> {
+  if (await inDemo()) return [];
+  return request<Enrollment[]>(leadId ? `/enrollments/?lead=${leadId}` : '/enrollments/');
+}
+
+export async function stopEnrollment(id: number): Promise<Result<Enrollment>> {
+  if (await inDemo()) return demoFail();
+  return attempt(() => request<Enrollment>(`/enrollments/${id}/stop/`, post()));
+}
+
+export async function getTasks(status: 'open' | 'all' = 'open'): Promise<OutreachTask[]> {
+  if (await inDemo()) return [];
+  return request<OutreachTask[]>(`/tasks/?status=${status}`);
+}
+
+export async function updateTask(id: number, action: 'done' | 'skip'): Promise<Result<OutreachTask>> {
+  if (await inDemo()) return demoFail();
+  return attempt(() => request<OutreachTask>(`/tasks/${id}/${action}/`, post()));
+}
+
+export async function getWhatsAppMessages(status = 'draft'): Promise<WhatsAppMessage[]> {
+  if (await inDemo()) return [];
+  return request<WhatsAppMessage[]>(`/whatsapp/messages/?status=${status}`);
+}
+
+export async function actOnWhatsApp(
+  id: number,
+  action: 'approve' | 'reject',
+  text?: string,
+): Promise<Result<WhatsAppMessage>> {
+  if (await inDemo()) return demoFail();
+  return attempt(() =>
+    request<WhatsAppMessage>(`/whatsapp/messages/${id}/${action}/`, post(text ? { text } : {})),
+  );
+}
+
+export async function getWhatsAppStatus(): Promise<WhatsAppStatus> {
+  if (await inDemo()) {
+    return { enabled: false, reachable: false, connected: false, state: '', error: '', sentToday: 0, dailyCap: 20 };
+  }
+  return request<WhatsAppStatus>('/whatsapp/status/', undefined, 20_000);
+}
+
+export async function getWhatsAppQr(): Promise<{ qr: string; error: string }> {
+  if (await inDemo()) return { qr: '', error: DEMO_ONLY };
+  return request('/whatsapp/qr/', undefined, 20_000);
+}
+
+export async function testWhatsApp(to: string): Promise<Result<{ ok: boolean; to?: string }>> {
+  if (await inDemo()) return demoFail();
+  return attempt(() => request('/whatsapp/test/', post({ to }), 30_000));
+}
+
+/** Manual opt-out: never WhatsApp this lead's number (or a typed number) again. */
+export async function optOutWhatsApp(body: { leadId?: number; phone?: string }): Promise<Result<{ ok: boolean; phone: string }>> {
+  if (await inDemo()) return demoFail();
+  return attempt(() => request('/whatsapp/opt_out/', post(body)));
 }

@@ -36,10 +36,11 @@ class KeywordReplyTests(TenantTestCase):
 
     def test_reply_query_no_data(self):
         reply = _keyword_reply('any replies?')
-        self.assertIn('all caught up', reply)
+        self.assertIn('No replies from prospects yet', reply)
 
     def test_reply_query_with_data(self):
-        Reply.objects.create(company='ReplyCo', contact='J', channel='email', status='awaiting')
+        Reply.objects.create(company='ReplyCo', contact='J', channel='email', status='awaiting',
+                             classification='question', from_email='j@replyco.com')
         reply = _keyword_reply('check replies')
         self.assertIn('ReplyCo', reply)
 

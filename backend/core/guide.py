@@ -12,7 +12,7 @@ from .ai import llm_available, llm_complete
 from .chat import _humanize, detect_language_style
 from .mailer import smtp_configured
 from .permissions import is_privileged
-from .models import AppSettings, EmailDraft, EmailTemplate, Lead, PipelineRun, Potential
+from .models import Enrollment, OutreachTask, WhatsAppMessage, AppSettings, EmailDraft, EmailTemplate, Lead, PipelineRun, Potential
 
 log = logging.getLogger(__name__)
 
@@ -28,8 +28,45 @@ THE PIPELINE (runs automatically on a schedule or via Pipeline → "Run cycle"):
 Search discovers companies worldwide via DuckDuckGo → Profile visits each site, audits it
 (flaws, contact email, 0-100 potential score) and Gemini writes a real company description
 from the site text → Copywright drafts a personalized cold email using the user's default
-template + description + audit findings → drafts wait for human approval → Responder/chat
-handles conversations. Nothing is ever emailed without the user clicking Approve.
+template + description + audit findings → drafts wait for human approval → Responder reads
+prospect replies from the mailboxes and suggests answers for approval. Nothing is ever
+emailed without the user clicking Approve.
+
+REPLIES (left menu → Replies; the badge counts replies waiting on the user):
+Every ~3 minutes the mailboxes are read (read-only — mail is never deleted, moved or
+marked read; "Check for replies now" does it at once). Each reply to one of our emails
+is sorted: Interested, Has a question, Not right now, Not interested, Asked to stop,
+Out of office, Other. Interested / question replies get a suggested answer the user can
+edit; "Approve & queue" sends it from the same mailbox in the same email thread, through
+the normal sending queue. Nothing is ever answered automatically. "Mark handled" clears
+a reply. People who ask to stop (unsubscribe / remove me / stop) are removed for good and
+any email still waiting to go to them is cancelled. Bounced emails (address does not
+exist) are stopped for good too; too many bounces pause that mailbox for 24 h.
+Out-of-office auto-replies are noted but never counted as a real answer.
+
+FOLLOW-UPS (Settings → Follow-ups):
+After a cold email is sent, the company gets up to two short follow-ups: a bump after
+3 working days and a "closing the loop" email 4 working days later. Each follow-up goes
+in the same email thread ("Re: …"), from the same mailbox. Follow-ups wait in Approvals
+like any email unless "Send follow-ups without asking" is on (off by default); either way
+the sending queue paces them. Follow-ups stop at once when the company replies (an
+out-of-office reply only pushes them back 3 days), the email bounces, they unsubscribe,
+the deal is marked Won/Lost, the company is marked "do not contact", or the user presses
+"Stop follow-ups" on the company. Optional extra steps (off by default): a LinkedIn task
+(opens a LinkedIn search and gives a short note to paste — LinkedIn is never automated),
+a call task, and a WhatsApp step.
+
+TASKS (left menu → Tasks): things a person does — LinkedIn notes, calls, and "Open in
+WhatsApp" links with the message already typed. Copy the text, open the link, then mark
+Done or Skip.
+
+WHATSAPP (Settings → WhatsApp, off by default): unofficial WhatsApp automation can get the
+number banned by WhatsApp — use a separate number, keep volumes low (daily limit, default
+20) and only message businesses that published the number. It needs the WhatsApp helper
+running; log in by scanning the QR code shown in Settings. Every WhatsApp message needs
+an approval in Approvals, always — even when email follow-ups are sent without asking.
+Messages go out only in the sending hours. "Stop WhatsApp to this number" blocks a number
+for good. With the helper off, WhatsApp steps become "Open in WhatsApp" tasks instead.
 
 PAGES:
 - Dashboard: everything at a glance — lead map/table with filters (industry, country,
@@ -56,8 +93,9 @@ PAGES:
   buyers of our services, or agency partners where agencies ARE the leads);
   Email Delivery SMTP (provider picker: Zoho Mail India/US/EU datacenter or
   Gmail; Zoho: username = full mailbox address, App Password when 2FA is on,
-  IMAP/SMTP access enabled in Zoho Mail settings; approved emails send from here,
-  without it they print to the server console); Email Templates (write manually or
+  IMAP/SMTP access enabled in Zoho Mail settings; approved emails are queued and
+  sent gradually from your mailboxes (Settings → Mailboxes & speed: daily limit,
+  sending hours, domain check), without one they print to the server console); Email Templates (write manually or
   upload .txt/.md/.html — first line "Subject: ..." becomes the subject; one default
   template; placeholders {{company}} {{industry}} {{website}} {{description}}
   {{findings}} {{sender_name}} {{sender_website}} {{services}}); Daily Report
@@ -90,6 +128,7 @@ def workspace_state(user=None):
     """Live snapshot so the guide can point at what's missing for THIS user.
     Configuration (keys, mailbox, report address, schedule) is owner/admin
     information — a member gets only the CRM counts."""
+    from .inbox import replies_digest
     s = AppSettings.load()
     if user is not None and not is_privileged(user):
         return (
@@ -97,6 +136,7 @@ def workspace_state(user=None):
             f'- Leads in CRM: {Lead.objects.count()}\n'
             f'- Email drafts awaiting approval: '
             f'{EmailDraft.objects.filter(status="draft").count()}\n'
+            f'- Prospect replies:\n{replies_digest(3)}\n'
             '- Workspace configuration is managed by the owner; do not describe it.\n'
         )
     return (
@@ -114,6 +154,14 @@ def workspace_state(user=None):
         f'- Autonomous runs: {"enabled" if s.runs_enabled else "paused"}, '
         f'every {s.get_run_frequency_display().lower()}\n'
         f'- Pipeline runs so far: {PipelineRun.objects.count()}\n'
+        f'- Follow-ups: {"on" if s.followups_enabled else "off"} '
+        f'({"sent without asking" if s.followups_auto_approve else "wait for approval"}), '
+        f'{Enrollment.objects.filter(status="active").count()} companies in a follow-up sequence\n'
+        f'- Open tasks (LinkedIn / call / WhatsApp link): '
+        f'{OutreachTask.objects.filter(status="open").count()}\n'
+        f'- WhatsApp: {"on" if s.whatsapp_enabled else "off"}, '
+        f'{WhatsAppMessage.objects.filter(status="draft").count()} messages awaiting approval\n'
+        f'- Prospect replies:\n{replies_digest(3)}\n'
     )
 
 

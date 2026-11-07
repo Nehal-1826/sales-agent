@@ -5,12 +5,16 @@ import { GuideWidget } from './components/GuideWidget';
 import { Toaster, toast } from './components/feedback';
 import { HomePage } from './pages/HomePage';
 import { ApprovalsPage } from './pages/ApprovalsPage';
+import { RepliesPage } from './pages/RepliesPage';
+import { TasksPage } from './pages/TasksPage';
 import { LeadsPage } from './pages/LeadsPage';
 import { ActivityPage } from './pages/ActivityPage';
 import { ChatPage } from './pages/ChatPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { LoginPage } from './pages/LoginPage';
 import { LandingPage } from './pages/LandingPage';
+import { MarketingPage, isMarketingSubpage } from './marketing/MarketingSite';
+import { routeMeta } from './marketing/site';
 import { SESSION_EXPIRED_EVENT, checkAuth, getOnboarding, logout, reprobe } from './lib/api';
 import type { AuthState } from './lib/api';
 import { navigate, useRoute } from './lib/router';
@@ -18,11 +22,32 @@ import { WorkspaceStatusProvider } from './lib/status';
 
 type Gate = 'checking' | AuthState;
 
+/** Public, prerendered marketing pages (/pricing, /privacy …) render without the auth gate. */
 export default function App() {
+  const path = window.location.pathname;
+  if (isMarketingSubpage(path)) return <MarketingPage path={routeMeta(path)!.path} />;
+  return <AppGate />;
+}
+
+/** A stored session token means "probably signed in": keep the spinner instead of flashing the landing page. */
+function hasStoredToken(): boolean {
+  try {
+    return !!localStorage.getItem('agentic-ai:token'); // same key as lib/transport.ts
+  } catch {
+    return false;
+  }
+}
+
+/** Marketing links send visitors to /?signin=1 to open the sign-in screen directly. */
+function wantsSignIn(): boolean {
+  return new URLSearchParams(window.location.search).has('signin');
+}
+
+function AppGate() {
   const [gate, setGate] = useState<Gate>('checking');
   // public marketing page is the entry for signed-out visitors; "Dashboard" /
   // "Start" goes to sign-in (never to open sign-up — accounts are created by the owner)
-  const [landing, setLanding] = useState(true);
+  const [landing, setLanding] = useState(() => !wantsSignIn());
 
   const probe = useCallback(async (fresh = false) => {
     setGate('checking');
@@ -34,6 +59,11 @@ export default function App() {
     void probe();
   }, [probe]);
 
+  // drop ?signin=1 from the address bar once read
+  useEffect(() => {
+    if (wantsSignIn()) window.history.replaceState(null, '', window.location.pathname + window.location.hash);
+  }, []);
+
   // any 401 mid-session (token revoked/expired) → back to the sign-in screen
   useEffect(() => {
     const onExpired = () => {
@@ -43,6 +73,12 @@ export default function App() {
     window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
     return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
   }, []);
+
+  // signed-out visitors see the (prerendered) landing page at once, not a spinner;
+  // same element as the 'unauthenticated' branch below, so React keeps it mounted
+  if (gate === 'checking' && landing && !hasStoredToken()) {
+    return <LandingPage onEnterDashboard={() => setLanding(false)} />;
+  }
 
   if (gate === 'checking') {
     return (
@@ -55,6 +91,12 @@ export default function App() {
         <Toaster />
       </div>
     );
+  }
+
+  // the public landing page never depends on the API: a signed-out visitor keeps
+  // seeing it while the backend is down; only "Sign in" reaches the offline screen
+  if (gate === 'offline' && landing && !hasStoredToken()) {
+    return <LandingPage onEnterDashboard={() => setLanding(false)} />;
   }
 
   if (gate === 'offline') {
@@ -129,6 +171,8 @@ function Shell({ demo, onSignOut }: { demo: boolean; onSignOut: () => void }) {
         <main className="content" id="main" tabIndex={-1}>
           {page === 'home' && <HomePage />}
           {page === 'approvals' && <ApprovalsPage />}
+          {page === 'replies' && <RepliesPage />}
+          {page === 'tasks' && <TasksPage />}
           {page === 'leads' && <LeadsPage tab={sub} />}
           {page === 'activity' && <ActivityPage />}
           {page === 'assistant' && <ChatPage />}

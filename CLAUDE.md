@@ -77,9 +77,24 @@ row without `update_fields` — a full-row save can clobber the lock.
 
 - **Search** — `scraper.search_queries_for_cycle()` builds industry × region
   queries (target cities beat countries; empty = worldwide rotation with an
-  India-metro slice), DuckDuckGo via `ddgs`, 8 s pause between queries. Known
-  domains, company names and `AppSettings.rejected_domains` are skipped. In
-  buyer mode a free Google Maps scrape (`gmaps.py`) adds no-website businesses.
+  India-metro slice); `discovery.expand_queries()` adds rotated phrasing
+  variants (+ neighbouring cities at higher widen levels, hard cap 60) and
+  `discovery.next_widen_level()` adapts volume from the last
+  `PipelineRun.summary['discovery']` (new vs known). Free engines only:
+  `search_backends.text_search()` rotates ddgs backends (DuckDuckGo, Brave,
+  Mojeek, Yahoo, Bing, Google, Startpage, Yandex) with per-process health —
+  rate limit / empty page → exponential cooldown, fall through to the next
+  engine (≤ 4 per query). Results deduped by registrable domain. Known
+  domains, company names and `AppSettings.rejected_domains` are skipped. Free
+  Google Maps scrape (`gmaps.py`) adds WITH-website listings (NLP + AI fit
+  funnel) and, in buyer mode, no-website businesses.
+- **Cycle budget + heartbeat** — `_run_cycle` beats the run lock
+  (`runlock.heartbeat_run_lock`, conditional on the owner's token) between
+  phases and every 5 profiled leads; after `CYCLE_BUDGET_SECONDS` (35 min) no
+  new search/profile work starts — leftovers stay `profiled=False`.
+  Leads audited > 90 days ago with no SENT draft are re-audited in place
+  (≤ 5/cycle, `pipeline._reprofile`: no gates, no deletion, contact fields
+  only filled); Copywright still never re-drafts a lead that has drafts.
 - **Profile** — `scraper.analyze_website()` audits the site (contact
   email/phone, findings, 0–100 score). Then two gates, both of which **delete
   the lead and blacklist its domain**: `icp.looks_like_competitor()` (heuristic,
@@ -133,6 +148,54 @@ a user's screen:
 - **Never send without approval.** Drafts only leave on an explicit user
   action; `sent_via='console'` means logged, **not delivered** — the UI must
   say so.
+- **Approve queues, the outbox sends** (`core/outbox.py`). Every approve path
+  (single, bulk, retry, chat, admin) calls `outbox.enqueue_draft()` = claim +
+  status `QUEUED` with a `Mailbox` and `scheduled_for`; nothing sends inline.
+  `drain_outbox()` (run_worker thread every ~30 s, `manage.py drain_outbox`,
+  `kick_drain()` after an API approve) sends due drafts only after
+  `claim_queued()` (atomic QUEUED → APPROVED), inside the sending window
+  (`AppSettings.send_window_*`, Asia/Kolkata, weekdays), under each mailbox's
+  `effective_cap()` (warmup ramp 5 → `daily_cap` over 14 days; WarmPulse
+  "warming"/health < 70 holds the ramp), 45–180 s apart, re-checking
+  `Suppression`. Stale APPROVED (> `STUCK_AFTER`) is requeued. A mailbox
+  auto-pauses 24 h on SMTP auth failure or > 3 % bounces (`EmailDraft.bounced_at`)
+  in its last 50 sends; its queue moves to another mailbox. When any `Mailbox`
+  exists it is the source of truth; `AppSettings.smtp_*` is the legacy fallback
+  (auto-converted into a Mailbox). The UI shows "Queued — sends at ~HH:MM".
+- **Replies are read, never auto-answered** (`core/inbox.py`). run_worker's
+  inbox thread (~3 min, per workspace; `manage.py poll_inbox`,
+  `POST /api/inbox/poll/`) reads each mailbox over IMAP read-only
+  (`select(readonly=True)` + `BODY.PEEK[]`, never STORE/MOVE/EXPUNGE) past
+  `Mailbox.imap_last_uid`. Match: our `EmailDraft.message_id` in
+  In-Reply-To/References, else sender == `to_email` (current workspace only);
+  unrelated mail is ignored. Hard DSN (5.x.x) → `bounced_at` +
+  `Suppression(BOUNCE)` + `lead.analysis['email_bounced']` (address kept) +
+  `check_bounce_pause`; soft (4.x.x) → note on the draft. Auto-replies → a
+  handled OOO `Reply`. "stop/unsubscribe/remove me" is decided by the keyword
+  heuristic even when an LLM disagrees → `Suppression(UNSUBSCRIBE,
+  source='reply')` + pending drafts to them rejected. Interested/question →
+  `Reply.suggested_reply`; only `approve_suggestion` (human) creates a draft
+  with `in_reply_to`/`references` (sent as headers by `mailer.thread_headers`)
+  and queues it via `enqueue_draft(prefer_mailbox=…)`.
+- **Follow-ups stop on any sign of life** (`core/sequences.py`). A SENT cold
+  email enrolls its lead (`Enrollment`) in the default `Sequence`
+  (`AppSettings.followups_enabled`, seeded by migration 0031 / lazily).
+  `sequences.tick()` (run_worker outbox thread) materializes due steps:
+  email → threaded `EmailDraft(status=draft, enrollment, sequence_step)`
+  ("Re: …", In-Reply-To/References, same mailbox), straight to
+  `enqueue_draft` only when `followups_auto_approve` (default off);
+  linkedin/call → `OutreachTask` (LinkedIn is never automated); whatsapp →
+  `WhatsAppMessage` draft, or a wa.me task when the sidecar is off. Signals
+  stop it atomically (`stop_enrollment` rejects unsent items) on a `Reply`
+  (OOO only shifts `next_due_at`), `Suppression`, hard bounce, Potential
+  won/lost, `Lead.do_not_contact`, or the Stop button; `send_draft` and
+  `whatsapp.send_message` re-check the enrollment right before sending.
+- **WhatsApp is opt-in and always human-approved** (`core/whatsapp.py`, Node
+  sidecar `whatsapp-sidecar/`, open-wa, can get the number banned). Never
+  auto-approve it. Sends only in the sending window, under
+  `whatsapp_daily_cap`, 60–240 s apart, skipping phone `Suppression` rows;
+  sidecar down → stays queued with an error. Phones → E.164
+  (`normalize_phone`, India default).
 - **Every cold email can be unsubscribed, permanently.** `send_draft` adds a
   signed per-recipient link (footer, with `AppSettings.company_address`) and
   RFC 8058 `List-Unsubscribe` / `List-Unsubscribe-Post` headers, and refuses
@@ -166,7 +229,9 @@ Built for a non-technical client: plain language ("Find companies",
 "Research", "Write emails", "Autopilot", "Good fit"), no Django/DB jargon in
 client-facing copy.
 
-- Pages (hash router `src/lib/router.ts`, `#/page/sub`): Home · Approvals ·
+- Pages (hash router `src/lib/router.ts`, `#/page/sub`): Home · Approvals
+  (+ WhatsApp drafts) · Replies (`pages/RepliesPage.tsx`, badge =
+  `repliesNeedingAttention`) · Tasks (LinkedIn / call / wa.me) ·
   Leads (`#/leads/board`, `#/leads/reports`) · Activity · Assistant ·
   Settings (`#/settings/<section>`, sections in `pages/settings/`, each saves
   only its own fields via `useSectionForm` with an unsaved-changes guard).

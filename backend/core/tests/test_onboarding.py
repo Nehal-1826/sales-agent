@@ -307,11 +307,11 @@ class ApproveAllActionTests(TenantTestCase):
         from core.models import EmailDraft
         self._draft('Acme', 'hi@acme.com')
         self._draft('Beta', 'hi@beta.com')
-        with mock.patch('core.actions.send_draft',
-                        side_effect=lambda d: setattr(d, 'status', EmailDraft.Statuses.SENT) or d.save(update_fields=['status', 'updated_at']) or d):
+        with mock.patch('core.outbox.send_draft') as send:
             result = execute({'action': 'approve_all'})
+        send.assert_not_called()  # approve queues; the outbox drain sends
         self.assertIn('2 of 2', result)
-        self.assertEqual(EmailDraft.objects.filter(status='sent').count(), 2)
+        self.assertEqual(EmailDraft.objects.filter(status='queued').count(), 2)
 
     def test_execute_empty_queue(self):
         result = execute({'action': 'approve_all'})

@@ -1,0 +1,16 @@
+{
+  "name": "whatsapp-sidecar",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Opt-in WhatsApp sender for the sales agent (open-wa). Unofficial - the number can be banned.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@open-wa/wa-automate": "^4.76.0"
+  }
+}

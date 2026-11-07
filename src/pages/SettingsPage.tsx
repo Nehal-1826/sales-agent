@@ -9,6 +9,9 @@ import { AccountSection } from './settings/AccountSection';
 import { AdvancedSection } from './settings/AdvancedSection';
 import { BusinessSection } from './settings/BusinessSection';
 import { EmailSection } from './settings/EmailSection';
+import { FollowupsSection } from './settings/FollowupsSection';
+import { WhatsAppSection } from './settings/WhatsAppSection';
+import { MailboxesSection } from './settings/MailboxesSection';
 import { ScheduleSection } from './settings/ScheduleSection';
 import { TargetingSection } from './settings/TargetingSection';
 import { TemplatesSection } from './settings/TemplatesSection';
@@ -17,7 +20,10 @@ const SECTIONS: { key: SettingsSection; label: string; hint: string }[] = [
   { key: 'business', label: 'Your business', hint: 'Name, website, what you sell' },
   { key: 'targeting', label: 'Who to find', hint: 'Places and kinds of businesses' },
   { key: 'email', label: 'Email sending', hint: 'Connect your mailbox' },
+  { key: 'mailboxes', label: 'Mailboxes & speed', hint: 'Daily limits, sending hours, domain check' },
   { key: 'templates', label: 'Email templates', hint: 'How emails start' },
+  { key: 'followups', label: 'Follow-ups', hint: 'Reminders after the first email' },
+  { key: 'whatsapp', label: 'WhatsApp', hint: 'Optional, off by default' },
   { key: 'schedule', label: 'Schedule & reports', hint: 'Autopilot and daily report' },
   { key: 'account', label: 'Account', hint: 'Password' },
   { key: 'advanced', label: 'Advanced', hint: 'AI key, mail server, AI instructions' },
@@ -77,6 +83,12 @@ export function SettingsPage({ section: raw }: { section: string }) {
             <TargetingSection settings={settings} onSaved={setSettings} />
           ) : section === 'email' ? (
             <EmailSection settings={settings} onSaved={setSettings} />
+          ) : section === 'mailboxes' ? (
+            <MailboxesSection settings={settings} onSaved={setSettings} />
+          ) : section === 'followups' ? (
+            <FollowupsSection settings={settings} onSaved={setSettings} />
+          ) : section === 'whatsapp' ? (
+            <WhatsAppSection settings={settings} onSaved={setSettings} />
           ) : section === 'schedule' ? (
             <ScheduleSection settings={settings} onSaved={setSettings} />
           ) : (

@@ -109,6 +109,8 @@ class Lead(TenantOwned, Timestamped):
     analysis = models.JSONField(default=dict, blank=True)  # raw scrape metrics
     # AI (Gemini) summary of what the company does, written from its own site text
     description = models.TextField(blank=True)
+    # "Do not contact" — stops every follow-up sequence for this lead (core.sequences)
+    do_not_contact = models.BooleanField(default=False)
 
     class Meta(TenantOwned.Meta):
         ordering = ['-created_at']
@@ -122,7 +124,8 @@ class EmailDraft(TenantOwned, Timestamped):
 
     class Statuses(models.TextChoices):
         DRAFT = 'draft', 'Draft'
-        APPROVED = 'approved', 'Approved'
+        APPROVED = 'approved', 'Approved'  # claimed: being sent right now
+        QUEUED = 'queued', 'Queued'  # approved, waiting in the outbox (core.outbox)
         SENT = 'sent', 'Sent'
         REJECTED = 'rejected', 'Rejected'
         FAILED = 'failed', 'Failed'
@@ -141,12 +144,84 @@ class EmailDraft(TenantOwned, Timestamped):
     sent_via = models.CharField(max_length=20, choices=Via.choices, blank=True)
     sent_at = models.DateTimeField(null=True, blank=True)
     error = models.CharField(max_length=500, blank=True)
+    # Outbox (core.outbox): which mailbox sends it and when it is due.
+    mailbox = models.ForeignKey('core.Mailbox', null=True, blank=True,
+                                on_delete=models.SET_NULL, related_name='drafts')
+    scheduled_for = models.DateTimeField(null=True, blank=True, db_index=True)
+    # Message-ID header we generated (make_msgid on the mailbox domain) —
+    # reply threading matches on it.
+    message_id = models.CharField(max_length=300, blank=True)
+    # set by bounce processing; feeds Mailbox.bounce_rate() / auto-pause
+    bounced_at = models.DateTimeField(null=True, blank=True)
+    # threading for answers to a prospect's reply (core.inbox): their
+    # Message-ID, and the References chain; send_draft adds both headers.
+    in_reply_to = models.CharField(max_length=300, blank=True)
+    references = models.TextField(blank=True)
+    # follow-up sequences (core.sequences): the enrollment this email belongs
+    # to and its step number (0 = the cold email, 1.. = follow-ups)
+    enrollment = models.ForeignKey('core.Enrollment', null=True, blank=True,
+                                   on_delete=models.SET_NULL, related_name='drafts')
+    sequence_step = models.PositiveSmallIntegerField(default=0)
 
     class Meta(TenantOwned.Meta):
         ordering = ['-updated_at']
 
     def __str__(self):
         return f'{self.company} — {self.get_status_display()}'
+
+
+class Mailbox(TenantOwned, Timestamped):
+    """Outreach — one sending mailbox.  Cold email rotates across the active
+    ones (core.outbox), each with its own daily cap, warmup ramp, DNS health
+    and auto-pause.  When any Mailbox exists it is the source of truth; the
+    legacy AppSettings.smtp_* fields are only the fallback for none."""
+
+    label = models.CharField(max_length=100, blank=True)
+    from_email = models.CharField(max_length=200)
+    from_name = models.CharField(max_length=200, blank=True)
+    smtp_host = models.CharField(max_length=200, blank=True)
+    smtp_port = models.PositiveIntegerField(default=587)
+    smtp_user = models.CharField(max_length=200, blank=True)
+    smtp_password = models.CharField(max_length=500, blank=True)
+    imap_host = models.CharField(max_length=200, blank=True)
+    imap_port = models.PositiveIntegerField(null=True, blank=True)
+    # optional separate IMAP login (blank = same as SMTP)
+    imap_user = models.CharField(max_length=200, blank=True)
+    imap_password = models.CharField(max_length=500, blank=True)
+    # core.inbox polling state: UID high-water mark, last poll, last error
+    imap_last_uid = models.PositiveBigIntegerField(default=0)
+    imap_uidvalidity = models.CharField(max_length=40, blank=True)
+    imap_checked_at = models.DateTimeField(null=True, blank=True)
+    imap_error = models.CharField(max_length=300, blank=True)
+    daily_cap = models.PositiveIntegerField(default=30)
+    # warmup ramp: the effective cap climbs from 5 to daily_cap over 14 days
+    ramp_start = models.DateField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    paused_until = models.DateTimeField(null=True, blank=True)
+    paused_reason = models.CharField(max_length=300, blank=True)
+    # a manual resume restarts the bounce-rate window (core.outbox)
+    resumed_at = models.DateTimeField(null=True, blank=True)
+    # core.dns_check results: {domain, spf, dmarc, dkim, mx} (each {ok, ...})
+    dns = models.JSONField(default=dict, blank=True)
+    dns_checked_at = models.DateTimeField(null=True, blank=True)
+    # WarmPulse (core.warmpulse) — optional warmup service status
+    warmup_status = models.CharField(max_length=30, blank=True)
+    health_score = models.FloatField(null=True, blank=True)
+    warmpulse_synced_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta(TenantOwned.Meta):
+        ordering = ['id']
+        unique_together = [('workspace', 'from_email')]
+
+    def __str__(self):
+        return self.label or self.from_email
+
+    @property
+    def domain(self):
+        return (self.from_email or '').rsplit('@', 1)[-1].strip().lower()
+
+    def configured(self):
+        return bool(self.smtp_host and self.smtp_user and self.smtp_password)
 
 
 class EmailTemplate(TenantOwned, Timestamped):
@@ -178,6 +253,8 @@ class Potential(TenantOwned, Timestamped):
         QUALIFIED = 'qualified', 'Qualified'
         PROPOSAL = 'proposal', 'Proposal'
         NEGOTIATION = 'negotiation', 'Negotiation'
+        WON = 'won', 'Won'
+        LOST = 'lost', 'Lost'
 
     company = models.CharField(max_length=200)
     opportunity = models.CharField(max_length=300)
@@ -194,7 +271,9 @@ class Potential(TenantOwned, Timestamped):
 
 
 class Reply(TenantOwned, Timestamped):
-    """CRM — REPLY: responses handled by the Responder (Chatbot)."""
+    """CRM — REPLY: a prospect's answer to our cold email, read from the
+    mailbox by core.inbox.  The Responder classifies it and may suggest an
+    answer; nothing is sent until a human approves (approve → outbox)."""
 
     class Statuses(models.TextChoices):
         REPLIED = 'replied', 'Replied'
@@ -206,17 +285,51 @@ class Reply(TenantOwned, Timestamped):
         LINKEDIN = 'linkedin', 'LinkedIn'
         WEBCHAT = 'webchat', 'Webchat'
 
+    class Classes(models.TextChoices):
+        INTERESTED = 'interested', 'Interested'
+        NOT_NOW = 'not_now', 'Not right now'
+        NOT_INTERESTED = 'not_interested', 'Not interested'
+        UNSUBSCRIBE = 'unsubscribe', 'Asked to stop'
+        OUT_OF_OFFICE = 'out_of_office', 'Out of office'
+        QUESTION = 'question', 'Has a question'
+        OTHER = 'other', 'Other'
+
     company = models.CharField(max_length=200)
     contact = models.CharField(max_length=200, blank=True)
     channel = models.CharField(max_length=10, choices=Channels.choices, default=Channels.EMAIL)
     status = models.CharField(max_length=20, choices=Statuses.choices, default=Statuses.AWAITING)
     summary = models.TextField(blank=True)
+    # inbound email (core.inbox)
+    draft = models.ForeignKey(EmailDraft, null=True, blank=True, on_delete=models.SET_NULL,
+                              related_name='replies')
+    lead = models.ForeignKey(Lead, null=True, blank=True, on_delete=models.SET_NULL,
+                             related_name='replies')
+    mailbox = models.ForeignKey(Mailbox, null=True, blank=True, on_delete=models.SET_NULL,
+                                related_name='replies')
+    from_email = models.CharField(max_length=200, blank=True)
+    subject = models.CharField(max_length=300, blank=True)
+    body_text = models.TextField(blank=True)
+    received_at = models.DateTimeField(null=True, blank=True)
+    message_id = models.CharField(max_length=300, blank=True, db_index=True)
+    references = models.TextField(blank=True)
+    classification = models.CharField(max_length=20, choices=Classes.choices, blank=True)
+    confidence = models.FloatField(null=True, blank=True)
+    suggested_reply = models.TextField(blank=True)
+    # the answer EmailDraft created when the human approved the suggestion
+    answer_draft = models.ForeignKey(EmailDraft, null=True, blank=True, on_delete=models.SET_NULL,
+                                     related_name='answered_replies')
+    handled = models.BooleanField(default=False)
 
     class Meta(TenantOwned.Meta):
         ordering = ['-updated_at']
 
     def __str__(self):
         return f'{self.company} — {self.get_status_display()}'
+
+    @property
+    def needs_attention(self):
+        return (not self.handled and self.classification not in
+                ('', self.Classes.OUT_OF_OFFICE, self.Classes.UNSUBSCRIBE))
 
 
 class Suppression(TenantOwned, Timestamped):
@@ -232,16 +345,35 @@ class Suppression(TenantOwned, Timestamped):
         COMPLAINT = 'complaint', 'Spam complaint'
         MANUAL = 'manual', 'Added manually'
 
-    email = models.CharField(max_length=200)
+    # one of email / phone is set: an email row blocks email, a phone row
+    # (E.164, WhatsApp opt-out) blocks WhatsApp messages
+    email = models.CharField(max_length=200, blank=True)
+    phone = models.CharField(max_length=20, blank=True)
     reason = models.CharField(max_length=20, choices=Reasons.choices, default=Reasons.UNSUBSCRIBE)
     source = models.CharField(max_length=200, blank=True)  # e.g. 'link', 'one-click', admin user
 
     class Meta(TenantOwned.Meta):
         ordering = ['-created_at']
-        unique_together = [('workspace', 'email')]
+        constraints = [
+            models.UniqueConstraint(fields=['workspace', 'email'], condition=~models.Q(email=''),
+                                    name='uniq_suppression_email'),
+            models.UniqueConstraint(fields=['workspace', 'phone'], condition=~models.Q(phone=''),
+                                    name='uniq_suppression_phone'),
+        ]
 
     def __str__(self):
-        return f'{self.email} — {self.get_reason_display()}'
+        return f'{self.email or self.phone} — {self.get_reason_display()}'
+
+    @classmethod
+    def is_phone_suppressed(cls, phone):
+        phone = (phone or '').strip()
+        return bool(phone) and cls.objects.filter(phone=phone).exists()
+
+    @classmethod
+    def add_phone(cls, phone, reason=Reasons.MANUAL, source=''):
+        obj, _ = cls.objects.get_or_create(
+            phone=phone.strip(), email='', defaults={'reason': reason, 'source': source[:200]})
+        return obj
 
     @staticmethod
     def normalize(email):
@@ -326,6 +458,30 @@ class AppSettings(TenantOwned, Timestamped):
     smtp_user = models.CharField(max_length=200, blank=True)
     smtp_password = models.CharField(max_length=500, blank=True)
     from_email = models.CharField(max_length=200, blank=True)
+
+    # Outbox sending window (Asia/Kolkata hours, end exclusive) — cold email
+    # only leaves inside it; weekdays_only skips Saturday + Sunday.
+    send_window_start = models.PositiveSmallIntegerField(default=9)
+    send_window_end = models.PositiveSmallIntegerField(default=18)
+    send_weekdays_only = models.BooleanField(default=True)
+
+    # Follow-up sequences (core.sequences): enroll a lead after its cold email
+    # is sent; follow-ups wait for approval unless auto-approve is on
+    followups_enabled = models.BooleanField(default=True)
+    followups_auto_approve = models.BooleanField(default=False)
+
+    # WhatsApp via the opt-in open-wa sidecar (core.whatsapp) — off by default;
+    # every WhatsApp message needs a human approval, always
+    whatsapp_enabled = models.BooleanField(default=False)
+    whatsapp_sidecar_url = models.CharField(max_length=300, blank=True,
+                                            default='http://whatsapp-sidecar:8002')
+    whatsapp_secret = models.CharField(max_length=300, blank=True)
+    whatsapp_daily_cap = models.PositiveSmallIntegerField(default=20)
+
+    # WarmPulse (core.warmpulse) — optional warmup-status sync; blank key = off
+    warmpulse_api_url = models.CharField(max_length=300, default='https://warmpulse.tech', blank=True)
+    warmpulse_api_key = models.CharField(max_length=300, blank=True)
+    warmpulse_synced_at = models.DateTimeField(null=True, blank=True)
 
     # Lead targeting — comma-separated country names; empty = worldwide sweep
     target_countries = models.TextField(blank=True)
@@ -520,3 +676,124 @@ class PipelineRun(TenantOwned, Timestamped):
 
     def __str__(self):
         return f'Run #{self.pk} ({self.started_at:%Y-%m-%d %H:%M})'
+
+
+class Sequence(TenantOwned, Timestamped):
+    """Outreach — a follow-up sequence (core.sequences).  Step 0 is always
+    the cold email itself; SequenceStep rows are the follow-ups after it."""
+
+    name = models.CharField(max_length=200)
+    is_default = models.BooleanField(default=False)
+    active = models.BooleanField(default=True)
+
+    class Meta(TenantOwned.Meta):
+        ordering = ['-is_default', 'id']
+
+    def __str__(self):
+        return self.name
+
+
+class SequenceStep(TenantOwned, Timestamped):
+    class Channels(models.TextChoices):
+        EMAIL = 'email', 'Email'
+        WHATSAPP = 'whatsapp', 'WhatsApp'
+        LINKEDIN_TASK = 'linkedin_task', 'LinkedIn task'
+        CALL_TASK = 'call_task', 'Call task'
+
+    sequence = models.ForeignKey(Sequence, on_delete=models.CASCADE, related_name='steps')
+    order = models.PositiveSmallIntegerField()  # 1, 2, … (0 is the cold email)
+    channel = models.CharField(max_length=20, choices=Channels.choices, default=Channels.EMAIL)
+    delay_days = models.PositiveSmallIntegerField(default=3)  # after the previous step
+    business_days = models.BooleanField(default=True)
+    subject = models.CharField(max_length=300, blank=True)  # blank = "Re: <cold subject>"
+    body = models.TextField(blank=True)  # {{placeholder}} template (pipeline.TEMPLATE_VARS)
+    personalize = models.BooleanField(default=False)  # LLM rewrite when a key is set
+    enabled = models.BooleanField(default=True)
+
+    class Meta(TenantOwned.Meta):
+        ordering = ['sequence', 'order']
+
+    def __str__(self):
+        return f'{self.sequence} #{self.order} {self.channel}'
+
+
+class Enrollment(TenantOwned, Timestamped):
+    class Statuses(models.TextChoices):
+        ACTIVE = 'active', 'Active'
+        PAUSED = 'paused', 'Paused'
+        COMPLETED = 'completed', 'Completed'
+        STOPPED = 'stopped', 'Stopped'
+
+    lead = models.ForeignKey(Lead, on_delete=models.CASCADE, related_name='enrollments')
+    sequence = models.ForeignKey(Sequence, on_delete=models.CASCADE, related_name='enrollments')
+    current_step = models.PositiveSmallIntegerField(default=0)  # last finished step
+    pending_step = models.PositiveSmallIntegerField(null=True, blank=True)  # materialized, not done
+    status = models.CharField(max_length=20, choices=Statuses.choices, default=Statuses.ACTIVE)
+    stop_reason = models.CharField(max_length=200, blank=True)
+    next_due_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    first_draft = models.ForeignKey(EmailDraft, null=True, blank=True, on_delete=models.SET_NULL,
+                                    related_name='+')
+    last_message_id = models.CharField(max_length=300, blank=True)
+    stopped_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta(TenantOwned.Meta):
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.lead} in {self.sequence} ({self.status})'
+
+
+class OutreachTask(TenantOwned, Timestamped):
+    """Assisted outreach — a person does it (LinkedIn note, call, wa.me link).
+    LinkedIn is never automated."""
+
+    class Channels(models.TextChoices):
+        LINKEDIN = 'linkedin', 'LinkedIn'
+        CALL = 'call', 'Call'
+        WHATSAPP = 'whatsapp', 'WhatsApp link'
+
+    class Statuses(models.TextChoices):
+        OPEN = 'open', 'Open'
+        DONE = 'done', 'Done'
+        SKIPPED = 'skipped', 'Skipped'
+
+    lead = models.ForeignKey(Lead, null=True, blank=True, on_delete=models.SET_NULL, related_name='tasks')
+    enrollment = models.ForeignKey(Enrollment, null=True, blank=True, on_delete=models.SET_NULL,
+                                   related_name='tasks')
+    channel = models.CharField(max_length=20, choices=Channels.choices)
+    message = models.TextField(blank=True)
+    url = models.CharField(max_length=1000, blank=True)
+    phone = models.CharField(max_length=40, blank=True)
+    due_at = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=Statuses.choices, default=Statuses.OPEN)
+
+    class Meta(TenantOwned.Meta):
+        ordering = ['status', 'due_at', 'id']
+
+
+class WhatsAppMessage(TenantOwned, Timestamped):
+    """A WhatsApp message sent through the opt-in open-wa sidecar
+    (core.whatsapp).  Always needs a human approval — never auto-approved."""
+
+    class Statuses(models.TextChoices):
+        DRAFT = 'draft', 'Draft'
+        QUEUED = 'queued', 'Queued'
+        SENDING = 'sending', 'Sending'
+        SENT = 'sent', 'Sent'
+        REJECTED = 'rejected', 'Rejected'
+        FAILED = 'failed', 'Failed'
+
+    lead = models.ForeignKey(Lead, null=True, blank=True, on_delete=models.SET_NULL,
+                             related_name='whatsapp_messages')
+    enrollment = models.ForeignKey(Enrollment, null=True, blank=True, on_delete=models.SET_NULL,
+                                   related_name='whatsapp_messages')
+    company = models.CharField(max_length=200, blank=True)
+    to_phone = models.CharField(max_length=20)  # E.164
+    text = models.TextField()
+    status = models.CharField(max_length=20, choices=Statuses.choices, default=Statuses.DRAFT)
+    scheduled_for = models.DateTimeField(null=True, blank=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    error = models.CharField(max_length=500, blank=True)
+
+    class Meta(TenantOwned.Meta):
+        ordering = ['-updated_at']

@@ -120,6 +120,10 @@ class DraftSafetyFlowTests(TenantTestCase):
         resp = self.client.post(f'/api/drafts/{failed.id}/send/')
         self.assertEqual(resp.status_code, 200)
         failed.refresh_from_db()
+        self.assertEqual(failed.status, EmailDraft.Statuses.QUEUED)  # retry = requeue
+        from core.outbox import drain_outbox
+        drain_outbox()  # console mode: due immediately
+        failed.refresh_from_db()
         self.assertEqual(failed.status, EmailDraft.Statuses.SENT)
 
     def test_chat_approve_without_recipient_sends_nothing(self):
@@ -139,7 +143,7 @@ class DraftSafetyFlowTests(TenantTestCase):
         blank.refresh_from_db()
         ready.refresh_from_db()
         self.assertEqual(blank.status, EmailDraft.Statuses.DRAFT)
-        self.assertEqual(ready.status, EmailDraft.Statuses.SENT)
+        self.assertEqual(ready.status, EmailDraft.Statuses.QUEUED)
 
     def test_manual_redraft_allowed_after_sent_but_not_while_waiting(self):
         self._draft(status=EmailDraft.Statuses.SENT)
@@ -236,8 +240,10 @@ class DraftFixRound1Tests(TenantTestCase):
         rejected = EmailDraft.objects.create(lead=self.lead, company='Harbor Co',
                                              to_email='info@harborco.com', subject='Hi', body='Body',
                                              status=EmailDraft.Statuses.REJECTED)
+        from core.outbox import drain_outbox
         with mock.patch('core.mailer._log_console_delivery') as delivered:
             self._run_admin_approve(self.draft, blank, approved, rejected)
+            drain_outbox()
         self.assertEqual(delivered.call_count, 1)  # only the sendable draft went out
         for d in (self.draft, blank, approved, rejected):
             d.refresh_from_db()
@@ -248,9 +254,11 @@ class DraftFixRound1Tests(TenantTestCase):
         self.assertEqual(rejected.status, EmailDraft.Statuses.REJECTED)
 
     def test_admin_action_does_not_send_when_claim_is_lost(self):
-        with mock.patch('core.admin.claim_draft_for_send', return_value=None), \
+        from core.outbox import drain_outbox
+        with mock.patch('core.outbox.claim_draft_for_send', return_value=None), \
              mock.patch('core.mailer._log_console_delivery') as delivered:
             self._run_admin_approve(self.draft)
+            drain_outbox()
         delivered.assert_not_called()
         self.draft.refresh_from_db()
         self.assertEqual(self.draft.status, EmailDraft.Statuses.DRAFT)
@@ -280,6 +288,18 @@ class DraftFixRound1Tests(TenantTestCase):
         self.assertFalse(EmailDraft.objects.filter(lead=blocked).exists())
         self.assertTrue(EmailDraft.objects.filter(lead=clear).exists())
 
+    def test_copywright_never_drafts_to_an_unsubscribed_address(self):
+        from core.models import Suppression
+        self._drop_setup_lead()
+        gone = self._lead('Gone', score=99, analysis={})
+        gone.contact_email = ' Info@Gone.com '
+        gone.save(update_fields=['contact_email'])
+        Suppression.add('info@gone.com')
+        kept = self._lead('Kept', score=10, analysis={})
+        self._run_copywright()
+        self.assertFalse(EmailDraft.objects.filter(lead=gone).exists())
+        self.assertTrue(EmailDraft.objects.filter(lead=kept).exists())
+
     def test_copywright_ties_break_by_id(self):
         self._drop_setup_lead()
         leads = [self._lead(f'Tie{i}', score=50) for i in range(5)]
@@ -290,8 +310,8 @@ class DraftFixRound1Tests(TenantTestCase):
 
     # -- 5. lost claim: nothing is sent ---------------------------------------
     def test_approve_with_lost_claim_is_409_and_sends_nothing(self):
-        with mock.patch('core.views.claim_draft_for_send', return_value=None), \
-             mock.patch('core.views.send_draft') as send:
+        with mock.patch('core.outbox.claim_draft_for_send', return_value=None), \
+             mock.patch('core.outbox.send_draft') as send:
             resp = self.client.post(f'/api/drafts/{self.draft.pk}/approve/')
         self.assertEqual(resp.status_code, 409)
         send.assert_not_called()

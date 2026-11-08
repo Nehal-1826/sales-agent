@@ -12,6 +12,7 @@ const METER_LABELS: Record<string, string> = {
   mailboxes: 'Mailboxes',
   seats: 'Team seats',
   sequences: 'Follow-up sequences',
+  runs_day: 'Pipeline runs today',
   runs_per_day: 'Automatic runs today',
   runs: 'Automatic runs today',
   ai_messages: 'Assistant messages this period',

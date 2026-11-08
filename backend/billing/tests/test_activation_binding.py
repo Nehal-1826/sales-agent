@@ -70,13 +70,19 @@ class StripeBindingTests(TestCase):
         s = sub_of(self.ws)
         self.assertEqual((s.status, s.plan.code, s.pending_checkout_id), ('active', 'enterprise', ''))
 
-    def test_renewal_below_plan_price_rejected(self):
+    def test_charge_below_plan_price_is_recorded_but_grants_nothing(self):
+        # prorated upgrade difference: money is invoiced, period/plan/status untouched
         self.checkout('startups', 'cs_S')
         stripe_post(self.c, stripe_invoice_paid(ws_id=self.ws.pk, amount=3900, ev_id='e1', pi='pi_1'))
-        self.assertEqual(sub_of(self.ws).status, 'active')
+        before = sub_of(self.ws)
+        self.assertEqual(before.status, 'active')
         r = stripe_post(self.c, stripe_invoice_paid(ws_id=self.ws.pk, amount=100, ev_id='e2', pi='pi_2'))
-        self.assertEqual(r.json(), {'status': 'rejected'})
-        self.assertEqual(Invoice.all_tenants.count(), 1)
+        self.assertEqual(r.json(), {'status': 'ok'})
+        after = sub_of(self.ws)
+        self.assertEqual(Invoice.all_tenants.count(), 2)
+        self.assertEqual((after.current_period_end, after.plan_id, after.status),
+                         (before.current_period_end, before.plan_id, before.status))
+        self.assertTrue(PlatformAuditLog.objects.filter(action='billing.proration_charge').exists())
 
 
 class RazorpayBindingTests(TestCase):

@@ -77,7 +77,9 @@ def verify_charge(sub, ev):
         plans += list(Plan.objects.filter(code=sub.pending_plan_code))
     need = min(expected_amount(p, sub.interval, sub.currency) for p in plans)
     if ev.amount < need:
-        return False, 'amount_mismatch'
+        # an active subscription charged less than a full period (e.g. the gateway's
+        # prorated upgrade difference): record the money, but grant nothing for it
+        return True, 'proration'
     return True, 'renewal'
 
 
@@ -85,8 +87,9 @@ def lock_subscription(sub_id):
     return Subscription.objects.select_for_update().select_related('plan', 'pending_plan').get(pk=sub_id)
 
 
-def record_charge(sub, ev, now=None):
+def record_charge(sub, ev, now=None, grant=True):
     """A paid charge: Invoice + Payment, period roll-forward, first-payment bonus.
+    grant=False (proration) records Invoice + Payment only: no period, plan or status change.
     Idempotent on the gateway payment id.  Returns the Invoice or None (duplicate)."""
     now = now or timezone.now()
     if not ev.payment_id or ev.amount <= 0:
@@ -108,6 +111,10 @@ def record_charge(sub, ev, now=None):
         gateway_payment_id=ev.payment_id, issued_at=now, paid_at=now)
     pay = Payment.objects.create(workspace=sub.workspace, invoice=inv, gateway=ev.gateway,
                            gateway_payment_id=ev.payment_id, amount=ev.amount, currency=currency)
+    if not grant:
+        audit('billing.proration_charge', sub.workspace, {'invoice': inv.number, 'amount': ev.amount,
+                                                          'currency': currency})
+        return inv
     first = sub.first_paid_at is None
     if first:
         sub.first_paid_at = now
@@ -194,7 +201,7 @@ def apply_event(sub, ev, now=None):
                       {'reason': why, 'payment': ev.payment_id, 'amount': ev.amount})
                 return 'rejected'
             _bind_ids(sub, ev)
-            record_charge(sub, ev, now)
+            record_charge(sub, ev, now, grant=(why != 'proration'))
         else:
             _bind_ids(sub, ev)
         return None

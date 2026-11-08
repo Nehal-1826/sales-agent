@@ -6,6 +6,7 @@ import { useAsync } from '../lib/hooks';
 import { navigate } from '../lib/router';
 import type { SettingsSection, SettingsState } from '../lib/types';
 import { AccountSection } from './settings/AccountSection';
+import { BillingSection } from './settings/BillingSection';
 import { AdvancedSection } from './settings/AdvancedSection';
 import { BusinessSection } from './settings/BusinessSection';
 import { EmailSection } from './settings/EmailSection';
@@ -26,6 +27,7 @@ const SECTIONS: { key: SettingsSection; label: string; hint: string }[] = [
   { key: 'whatsapp', label: 'WhatsApp', hint: 'Optional, off by default' },
   { key: 'schedule', label: 'Schedule & reports', hint: 'Autopilot and daily report' },
   { key: 'account', label: 'Account', hint: 'Password' },
+  { key: 'billing', label: 'Plan & billing', hint: 'Plan, usage, invoices' },
   { key: 'advanced', label: 'Advanced', hint: 'AI key, mail server, AI instructions' },
 ];
 
@@ -69,6 +71,8 @@ export function SettingsPage({ section: raw }: { section: string }) {
         <div className="settings-content">
           {section === 'templates' ? (
             <TemplatesSection />
+          ) : section === 'billing' ? (
+            <BillingSection />
           ) : section === 'account' ? (
             <AccountSection />
           ) : loaded.loading ? (

@@ -1,71 +1,80 @@
 /**
- * Pricing tiers — single source for the pricing page AND the
- * SoftwareApplication JSON-LD offers. Monthly prices; yearly = 20% off.
- * No payment integration: every CTA books a demo.
+ * Pricing plans — single source for the pricing page AND the
+ * SoftwareApplication JSON-LD offers. Static fallback that mirrors the
+ * seeded billing plans; the pricing page overlays live /api/billing/plans/.
+ * Amounts are whole currency units (₹ / $), not minor units.
  */
+export type PlanCode = 'startups' | 'business' | 'enterprise';
+export type Interval = 'month' | 'year';
+export type Currency = 'INR' | 'USD';
+
 export interface Tier {
-  id: 'free' | 'starter' | 'growth' | 'agency';
+  id: PlanCode;
   name: string;
+  /** monthly / yearly price in ₹ */
   inr: number;
+  inrYear: number;
+  /** monthly / yearly price in $ */
   usd: number;
+  usdYear: number;
   blurb: string;
   features: string[];
   popular?: boolean;
 }
 
-export const ANNUAL_DISCOUNT = 0.2;
-
 export const TIERS: Tier[] = [
   {
-    id: 'free',
-    name: 'Free',
-    inr: 0,
-    usd: 0,
-    blurb: 'Try it on one market.',
-    features: ['25 audited leads / month', '1 city × industry', 'Copy-paste email drafts'],
-  },
-  {
-    id: 'starter',
-    name: 'Starter',
-    inr: 2499,
-    usd: 29,
-    blurb: 'For a solo founder or freelancer.',
+    id: 'startups',
+    name: 'Startups',
+    inr: 2999,
+    inrYear: 29990,
+    usd: 39,
+    usdYear: 390,
+    blurb: 'For a founder or small team starting outreach.',
     features: [
-      '300 audited leads / month',
-      '1 workspace',
-      '1 mailbox',
-      'Approve & send from your own mailbox',
-      'Daily 8 PM IST report',
+      '500 new leads / month',
+      '3,000 emails / month',
+      '2 mailboxes, 2 team seats',
+      '5 follow-up sequences',
+      '2 automatic runs a day',
+      '300 assistant messages / month',
     ],
   },
   {
-    id: 'growth',
-    name: 'Growth',
-    inr: 6999,
-    usd: 79,
+    id: 'business',
+    name: 'Business',
+    inr: 7999,
+    inrYear: 79990,
+    usd: 99,
+    usdYear: 990,
     popular: true,
-    blurb: 'For a small agency or sales team.',
+    blurb: 'For a sales team or agency running real volume.',
     features: [
-      '1,500 audited leads / month',
-      '3 workspaces',
-      '3 mailboxes',
-      'Autopilot: finds and drafts on a schedule (you still approve)',
-      'Phone number enrichment',
-      'WarmPulse mailbox warmup included (coming soon)',
+      '2,000 new leads / month',
+      '15,000 emails / month',
+      '5 mailboxes, 5 team seats',
+      '25 follow-up sequences',
+      'WhatsApp drafts (you approve each one)',
+      '6 automatic runs a day',
+      '2,000 assistant messages / month',
     ],
   },
   {
-    id: 'agency',
-    name: 'Agency',
-    inr: 14999,
-    usd: 199,
-    blurb: 'For agencies running many clients.',
+    id: 'enterprise',
+    name: 'Enterprise',
+    inr: 19999,
+    inrYear: 199990,
+    usd: 249,
+    usdYear: 2490,
+    blurb: 'For agencies and large teams.',
     features: [
-      '5,000 audited leads / month',
-      '10 workspaces',
-      'Unlimited mailboxes',
-      'White-label audit reports',
-      'Priority support',
+      '8,000 new leads / month',
+      '60,000 emails / month',
+      '20 mailboxes, 20 team seats',
+      'Unlimited follow-up sequences',
+      'WhatsApp drafts (you approve each one)',
+      '24 automatic runs a day',
+      '10,000 assistant messages / month',
     ],
   },
 ];
@@ -73,15 +82,27 @@ export const TIERS: Tier[] = [
 const inrFmt = new Intl.NumberFormat('en-IN');
 const usdFmt = new Intl.NumberFormat('en-US');
 
-/** Per-month price for the chosen billing period. */
-export function monthly(amount: number, annual: boolean): number {
-  return annual ? Math.round(amount * (1 - ANNUAL_DISCOUNT)) : amount;
-}
-
 export const formatInr = (n: number) => `₹${inrFmt.format(n)}`;
 export const formatUsd = (n: number) => `$${usdFmt.format(n)}`;
+export const formatMoney = (n: number, c: Currency) => (c === 'INR' ? formatInr(n) : formatUsd(n));
 
-export const PILOT = { inr: 2999, days: 14 };
+/** Currency default: Asia/Kolkata → INR, else USD. Safe during prerender (falls back to INR, the India-first default). */
+export function detectCurrency(): Currency {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (!tz) return 'INR';
+    return tz === 'Asia/Kolkata' || tz === 'Asia/Calcutta' ? 'INR' : 'USD';
+  } catch {
+    return 'INR';
+  }
+}
+
+/** Signup URL for a plan CTA. */
+export const signupHref = (code: string, interval: Interval) =>
+  `/?signup=1&plan=${encodeURIComponent(code)}&interval=${interval}`;
+
+export const BONUS_DAYS = 10;
+export const REFUND_WINDOW_DAYS = 10;
 
 /** The tool stack Shailog AI replaces — approximate entry-level list prices (USD / month). */
 export const STACK = [
@@ -94,8 +115,8 @@ export const STACK_TOTAL_USD = STACK.reduce((s, x) => s + x.usd, 0);
 
 export const FAQ: { q: string; a: string }[] = [
   {
-    q: 'Do I need a contract or a credit card?',
-    a: 'No. Plans are monthly and you can stop any time. The Free plan needs no card. Right now we set up every paid account personally after a short demo call.',
+    q: 'Do I need a contract?',
+    a: 'No contract. You sign up and pay online, monthly or yearly. Cancel within 10 days of your first payment for a partial refund, or any time after to stop at the end of the period.',
   },
   {
     q: 'Does Shailog AI send emails on its own?',
@@ -118,11 +139,11 @@ export const FAQ: { q: string; a: string }[] = [
     a: 'Every email carries a one-click unsubscribe link and unsubscribe headers. Anyone who unsubscribes goes on a suppression list and is never emailed again from your workspace. Our Privacy Policy covers the DPDP Act 2023 and GDPR.',
   },
   {
-    q: 'What does the ₹2,999 pilot include?',
-    a: '14 days set up for your market by us. If you do not get 5 positive replies or 2 booked calls, we refund the ₹2,999.',
+    q: 'What are the 10 bonus days?',
+    a: 'Your first billing period is extended by 10 days at no charge, so you get more than a full period for your first payment.',
   },
   {
-    q: 'What does "founding customer" mean?',
-    a: 'The first 25 agencies that sign up keep the price they joined at for as long as they stay subscribed, even if list prices go up later.',
+    q: 'What is the refund policy?',
+    a: 'Cancel within 10 days of your first payment and we refund the unused part of the period you paid for, minus a small non-refundable fee. After 10 days, cancelling stops renewal at the end of the period and there is no refund.',
   },
 ];

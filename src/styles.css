@@ -3521,3 +3521,22 @@ input[type='radio'] {
 .task-card pre { white-space: pre-wrap; font: inherit; margin: 0; background: #f6f2ec; padding: 10px; border-radius: 6px; }
 .task-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .seq-progress { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* ---- billing ---- */
+.billing-plan-card { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
+.billing-plan-name { font-size: 1.25rem; margin-right: 10px; }
+.billing-status { font-size: 0.8rem; padding: 2px 8px; border-radius: 999px; background: #eee; }
+.billing-active { background: #dcf5e3; }
+.billing-past_due, .billing-pending { background: #fdecc8; }
+.billing-meters { display: grid; gap: 12px; margin-bottom: 16px; }
+.billing-meter-head { display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 4px; }
+.billing-bar { height: 8px; border-radius: 4px; background: #e8e2d9; overflow: hidden; }
+.billing-bar span { display: block; height: 100%; background: var(--accent, #e8590c); }
+.billing-bar span.full { background: #c92a2a; }
+.billing-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.billing-picker { margin-top: 16px; display: grid; gap: 10px; }
+.billing-plans { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.billing-plan-opt { display: grid; gap: 6px; padding: 12px; border: 1px solid #ddd5c8; border-radius: 10px; }
+.billing-table { width: 100%; border-collapse: collapse; }
+.billing-table th, .billing-table td { text-align: left; padding: 8px; border-bottom: 1px solid #eee5d8; }
+.link-btn { background: none; border: 0; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; }

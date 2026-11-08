@@ -56,7 +56,7 @@ export const ROUTES: RouteMeta[] = [
     path: '/pricing',
     title: 'Pricing — Shailog AI lead finder and website-gap outreach',
     description:
-      'Simple monthly plans in INR and USD: Free, Starter ₹2,499, Growth ₹6,999, Agency ₹14,999. 20% off yearly. Founding customers keep their price for life.',
+      'Simple monthly plans in INR and USD: Startups ₹2,999, Business ₹7,999, Enterprise ₹19,999 per month (USD available). Pay online, 10 bonus days, partial refund if you cancel within 10 days.',
     priority: 0.9,
   },
   {

@@ -27,6 +27,7 @@ export type SettingsSection =
   | 'mailboxes'
   | 'schedule'
   | 'account'
+  | 'billing'
   | 'advanced';
 
 export interface AgentMeta {

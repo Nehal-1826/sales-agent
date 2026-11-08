@@ -34,7 +34,10 @@ export function LandingPage({ onEnterDashboard }: { onEnterDashboard?: () => voi
             for you to approve it.
           </p>
           <div className="lp-actions">
-            <a className="lp-cta lp-cta-solid" href="#contact">
+            <a className="lp-cta lp-cta-solid" href="/?signup=1">
+              Start now
+            </a>
+            <a className="lp-cta lp-cta-ghost" href="#contact">
               Book a Demo
             </a>
             <a className="lp-cta lp-cta-ghost" href="/pricing">

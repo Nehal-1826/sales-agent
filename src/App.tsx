@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { GuideWidget } from './components/GuideWidget';
-import { Toaster, toast } from './components/feedback';
+import { Banner, Toaster, toast } from './components/feedback';
 import { HomePage } from './pages/HomePage';
 import { ApprovalsPage } from './pages/ApprovalsPage';
 import { RepliesPage } from './pages/RepliesPage';
@@ -12,11 +12,13 @@ import { ActivityPage } from './pages/ActivityPage';
 import { ChatPage } from './pages/ChatPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { LoginPage } from './pages/LoginPage';
+import { SignupPage } from './pages/SignupPage';
+import { VerifyEmailPage } from './pages/VerifyEmailPage';
 import { LandingPage } from './pages/LandingPage';
 import { MarketingPage, isMarketingSubpage } from './marketing/MarketingSite';
 import { routeMeta } from './marketing/site';
-import { SESSION_EXPIRED_EVENT, checkAuth, getOnboarding, logout, reprobe } from './lib/api';
-import type { AuthState } from './lib/api';
+import { PAYMENT_REQUIRED_EVENT, SESSION_EXPIRED_EVENT, checkAuth, getOnboarding, logout, reprobe } from './lib/api';
+import type { AuthState, PaymentRequiredInfo } from './lib/api';
 import { navigate, useRoute } from './lib/router';
 import { WorkspaceStatusProvider } from './lib/status';
 
@@ -43,11 +45,22 @@ function wantsSignIn(): boolean {
   return new URLSearchParams(window.location.search).has('signin');
 }
 
+/** Marketing CTAs send visitors to /?signup=1&plan=…&interval=… */
+function wantsSignup(): boolean {
+  return new URLSearchParams(window.location.search).has('signup');
+}
+
+function verifyToken(): string {
+  return new URLSearchParams(window.location.search).get('verify') ?? '';
+}
+
 function AppGate() {
   const [gate, setGate] = useState<Gate>('checking');
+  const [signingUp, setSigningUp] = useState(wantsSignup);
+  const [verifying, setVerifying] = useState(verifyToken);
   // public marketing page is the entry for signed-out visitors; "Dashboard" /
   // "Start" goes to sign-in (never to open sign-up — accounts are created by the owner)
-  const [landing, setLanding] = useState(() => !wantsSignIn());
+  const [landing, setLanding] = useState(() => !wantsSignIn() && !wantsSignup());
 
   const probe = useCallback(async (fresh = false) => {
     setGate('checking');
@@ -73,6 +86,13 @@ function AppGate() {
     window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
     return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
   }, []);
+
+  if (verifying) return (
+    <>
+      <VerifyEmailPage token={verifying} onDone={() => { setVerifying(''); void probe(); }} />
+      <Toaster />
+    </>
+  );
 
   // signed-out visitors see the (prerendered) landing page at once, not a spinner;
   // same element as the 'unauthenticated' branch below, so React keeps it mounted
@@ -116,6 +136,19 @@ function AppGate() {
     );
   }
 
+  if (gate === 'unauthenticated' && signingUp) {
+    return (
+      <>
+        <SignupPage
+          onHome={() => { setSigningUp(false); setLanding(true); }}
+          onSignIn={() => { setSigningUp(false); setLanding(false); }}
+          onSignedUp={() => { setSigningUp(false); void probe(); }}
+        />
+        <Toaster />
+      </>
+    );
+  }
+
   if (gate === 'unauthenticated' && landing) {
     return <LandingPage onEnterDashboard={() => setLanding(false)} />;
   }
@@ -145,6 +178,21 @@ function AppGate() {
 function Shell({ demo, onSignOut }: { demo: boolean; onSignOut: () => void }) {
   const { page, sub } = useRoute();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [paywalled, setPaywalled] = useState(false);
+
+  // HTTP 402 from any call: quota → toast; payment_required → persistent banner
+  useEffect(() => {
+    const onPay = (e: Event) => {
+      const info = (e as CustomEvent<PaymentRequiredInfo>).detail;
+      if (info?.error === 'quota_exceeded') {
+        toast.warn(`Plan limit reached: ${info.meter} (${info.used} of ${info.limit}). Upgrade in Plan & billing.`);
+      } else {
+        setPaywalled(true);
+      }
+    };
+    window.addEventListener(PAYMENT_REQUIRED_EVENT, onPay);
+    return () => window.removeEventListener(PAYMENT_REQUIRED_EVENT, onPay);
+  }, []);
 
   // a user whose setup chat is still open lands in the Assistant once
   useEffect(() => {
@@ -168,6 +216,19 @@ function Shell({ demo, onSignOut }: { demo: boolean; onSignOut: () => void }) {
       {menuOpen && <div className="scrim" onClick={() => setMenuOpen(false)} aria-hidden />}
       <div className="main">
         <TopBar page={page} onMenu={() => setMenuOpen(true)} demo={demo} />
+        {paywalled && (
+          <Banner
+            tone="warn"
+            title="A paid plan is needed to make changes"
+            action={
+              <button className="btn btn-sm btn-primary" onClick={() => { setPaywalled(false); navigate('settings', 'billing'); }}>
+                Go to billing
+              </button>
+            }
+          >
+            You can still look around. Choose a plan to start finding leads and sending emails.
+          </Banner>
+        )}
         <main className="content" id="main" tabIndex={-1}>
           {page === 'home' && <HomePage />}
           {page === 'approvals' && <ApprovalsPage />}

@@ -1,88 +1,118 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { DemoBooking } from '../components/DemoBooking';
+import { fetchPlans } from '../lib/billing';
+import type { ApiPlan } from '../lib/billing';
 import { MarketingLayout } from '../marketing/MarketingLayout';
 import { Proof, SafetyPromises } from '../marketing/TrustSections';
 import {
+  BONUS_DAYS,
   FAQ,
-  PILOT,
+  REFUND_WINDOW_DAYS,
   STACK,
   STACK_TOTAL_USD,
   TIERS,
-  formatInr,
+  detectCurrency,
+  formatMoney,
   formatUsd,
-  monthly,
+  signupHref,
 } from '../marketing/pricing';
+import type { Currency, Interval, Tier } from '../marketing/pricing';
 import { useDocumentMeta } from '../marketing/seo';
 
-/** PRICING — /pricing. No payment integration: every CTA books a demo. */
+/** Overlay live plan prices (minor units) on the static fallback tiers. */
+function mergeLive(live: ApiPlan[] | null): Tier[] {
+  if (!live) return TIERS;
+  return TIERS.map((t) => {
+    const p = live.find((x) => x.code === t.id);
+    if (!p) return t;
+    return {
+      ...t,
+      name: p.name || t.name,
+      inr: p.price_inr_month / 100,
+      usd: p.price_usd_month / 100,
+      inrYear: p.price_inr_year / 100,
+      usdYear: p.price_usd_year / 100,
+    };
+  });
+}
+
+/** PRICING — /pricing. Static plans first, live prices when the API answers. */
 export function PricingPage() {
   useDocumentMeta('/pricing');
-  const [annual, setAnnual] = useState(false);
+  const [interval, setInterval_] = useState<Interval>('month');
+  // prerender has no window: start INR, correct after mount
+  const [currency, setCurrency] = useState<Currency>('INR');
+  const [live, setLive] = useState<ApiPlan[] | null>(null);
+
+  useEffect(() => {
+    setCurrency(detectCurrency());
+    fetchPlans().then(setLive).catch(() => undefined);
+  }, []);
+
+  const tiers = mergeLive(live);
+  const yearly = interval === 'year';
 
   return (
     <MarketingLayout>
       <section className="lp-section mk-section mk-page-head">
-        <h1>Simple pricing, in rupees</h1>
+        <h1>Simple pricing</h1>
         <p className="lp-section-sub">
-          Pay monthly, stop any time. Prices in INR, with USD for customers outside India. Every plan: you approve
-          every email, it sends from your own mailbox.
+          Sign up and pay online. Your first payment includes {BONUS_DAYS} bonus days, and if it is not for you,
+          cancel within {REFUND_WINDOW_DAYS} days for a partial refund. Every plan: you approve every email, it
+          sends from your own mailbox.
         </p>
 
         <div className="mk-toggle" role="group" aria-label="Billing period">
-          <button type="button" aria-pressed={!annual} onClick={() => setAnnual(false)}>
+          <button type="button" aria-pressed={!yearly} onClick={() => setInterval_('month')}>
             Monthly
           </button>
-          <button type="button" aria-pressed={annual} onClick={() => setAnnual(true)}>
-            Yearly <em>save 20%</em>
+          <button type="button" aria-pressed={yearly} onClick={() => setInterval_('year')}>
+            Yearly <em>2 months free</em>
+          </button>
+        </div>
+        <div className="mk-toggle" role="group" aria-label="Currency">
+          <button type="button" aria-pressed={currency === 'INR'} onClick={() => setCurrency('INR')}>
+            INR ₹
+          </button>
+          <button type="button" aria-pressed={currency === 'USD'} onClick={() => setCurrency('USD')}>
+            USD $
           </button>
         </div>
 
         <div className="mk-tiers">
-          {TIERS.map((t) => (
-            <article key={t.id} className={`mk-tier ${t.popular ? 'mk-tier-pop' : ''}`}>
-              {t.popular && <span className="mk-pop-badge">Most popular</span>}
-              <h2>{t.name}</h2>
-              <p className="mk-muted">{t.blurb}</p>
-              <div className="mk-price">
-                <strong>{formatInr(monthly(t.inr, annual))}</strong>
-                <span>/ month</span>
-              </div>
-              <div className="mk-price-usd">
-                {formatUsd(monthly(t.usd, annual))} / month{annual && t.inr > 0 ? ', billed yearly' : ''}
-              </div>
-              <ul className="mk-list">
-                {t.features.map((f) => (
-                  <li key={f}>{f}</li>
-                ))}
-              </ul>
-              <a className={`lp-cta ${t.popular ? 'lp-cta-solid' : 'lp-cta-ghost'} mk-tier-cta`} href="#contact">
-                {t.inr === 0 ? 'Start free — book a setup call' : 'Book a demo'}
-              </a>
-            </article>
-          ))}
+          {tiers.map((t) => {
+            const amount =
+              currency === 'INR' ? (yearly ? t.inrYear : t.inr) : yearly ? t.usdYear : t.usd;
+            return (
+              <article key={t.id} className={`mk-tier ${t.popular ? 'mk-tier-pop' : ''}`}>
+                {t.popular && <span className="mk-pop-badge">Most popular</span>}
+                <h2>{t.name}</h2>
+                <p className="mk-muted">{t.blurb}</p>
+                <div className="mk-price">
+                  <strong>{formatMoney(amount, currency)}</strong>
+                  <span>/ {yearly ? 'year' : 'month'}</span>
+                </div>
+                <div className="mk-price-usd">+{BONUS_DAYS} bonus days on your first payment</div>
+                <ul className="mk-list">
+                  {t.features.map((f) => (
+                    <li key={f}>{f}</li>
+                  ))}
+                </ul>
+                <a
+                  className={`lp-cta ${t.popular ? 'lp-cta-solid' : 'lp-cta-ghost'} mk-tier-cta`}
+                  href={signupHref(t.id, interval)}
+                >
+                  Start now
+                </a>
+              </article>
+            );
+          })}
         </div>
-
-        <div className="mk-offers">
-          <article className="mk-offer">
-            <span className="mk-sample-tag">Founding customer</span>
-            <h3>Price locked for life</h3>
-            <p>
-              The first 25 agencies that join keep the price they signed up at for as long as they stay subscribed —
-              even if list prices go up.
-            </p>
-          </article>
-          <article className="mk-offer mk-offer-pilot">
-            <span className="mk-sample-tag">{PILOT.days}-day pilot</span>
-            <h3>{formatInr(PILOT.inr)} pilot, with a refund promise</h3>
-            <p>
-              We set it up for your market. If you don’t get <b>5 positive replies</b> or <b>2 booked calls</b> in{' '}
-              {PILOT.days} days, we refund the {formatInr(PILOT.inr)}.
-            </p>
-            <a className="lp-cta lp-cta-solid" href="#contact">
-              Ask for a pilot
-            </a>
-          </article>
-        </div>
+        <p className="mk-fine">
+          {currency === 'INR' && 'Prices exclude 18% GST. '}
+          Cancel within {REFUND_WINDOW_DAYS} days of your first payment for a partial refund of the unused period
+          (minus a small non-refundable fee). After that, cancel any time to stop renewal.
+        </p>
       </section>
 
       <section className="lp-section mk-section" aria-labelledby="stack-h">
@@ -112,9 +142,9 @@ export function PricingPage() {
               <td>≈ {formatUsd(STACK_TOTAL_USD)}</td>
             </tr>
             <tr className="mk-table-us">
-              <td>Shailog AI Growth</td>
+              <td>Shailog AI Business</td>
               <td>find, audit, enrich, draft, approve & send</td>
-              <td>{formatUsd(79)}</td>
+              <td>{formatUsd(99)}</td>
             </tr>
           </tbody>
         </table>

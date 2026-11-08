@@ -33,6 +33,12 @@ export function MarketingLayout({
     </a>
   );
 
+  const startNow = (
+    <a className="lp-cta lp-cta-ghost" href="/?signup=1">
+      Start now
+    </a>
+  );
+
   return (
     <div className="lp">
       <header className={`lp-nav ${scrolled ? 'lp-nav-scrolled' : ''}`}>
@@ -46,7 +52,7 @@ export function MarketingLayout({
             <a href="/pricing">Pricing</a>
             <a href="/#contact">Contact</a>
           </nav>
-          {signIn}
+          <>{startNow}{signIn}</>
         </div>
       </header>
 
@@ -77,6 +83,7 @@ export function MarketingLayout({
             <a href="/how-it-works">How it works</a>
             <a href="/pricing">Pricing</a>
             <a href="/#contact">Book a demo</a>
+            <a href="/?signup=1">Start now</a>
             <a href="/?signin=1">Sign in</a>
           </div>
 

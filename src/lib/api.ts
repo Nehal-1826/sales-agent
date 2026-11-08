@@ -4,3 +4,4 @@
  */
 export * from './transport';
 export * from './endpoints';
+export * from './billing';

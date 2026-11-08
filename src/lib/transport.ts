@@ -19,6 +19,12 @@ export const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? '/api';
 
 const TOKEN_KEY = 'agentic-ai:token';
 export const SESSION_EXPIRED_EVENT = 'agentic:session-expired';
+export const PAYMENT_REQUIRED_EVENT = 'agentic:payment-required';
+
+/** Body of an HTTP 402 (paywall or quota). */
+export type PaymentRequiredInfo =
+  | { error: 'payment_required' }
+  | { error: 'quota_exceeded'; meter: string; limit: number; used: number };
 
 /** Bundled demo data is only allowed in dev builds or when explicitly enabled. */
 const DEMO_ALLOWED = import.meta.env.DEV || import.meta.env.VITE_ALLOW_DEMO === '1';
@@ -51,6 +57,8 @@ function friendlyStatus(status: number): string {
   if (status === 400) return 'That request was not accepted.';
   if (status === 403) return "You don't have access to that.";
   if (status === 404) return 'That item no longer exists.';
+  if (status === 402) return 'A paid plan is required for that.';
+  if (status === 429) return 'Too many attempts. Try again in a little while.';
   if (status === 409) return 'That was already handled.';
   if (status >= 500) return 'The server hit an error. Try again in a moment.';
   return `Request failed (${status}).`;
@@ -97,11 +105,20 @@ export async function request<T>(path: string, init?: RequestInit, timeoutMs = 1
   if (!res.ok) {
     let detail = '';
     try {
-      const body = (await res.json()) as { detail?: string; message?: string };
+      const body = (await res.json()) as { detail?: string; message?: string; error?: string };
       detail = body.detail || body.message || '';
+      if (res.status === 402) {
+        const info: PaymentRequiredInfo =
+          body.error === 'quota_exceeded'
+            ? (body as unknown as PaymentRequiredInfo)
+            : { error: 'payment_required' };
+        window.dispatchEvent(new CustomEvent<PaymentRequiredInfo>(PAYMENT_REQUIRED_EVENT, { detail: info }));
+        if (!detail) detail = info.error === 'quota_exceeded' ? 'You have reached a plan limit.' : 'A paid plan is required.';
+      }
     } catch {
       /* non-JSON error body */
     }
+    if (res.status === 402 && !detail) detail = 'A paid plan is required.';
     throw new ApiError(res.status, detail || friendlyStatus(res.status));
   }
   if (res.status === 204) return undefined as T;
@@ -232,4 +249,56 @@ export async function downloadFile(path: string, filename: string): Promise<Resu
     URL.revokeObjectURL(url);
     return true as const;
   });
+}
+
+/** Store a token returned by signup (same as login does). */
+export function setSessionToken(token: string): void {
+  authToken = token;
+  try {
+    localStorage.setItem(TOKEN_KEY, token);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Open (unauthenticated) POST that returns field errors; never sends a stale token. */
+export async function openPost<T>(
+  path: string,
+  body: unknown,
+): Promise<{ ok: true; data: T } | { ok: false; error: string; fields: Record<string, string> }> {
+  try {
+    const res = await fetch(`${API_BASE_URL}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (res.ok) return { ok: true, data: (await res.json().catch(() => ({}))) as T };
+    const fields: Record<string, string> = {};
+    let error = friendlyStatus(res.status);
+    try {
+      const b = (await res.json()) as Record<string, unknown>;
+      for (const [k, v] of Object.entries(b)) {
+        const msg = Array.isArray(v) ? String(v[0]) : typeof v === 'string' ? v : '';
+        if (!msg) continue;
+        if (k === 'detail' || k === 'error' || k === 'message') error = msg;
+        else fields[k] = msg;
+      }
+    } catch {
+      /* non-JSON */
+    }
+    return { ok: false, error, fields };
+  } catch {
+    return { ok: false, error: "Couldn't reach the server. Check your connection and try again.", fields: {} };
+  }
+}
+
+/** Authenticated GET returning raw text (HTML invoices). */
+export async function requestText(path: string): Promise<string> {
+  const headers: Record<string, string> = {};
+  if (authToken) headers.Authorization = `Token ${authToken}`;
+  const res = await fetch(`${API_BASE_URL}${path}`, { headers, signal: AbortSignal.timeout(20_000) });
+  if (res.status === 401 && authToken) expireSession();
+  if (!res.ok) throw new ApiError(res.status, friendlyStatus(res.status));
+  return res.text();
 }

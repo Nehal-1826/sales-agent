@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views, views_webhooks
+from . import views, views_platform as vp, views_webhooks
 
 urlpatterns = [
     path('billing/plans/', views.plans, name='billing-plans'),
@@ -12,6 +12,24 @@ urlpatterns = [
     path('billing/invoices/', views.invoices, name='billing-invoices'),
     path('billing/invoices/<int:invoice_id>/', views.invoice_html, name='billing-invoice'),
     path('billing/billing_details/', views.billing_details, name='billing-details'),
+    path('platform/2fa/setup/', vp.tfa_setup, name='platform-2fa-setup'),
+    path('platform/2fa/confirm/', vp.tfa_confirm, name='platform-2fa-confirm'),
+    path('platform/2fa/verify/', vp.tfa_verify, name='platform-2fa-verify'),
+    path('platform/overview/', vp.overview, name='platform-overview'),
+    path('platform/marketing/', vp.marketing, name='platform-marketing'),
+    path('platform/tenants/', vp.tenants, name='platform-tenants'),
+    path('platform/tenants/<int:tenant_id>/', vp.tenant_detail, name='platform-tenant'),
+    path('platform/tenants/<int:tenant_id>/suspend/', vp.tenant_suspend),
+    path('platform/tenants/<int:tenant_id>/unsuspend/', vp.tenant_unsuspend),
+    path('platform/tenants/<int:tenant_id>/extend/', vp.tenant_extend),
+    path('platform/tenants/<int:tenant_id>/change_plan/', vp.tenant_change_plan),
+    path('platform/payments/', vp.payments_list, name='platform-payments'),
+    path('platform/payments/<int:payment_id>/refund/', vp.payment_refund),
+    path('platform/invoices/', vp.invoices_list, name='platform-invoices'),
+    path('platform/invoices/<int:invoice_id>/', vp.invoice_html, name='platform-invoice'),
+    path('platform/plans/', vp.plans_list, name='platform-plans'),
+    path('platform/plans/<slug:code>/', vp.plan_update),
+    path('platform/audit/', vp.audit_list, name='platform-audit'),
     path('webhooks/razorpay/', views_webhooks.razorpay_webhook, name='webhook-razorpay'),
     path('webhooks/stripe/', views_webhooks.stripe_webhook, name='webhook-stripe'),
 ]

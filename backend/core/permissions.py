@@ -54,3 +54,20 @@ class IsWorkspaceAdminOrReadOnly(BasePermission):
             return False
         _paywall(request)
         return request.method in SAFE_METHODS or is_privileged(request.user)
+
+
+class IsPlatformAdmin(BasePermission):
+    """Platform operators only: authenticated, no workspace, staff, active.
+    Tenant users always get 403 here."""
+
+    def has_permission(self, request, view):
+        from .authz import is_platform_admin
+        return is_platform_admin(request.user)
+
+
+class IsPlatformAdminWithOTP(IsPlatformAdmin):
+    """Platform admin whose token session passed TOTP (12 h)."""
+
+    def has_permission(self, request, view):
+        from .authz import otp_satisfied
+        return super().has_permission(request, view) and otp_satisfied(request)

@@ -27,7 +27,7 @@ from .outbox import enqueue_draft, kick_drain
 from .tenancy import current_workspace
 from .authentication import token_expired
 from .permissions import IsWorkspaceAdmin, IsWorkspaceAdminOrReadOnly
-from .models import AgentConfig, AppSettings, ChatMessage, EmailDraft, EmailTemplate, Lead, Mailbox, PipelineRun, Potential, Reply, SearchProfile, User
+from .models import AgentConfig, AppSettings, ChatMessage, EmailDraft, EmailTemplate, Lead, Mailbox, PipelineRun, PlatformSession, Potential, Reply, SearchProfile, User
 from .pipeline import PipelineBusy, pipeline_status, run_pipeline, start_pipeline_async
 from .reports import _resolve_recipients, send_daily_report
 from .runlock import running_since
@@ -134,6 +134,8 @@ def login(request):
     if token_expired(token):   # an expired token is dead — issue a fresh one
         token.delete()
         token = Token.objects.create(user=user)
+    if user.workspace_id is None:   # a fresh login must pass TOTP again
+        PlatformSession.objects.filter(token=token).delete()
     return Response({'token': token.key, 'user': {**UserSerializer(user).data, **auth_extras(user, request)}})
 
 

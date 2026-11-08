@@ -53,6 +53,8 @@ class User(AbstractUser):
     email_verified_at = models.DateTimeField(null=True, blank=True)
     # platform-admin TOTP secret (base32); never serialized
     totp_secret = models.CharField(max_length=64, blank=True)
+    # secret issued by 2fa/setup, promoted to totp_secret by 2fa/confirm
+    totp_pending = models.CharField(max_length=64, blank=True)
     # per-user chat onboarding state (core.onboarding): {started, done, step,
     # answers{...}} — every NEW login gets the setup wizard; empty = fresh user
     onboarding = models.JSONField(default=dict, blank=True)
@@ -809,3 +811,21 @@ class WhatsAppMessage(TenantOwned, Timestamped):
 
     class Meta(TenantOwned.Meta):
         ordering = ['-updated_at']
+
+
+class PlatformSession(models.Model):
+    """TOTP state of one auth token (platform admins only).  Deleted with the
+    token (logout / expiry / password change) so a new login must re-verify."""
+
+    token = models.OneToOneField('authtoken.Token', on_delete=models.CASCADE, related_name='platform_session')
+    otp_verified_at = models.DateTimeField(null=True, blank=True)
+    last_otp_step = models.BigIntegerField(default=0)
+
+
+class LoginAttempt(models.Model):
+    """Failure counter shared by every web process (replaces the per-process
+    cache).  key = sha256(name|ip); the window restarts after lockout.WINDOW."""
+
+    key = models.CharField(max_length=64, unique=True)
+    count = models.PositiveIntegerField(default=0)
+    window_start = models.DateTimeField()

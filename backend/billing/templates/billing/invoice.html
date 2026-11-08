@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Invoice {{ inv.number }}</title>
+<style>
+body{font-family:Arial,sans-serif;max-width:760px;margin:32px auto;color:#222;font-size:14px}
+table{width:100%;border-collapse:collapse;margin-top:16px}
+th,td{padding:8px;border-bottom:1px solid #ddd;text-align:left}
+td.n,th.n{text-align:right}.muted{color:#666}h1{margin:0 0 4px}
+@media print{.noprint{display:none}}
+</style></head><body>
+<button class="noprint" onclick="window.print()">Print</button>
+<h1>{% if inv.tax_rate_bp %}Tax invoice{% else %}Invoice{% endif %}</h1>
+<p class="muted">No. {{ inv.number }} &middot; Issued {{ inv.issued_at|date:"j M Y" }}</p>
+<table><tr>
+<td><strong>{{ seller_name }}</strong><br>{{ seller_address|linebreaksbr }}{% if seller_gstin %}<br>GSTIN: {{ seller_gstin }}{% endif %}</td>
+<td><strong>Billed to</strong><br>{{ inv.billing_name }}<br>{{ inv.billing_email }}<br>{{ inv.billing_address|linebreaksbr }}{% if inv.gstin %}<br>GSTIN: {{ inv.gstin }}{% endif %}</td>
+</tr></table>
+<table>
+<tr><th>Description</th><th>SAC</th><th class="n">Amount</th></tr>
+<tr><td>{{ inv.subscription.plan.name }} plan ({{ inv.subscription.interval }}ly), {{ inv.period_start|date:"j M Y" }} to {{ inv.period_end|date:"j M Y" }}</td><td>{{ sac }}</td><td class="n">{{ subtotal }}</td></tr>
+{% if inv.tax_rate_bp %}<tr><td>GST @ {{ gst_pct }}%</td><td></td><td class="n">{{ tax }}</td></tr>{% else %}<tr><td colspan="3" class="muted">Export of services, zero-rated (0% GST).</td></tr>{% endif %}
+<tr><th colspan="2">Total ({{ inv.currency }})</th><th class="n">{{ total }}</th></tr>
+{% if inv.amount_refunded %}<tr><td colspan="2">Refunded</td><td class="n">{{ refunded }}</td></tr>{% endif %}
+</table>
+<p class="muted">Status: {{ inv.status }}. Payment reference: {{ inv.gateway_payment_id }}. Computer-generated; no signature required.</p>
+</body></html>

@@ -104,6 +104,13 @@ class Subscription(TenantOwned):
     first_paid_at = models.DateTimeField(null=True, blank=True)
     cancel_at_period_end = models.BooleanField(default=False)
     canceled_at = models.DateTimeField(null=True, blank=True)
+    # invoice recipient (tenant-editable via /api/billing/billing_details/)
+    billing_name = models.CharField(max_length=200, blank=True)
+    billing_email = models.EmailField(blank=True)
+    billing_address = models.TextField(blank=True)
+    gstin = models.CharField(max_length=20, blank=True)
+    # downgrade requested mid-period: applied when the next renewal charge lands
+    pending_plan_code = models.CharField(max_length=30, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

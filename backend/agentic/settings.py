@@ -121,6 +121,7 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
         'billing.permissions.HasPaidAccess',
     ],
+    'DEFAULT_THROTTLE_RATES': {'billing': '30/min', 'webhook': '600/min'},
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
         'rest_framework.renderers.BrowsableAPIRenderer',

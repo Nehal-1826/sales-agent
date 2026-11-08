@@ -67,6 +67,8 @@ class Command(BaseCommand):
         ws, _ = Workspace.all_tenants.get_or_create(
             slug=DEMO_SLUG, defaults={'name': 'Demo'})
         provision_workspace(ws)
+        from billing.services import ensure_manual_subscription
+        ensure_manual_subscription(ws)  # operator-created: manual Enterprise, never paywalled
         with workspace_context(ws):
             self._seed(options)
 

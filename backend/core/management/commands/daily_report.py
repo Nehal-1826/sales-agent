@@ -36,7 +36,10 @@ class Command(BaseCommand):
             workspaces = workspaces.filter(slug=slug)
             if not workspaces.exists():
                 raise CommandError(f'No active workspace with slug "{slug}".')
+        from billing.entitlements import has_paid_access
         for ws in workspaces:
+            if not has_paid_access(ws):
+                continue  # unpaid / expired workspace: no daily report
             try:
                 with workspace_context(ws):
                     status, subject = send_daily_report(day)

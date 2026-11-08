@@ -12,6 +12,7 @@ from unittest import mock
 from django.test import TestCase
 
 from core.models import Workspace
+from billing.services import ensure_manual_subscription
 from core.tenancy import reset_workspace, set_workspace
 
 
@@ -22,6 +23,7 @@ class TenantTestCase(TestCase):
         super()._pre_setup()
         self.workspace, _ = Workspace.all_tenants.get_or_create(
             slug=self.workspace_slug, defaults={'name': 'Test Co'})
+        ensure_manual_subscription(self.workspace)  # paid access; the paywall stays strict
         token = set_workspace(self.workspace)
         self.addCleanup(reset_workspace, token)
         # Env secrets are absorbed only for the default tenant; existing tests

@@ -258,7 +258,14 @@ def execute(spec, username='chat'):
 
     if action == 'run_pipeline':
         from .pipeline import start_pipeline_async  # late import — heavy module
-        if not start_pipeline_async(f'chat:{username}'):
+        from billing.entitlements import BillingError
+        try:
+            started = start_pipeline_async(f'chat:{username}')
+        except BillingError as exc:   # unpaid / runs per day / lead quota: say so, run nothing
+            return ("I can't start a cycle: " + (
+                'your subscription is inactive.' if exc.payload['error'] == 'payment_required'
+                else f"your plan's {exc.payload['meter']} limit is reached ({exc.payload['used']}/{exc.payload['limit']})."))
+        if not started:
             return 'A cycle is already running — I\'ll have results in a few minutes.'
         return ('Started a full pipeline cycle in the background — Search, Profile and '
                 'Copywright are working; results land in the CRM in a couple of minutes.')

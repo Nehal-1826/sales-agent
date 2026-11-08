@@ -5,7 +5,10 @@ from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
+from billing.entitlements import check as quota_check
+
 from . import sequences, whatsapp
+from .tenancy import current_workspace
 from .models import AppSettings, Enrollment, Lead, OutreachTask, Sequence, Suppression, WhatsAppMessage
 from .permissions import IsWorkspaceAdmin, IsWorkspaceAdminOrReadOnly
 from .serializers import (EnrollmentSerializer, OutreachTaskSerializer, SequenceSerializer,
@@ -19,6 +22,7 @@ def sequences_list(request):
     if request.method == 'POST':
         ser = SequenceSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
+        quota_check(current_workspace(), 'sequences')   # billing: 402 when the plan is full
         seq = Sequence.objects.create(name=ser.validated_data.get('name') or 'Follow-up',
                                       active=ser.validated_data.get('active', True))
         ser.update(seq, ser.validated_data)
@@ -108,6 +112,7 @@ def whatsapp_message_action(request, msg_id, action):
     if not WhatsAppMessage.objects.filter(pk=msg_id).exists():
         return Response({'detail': 'Not found.'}, status=404)
     if action == 'approve':  # a human approval — the only way one gets queued
+        quota_check(current_workspace(), 'whatsapp')   # billing: plan feature, 402 otherwise
         msg = whatsapp.approve_message(msg_id, text=request.data.get('text'))
         if msg is None:
             return Response({'detail': 'That message was already handled.'}, status=409)

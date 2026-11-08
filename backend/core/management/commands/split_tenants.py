@@ -181,6 +181,8 @@ class Command(BaseCommand):
             if created:
                 self.stdout.write(f'created workspace "{slug}"')
             provision_workspace(ws)  # idempotent: agents + neutral settings
+            from billing.services import ensure_manual_subscription
+            ensure_manual_subscription(ws)  # operator-created: manual Enterprise, never paywalled
             ws_by_slug[slug] = ws
         slug_of = {w.pk: s for s, w in ws_by_slug.items()}
         slug_of.update(dict(Workspace.all_tenants.values_list('id', 'slug')))

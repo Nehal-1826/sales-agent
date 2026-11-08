@@ -14,8 +14,10 @@ from .actions import pending_summary
 from .chat import responder_reply
 from .guide import guide_answer
 from .health import status_of
-from .mailer import NO_RECIPIENT_ERROR, smtp_configured, valid_recipient
+from billing.entitlements import BillingError, check as quota_check
+from .mailer import NO_RECIPIENT_ERROR, check_send_quota, smtp_configured, valid_recipient
 from .outbox import enqueue_draft, kick_drain
+from .tenancy import current_workspace
 from .authentication import token_expired
 from .permissions import IsWorkspaceAdmin, IsWorkspaceAdminOrReadOnly
 from .models import AgentConfig, AppSettings, ChatMessage, EmailDraft, EmailTemplate, Lead, Mailbox, PipelineRun, Potential, Reply, SearchProfile, User
@@ -354,6 +356,8 @@ def smtp_connect(request):
         port = int(request.data.get('port') or 587)
     except (TypeError, ValueError):
         port = 587
+    if not Mailbox.objects.filter(from_email__iexact=user).exists():
+        quota_check(current_workspace(), 'mailboxes')   # billing: connecting a NEW mailbox is a create
     result = connect_mailbox(provider, user, password,
                              host=(request.data.get('host') or '').strip(), port=port)
     return Response(result)
@@ -565,6 +569,7 @@ def chat(request):
         text = (request.data.get('text') or '').strip()
         if not text:
             return Response({'detail': 'text is required'}, status=400)
+        quota_check(current_workspace(), 'ai_msgs')   # billing: 402 before anything is stored or sent to the LLM
         status = onboarding_status(request.user, settings)
         # always redact: a key pasted after setup is stored (and re-served) forever too
         stored = redact_for_history(text, status['stepKey'] or '')
@@ -629,6 +634,7 @@ def drafts_bulk_approve(request):
     if not isinstance(raw_ids, list) or not raw_ids:
         return Response({'detail': 'ids must be a non-empty list'}, status=400)
     results, queued, failed = [], 0, 0
+    blocked = None
     for raw in raw_ids:
         try:
             draft_id = int(raw)
@@ -650,6 +656,13 @@ def drafts_bulk_approve(request):
             results.append({'id': draft_id, 'ok': False, 'error': NO_RECIPIENT_ERROR})
             failed += 1
             continue
+        try:
+            check_send_quota()   # billing: stop queueing once the plan is full
+        except BillingError as exc:
+            blocked = exc
+            results.append({'id': draft_id, 'ok': False, 'error': 'plan email limit reached'})
+            failed += 1
+            continue
         # claim + queue: the outbox paces it out (core.outbox), never a burst
         draft = enqueue_draft(draft.id)
         if draft is None:
@@ -661,6 +674,8 @@ def drafts_bulk_approve(request):
         queued += 1
     if queued:
         kick_drain()
+    if blocked is not None and not queued:
+        raise blocked   # nothing went out: surface the 402 (quota / payment)
     return Response({'results': results, 'queued': queued, 'sent': 0, 'failed': failed})
 
 
@@ -716,6 +731,7 @@ def draft_approve(request, draft_id):
         return Response({'detail': f'draft is already {draft.status}'}, status=409)
     if not valid_recipient(draft.to_email):
         return Response({'detail': NO_RECIPIENT_ERROR}, status=400)
+    check_send_quota()   # billing: 402 before the claim
     draft = enqueue_draft(draft.id)
     if draft is None:
         return Response({'detail': 'this draft is already being sent'}, status=409)
@@ -758,6 +774,7 @@ def draft_send(request, draft_id):
         return Response({'detail': 'only failed drafts can be retried'}, status=409)
     if not valid_recipient(draft.to_email):
         return Response({'detail': NO_RECIPIENT_ERROR}, status=400)
+    check_send_quota()   # billing: 402 before the claim
     draft = enqueue_draft(draft.id, from_statuses=(EmailDraft.Statuses.FAILED,))
     if draft is None:
         return Response({'detail': 'this draft is already being sent'}, status=409)
@@ -810,6 +827,7 @@ def mailboxes(request):
     if request.method == 'POST':
         serializer = MailboxSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        quota_check(current_workspace(), 'mailboxes')   # billing: 402 when the plan is full
         mb = serializer.save()
         return Response(MailboxSerializer(mb).data, status=status.HTTP_201_CREATED)
     return Response(MailboxSerializer(Mailbox.objects.all(), many=True).data)

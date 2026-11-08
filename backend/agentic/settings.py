@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     'corsheaders',
     # local
     'core',
+    'billing',
 ]
 
 MIDDLEWARE = [
@@ -118,6 +119,7 @@ REST_FRAMEWORK = {
     'EXCEPTION_HANDLER': 'core.exceptions.api_exception_handler',
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
+        'billing.permissions.HasPaidAccess',
     ],
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',

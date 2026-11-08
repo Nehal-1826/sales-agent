@@ -375,6 +375,9 @@ def tick_all_workspaces():
     from .models import Workspace
     from .tenancy import workspace_context
     for ws in Workspace.all_tenants.filter(is_active=True).order_by('id'):
+        from billing.entitlements import has_paid_access
+        if not has_paid_access(ws):
+            continue  # unpaid / expired workspace: workers skip it (billing)
         try:
             with workspace_context(ws):
                 tick()

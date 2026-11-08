@@ -38,5 +38,7 @@ class Command(BaseCommand):
                 )
             # fresh tenants start with empty keys; env secrets only seed the default tenant
             provision_workspace(ws)
+            from billing.services import ensure_manual_subscription
+            ensure_manual_subscription(ws)  # operator-created: manual Enterprise, never paywalled
         self.stdout.write(self.style.SUCCESS(
             f'Created workspace "{ws.name}" ({ws.slug}) with owner "{opts["owner_username"]}".'))

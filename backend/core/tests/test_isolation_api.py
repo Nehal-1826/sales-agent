@@ -14,6 +14,7 @@ from django.test import TestCase, TransactionTestCase
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
+from billing.services import ensure_manual_subscription
 from core.models import (
     AgentConfig, AppSettings, ChatMessage, EmailDraft, EmailTemplate, Lead,
     PipelineRun, Potential, Reply, SearchProfile, User, Workspace,
@@ -55,6 +56,8 @@ class IsolationBase(TestCase):
     def setUpTestData(cls):
         cls.wa = Workspace.all_tenants.create(name='Alpha', slug='alpha')
         cls.wb = Workspace.all_tenants.create(name='Beta', slug='beta')
+        ensure_manual_subscription(cls.wa)
+        ensure_manual_subscription(cls.wb)
         cls.a_owner = User.objects.create_user(username='a_owner', password='pass12345',
                                                role='owner', workspace=cls.wa)
         cls.a_member = User.objects.create_user(username='a_member', password='pass12345',
@@ -312,6 +315,8 @@ class BackgroundThreadTests(TransactionTestCase):
     def setUp(self):
         self.wa = Workspace.all_tenants.create(name='Alpha', slug='alpha')
         self.wb = Workspace.all_tenants.create(name='Beta', slug='beta')
+        ensure_manual_subscription(self.wa)
+        ensure_manual_subscription(self.wb)
         with workspace_context(self.wb):
             Lead.objects.create(company='B-existing')
 

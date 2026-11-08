@@ -3540,3 +3540,32 @@ input[type='radio'] {
 .billing-table { width: 100%; border-collapse: collapse; }
 .billing-table th, .billing-table td { text-align: left; padding: 8px; border-bottom: 1px solid #eee5d8; }
 .link-btn { background: none; border: 0; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; }
+
+/* ---- platform admin console ---- */
+.pf-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.pf-kpi { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; }
+.pf-kpi strong { font-family: var(--display); font-size: 22px; font-variant-numeric: tabular-nums; }
+.pf-kpi small { color: var(--text-2); }
+.pf-h2 { font-size: 15px; margin: 0 0 10px; }
+.pf-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.pf-filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.pf-table .leads-table tbody tr { cursor: pointer; }
+.pf-pager { display: flex; gap: 10px; align-items: center; justify-content: flex-end; margin-top: 12px; }
+.pf-pager small { margin-right: auto; color: var(--text-2); }
+.pf-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+.pf-error { color: var(--danger-ink); background: var(--danger-soft); border: 1px solid var(--danger-border); border-radius: var(--radius-sm); padding: 8px 10px; }
+.pf-dl { display: grid; grid-template-columns: 120px 1fr; gap: 6px 12px; margin: 0 0 16px; }
+.pf-dl dt { color: var(--text-2); }
+.pf-dl dd { margin: 0; }
+.pf-usage { margin: 0 0 12px; padding-left: 18px; }
+.pf-brand { padding: 14px 16px; }
+.pf-chart { margin: 0; }
+.pf-chart svg { width: 100%; display: block; }
+.pf-chart-axis { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-2); }
+.pf-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.pf-hbars { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.pf-hbars li { display: grid; grid-template-columns: 140px 1fr 56px; gap: 10px; align-items: center; }
+.pf-hbar-track { background: var(--border-soft); border-radius: var(--radius-pill); height: 10px; overflow: hidden; }
+.pf-hbar-track span { display: block; height: 100%; background: var(--accent); }
+.pf-secret { display: grid; gap: 8px; }
+.pf-plan { margin-bottom: 14px; }

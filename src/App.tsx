@@ -21,6 +21,10 @@ import { PAYMENT_REQUIRED_EVENT, SESSION_EXPIRED_EVENT, checkAuth, getOnboarding
 import type { AuthState, PaymentRequiredInfo } from './lib/api';
 import { navigate, useRoute } from './lib/router';
 import { WorkspaceStatusProvider } from './lib/status';
+import { getMe } from './lib/platform';
+import type { Me } from './lib/platform';
+import { PlatformShell } from './pages/platform/PlatformShell';
+import { TotpScreen } from './pages/platform/TotpScreen';
 
 type Gate = 'checking' | AuthState;
 
@@ -163,14 +167,55 @@ function AppGate() {
   }
 
   return (
+    <RoleGate
+      demo={gate === 'demo'}
+      onSignOut={() => {
+        logout();
+        setGate('unauthenticated');
+      }}
+    />
+  );
+}
+
+/** Platform admins have no workspace: they get the platform console instead of the tenant shell. */
+function RoleGate({ demo, onSignOut }: { demo: boolean; onSignOut: () => void }) {
+  const [me, setMe] = useState<Me | null>(null);
+  const [failed, setFailed] = useState(false);
+  const load = useCallback(() => {
+    setFailed(false);
+    getMe().then(setMe).catch(() => setFailed(true));
+  }, []);
+  useEffect(load, [load]);
+
+  if (failed) {
+    return (
+      <div className="login-wrap">
+        <div className="panel login-card login-card-center" role="alert">
+          <strong className="login-headline">Couldn't load your account</strong>
+          <button className="btn btn-primary" onClick={load}>Try again</button>
+        </div>
+      </div>
+    );
+  }
+  if (!me) {
+    return (
+      <div className="login-wrap">
+        <div className="panel login-card login-card-center"><span className="spinner" aria-hidden /></div>
+      </div>
+    );
+  }
+  if (me.platform_admin && me.otp_required) {
+    return (
+      <>
+        <TotpScreen onVerified={load} onSignOut={onSignOut} />
+        <Toaster />
+      </>
+    );
+  }
+  if (me.platform_admin) return <PlatformShell demo={demo} onSignOut={onSignOut} />;
+  return (
     <WorkspaceStatusProvider>
-      <Shell
-        demo={gate === 'demo'}
-        onSignOut={() => {
-          logout();
-          setGate('unauthenticated');
-        }}
-      />
+      <Shell demo={demo} onSignOut={onSignOut} />
     </WorkspaceStatusProvider>
   );
 }

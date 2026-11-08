@@ -82,8 +82,8 @@ def process(gateway_name, request):
         return JsonResponse({'status': 'rejected'}, status=200)   # 200: never retried, never an oracle
     try:
         with workspace_context(sub.workspace), transaction.atomic():
-            apply_event(lock_subscription(sub.pk), ev)
-        row.status = 'processed'
+            res = apply_event(lock_subscription(sub.pk), ev)
+        row.status = 'rejected' if res == 'rejected' else 'processed'
     except Exception as e:  # noqa: BLE001 — recorded, gateway retries on 500
         log.exception('webhook processing failed')
         row.status, row.error = 'error', type(e).__name__
@@ -92,7 +92,7 @@ def process(gateway_name, request):
         return JsonResponse({'error': 'processing_failed'}, status=500)
     row.processed_at = timezone.now()
     row.save(update_fields=['status', 'processed_at'])
-    return JsonResponse({'status': 'ok'})
+    return JsonResponse({'status': row.status if res == 'rejected' else 'ok'})
 
 
 def _hook(name):

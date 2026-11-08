@@ -68,7 +68,7 @@ class CheckoutTests(TestCase):
 
     def test_stripe_inline_price_data_when_no_price_id(self):
         body = {'plan_code': 'startups', 'interval': 'year', 'currency': 'USD'}
-        with env_patch(), mock.patch(STR, return_value=fake_response({'url': 'https://stripe.test/c'})) as req:
+        with env_patch(), mock.patch(STR, return_value=fake_response({'url': 'https://stripe.test/c', 'id': 'cs_1'})) as req:
             r = self.owner.post('/api/billing/checkout/', body, format='json')
         self.assertEqual(r.json(), {'gateway': 'stripe', 'redirect_url': 'https://stripe.test/c'})
         form = req.call_args.kwargs['data']
@@ -80,7 +80,7 @@ class CheckoutTests(TestCase):
     def test_stripe_uses_stored_price_id(self):
         Plan.objects.filter(code='startups').update(stripe_price_ids={'month': 'price_123'})
         body = {'plan_code': 'startups', 'interval': 'month', 'currency': 'USD'}
-        with env_patch(), mock.patch(STR, return_value=fake_response({'url': 'u'})) as req:
+        with env_patch(), mock.patch(STR, return_value=fake_response({'url': 'u', 'id': 'cs_1'})) as req:
             self.owner.post('/api/billing/checkout/', body, format='json')
         self.assertEqual(req.call_args.kwargs['data']['line_items[0][price]'], 'price_123')
 
@@ -117,7 +117,7 @@ class VerifyTests(TestCase):
     def test_good_signature_confirms_server_side_then_activates_once(self):
         now = int(time.time())
         resp = [fake_response({'status': 'active', 'current_start': now, 'current_end': now + 30 * 86400,
-                               'customer_id': 'cust_v'}),
+                               'customer_id': 'cust_v', 'plan_id': 'plan_rzp_s'}),
                 fake_response({'status': 'captured', 'amount': 353882, 'currency': 'INR'})]
         with env_patch(), mock.patch(RZP, side_effect=resp):
             r = self.post()

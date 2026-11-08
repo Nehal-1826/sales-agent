@@ -77,7 +77,7 @@ def subscription(request):
     now = timezone.now()
     amount, _pay = payments.refund_preview(sub, now) if sub else (0, None)
     usage = [{'meter': m, 'limit': ent.limits.get(m, 0), 'used': u} for m, u in ent.usage.items()]
-    until = (sub.first_paid_at + payments.REFUND_WINDOW) if amount > 0 else None
+    until = (payments.refund_window_start(sub) + payments.REFUND_WINDOW) if amount > 0 else None
     return Response({
         'plan': {'code': sub.plan.code, 'name': sub.plan.name} if sub else None,
         'status': ent.status, 'interval': sub.interval if sub else None,
@@ -166,7 +166,11 @@ def checkout(request):
             return _gateway_503()
         except GatewayError:
             return Response({'error': 'gateway_error'}, status=502)
-        sub.plan, sub.interval, sub.currency = plan, interval, currency
+        # the chosen plan is only PENDING until a charge matching it lands (never sub.plan here)
+        sub.currency = currency
+        sub.pending_checkout_id = ids.get('checkout_id', '')
+        sub.pending_plan, sub.pending_interval = plan, interval
+        sub.pending_amount = payments.expected_amount(plan, interval, currency)
         sub.gateway = payload['gateway']
         sub.gateway_subscription_id = ids.get('subscription_id', '')
         sub.gateway_customer_id = ids.get('customer_id', '')
@@ -207,9 +211,12 @@ def razorpay_verify(request):
                          subscription_id=sid, customer_id=rs.get('customer_id') or '',
                          payment_id=pid, amount=int(rp.get('amount') or 0),
                          currency=(rp.get('currency') or 'INR').upper(),
-                         period_start=_ts(rs.get('current_start')), period_end=_ts(rs.get('current_end')))
+                         period_start=_ts(rs.get('current_start')), period_end=_ts(rs.get('current_end')),
+                         extra={'plan_id': rs.get('plan_id') or ''})
     with transaction.atomic():
-        payments.apply_event(payments.lock_subscription(sub.pk), ev)
+        res = payments.apply_event(payments.lock_subscription(sub.pk), ev)
+    if res == 'rejected':
+        return Response({'status': 'rejected'}, status=409)
     return Response({'status': 'active' if get_entitlement(ws).is_paid_access else 'pending'})
 
 

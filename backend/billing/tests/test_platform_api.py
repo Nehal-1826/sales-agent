@@ -114,6 +114,7 @@ class RefundTests(Base):
         p.start()
         self.addCleanup(p.stop)
         self.pws = pending_ws('payco')
+        Subscription.all_tenants.filter(workspace=self.pws).update(pending_amount=300000)
         rzp_post(APIClient(), rzp_charged(pay_id='pay_1', amount=300000))
         self.pay = Payment.all_tenants.get(gateway_payment_id='pay_1')
 

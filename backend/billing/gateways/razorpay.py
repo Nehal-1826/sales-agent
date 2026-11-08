@@ -55,7 +55,7 @@ class RazorpayGateway(Gateway):
                    'description': f'{plan.name} ({interval}ly)',
                    'prefill': {'email': customer_email, 'name': user_name}, 'notes': notes}
         return {'gateway': 'razorpay', 'razorpay_options': options}, \
-            {'subscription_id': sub['id'], 'customer_id': sub.get('customer_id') or ''}
+            {'subscription_id': sub['id'], 'customer_id': sub.get('customer_id') or '', 'checkout_id': sub['id']}
 
     # --- checkout callback ---
     def verify_checkout_signature(self, payment_id, subscription_id, signature):
@@ -91,7 +91,7 @@ class RazorpayGateway(Gateway):
             amount=int(ref.get('amount') or pay.get('amount') or 0),
             currency=(pay.get('currency') or ref.get('currency') or 'INR').upper(),
             period_start=_ts(sub.get('current_start')), period_end=_ts(sub.get('current_end')),
-            extra={'refund_id': ref.get('id', '')})
+            extra={'refund_id': ref.get('id', ''), 'plan_id': sub.get('plan_id') or ''})
 
     def refund(self, payment_id, amount, currency=''):
         return self._call('POST', f'/payments/{payment_id}/refund', json={'amount': int(amount)})['id']

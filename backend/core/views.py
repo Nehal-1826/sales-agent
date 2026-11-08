@@ -184,6 +184,10 @@ class LeadViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return Lead.objects.all()
 
+    def perform_create(self, serializer):
+        quota_check(current_workspace(), 'leads')   # billing: manual create counts against the leads quota (402)
+        serializer.save()
+
 
 class PotentialViewSet(viewsets.ModelViewSet):
     permission_classes = [IsWorkspaceAdminOrReadOnly]

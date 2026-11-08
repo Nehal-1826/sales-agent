@@ -37,8 +37,52 @@ def split_tax(total, currency):
     return total - tax, GST_BP, tax
 
 
+def expected_amount(plan, interval, currency):
+    """Minor units the gateway must charge: list price, plus 18 % GST for INR."""
+    base = getattr(plan, f'price_{currency.lower()}_{interval}', 0)
+    if currency == 'INR':
+        return (base * (10000 + GST_BP) + 5000) // 10000
+    return base
+
+
+def _gateway_plan_ok(plan, interval, ev):
+    """Gateway object must name the plan we expect (fail closed when it does not say)."""
+    if ev.gateway == 'razorpay':
+        want = (plan.razorpay_plan_ids or {}).get(interval)
+        return bool(want) and ev.extra.get('plan_id') == want
+    want = (plan.stripe_price_ids or {}).get(interval)
+    return not want or ev.extra.get('price_id') == want
+
+
+def verify_charge(sub, ev):
+    """(ok, reason).  Activation must match the stored pending checkout; a renewal
+    must cover the current plan (or the scheduled downgrade)."""
+    S = Subscription.Statuses
+    if ev.currency and sub.currency and ev.currency != sub.currency:
+        return False, 'currency_mismatch'
+    if sub.pending_checkout_id or sub.status not in (S.ACTIVE, S.PAST_DUE):
+        plan = sub.pending_plan
+        if not sub.pending_checkout_id or plan is None:
+            return False, 'no_pending_checkout'
+        if ev.extra.get('checkout_id') and ev.extra['checkout_id'] != sub.pending_checkout_id:
+            return False, 'checkout_mismatch'
+        if ev.amount < sub.pending_amount or sub.pending_amount <= 0:
+            return False, 'amount_mismatch'
+        if not _gateway_plan_ok(plan, sub.pending_interval, ev):
+            return False, 'plan_mismatch'
+        return True, 'activation'
+    plans = [sub.plan]
+    if sub.pending_plan_code:
+        from .models import Plan
+        plans += list(Plan.objects.filter(code=sub.pending_plan_code))
+    need = min(expected_amount(p, sub.interval, sub.currency) for p in plans)
+    if ev.amount < need:
+        return False, 'amount_mismatch'
+    return True, 'renewal'
+
+
 def lock_subscription(sub_id):
-    return Subscription.objects.select_for_update().select_related('plan').get(pk=sub_id)
+    return Subscription.objects.select_for_update().select_related('plan', 'pending_plan').get(pk=sub_id)
 
 
 def record_charge(sub, ev, now=None):
@@ -62,7 +106,7 @@ def record_charge(sub, ev, now=None):
         billing_email=sub.billing_email or sub.workspace.billing_email,
         billing_address=sub.billing_address, gstin=sub.gstin,
         gateway_payment_id=ev.payment_id, issued_at=now, paid_at=now)
-    Payment.objects.create(workspace=sub.workspace, invoice=inv, gateway=ev.gateway,
+    pay = Payment.objects.create(workspace=sub.workspace, invoice=inv, gateway=ev.gateway,
                            gateway_payment_id=ev.payment_id, amount=ev.amount, currency=currency)
     first = sub.first_paid_at is None
     if first:
@@ -70,7 +114,12 @@ def record_charge(sub, ev, now=None):
         end = end + timedelta(days=sub.bonus_days)   # bonus once, on the first paid period only
     sub.current_period_start = start if first or not sub.current_period_start else max(start, sub.current_period_start)
     sub.current_period_end = max(end, sub.current_period_end) if sub.current_period_end else end
-    if not first and sub.pending_plan_code:   # scheduled downgrade takes effect on renewal
+    if sub.pending_checkout_id and sub.pending_plan_id:   # verified activation: adopt the paid plan
+        sub.plan, sub.interval = sub.pending_plan, sub.pending_interval
+        sub.pending_plan_code = ''
+        sub.cycle_first_payment_id = pay.pk
+        sub.pending_checkout_id, sub.pending_plan, sub.pending_interval, sub.pending_amount = '', None, '', 0
+    elif not first and sub.pending_plan_code:   # scheduled downgrade takes effect on renewal
         from .models import Plan
         newp = Plan.objects.filter(code=sub.pending_plan_code).first()
         if newp is not None:
@@ -132,11 +181,25 @@ def apply_event(sub, ev, now=None):
     """Dispatch one verified, workspace-resolved event.  Caller holds the lock."""
     now = now or timezone.now()
     S = Subscription.Statuses
-    _bind_ids(sub, ev)
     if ev.type in ('activated', 'charged'):
+        if ev.extra.get('checkout_id') and ev.extra['checkout_id'] != sub.pending_checkout_id:
+            audit('billing.activation_rejected', sub.workspace, {'reason': 'checkout_mismatch'})
+            return 'rejected'
         if ev.payment_id and ev.amount > 0:   # only a real charge activates
+            if Payment.all_tenants.filter(gateway_payment_id=ev.payment_id).exists():
+                return None
+            ok, why = verify_charge(sub, ev)
+            if not ok:
+                audit('billing.activation_rejected', sub.workspace,
+                      {'reason': why, 'payment': ev.payment_id, 'amount': ev.amount})
+                return 'rejected'
+            _bind_ids(sub, ev)
             record_charge(sub, ev, now)
-    elif ev.type == 'payment_failed':
+        else:
+            _bind_ids(sub, ev)
+        return None
+    _bind_ids(sub, ev)
+    if ev.type == 'payment_failed':
         if sub.status in (S.ACTIVE, S.PAST_DUE):
             sub.status = S.PAST_DUE   # 3-day grace beyond period_end is in entitlements
             sub.save(update_fields=['status', 'updated_at'])
@@ -167,23 +230,42 @@ def refund_fee_pct():
     return min(max(v, 0.0), 100.0)
 
 
+def cycle_payments(sub):
+    """Captured payments of the current paid cycle (from its activation payment on)."""
+    qs = Payment.objects.filter(invoice__subscription=sub, status=Payment.Statuses.CAPTURED)
+    if sub.cycle_first_payment_id:
+        qs = qs.filter(pk__gte=sub.cycle_first_payment_id)
+    return qs.select_related('invoice').order_by('id')
+
+
 def first_payment(sub):
-    return (Payment.objects.filter(invoice__subscription=sub, status=Payment.Statuses.CAPTURED)
-            .select_related('invoice').order_by('id').first())
+    """First payment of the current paid cycle (anchors the refund window)."""
+    return cycle_payments(sub).first()
+
+
+def latest_payment(sub):
+    return cycle_payments(sub).last()
+
+
+def refund_window_start(sub):
+    p = first_payment(sub)
+    return p.created_at if p else None
 
 
 def in_refund_window(sub, now):
-    return bool(sub.first_paid_at and sub.status in ('active', 'past_due')
-                and now - sub.first_paid_at <= REFUND_WINDOW)
+    start = refund_window_start(sub)
+    return bool(start and sub.refund_used_at is None and sub.status in ('active', 'past_due')
+                and now - start <= REFUND_WINDOW)
 
 
 def refund_preview(sub, now=None):
     """(amount, payment) a cancel right now would refund; (0, None) outside the window.
+    Only the latest captured payment of the current cycle, once per workspace ever.
     refund = total * unused_paid_days / paid_days * (1 - fee); bonus days excluded."""
     now = now or timezone.now()
     if not in_refund_window(sub, now):
         return 0, None
-    pay = first_payment(sub)
+    pay = latest_payment(sub)
     if pay is None:
         return 0, None
     inv = pay.invoice
@@ -234,6 +316,8 @@ def cancel_subscription(sub_id, user=None, now=None, ip=None):
             sub.current_period_end = now
             sub.cancel_at_period_end = False
             sub.canceled_at = now
+            if out['refunded']:
+                sub.refund_used_at = now   # one cancel-refund per workspace, ever
         else:
             sub.cancel_at_period_end = True
         sub.save()

@@ -36,6 +36,8 @@ log = logging.getLogger(__name__)
 
 VERIFY_SALT = 'shailog.verify-email'
 VERIFY_MAX_AGE = 48 * 3600
+# Accepted risk: self-serve signup returns a token at once, so a taken email is distinguishable;
+# mitigated only by the 5/hour signup throttle.
 EMAIL_TAKEN = 'Could not use this email.'
 BAD_LINK = 'This verification link is invalid or has expired.'
 _CTRL = re.compile('[\x00-\x1f\x7f-\x9f  ]')

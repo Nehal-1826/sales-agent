@@ -23,6 +23,12 @@ def _ts(v):
     return datetime.fromtimestamp(int(v), tz=dt_timezone.utc) if v else None
 
 
+def _price_id(invoice):
+    line = ((invoice.get('lines') or {}).get('data') or [{}])[0]
+    pd = ((line.get('pricing') or {}).get('price_details') or {}).get('price')
+    return (line.get('price') or {}).get('id') or pd or ''
+
+
 def parse_signature_header(value):
     t, sigs = None, []
     for part in (value or '').split(','):
@@ -70,7 +76,7 @@ class StripeGateway(Gateway):
                 'line_items[0][price_data][product_data][name]': f'Shailog {plan.name}',
             })
         s = self._call('POST', '/checkout/sessions', form)
-        return {'gateway': 'stripe', 'redirect_url': s['url']}, {'subscription_id': '', 'customer_id': ''}
+        return {'gateway': 'stripe', 'redirect_url': s['url']}, {'subscription_id': '', 'customer_id': '', 'checkout_id': s['id']}
 
     def verify_webhook(self, raw_body, headers, now=None):
         secret = require_env('STRIPE_WEBHOOK_SECRET')[0]
@@ -108,7 +114,9 @@ class StripeGateway(Gateway):
             workspace_id=str(wid), subscription_id=sub_id, customer_id=o.get('customer') or '',
             payment_id=pay, amount=amount, currency=(o.get('currency') or 'usd').upper(),
             period_start=_ts(line.get('start')), period_end=_ts(line.get('end')),
-            extra={'invoice_id': o.get('id', '') if raw_type.startswith('invoice.') else ''})
+            extra={'invoice_id': o.get('id', '') if raw_type.startswith('invoice.') else '',
+                   'checkout_id': o.get('id', '') if raw_type == 'checkout.session.completed' else '',
+                   'price_id': _price_id(o) if raw_type.startswith('invoice.') else ''})
 
     def refund(self, payment_id, amount, currency=''):
         return self._call('POST', '/refunds', {'payment_intent': payment_id, 'amount': str(int(amount))})['id']

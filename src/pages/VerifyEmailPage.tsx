@@ -1,6 +1,18 @@
 import { useEffect, useState } from 'react';
 import { verifyEmail } from '../lib/api';
 
+// the token is single-use: StrictMode / remounts must share one request, or the
+// second POST gets "already used" and overwrites the success of the first
+const inflight = new Map<string, ReturnType<typeof verifyEmail>>();
+function verifyOnce(token: string) {
+  let p = inflight.get(token);
+  if (!p) {
+    p = verifyEmail(token);
+    inflight.set(token, p);
+  }
+  return p;
+}
+
 /** /?verify=<token> — confirms the signup email address. */
 export function VerifyEmailPage({ token, onDone }: { token: string; onDone: () => void }) {
   const [state, setState] = useState<'working' | 'ok' | 'failed'>('working');
@@ -8,7 +20,7 @@ export function VerifyEmailPage({ token, onDone }: { token: string; onDone: () =
 
   useEffect(() => {
     let live = true;
-    verifyEmail(token).then((r) => {
+    verifyOnce(token).then((r) => {
       if (!live) return;
       if (r.ok) setState('ok');
       else {

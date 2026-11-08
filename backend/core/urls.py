@@ -11,6 +11,7 @@ router.register('potential', views.PotentialViewSet, basename='potential')
 router.register('replies', views.ReplyViewSet, basename='reply')
 
 urlpatterns = [
+    path('', include('billing.urls')),   # /api/billing/*, /api/webhooks/*
     # health & meta
     path('health/', views.health, name='health'),
     # public, token-signed opt-out (email footer link + RFC 8058 one-click)

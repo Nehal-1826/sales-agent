@@ -477,9 +477,35 @@ class PipelineBusy(Exception):
     """Another cycle holds the run lock."""
 
 
+def _lead_room(summary):
+    """False once the plan's monthly lead quota is used up (or the workspace has
+    no paid access): the search loops stop creating leads, and the run notes
+    say why.  Usage is derived from Lead rows, so this stays exact."""
+    from billing.entitlements import headroom
+    room = headroom(current_workspace(), 'leads')
+    if room is None or room > 0:
+        return True
+    note = 'Lead quota for this plan reached — no new leads this cycle. Upgrade to find more.'
+    if note not in summary['notes']:
+        summary['notes'].append(note)
+    summary['quota_blocked'] = 'leads'
+    return False
+
+
+def check_run_quota():
+    """Server-side gate for starting a cycle: paid access, runs/day, and at
+    least one lead of headroom (a cycle that cannot add leads is pointless)."""
+    from billing.entitlements import check
+    ws = current_workspace()
+    check(ws, 'runs_day')
+    check(ws, 'leads')
+
+
 def run_pipeline(triggered_by='manual'):
     """Run one orchestrator cycle synchronously.  Raises PipelineBusy when a
-    cycle is already running anywhere (API, chat, worker)."""
+    cycle is already running anywhere (API, chat, worker).  Raises the billing
+    402 errors (unpaid / runs-per-day / lead quota) BEFORE taking the lock."""
+    check_run_quota()
     token = acquire_run_lock()
     if not token:
         raise PipelineBusy('A pipeline cycle is already running.')
@@ -498,7 +524,9 @@ def run_pipeline(triggered_by='manual'):
 
 def start_pipeline_async(triggered_by='manual'):
     """Take the lock now (so callers can answer 'busy' immediately), run the
-    cycle on a daemon thread, release when done.  Returns False when busy."""
+    cycle on a daemon thread, release when done.  Returns False when busy.
+    Raises the billing 402 errors before taking the lock."""
+    check_run_quota()
     token = acquire_run_lock()
     if not token:
         return False
@@ -609,6 +637,8 @@ def _run_cycle(triggered_by):
     for r in results:
         if len(new_leads) >= MAX_LEADS_PER_CYCLE:
             break
+        if not _lead_room(summary):
+            break  # plan lead quota reached — lead creation stops
         domain = _norm_domain(r['website'])
         if not domain:
             continue
@@ -685,6 +715,8 @@ def _run_cycle(triggered_by):
             f'Maps funnel: {len(site_candidates)} listings → {len(nlp_kept)} after NLP → '
             f'{fit_n} FIT, {len(verdicts) - fit_n} NOT_FIT, {len(nlp_kept) - len(verdicts)} held (AI unanswered)')
         for place, fit in verdicts:
+            if not _lead_room(summary):
+                break  # plan lead quota reached
             domain = _norm_domain(place.get('website', ''))
             if not fit:
                 if domain and domain not in (settings.rejected_domains or []):
@@ -727,6 +759,8 @@ def _run_cycle(triggered_by):
                 log.warning('Google Maps discovery failed for %r: %s', maps_query, exc)
                 no_site_places = []
             for place in no_site_places:
+                if not _lead_room(summary):
+                    break  # plan lead quota reached
                 name_l = place['name'].lower()
                 if name_l in known:
                     continue

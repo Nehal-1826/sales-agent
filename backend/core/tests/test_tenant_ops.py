@@ -7,6 +7,7 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 
 from core.management.commands.run_worker import Command as WorkerCommand
+from billing.services import ensure_manual_subscription
 from core.models import AgentConfig, AppSettings, Lead, User, Workspace
 from core.pipeline import PipelineBusy
 from core.tenancy import current_workspace, workspace_context
@@ -23,6 +24,7 @@ class Stop(Exception):
 class TwoTenantBase(TenantTestCase):
     def _make(self, slug, **settings):
         ws = Workspace.all_tenants.create(slug=slug, name=slug.title())
+        ensure_manual_subscription(ws)
         provision_workspace(ws)
         with workspace_context(ws):
             row = AppSettings.load()

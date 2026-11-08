@@ -25,6 +25,12 @@ class Workspace(models.Model):
     slug = models.SlugField(max_length=60, unique=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    # self-serve signup attribution + billing contact (billing app)
+    signup_source = models.CharField(max_length=200, blank=True)
+    signup_campaign = models.CharField(max_length=200, blank=True)
+    signup_referrer = models.CharField(max_length=200, blank=True)
+    country = models.CharField(max_length=2, blank=True)
+    billing_email = models.EmailField(blank=True)
 
     objects = models.Manager()
     # same name as the tenant models' unscoped manager, so callers can grep
@@ -44,6 +50,9 @@ class User(AbstractUser):
         MEMBER = 'member', 'Member'
 
     role = models.CharField(max_length=10, choices=Roles.choices, default=Roles.MEMBER)
+    email_verified_at = models.DateTimeField(null=True, blank=True)
+    # platform-admin TOTP secret (base32); never serialized
+    totp_secret = models.CharField(max_length=64, blank=True)
     # per-user chat onboarding state (core.onboarding): {started, done, step,
     # answers{...}} — every NEW login gets the setup wizard; empty = fresh user
     onboarding = models.JSONField(default=dict, blank=True)
@@ -59,6 +68,9 @@ class User(AbstractUser):
             ws = current_workspace()
             if ws is not None:
                 self.workspace = ws
+        if not self.pk and self.workspace_id is not None:
+            from billing.entitlements import check_new_seat   # plan seat limit (402)
+            check_new_seat(self.workspace)
         # First user IN THAT WORKSPACE owns it.
         if (not self.pk and self.workspace_id is not None
                 and not User.objects.filter(workspace_id=self.workspace_id).exists()):

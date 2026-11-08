@@ -451,6 +451,20 @@ def valid_recipient(email):
 STUCK_AFTER = timedelta(minutes=15)
 
 
+PLAN_LIMIT_ERROR = "Not sent: your plan's email limit is reached or the subscription is inactive."
+
+
+def check_send_quota():
+    """Billing gate for APPROVING an email: sent this period + already
+    queued/approved + this one must fit the plan.  Raises billing.entitlements
+    BillingError (API -> 402) — callers run it BEFORE claiming the draft."""
+    from billing.entitlements import check
+    from .tenancy import current_workspace
+    pending = EmailDraft.objects.filter(
+        status__in=[EmailDraft.Statuses.QUEUED, EmailDraft.Statuses.APPROVED]).count()
+    check(current_workspace(), 'emails', add=pending + 1)
+
+
 def claim_draft_for_send(draft_id, from_statuses=(EmailDraft.Statuses.DRAFT, EmailDraft.Statuses.FAILED)):
     """Atomically move a draft to APPROVED.  Returns the draft, or None when
     another request (double-click, chat 'approve all') already claimed it —
@@ -515,6 +529,18 @@ def send_draft(draft, mailbox=None, connection=None):
             draft.error = STOPPED_ERROR
             draft.save(update_fields=['to_email', 'status', 'error', 'updated_at'])
             return draft
+
+    # billing: fail closed.  An unpaid workspace or an exhausted email quota
+    # never sends (the draft ends FAILED with a visible reason, retry after upgrading).
+    from billing.entitlements import BillingError, check
+    from .tenancy import current_workspace
+    try:
+        check(current_workspace(), 'emails', add=1)
+    except BillingError:
+        draft.status = EmailDraft.Statuses.FAILED
+        draft.error = PLAN_LIMIT_ERROR
+        draft.save(update_fields=['to_email', 'status', 'error', 'updated_at'])
+        return draft
 
     try:
         s = AppSettings.load()

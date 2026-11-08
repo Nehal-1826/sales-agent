@@ -189,6 +189,14 @@ def send_message(msg, s, now):
     if msg.enrollment_id and not enrollment_allows_send(msg.enrollment_id):
         WhatsAppMessage.objects.filter(pk=msg.pk).update(status=W.REJECTED, error=STOPPED_ERROR)
         return W.REJECTED
+    from billing.entitlements import BillingError, check
+    from .tenancy import current_workspace
+    try:
+        check(current_workspace(), 'whatsapp')   # billing: plan feature + paid access, fail closed
+    except BillingError:
+        _defer(msg, 'WhatsApp is not included in your plan, or the subscription is inactive.',
+               now + RETRY_AFTER)
+        return W.QUEUED
     try:
         sidecar_send(msg.to_phone, msg.text, s)
     except SidecarError as exc:
@@ -247,6 +255,9 @@ def drain_all_workspaces():
     from .models import Workspace
     from .tenancy import workspace_context
     for ws in Workspace.all_tenants.filter(is_active=True).order_by('id'):
+        from billing.entitlements import has_paid_access
+        if not has_paid_access(ws):
+            continue  # unpaid / expired workspace: workers skip it (billing)
         try:
             with workspace_context(ws):
                 drain_whatsapp()

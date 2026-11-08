@@ -27,6 +27,8 @@ class Command(BaseCommand):
         name = os.environ.get('DEFAULT_TENANT_NAME', '').strip() or 'Shailog Technologies'
         ws, _ = Workspace.all_tenants.get_or_create(slug=slug, defaults={'name': name})
         provision_workspace(ws)
+        from billing.services import ensure_manual_subscription
+        ensure_manual_subscription(ws)  # operator-created: manual Enterprise, never paywalled
 
         with workspace_context(ws):
             # scoped to the default workspace: other tenants' users must not

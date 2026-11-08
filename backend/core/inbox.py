@@ -604,6 +604,9 @@ def poll_all_workspaces():
     from .tenancy import workspace_context
     totals = {}
     for ws in Workspace.all_tenants.filter(is_active=True).order_by('id'):
+        from billing.entitlements import has_inbox_access
+        if not has_inbox_access(ws):
+            continue  # unpaid / expired workspace: workers skip it (billing)
         try:
             with workspace_context(ws):
                 totals[ws.slug] = poll_inbox()

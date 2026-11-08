@@ -16,6 +16,13 @@ from rest_framework.permissions import SAFE_METHODS, BasePermission
 PRIVILEGED_ROLES = ('owner', 'admin')
 
 
+def _paywall(request):
+    # views that set their own permission_classes replace the global default,
+    # so the paywall is applied here too (billing.permissions)
+    from billing.permissions import enforce_paywall
+    enforce_paywall(request)
+
+
 def is_privileged(user):
     """Owner/admin (or a Django superuser) — may manage the workspace."""
     return bool(
@@ -31,7 +38,10 @@ class IsWorkspaceAdmin(BasePermission):
     message = 'Only the workspace owner or an admin can do that.'
 
     def has_permission(self, request, view):
-        return is_privileged(request.user)
+        allowed = is_privileged(request.user)
+        if allowed:
+            _paywall(request)   # a forbidden member stays 403, not 402
+        return allowed
 
 
 class IsWorkspaceAdminOrReadOnly(BasePermission):
@@ -42,4 +52,5 @@ class IsWorkspaceAdminOrReadOnly(BasePermission):
     def has_permission(self, request, view):
         if not (request.user and request.user.is_authenticated):
             return False
+        _paywall(request)
         return request.method in SAFE_METHODS or is_privileged(request.user)

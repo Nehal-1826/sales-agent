@@ -116,6 +116,12 @@ class Command(BaseCommand):
             time.sleep(30)
 
     def _tick_workspace(self, ws, last_failure):
+        from billing.entitlements import BillingError
+        from core.pipeline import check_run_quota
+        try:
+            check_run_quota()
+        except BillingError:
+            return  # unpaid, runs/day or lead quota reached: skip quietly
         settings = AppSettings.load()
         if not settings.runs_enabled:
             return

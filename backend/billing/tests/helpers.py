@@ -28,7 +28,23 @@ def pending_ws(slug, gateway='razorpay', sub_id='sub_R1', cust='', currency='INR
     Subscription.all_tenants.filter(workspace=ws).update(
         gateway_subscription_id=sub_id, gateway_customer_id=cust, currency=currency,
         current_period_start=None, current_period_end=None)
+    set_pending(ws, 'startups', 'month', checkout_id=sub_id or 'cs_1')
     return ws
+
+
+def set_pending(ws, plan_code='startups', interval='month', checkout_id='cs_1'):
+    """Simulate a started checkout: pending plan + expected amount (no sub.plan change)."""
+    from billing.models import Plan
+    from billing.payments import expected_amount
+    plan = Plan.objects.get(code=plan_code)
+    ids = dict(plan.razorpay_plan_ids or {})
+    ids.setdefault(interval, f'plan_rzp_{plan_code[0]}')
+    Plan.objects.filter(pk=plan.pk).update(razorpay_plan_ids=ids)
+    sub = Subscription.all_tenants.get(workspace=ws)
+    cur = sub.currency
+    Subscription.all_tenants.filter(pk=sub.pk).update(
+        pending_checkout_id=checkout_id, pending_plan=plan, pending_interval=interval,
+        pending_amount=expected_amount(plan, interval, cur))
 
 
 def client_for(ws, username, role='owner', verified=True):
@@ -49,12 +65,13 @@ def rzp_post(client, body: dict, event_id='evt_1', secret='rzp_whsec', sig=None)
                        HTTP_X_RAZORPAY_SIGNATURE=sig, HTTP_X_RAZORPAY_EVENT_ID=event_id)
 
 
-def rzp_charged(sub_id='sub_R1', pay_id='pay_1', amount=353882, ws_id=None, start=None, end=None):
+def rzp_charged(sub_id='sub_R1', pay_id='pay_1', amount=353882, ws_id=None, start=None, end=None,
+                plan_id='plan_rzp_s'):
     now = int(time.time())
     return {'event': 'subscription.charged', 'payload': {
         'subscription': {'entity': {'id': sub_id, 'customer_id': 'cust_1',
                                     'notes': {'workspace_id': str(ws_id)} if ws_id else {},
-                                    'current_start': start or now, 'current_end': end or now + 30 * 86400}},
+                                    'plan_id': plan_id, 'current_start': start or now, 'current_end': end or now + 30 * 86400}},
         'payment': {'entity': {'id': pay_id, 'amount': amount, 'currency': 'INR'}}}}
 
 

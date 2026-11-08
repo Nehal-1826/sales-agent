@@ -28,6 +28,7 @@ class RefundTests(TestCase):
         p.start()
         self.addCleanup(p.stop)
         self.ws = pending_ws('rf1')
+        Subscription.all_tenants.filter(workspace=self.ws).update(pending_amount=300000)   # round test figure
         rzp_post(APIClient(), rzp_charged(pay_id='pay_1', amount=300000, start=T0, end=T0 + 30 * DAY))
         self.sub = Subscription.all_tenants.get(workspace=self.ws)
         self.assertEqual(self.sub.status, 'active')
@@ -109,3 +110,34 @@ class RefundTests(TestCase):
         self.assertIsNotNone(body['can_refund_until'])
         self.assertIsInstance(body['usage'], list)
         self.assertEqual(body['status'], 'active')
+
+
+class RefundLoopTests(RefundTests):
+    """Finding 2: refund-loop. One cancel-refund per workspace; latest cycle payment only."""
+
+    def test_second_cycle_cancel_gets_no_refund_and_p1_untouched(self):
+        from billing.tests.helpers import set_pending
+        out, _ = self.cancel(0)
+        self.assertGreater(out['refunded'], 0)
+        p1 = Payment.all_tenants.get(gateway_payment_id='pay_1')
+        p1_refunded = Invoice.all_tenants.get(pk=p1.invoice_id).amount_refunded
+        # re-subscribe: new checkout + second payment
+        Subscription.all_tenants.filter(pk=self.sub.pk).update(gateway_subscription_id='sub_R1')
+        set_pending(self.ws, 'startups', 'month', checkout_id='sub_R1')
+        Subscription.all_tenants.filter(pk=self.sub.pk).update(pending_amount=300000)
+        rzp_post(APIClient(), rzp_charged(pay_id='pay_2', amount=300000, start=T0 + DAY, end=T0 + 31 * DAY),
+                 event_id='evt_2')
+        sub = Subscription.all_tenants.get(pk=self.sub.pk)
+        self.assertEqual(sub.status, 'active')
+        end_after_p2 = sub.current_period_end
+        self.assertEqual(end_after_p2, datetime.fromtimestamp(T0 + 31 * DAY, tz=dt_timezone.utc))  # no 2nd bonus
+        out2, _ = self.cancel(2)
+        self.assertEqual((out2['refunded'], out2['canceled_immediately']), (0, False))
+        self.assertTrue(Subscription.all_tenants.get(pk=self.sub.pk).cancel_at_period_end)
+        self.assertEqual(Invoice.all_tenants.get(pk=p1.invoice_id).amount_refunded, p1_refunded)
+        self.assertEqual(Refund.all_tenants.count(), 1)
+
+    def test_refund_targets_latest_cycle_payment(self):
+        sub = Subscription.all_tenants.get(pk=self.sub.pk)
+        with workspace_context(self.ws):
+            self.assertEqual(payments.latest_payment(sub).gateway_payment_id, 'pay_1')

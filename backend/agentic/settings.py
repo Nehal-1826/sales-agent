@@ -207,3 +207,11 @@ if not DEBUG:
 import sys as _sys  # noqa: E402
 OUTBOX_API_DRAIN = (os.environ.get('OUTBOX_API_DRAIN', '1') == '1'
                     and not (len(_sys.argv) > 1 and _sys.argv[1] == 'test'))
+
+
+if DEBUG:   # dev only: show the signup verification link (log.info) in runserver output
+    LOGGING = {
+        'version': 1, 'disable_existing_loggers': False,
+        'handlers': {'console': {'class': 'logging.StreamHandler'}},
+        'loggers': {'core.signup': {'handlers': ['console'], 'level': 'INFO'}},
+    }

@@ -111,6 +111,16 @@ class Subscription(TenantOwned):
     gstin = models.CharField(max_length=20, blank=True)
     # downgrade requested mid-period: applied when the next renewal charge lands
     pending_plan_code = models.CharField(max_length=30, blank=True)
+    # checkout started but not yet paid: activation must match these (never sub.plan)
+    pending_checkout_id = models.CharField(max_length=200, blank=True)
+    pending_plan = models.ForeignKey(Plan, null=True, blank=True, on_delete=models.SET_NULL,
+                                     related_name='+')
+    pending_interval = models.CharField(max_length=10, blank=True)
+    pending_amount = models.PositiveIntegerField(default=0)  # expected minor units, incl. GST for INR
+    # at most one cancel-refund per workspace, ever
+    refund_used_at = models.DateTimeField(null=True, blank=True)
+    # first Payment of the current paid cycle (set at each verified activation)
+    cycle_first_payment_id = models.PositiveIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

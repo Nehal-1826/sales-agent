@@ -90,6 +90,18 @@ class QuotaApiTests(TestCase):
         self.assertEqual(r.status_code, 402)
         self.assertEqual(r.json()['meter'], 'leads')
 
+    def test_manual_lead_create_blocked_when_lead_quota_full(self):
+        from billing.models import Plan
+        Plan.objects.filter(code='startups').update(limits={**Plan.objects.get(code='startups').limits,
+                                                            'leads': 1})
+        with workspace_context(self.ws):
+            Lead.objects.create(company='one')
+        r = self.c.post('/api/leads/', {'company': 'two', 'hasWebsite': False}, format='json')
+        self.assertEqual(r.status_code, 402)
+        self.assertEqual(r.json()['meter'], 'leads')
+        with workspace_context(self.ws):
+            self.assertEqual(Lead.objects.count(), 1)
+
     def test_approve_blocked_when_email_quota_full(self):
         from billing.models import Plan
         Plan.objects.filter(code='startups').update(

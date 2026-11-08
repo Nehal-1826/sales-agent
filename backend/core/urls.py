@@ -3,7 +3,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from . import unsubscribe, views, views_sequences as vs
+from . import signup, unsubscribe, views, views_sequences as vs
 
 router = DefaultRouter()
 router.register('leads', views.LeadViewSet, basename='lead')
@@ -18,6 +18,9 @@ urlpatterns = [
     path('unsubscribe/<str:token>/', unsubscribe.unsubscribe_view, name='unsubscribe'),
     # users / roles
     path('auth/register/', views.register, name='register'),
+    path('auth/signup/', signup.signup, name='signup'),
+    path('auth/verify_email/', signup.verify_email, name='verify-email'),
+    path('auth/resend_verification/', signup.resend_verification, name='resend-verification'),
     path('auth/login/', views.login, name='login'),
     path('auth/me/', views.me, name='me'),
     path('auth/logout/', views.logout, name='logout'),

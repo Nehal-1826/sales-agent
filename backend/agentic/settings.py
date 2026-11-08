@@ -111,6 +111,27 @@ AUTH_USER_MODEL = 'core.User'
 # REST API
 # ------------------------------------------------------------------
 
+# Reverse proxies in front of Django (Cloudflare tunnel = 1).  0 = trust only
+# REMOTE_ADDR; N>0 = the client is the Nth-from-right X-Forwarded-For entry.
+TRUSTED_PROXY_COUNT = int(os.environ.get('TRUSTED_PROXY_COUNT', '0') or 0)
+
+# Self-serve passwords (signup + change_password; create_user() skips these)
+AUTH_PASSWORD_VALIDATORS = [
+    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+     'OPTIONS': {'min_length': 10}},
+    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
+]
+
+# Under `manage.py test` the generic throttles would make suites order-dependent;
+# throttle tests patch the rates they exercise.
+import sys as _sys0  # noqa: E402
+_TEST_RATES = ({'anon': '100000/min', 'user': '100000/min', 'login': '100000/min',
+                'signup': '100000/hour', 'resend': '100000/hour',
+                'billing': '100000/min', 'webhook': '100000/min'}
+               if len(_sys0.argv) > 1 and _sys0.argv[1] == 'test' else {})
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'core.authentication.ExpiringTokenAuthentication',
@@ -121,7 +142,19 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
         'billing.permissions.HasPaidAccess',
     ],
-    'DEFAULT_THROTTLE_RATES': {'billing': '30/min', 'webhook': '600/min'},
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+        'rest_framework.throttling.ScopedRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '60/min', 'user': '600/min',
+        'login': '10/min', 'signup': '5/hour', 'resend': '3/hour',
+        'billing': '30/min', 'webhook': '600/min',
+        **_TEST_RATES,
+    },
+    # DRF trusts the whole X-Forwarded-For header unless NUM_PROXIES is set
+    'NUM_PROXIES': TRUSTED_PROXY_COUNT,
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
         'rest_framework.renderers.BrowsableAPIRenderer',

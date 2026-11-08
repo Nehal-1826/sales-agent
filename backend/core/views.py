@@ -5,7 +5,14 @@ from django.db import connection
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.authtoken.models import Token
-from rest_framework.decorators import action, api_view, permission_classes
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
+from rest_framework.decorators import action, api_view, permission_classes, throttle_classes
+from rest_framework.throttling import AnonRateThrottle
+
+from . import lockout
+from .authz import auth_extras
+from .throttles import LoginThrottle
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -105,21 +112,29 @@ def register(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle, LoginThrottle])
 def login(request):
+    uname = request.data.get('username')
+    uname = uname if isinstance(uname, str) else ''
+    ip = lockout.client_ip(request)
+    if lockout.is_locked(uname, ip):
+        return Response({'error': 'too_many_attempts'}, status=429)
     user = authenticate(
         request,
         username=request.data.get('username'),
         password=request.data.get('password'),
     )
     if user is None:
+        lockout.record_failure(uname, ip)
         return Response({'detail': 'invalid credentials'}, status=401)
+    lockout.clear(uname, ip)
     if user.workspace is not None and not user.workspace.is_active:
         return Response({'detail': 'This workspace is suspended.'}, status=403)
     token, _ = Token.objects.get_or_create(user=user)
     if token_expired(token):   # an expired token is dead — issue a fresh one
         token.delete()
         token = Token.objects.create(user=user)
-    return Response({'token': token.key, 'user': UserSerializer(user).data})
+    return Response({'token': token.key, 'user': {**UserSerializer(user).data, **auth_extras(user, request)}})
 
 
 @api_view(['POST'])
@@ -132,7 +147,7 @@ def logout(request):
 
 @api_view(['GET'])
 def me(request):
-    return Response(UserSerializer(request.user).data)
+    return Response({**UserSerializer(request.user).data, **auth_extras(request.user, request)})
 
 
 @api_view(['POST'])
@@ -141,10 +156,12 @@ def change_password(request):
     if not user.check_password(request.data.get('currentPassword') or ''):
         return Response({'detail': 'current password is incorrect'}, status=400)
     new = request.data.get('newPassword') or ''
-    if len(new) < 8:
-        return Response({'detail': 'new password must be 8+ characters'}, status=400)
     if new != request.data.get('confirmPassword'):
         return Response({'detail': 'passwords do not match'}, status=400)
+    try:
+        validate_password(new, user)
+    except DjangoValidationError as e:
+        return Response({'detail': ' '.join(e.messages)}, status=400)
     user.set_password(new)
     user.save(update_fields=['password'])
     # a password change must end every existing session, including any copied token

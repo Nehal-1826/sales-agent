@@ -128,7 +128,7 @@ AUTH_PASSWORD_VALIDATORS = [
 # throttle tests patch the rates they exercise.
 import sys as _sys0  # noqa: E402
 _TEST_RATES = ({'anon': '100000/min', 'user': '100000/min', 'login': '100000/min',
-                'signup': '100000/hour', 'resend': '100000/hour',
+                'signup': '100000/hour', 'resend': '100000/hour', 'otp': '100000/min',
                 'billing': '100000/min', 'webhook': '100000/min'}
                if len(_sys0.argv) > 1 and _sys0.argv[1] == 'test' else {})
 
@@ -149,7 +149,7 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_THROTTLE_RATES': {
         'anon': '60/min', 'user': '600/min',
-        'login': '10/min', 'signup': '5/hour', 'resend': '3/hour',
+        'login': '10/min', 'signup': '5/hour', 'resend': '3/hour', 'otp': '10/min',
         'billing': '30/min', 'webhook': '600/min',
         **_TEST_RATES,
     },

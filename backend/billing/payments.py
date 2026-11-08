@@ -241,3 +241,36 @@ def cancel_subscription(sub_id, user=None, now=None, ip=None):
                                                 'refund_status': 'failed' if out.get('refund_failed') else 'ok'},
               actor=user, ip=ip)
     return out
+
+
+def platform_refund(payment_id, amount, reason, actor=None, ip=None):
+    """Operator refund of a captured payment, capped at invoice total - already
+    refunded under select_for_update.  Caller wraps in workspace_context.
+    Returns ({...}, http_status); nothing changes when the gateway rejects."""
+    from .gateways import GatewayError, GatewayNotConfigured, gateway_by_name
+    with transaction.atomic():
+        pay = Payment.objects.select_for_update().filter(pk=payment_id).first()
+        if pay is None:
+            return {'error': 'not_found'}, 404
+        inv = Invoice.objects.select_for_update().get(pk=pay.invoice_id)
+        if pay.status != Payment.Statuses.CAPTURED:
+            return {'error': 'not_refundable'}, 400
+        room = inv.total - inv.amount_refunded
+        if amount <= 0 or amount > room:
+            return {'error': 'amount_invalid', 'refundable': room}, 400
+        rf = Refund.objects.create(workspace=pay.workspace, payment=pay, amount=amount,
+                                   reason=reason[:200], requested_by=actor, status='pending')
+        if pay.gateway in ('razorpay', 'stripe'):
+            try:
+                rf.gateway_refund_id = gateway_by_name(pay.gateway).refund(
+                    pay.gateway_payment_id, amount, inv.currency)
+            except (GatewayError, GatewayNotConfigured):
+                transaction.set_rollback(True)   # drop the pending Refund row too
+                return {'error': 'gateway_error'}, 502
+        rf.status = 'processed'
+        rf.save()
+        mark_refunded(inv, pay, inv.amount_refunded + amount)
+        audit('platform.refund', pay.workspace, {'payment': pay.pk, 'invoice': inv.number, 'amount': amount,
+                                                 'currency': inv.currency, 'reason': reason},
+              actor=actor, ip=ip)
+    return {'refunded': amount, 'currency': inv.currency, 'refundable': room - amount}, 200

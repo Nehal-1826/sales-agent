@@ -26,3 +26,6 @@ htmlcov/
 # graphify output (rebuild: graphify update .)
 graphify-out/
 dist-ssr
+
+# local CRM data backups — customer data + credentials, never push
+backups/

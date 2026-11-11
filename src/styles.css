@@ -4,6 +4,10 @@
    canvas · dark dot-grid telemetry canvas for the flow · one
    electric orange accent reserved for signals and approval actions.
    Type: Space Grotesk (display) · Inter (UI) · JetBrains Mono (telemetry)
+﻿/* ================================================================
+   Shailog Technologies - Marketing & Sales AI — orange & white theme
+   White surfaces · orange accent (#f97316 / #ea580c) · warm orange
+   text tones. Strictly orange + white, no other hues.
    ================================================================ */
 
 :root {
@@ -3569,3 +3573,174 @@ input[type='radio'] {
 .pf-hbar-track span { display: block; height: 100%; background: var(--accent); }
 .pf-secret { display: grid; gap: 8px; }
 .pf-plan { margin-bottom: 14px; }
+.dash-profile strong { font-size: 13.5px; color: var(--text); }
+
+
+/* ==========================================================
+   MOBILE POLISH — bottom tab bar, safe areas, landing & app fixes
+   (kept last so it wins the cascade)
+   ========================================================== */
+html { -webkit-text-size-adjust: 100%; }
+body { overflow-x: clip; } /* clip (not hidden) so position:sticky scroll sections keep working */
+img, video, svg { max-width: 100%; }
+
+@media (max-width: 960px) {
+  /* sidebar -> fixed bottom tab bar (the old off-canvas drawer had no trigger) */
+  .sidebar,
+  .sidebar.minimal {
+    inset: auto 0 0 0;
+    width: 100%;
+    height: calc(64px + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+    flex-direction: row;
+    transform: none;
+    border-right: 0;
+    border-top: 1px solid #c2410c;
+    box-shadow: 0 -6px 20px rgba(124, 45, 18, 0.18);
+    background: linear-gradient(90deg, #f97316 0%, #ea580c 100%);
+  }
+  .sidebar .sidebar-brand { display: none; }
+  .sidebar .sidebar-foot { display: none; }
+  .sidebar .side-nav,
+  .sidebar.minimal .side-nav {
+    flex: 1;
+    flex-direction: row;
+    justify-content: space-around;
+    align-items: center;
+    gap: 0;
+    padding: 6px 8px;
+  }
+  .sidebar .nav-item,
+  .sidebar.minimal .nav-item {
+    flex: 1;
+    width: auto;
+    max-width: 96px;
+    height: 52px;
+    margin: 0;
+    padding: 4px 0;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    border-radius: 14px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sidebar .nav-item svg { width: 22px; height: 22px; }
+  .sidebar .nav-tip,
+  .sidebar.minimal .nav-tip {
+    display: block;
+    position: static;
+    transform: none;
+    opacity: 1;
+    background: none;
+    padding: 0;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.95);
+    pointer-events: none;
+  }
+  .sidebar .nav-item.active,
+  .sidebar .nav-item:hover,
+  .sidebar.minimal .nav-item.active,
+  .sidebar.minimal .nav-item:hover {
+    width: auto;
+    margin: 0;
+    padding: 4px 0;
+    border-radius: 14px;
+  }
+  .sidebar .nav-item.active { background: #fff; }
+  .sidebar .nav-item:hover:not(.active) { background: rgba(255, 255, 255, 0.14); }
+  .sidebar.minimal .nav-item::before,
+  .sidebar.minimal .nav-item::after { display: none !important; }
+  .sidebar .nav-item.active .nav-tip,
+  .sidebar .nav-item.active svg { color: var(--accent-strong); }
+
+  /* app content: clear the tab bar and the pinned profile pill */
+  .main { margin-left: 0; }
+  .content {
+    padding: 64px 14px calc(88px + env(safe-area-inset-bottom));
+  }
+  .dash-profile {
+    top: calc(10px + env(safe-area-inset-top));
+    right: 12px;
+    padding: 4px 12px 4px 5px;
+  }
+  .dash-profile .avatar { width: 26px; height: 26px; font-size: 11px; }
+  .dash-profile strong { font-size: 12.5px; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* AI guide button floats above the tab bar */
+  .guide-fab { right: 14px; bottom: calc(78px + env(safe-area-inset-bottom)); }
+  .guide-panel {
+    right: 8px;
+    left: 8px;
+    width: auto;
+    bottom: calc(76px + env(safe-area-inset-bottom));
+    max-height: calc(100dvh - 160px);
+  }
+}
+
+@media (max-width: 760px) {
+  /* ---- tables & wide blocks scroll inside their panel instead of the page ---- */
+  .leads-geo-table { min-width: 560px; }
+  .panel:has(> table), .panel:has(.leads-geo-table),
+  .table-wrap, .lg-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .subtabs { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .subtabs::-webkit-scrollbar { display: none; }
+  .subtab { flex: none; white-space: nowrap; }
+  .page-header h1 { font-size: 22px; }
+  .page-header > * { max-width: 100%; }
+  .approval-actions .btn { flex: 1; }
+
+  /* inputs ≥16px so iOS doesn't zoom on focus; comfortable tap targets */
+  input, select, textarea { font-size: 16px; }
+  .btn { min-height: 40px; }
+
+  /* ---- landing page ---- */
+  .lp-nav-inner {
+    grid-template-columns: 1fr auto;
+    padding: 10px 16px;
+    gap: 10px;
+  }
+  .lp-links { display: none; }
+  .lp-brand img { height: 36px; }
+  .lp-nav-inner .lp-cta { padding: 9px 16px; font-size: 13.5px; white-space: nowrap; }
+  .lp-hero {
+    grid-template-columns: 1fr;
+    min-height: 0;
+    padding: 20px 18px 36px;
+    gap: 26px;
+    text-align: left;
+  }
+  .lp-hero-copy h1.lp-hero-line,
+  .lp-hero-line {
+    font-size: clamp(32px, 10vw, 44px) !important;
+    margin-bottom: 18px !important;
+  }
+  .lp-actions { gap: 10px; }
+  .lp-actions .lp-cta { flex: 1 1 100%; justify-content: center; text-align: center; padding: 13px 22px; }
+  .lp-section { padding: 48px 18px; }
+  .lp-section-sub { margin-bottom: 26px; }
+
+  /* "how it works": keep the pinned scroll-driven card slide on phones too */
+  .lp-hiw-tall { height: 300vh; }
+  .lp-hiw-sticky { height: 100vh; height: 100svh; padding-top: 64px; gap: 24px; }
+  .lp-hiw-pin { padding: 0 18px; }
+  .lp-hiw-pin h2 { font-size: 28px; }
+  .lp-hiw-pin p { font-size: 14.5px; }
+  .lp-hiw-track { padding-left: 18px; }
+  .lp-card { width: 78vw; height: auto; min-height: 260px; padding: 26px 24px; }
+  .lp-demo-wrap, .lp-contact-card { padding: 22px 18px; }
+  .lp-demo-grid { gap: 22px; }
+  .lp-footer-inner { grid-template-columns: 1fr; gap: 26px; padding: 36px 18px 24px; }
+  .lp-footer-bar { flex-wrap: wrap; gap: 10px; justify-content: center; text-align: center; }
+
+  /* ---- login ---- */
+  .login-wrap { padding: 72px 16px 24px; align-items: start; }
+  .login-card { padding: 26px 20px; }
+  .login-home { top: calc(14px + env(safe-area-inset-top)); left: 14px; padding: 8px 14px; font-size: 13px; }
+}
+
+@media (max-width: 400px) {
+  .stat-row { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .content { padding-left: 12px; padding-right: 12px; }
+  .lp-brand img { height: 32px; }
+}

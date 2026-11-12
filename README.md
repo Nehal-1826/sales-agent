@@ -54,8 +54,31 @@ npm run dev
 API docs: http://localhost:8001/docs · E2E gate: [scripts/e2e/README.md](scripts/e2e/README.md)
 (run it before every push — 3 servers + `python scripts/e2e/flow.py`).
 
-Docker (VPS, all services + one gateway): `docker compose up -d --build` —
-see [docs/DEPLOY-agent.md](docs/DEPLOY-agent.md).
+## Docker (VPS, all services + one gateway)
+
+Two env files are required before `docker compose up -d --build` — a fresh
+clone fails without BOTH (compose reads `backend/.env.docker` directly):
+
+```bash
+cp .env.example .env                                # root — compose secrets
+cp backend/.env.docker.example backend/.env.docker  # FastAPI + celery env
+```
+
+- `backend/.env.docker` defaults to host-network URLs. Set `APP_BASE_URL` and
+  the OAuth redirect URIs to the new external prefix —
+  `https://YOUR_DOMAIN/wp-api/api` — because the gateway maps
+  `/wp-api/x` → FastAPI `/x` (see `ops/gateway/nginx.conf`). DB/Redis URLs in
+  it can stay: the compose `environment:` block overrides them on the bridge
+  network.
+- `WARMUP_JWT_SECRET` (root `.env`) is the one secret compose actually
+  interpolates: it feeds FastAPI's `JWT_SECRET` (api/worker/beat) AND Django's
+  `WARMUP_JWT_SECRET` — both bridge sides sign/verify with the same value.
+  32+ chars in production; both backends refuse shorter.
+- `AGENT_BRIDGE_ENABLED` (FastAPI side, default on) is the bridge kill-switch:
+  set `false` to hard-disable bridge logins without touching Django.
+
+First-deploy validation checklist (curl matrix, JWT round-trip, agent-DB
+bootstrap): [docs/DEPLOY-agent.md](docs/DEPLOY-agent.md).
 
 ## Build status
 

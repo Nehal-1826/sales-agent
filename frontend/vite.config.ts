@@ -6,10 +6,18 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
-    // The Python venv churns thousands of files (pycache, Django templates)
-    // and lives in OneDrive — watching it caused reload storms and crashes.
+    // The Python venvs churn thousands of files (pycache, Django templates)
+    // and live in OneDrive — watching them caused reload storms and crashes.
+    // Both backends: backend-agent/ (Django) and backend/ (FastAPI).
     watch: {
-      ignored: ['**/backend/.venv/**', '**/backend/staticfiles/**', '**/backend/*.sqlite3*'],
+      ignored: [
+        '**/backend-agent/.venv/**',
+        '**/backend/.venv/**',
+        '**/backend-agent/staticfiles/**',
+        '**/backend/staticfiles/**',
+        '**/backend-agent/*.sqlite3*',
+        '**/backend/*.sqlite3*',
+      ],
     },
     // Proxy API calls to the Django backend during development.
     // API_PROXY_TARGET overrides the default when :8000 is taken by

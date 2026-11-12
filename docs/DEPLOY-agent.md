@@ -68,13 +68,22 @@ run this *locally*):
 scp -r "C:/Users/kanna/OneDrive/Desktop/intern/Agentic AI" root@YOUR_VPS_IP:/opt/agentic
 ```
 
-**Step 3 — create your secrets file:**
+**Step 3 — create your secrets files (BOTH are required — a fresh clone
+fails `docker compose up` without them):**
 
 ```bash
 cd /opt/agentic
-cp .env.example .env
+cp .env.example .env                                # root: compose-level secrets
+cp backend/.env.docker.example backend/.env.docker  # FastAPI + celery services
 nano .env        # set the values, see section 3 below — save with Ctrl+O, Enter, Ctrl+X
+nano backend/.env.docker
 ```
+
+In `backend/.env.docker`, set `APP_BASE_URL` and the OAuth redirect URIs to
+the new external prefix: `https://YOUR_DOMAIN/wp-api/api` (the gateway maps
+`/wp-api/x` → FastAPI `/x`, so API-style absolute URLs must carry
+`/wp-api`). Its `DATABASE_URL`/`REDIS_URL` lines can stay as written — the
+compose `environment:` block overrides them on the docker bridge network.
 
 **Step 4 — build and start everything:**
 
@@ -99,7 +108,9 @@ ufw allow OpenSSH && ufw allow 80 && ufw allow 443 && ufw enable
 | `ALLOWED_HOSTS` | your VPS IP and/or domain, comma separated — e.g. `11.22.33.44,myagent.com` |
 | `POSTGRES_PASSWORD` | a strong password (only used inside docker, but set it anyway) |
 | `CSRF_TRUSTED_ORIGINS` | only needed with HTTPS: `https://myagent.com` |
-| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` / `FROM_EMAIL` / `REPORT_EMAIL` | optional — Gmail details; if omitted, set them in Django Admin instead (they're already configured in your DB backup if you migrate it) |
+| `WARMUP_JWT_SECRET` | **shared bridge secret — must equal FastAPI's `JWT_SECRET`.** Compose interpolates this ONE value into both sides (FastAPI api/worker/beat `JWT_SECRET` + Django `WARMUP_JWT_SECRET`), so there is no double entry to drift. 32+ chars — both backends refuse shorter in production. Generate: `python3 -c "import secrets; print(secrets.token_urlsafe(64))"` |
+| `AGENT_BRIDGE_ENABLED` | optional (goes in `backend/.env.docker`, FastAPI side). Bridge kill-switch, default `true`; set `false` to hard-disable bridge logins without touching Django. |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` / `FROM_EMAIL` / `REPORT_EMAIL` | optional — Gmail details; if omitted, set them in Django Admin instead (they're already configured in your DB backup if you migrate them) |
 
 API keys and credentials live **only** in `.env` / Django admin on the server —
 never in the frontend code. Keep `.env` private; it is git-ignored.
@@ -160,7 +171,69 @@ docker compose ps                 # all services "Up" (healthy)
 docker compose logs worker | tail -20
 ```
 
-## 7. How automatic restart works
+## 7. First-deploy validation checklist (merged stack)
+
+Run once after every fresh deploy of the merged monorepo. Commands run on the
+VPS from `/opt/agentic` unless noted. Step 0 needs no Docker — it also works
+on the dev laptop.
+
+**0 — validate compose config BEFORE starting (no Docker required):**
+
+```bash
+docker compose config -q    # silence = OK; prints errors like a missing ${WARMUP_JWT_SECRET}
+```
+
+**1 — build and start:**
+
+```bash
+docker compose up -d --build
+docker compose ps           # every service Up; db/redis healthy, django healthy
+```
+
+**2 — Postgres volume predates the merge?** The `agent` database was never
+created (init scripts only run on first cluster init). Create it by hand —
+the script is idempotent:
+
+```bash
+docker compose exec db psql -U warmpulse \
+  -f /docker-entrypoint-initdb.d/10-create-agent-db.sql
+docker compose restart django   # entrypoint then migrates the agent schema
+```
+
+**3 — curl matrix** (replace `localhost` with your IP/domain when testing
+from outside the VPS):
+
+| URL | Expect |
+|---|---|
+| `curl -fsS http://localhost/api/health/` | 200 JSON, `"database": "connected"` (Django + its DB) |
+| `curl -fsS http://localhost/wp-api/health` | 200 `{"status":"ok"}` (FastAPI alive behind the gateway) |
+| `curl -s -o /dev/null -w '%{http_code}\n' http://localhost/wp-api/api/auth/me` | `401` — reachable but auth-required (NOT 404/502) |
+| `curl -s -o /dev/null -w '%{http_code}\n' http://localhost/docs` | `404` in production — interactive docs are OFF once `APP_ENV=production` (FastAPI refuses `/docs` `/redoc` `/openapi.json`) |
+| `curl -fsS http://localhost/` | 200 — the SPA shell (frontend container) |
+
+**4 — bridge JWT round-trip** (Django mints → FastAPI accepts — the core of
+the merged stack):
+
+```bash
+DJANGO_TOKEN=$(curl -fsS -X POST http://localhost/api/auth/login/ \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"operator","password":"operator-demo-2026"}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
+BRIDGE=$(curl -fsS -X POST http://localhost/api/auth/warmup-token/ \
+  -H "Authorization: Token $DJANGO_TOKEN" \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
+curl -fsS http://localhost/wp-api/api/auth/me -H "Authorization: Bearer $BRIDGE"
+# Expect 200 with the provisioned WarmPulse user JSON (same email as the Django user).
+```
+
+If the last call 401s, the two sides hold different secrets: compose wires
+BOTH from the one `WARMUP_JWT_SECRET` in root `.env` — check with
+`docker compose config | grep -i jwt`. Note: a *platform admin* account gets
+`403 {"detail": "OTP required"}` from warmup-token until the session passes
+TOTP (`POST /api/platform/2fa/verify/`) — test the round-trip with a regular
+workspace user (e.g. `operator` on demo installs).
+
+## 8. How automatic restart works
 
 Every service has `restart: unless-stopped` in `docker-compose.yml`:
 
@@ -172,7 +245,7 @@ Every service has `restart: unless-stopped` in `docker-compose.yml`:
 - Migrations run automatically at every start (`entrypoint.sh`), and data
   lives in the `pgdata` volume — restarts never lose leads.
 
-## 8. How to update after pushing new code
+## 9. How to update after pushing new code
 
 ```bash
 cd /opt/agentic
@@ -182,7 +255,7 @@ docker compose up -d --build      # rebuilds changed images, restarts, keeps dat
 
 Migrations apply automatically during the restart. Downtime: a few seconds.
 
-## 9. Accessing the dashboard from laptop / phone
+## 10. Accessing the dashboard from laptop / phone
 
 - Same URL everywhere: `http://YOUR_VPS_IP` (bookmark it). Login:
   `operator` / `operator-demo-2026` — change it in Django Admin → Users after
@@ -202,7 +275,7 @@ docker compose -f docker-compose.yml -f docker-compose.https.yml up -d
 Caddy obtains + renews the certificate automatically. Dashboard becomes
 `https://myagent.com`.
 
-## 10. Monthly cost options
+## 11. Monthly cost options
 
 | Provider | Spec | Price/mo |
 |---|---|---|

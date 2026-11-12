@@ -51,7 +51,14 @@ export function Sidebar({
 
   return (
     <aside className={`sidebar${open ? ' open' : ''}`} aria-label="Main navigation">
-      <button className="sidebar-brand" onClick={() => navigate('home')} aria-label="Go to Home">
+      <button
+        className="sidebar-brand"
+        onClick={() => {
+          navigate('home');
+          onClose();
+        }}
+        aria-label="Go to Home"
+      >
         <img src="/warmpulse-logo.svg" alt="" className="brand-logo" />
       </button>
       {user?.workspace && (
@@ -66,7 +73,10 @@ export function Sidebar({
           <button
             key={key}
             className={`nav-item${page === key ? ' active' : ''}`}
-            onClick={() => navigate(key)}
+            onClick={() => {
+              navigate(key);
+              onClose(); // collapse the mobile drawer after a selection
+            }}
             aria-current={page === key ? 'page' : undefined}
           >
             <Icon size={18} />
@@ -97,10 +107,12 @@ export function Sidebar({
             <strong>{user?.name ?? 'Signed in'}</strong>
             <small>{user ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : ''}</small>
           </div>
-          <button className="icon-btn side-logout" onClick={onSignOut} aria-label="Sign out" title="Sign out">
-            <IconLogout size={17} />
-          </button>
         </div>
+        {/* full-width sign-out row, same conventions as the nav items above */}
+        <button className="nav-item side-logout" onClick={onSignOut} aria-label="Sign out" title="Sign out">
+          <IconLogout size={18} />
+          <span>Sign out</span>
+        </button>
       </div>
     </aside>
   );

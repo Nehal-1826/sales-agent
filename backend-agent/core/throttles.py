@@ -33,3 +33,11 @@ class OtpThrottle(SimpleRateThrottle):
     def get_cache_key(self, request, view):
         ident = request.user.pk if request.user and request.user.is_authenticated else self.get_ident(request)
         return self.cache_format % {'scope': self.scope, 'ident': ident}
+
+
+class CompanyScrapeThrottle(_IpScope):
+    """POST /api/company/scrape — called by ANONYMOUS visitors on the signup
+    form, so the limit is per-IP.  The rate lives on the class on purpose:
+    the endpoint owns its own limit and DEFAULT_THROTTLE_RATES stays as is."""
+    scope = 'company_scrape'
+    THROTTLE_RATES = {**SimpleRateThrottle.THROTTLE_RATES, 'company_scrape': '10/min'}

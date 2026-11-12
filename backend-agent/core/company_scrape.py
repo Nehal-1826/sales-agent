@@ -11,10 +11,11 @@ the guard.  Name/description extraction reuses the Search agent's
 scraper helpers (pick_site_name, name_from_domain); only the guarded
 fetch lives here.
 
-Token auth, no paywall: self-serve signups use this while their
-subscription is still PENDING, and the user-initiated single fetch of
-their OWN site is not agent traffic (robots.txt politeness applies to
-the pipeline's discovery crawls, not to this).
+Open to anonymous visitors — the "Fetch details" button sits on the
+signup form, where no token exists yet — and rate-limited per IP by
+CompanyScrapeThrottle (10/min) instead.  No paywall: the user-initiated
+single fetch of their OWN site is not agent traffic (robots.txt
+politeness applies to the pipeline's discovery crawls, not to this).
 """
 
 import ipaddress
@@ -25,11 +26,12 @@ from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from .scraper import MAX_HTML, USER_AGENT, _registrable, name_from_domain, pick_site_name
+from .throttles import CompanyScrapeThrottle
 
 FETCH_TIMEOUT = 6   # seconds per request
 DEADLINE = 10       # seconds for the whole fetch (brief: ≤10s)
@@ -144,7 +146,8 @@ def company_details(html, final_url):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])  # own permission_classes → no global paywall
+@permission_classes([AllowAny])  # anonymous signup visitors; CompanyScrapeThrottle limits abuse
+@throttle_classes([CompanyScrapeThrottle])
 def company_scrape(request):
     data = request.data if hasattr(request.data, 'get') else {}
     raw = data.get('url')

@@ -9,11 +9,13 @@ machine, and the SSRF cases pin exactly the addresses the guard refuses.
 from unittest import mock
 
 import requests as requests_lib
+from django.core.cache import cache
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
 from core.models import User
 from core.tests.base import TenantTestCase
+from core.throttles import CompanyScrapeThrottle
 
 # getaddrinfo payload shape for a PUBLIC host (family, type, proto, canon, sockaddr)
 PUBLIC_DNS = [(2, 1, 6, '', ('93.184.216.34', 443))]
@@ -52,6 +54,7 @@ def resp(html='', status=200, url='https://acme.example/'):
 
 class CompanyScrapeTests(TenantTestCase):
     def setUp(self):
+        cache.clear()  # throttle history must not leak between tests
         self.user = User.objects.create_user(
             username='tester', password='testpass1234', role=User.Roles.OWNER)
         self.token = Token.objects.create(user=self.user)
@@ -61,12 +64,26 @@ class CompanyScrapeTests(TenantTestCase):
     def call(self, url, **over):
         return self.client.post('/api/company/scrape/', {'url': url, **over}, format='json')
 
-    # -- auth -----------------------------------------------------------
+    # -- auth + throttle ---------------------------------------------------
 
-    def test_anonymous_is_401(self):
-        anon = APIClient()
-        r = anon.post('/api/company/scrape/', {'url': 'https://acme.example/'}, format='json')
-        self.assertEqual(r.status_code, 401)
+    def test_anonymous_can_fetch(self):
+        """The button lives on the signup form — no token exists yet (spec fix)."""
+        with mock.patch('socket.getaddrinfo', return_value=PUBLIC_DNS), \
+                mock.patch('core.company_scrape.requests.get', return_value=resp(PAGE)):
+            r = APIClient().post('/api/company/scrape/', {'url': 'acme.example'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()['name'], 'Acme Rockets')
+
+    def test_anonymous_hits_the_scoped_throttle(self):
+        with mock.patch.dict(CompanyScrapeThrottle.THROTTLE_RATES, {'company_scrape': '1/min'}), \
+                mock.patch('socket.getaddrinfo', return_value=PUBLIC_DNS), \
+                mock.patch('core.company_scrape.requests.get', return_value=resp(PAGE)):
+            anon = APIClient()
+            first = anon.post('/api/company/scrape/', {'url': 'acme.example'}, format='json')
+            second = anon.post('/api/company/scrape/', {'url': 'acme.example'}, format='json')
+        self.assertEqual(first.status_code, 200, first.content)
+        self.assertEqual(second.status_code, 429, second.content)
+        self.assertIn('detail', second.json())
 
     # -- happy path -----------------------------------------------------
 

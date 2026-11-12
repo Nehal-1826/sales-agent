@@ -1,5 +1,14 @@
 # Deploying Agentic AI to a VPS — beginner guide
 
+> **Monorepo note (2026-11-12):** paths in this guide predate the WarmPulse
+> merge. The agent backend now lives at `backend-agent/` (was `backend/`
+> from the standalone sales-agent repo), and the root `docker-compose.yml`
+> is the merged stack — Django + FastAPI + frontend + celery behind one
+> gateway (`ops/gateway/nginx.conf`: `/api/` → django, `/wp-api/` → fastapi,
+> `/` → frontend). Pre-move paths below still read as `backend/` for the
+> agent service; substitute `backend-agent/` there. FastAPI/warmup deploy
+> specifics stay in the root README.
+
 This makes the whole system run 24/7 on a small Linux server. Your laptop
 becomes just a window into it: close it, sleep it, lose internet — the agent
 keeps discovering, profiling, drafting and reporting on the VPS.

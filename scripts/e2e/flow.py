@@ -63,6 +63,16 @@ def skip(name: str, reason: str) -> None:
     print(f"SKIP  {name}  — {reason}")
 
 
+def safe_text(loc) -> str:
+    """inner_text() for a condition/detail arg that must never raise: a
+    missing element yields a placeholder so the check FAILs with detail
+    instead of aborting the remaining checks + summary."""
+    try:
+        return loc.inner_text()
+    except Exception as exc:  # noqa: BLE001
+        return f"<element missing: {type(exc).__name__}>"
+
+
 print(f"# base={BASE}  fastapi={'up' if WP_UP else 'DOWN'}")
 print(f"# shots -> {SHOTS}")
 
@@ -82,12 +92,12 @@ with sync_playwright() as p:
     page.goto(BASE)
     page.wait_for_load_state("networkidle")
     check("landing: <title> contains WarmPulse", "WarmPulse" in page.title(), page.title())
-    h1 = page.locator("h1.lp-hero-line").inner_text()
+    h1 = safe_text(page.locator("h1.lp-hero-line"))
     check("landing: hero H1 'Find the Lead'", "Find the Lead" in h1, h1)
-    tagline = page.locator(".lp-hero-tagline").inner_text()
+    tagline = safe_text(page.locator(".lp-hero-tagline"))
     check("landing: tagline 'Keep every sender warm'", "Keep every sender warm" in tagline, tagline)
     cards = page.locator(".lp-card h3").all_inner_texts()
-    first_card = page.locator(".lp-card").first.inner_text().lower()
+    first_card = safe_text(page.locator(".lp-card").first).lower()
     check("landing: first how-it-works card mentions warming",
           bool(cards) and "warm" in cards[0].lower() and "warm" in first_card,
           f"cards={cards[:2]}")
@@ -100,7 +110,7 @@ with sync_playwright() as p:
     # ── 2. Sign in -> login page ────────────────────────────────────
     page.locator("a, button", has_text="Sign in").first.click()
     page.wait_for_load_state("networkidle")
-    wordmark = page.locator(".login-title strong").inner_text()
+    wordmark = safe_text(page.locator(".login-title strong"))
     check("login: wordmark 'WarmPulse'", wordmark.strip() == "WarmPulse", wordmark)
     btn_color = page.locator("button.btn-primary").first.evaluate("el => getComputedStyle(el).backgroundColor")
     check("rebrand: primary button is violet", btn_color == VIOLET, btn_color)
@@ -154,22 +164,22 @@ with sync_playwright() as p:
 
     page.goto(BASE + "/#/warmup")
     page.wait_for_timeout(1800)
-    top_title = page.locator(".topbar-title").inner_text()
+    top_title = safe_text(page.locator(".topbar-title"))
     check("warmup: deep link stays on Warmup (TopBar title)", top_title.strip() == "Warmup", top_title)
     body = page.locator("body").inner_text()
     check("warmup: page renders (no bounce home)", "Warmup backend" in body, body[:120])
     check("warmup: sidebar item present", page.locator("button.nav-item", has_text="Warmup").count() == 1)
     page.wait_for_timeout(1500)  # let the health probe settle
+    ws = page.locator(".warmup-status")
+    ws_txt = safe_text(ws)
     if WP_UP:
         check("warmup: health live · FastAPI",
-              page.locator(".warmup-status.up").count() > 0
-              and "live · FastAPI" in page.locator(".warmup-status").inner_text(),
-              page.locator(".warmup-status").inner_text())
+              page.locator(".warmup-status.up").count() > 0 and "live · FastAPI" in ws_txt,
+              ws_txt)
     else:
         check("warmup: not-reachable panel when FastAPI down",
-              page.locator(".warmup-status.down").count() > 0
-              and "not reachable" in page.locator(".warmup-status").inner_text(),
-              page.locator(".warmup-status").inner_text())
+              page.locator(".warmup-status.down").count() > 0 and "not reachable" in ws_txt,
+              ws_txt)
         skip("warmup: health live · FastAPI", "FastAPI not reachable on :8001")
     page.screenshot(path=str(SHOTS / "06-warmup.png"))
 
@@ -191,8 +201,13 @@ with sync_playwright() as p:
 
     # ── 8. Hygiene: console + 404s (over the whole session) ────────
     # A deliberately-down FastAPI still makes /wp-api/health proxy-500; those
-    # probe failures are the skipped mode's expected noise, not app bugs.
-    nonwp_bad = [(u, s) for u, s in bad_responses if "/wp-api/" not in u]
+    # probe failures are the skipped mode's expected noise — so /wp-api/ is
+    # exempt ONLY in down-mode. With FastAPI up, its 4xx/5xx count as
+    # failures like every other route's.
+    if WP_UP:
+        nonwp_bad = list(bad_responses)
+    else:
+        nonwp_bad = [(u, s) for u, s in bad_responses if "/wp-api/" not in u]
     hygiene_errors = console_errors
     if not WP_UP:
         n_probe = sum(1 for u, _ in bad_responses if "/wp-api/" in u)

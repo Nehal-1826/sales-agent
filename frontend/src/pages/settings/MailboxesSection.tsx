@@ -9,18 +9,10 @@ import {
   getMailboxes,
   putSettings,
   resumeMailbox,
-  syncWarmPulse,
   updateMailbox,
 } from '../../lib/api';
 import { useAsync } from '../../lib/hooks';
-import type {
-  DnsCheckItem,
-  Mailbox,
-  MailboxInput,
-  OutboxConfig,
-  SettingsState,
-  WarmPulseConfig,
-} from '../../lib/types';
+import type { DnsCheckItem, Mailbox, MailboxInput, OutboxConfig, SettingsState } from '../../lib/types';
 import { SaveBar, useSectionForm } from './useSectionForm';
 
 const DNS_LABELS: { key: 'spf' | 'dkim' | 'dmarc' | 'mx'; label: string; what: string }[] = [
@@ -220,39 +212,21 @@ function MailboxModal({ mailbox, onClose, onSaved }: { mailbox: Mailbox | null; 
   );
 }
 
-interface OutboxForm {
-  outbox: OutboxConfig;
-  warmpulse: WarmPulseConfig;
-}
-
 /** Mailboxes — where cold email goes out from, how fast, and whether each
  *  sending domain is set up so emails land in the inbox. */
 export function MailboxesSection({ settings, onSaved }: { settings: SettingsState; onSaved: (s: SettingsState) => void }) {
   const list = useAsync(getMailboxes);
   const [editing, setEditing] = useState<Mailbox | 'new' | null>(null);
-  const form = useSectionForm<OutboxForm>(
-    {
-      outbox: settings.outbox ?? { windowStart: 9, windowEnd: 18, weekdaysOnly: true },
-      warmpulse: { apiUrl: settings.warmpulse?.apiUrl ?? 'https://warmpulse.tech', apiKey: settings.warmpulse?.apiKey ?? '' },
-    },
+  const form = useSectionForm<OutboxConfig>(
+    settings.outbox ?? { windowStart: 9, windowEnd: 18, weekdaysOnly: true },
     async (v) => {
-      const res = await putSettings({ outbox: v.outbox, warmpulse: { apiUrl: v.warmpulse.apiUrl, apiKey: v.warmpulse.apiKey } });
+      const res = await putSettings({ outbox: v });
       if (res.ok) onSaved(res.data);
       return res;
     },
   );
-  const { outbox, warmpulse } = form.value;
-  const setOutbox = (patch: Partial<OutboxConfig>) => form.setValue({ ...form.value, outbox: { ...outbox, ...patch } });
-
-  const sync = async () => {
-    if (form.dirty && !(await form.save())) return;
-    const res = await syncWarmPulse();
-    if (!res.ok) return toast.error(res.error);
-    if (res.data.ok) {
-      toast.success(`WarmPulse linked — ${res.data.matched ?? 0} mailbox(es) matched.`);
-      void list.reload();
-    } else toast.error(res.data.message ?? 'Could not reach WarmPulse.');
-  };
+  const outbox = form.value;
+  const setOutbox = (patch: Partial<OutboxConfig>) => form.setValue({ ...outbox, ...patch });
 
   return (
     <section className="panel settings-panel" aria-labelledby="sec-mailboxes">
@@ -303,27 +277,6 @@ export function MailboxesSection({ settings, onSaved }: { settings: SettingsStat
           <small>Don't send on Saturday and Sunday — business emails do better on workdays.</small>
         </div>
         <Toggle checked={outbox.weekdaysOnly} onChange={(weekdaysOnly) => setOutbox({ weekdaysOnly })} label="Weekdays only" />
-      </div>
-
-      <hr className="divider" />
-      <h3 className="field-label">WarmPulse (optional)</h3>
-      <p className="mailbox-muted">
-        If you warm up your mailboxes with WarmPulse, paste an API key from WarmPulse (Workspace → API keys). We
-        then keep sending slowly while a mailbox is still warming up or its health is low.
-      </p>
-      <Field label="WarmPulse API key" hint="Leave empty to switch this off.">
-        <input
-          type="password"
-          value={warmpulse.apiKey}
-          placeholder="wp_live_…"
-          autoComplete="off"
-          onChange={(e) => form.setValue({ ...form.value, warmpulse: { ...warmpulse, apiKey: e.target.value } })}
-        />
-      </Field>
-      <div className="settings-row">
-        <button className="btn btn-sm" onClick={() => void sync()} disabled={!warmpulse.apiKey}>
-          Check WarmPulse now
-        </button>
       </div>
 
       {editing && (

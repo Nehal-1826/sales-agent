@@ -270,11 +270,6 @@ export async function resumeMailbox(id: number): Promise<Result<Mailbox>> {
   return attempt(() => request<Mailbox>(`/mailboxes/${id}/resume/`, post()));
 }
 
-export async function syncWarmPulse(): Promise<Result<{ ok: boolean; matched?: number; message?: string }>> {
-  if (await inDemo()) return demoFail();
-  return attempt(() => request('/warmpulse/sync/', post(), 30_000));
-}
-
 /* ---------------- settings ---------------- */
 
 export async function getSettings(): Promise<SettingsState> {

@@ -1,12 +1,9 @@
 import { useState } from 'react';
-import { Banner, toast } from '../../components/feedback';
+import { toast } from '../../components/feedback';
 import { Field, Toggle } from '../../components/ui';
 import { getWhatsAppQr, getWhatsAppStatus, putSettings, testWhatsApp } from '../../lib/api';
 import type { SettingsState, WhatsAppConfig, WhatsAppStatus } from '../../lib/types';
 import { SaveBar, useSectionForm } from './useSectionForm';
-
-export const WHATSAPP_WARNING =
-  'Unofficial WhatsApp automation can get this number banned by WhatsApp. Use a separate number, keep volumes low, and only message businesses that published this number.';
 
 /** WhatsApp — opt-in helper (open-wa), QR login, daily limit. */
 export function WhatsAppSection({ settings, onSaved }: { settings: SettingsState; onSaved: (s: SettingsState) => void }) {
@@ -52,9 +49,6 @@ export function WhatsAppSection({ settings, onSaved }: { settings: SettingsState
       <h2 id="sec-whatsapp" className="section-title">
         WhatsApp
       </h2>
-      <Banner tone="error" title="Risk of a ban">
-        {WHATSAPP_WARNING}
-      </Banner>
       <p className="muted">
         Every WhatsApp message waits in Approvals for you — it is never sent without asking. Messages go out only in
         your sending hours, a few minutes apart. With this off, WhatsApp steps become an "Open in WhatsApp" task with the

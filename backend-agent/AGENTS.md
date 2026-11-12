@@ -1,3 +1,7 @@
+> **Monorepo note (2026-11-12):** this directory is the Django backend inside
+> the Email-Warmup monorepo. Frontend now lives at `../frontend` (was `./src`),
+> Docker at `../frontend/deploy/`. Ignore pre-move path references below.
+
 # AGENTS.md
 
 Autonomous marketing & sales agent system. React + TypeScript + Vite frontend,

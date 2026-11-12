@@ -67,10 +67,10 @@ Note: `frontend/deploy/Dockerfile` + `nginx.conf` are the frontend build image (
 
 ```bash
 ls backend-agent/manage.py frontend/package.json frontend-warmpulse/package.json frontend-warmpulse/src
-git log --follow --oneline -3 -- backend-agent/manage.py | head -3
+git log --follow -m --oneline -3 -- backend-agent/manage.py
 ```
 
-Expected: all files exist; `git log --follow` shows sales-agent commits (not just the import merge).
+Expected: all files exist; the log shows sales-agent commits (e.g. `305a492 Initial commit: sales agent app`) — not just the import merge. Note: plain `--follow` cannot cross a `git subtree add` merge (the path prefix changes at the merge commit and git runs no rename diff on merges), so the `-m` flag is required to diff the merge against each parent and follow into the sales-agent history.
 
 - [ ] **Step 4: Commit**
 

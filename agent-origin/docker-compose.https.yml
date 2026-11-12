@@ -1,0 +1,28 @@
+# Optional HTTPS — use WITH docker-compose.yml when you have a domain:
+#   docker compose -f docker-compose.yml -f docker-compose.https.yml up -d
+# Caddy obtains and renews the Let's Encrypt certificate automatically.
+# Point your domain's DNS A record at the VPS IP first, then set DOMAIN in .env.
+
+services:
+  # Caddy takes over ports 80/443; nginx stays internal to the docker network.
+  frontend:
+    ports: !override []
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"    # ACME challenge + HTTP redirect
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+
+volumes:
+  caddy_data:
+  caddy_config:

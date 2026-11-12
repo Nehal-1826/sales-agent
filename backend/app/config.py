@@ -74,6 +74,12 @@ class Settings(BaseSettings):
     jwt_access_ttl_minutes: int = Field(default=15, alias="JWT_ACCESS_TTL_MINUTES")
     jwt_refresh_ttl_days: int = Field(default=7, alias="JWT_REFRESH_TTL_DAYS")
 
+    # Agent bridge — accept Django-minted JWTs (iss=agent-bridge) and
+    # auto-provision passwordless WarmPulse users from them. Both sides sign
+    # with the same HS256 secret (deploy wires Django's WARMUP_JWT_SECRET to
+    # this app's JWT_SECRET). Flip off to hard-disable bridge logins.
+    agent_bridge_enabled: bool = Field(default=True, alias="AGENT_BRIDGE_ENABLED")
+
     # Google OAuth (mailbox-connect)
     google_client_id: str = Field(default="", alias="GOOGLE_CLIENT_ID")
     google_client_secret: str = Field(default="", alias="GOOGLE_CLIENT_SECRET")

@@ -9,13 +9,15 @@ from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.db.models.api_keys import ApiKey
-from app.db.models.users import User, UserRole
+from app.db.models.users import OnboardingStatus, User, UserRole
 from app.db.session import get_db
 from app.services.auth_service import load_user_by_id
 from app.services.security import InvalidTokenError, decode_token
 
 _API_KEY_PREFIX = "wp_live_"
+_BRIDGE_ISSUER = "agent-bridge"
 
 
 def _extract_bearer(authorization: str | None) -> str:
@@ -57,11 +59,66 @@ def get_current_claims(
     return claims
 
 
+async def _provision_bridge_user(session: AsyncSession, claims: dict[str, Any]) -> User:
+    """Resolve a Django-minted agent-bridge JWT to a WarmPulse user.
+
+    ``sub`` on bridge tokens is the *Django* user id, so the WarmPulse side
+    keys on ``email`` instead: create a passwordless user on first login
+    (email-verified, mailbox_pending onboarding, role from claims), return
+    the existing row on every later login. Existing users are returned
+    untouched — role/email are never modified (idempotent re-login).
+    """
+    email = str(claims.get("email", "")).lower()
+    if not email:
+        raise HTTPException(status_code=401, detail="Bridge token missing email")
+    role = UserRole.super_admin if claims.get("role") == "super_admin" else UserRole.client
+    user = (await session.execute(select(User).where(User.email == email))).scalar_one_or_none()
+    if user is None:
+        user = User(
+            email=email,
+            hashed_password=None,
+            role=role,
+            email_verified=True,
+            onboarding_status=OnboardingStatus.mailbox_pending,
+        )
+        session.add(user)
+        await session.commit()
+    return user
+
+
 async def get_current_user(
     claims: Annotated[dict[str, Any], Depends(get_current_claims)],
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> User:
     """Decode JWT and load the user from the DB. 401 if token invalid / user missing."""
+    # Agent-bridge JWTs (iss=agent-bridge, minted by the Django sales-agent):
+    # resolve by email + auto-provision instead of the local sub lookup below.
+    if claims.get("iss") == _BRIDGE_ISSUER:
+        if not get_settings().agent_bridge_enabled:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Bridge authentication disabled",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        user = await _provision_bridge_user(session, claims)
+        # Same suspension chokepoint as the normal path below — bridge
+        # provisioning must not become a way around an admin suspension.
+        if user.is_suspended:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account suspended",
+            )
+        return user
+    # A token carrying a *foreign* issuer must never fall through to the
+    # normal sub lookup: iss != agent-bridge on an otherwise-valid token is a
+    # hard 401. WarmPulse-issued tokens carry no iss claim at all, so the
+    # normal path below is unchanged for the mobile app.
+    if claims.get("iss") is not None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Untrusted token issuer",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     sub = claims.get("sub")
     if not sub:
         raise HTTPException(

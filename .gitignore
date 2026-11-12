@@ -86,3 +86,15 @@ scratchpad_qa/
 
 # nginx maintenance flag (ops/maintenance.sh)
 maintenance.on
+
+# Monorepo layout (sales-agent merge): backend-agent + frontend + frontend-warmpulse + whatsapp-sidecar
+backend-agent/.venv/
+backend-agent/db.sqlite3*
+backend-agent/staticfiles/
+# local CRM data backups — customer data + credentials, never push
+backups/
+frontend/node_modules/
+frontend-warmpulse/node_modules/
+whatsapp-sidecar/node_modules/
+# WarmPulse frontend moved to frontend-warmpulse/ — keep its APK artifact ignored there too
+frontend-warmpulse/downloads/*.apk

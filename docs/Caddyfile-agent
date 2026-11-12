@@ -1,0 +1,5 @@
+# Terminate HTTPS with an auto-renewed Let's Encrypt certificate,
+# then forward to the nginx frontend container.
+{$DOMAIN} {
+    reverse_proxy frontend:80
+}

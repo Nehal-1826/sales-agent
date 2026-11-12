@@ -86,39 +86,58 @@ async def _provision_bridge_user(session: AsyncSession, claims: dict[str, Any]) 
     return user
 
 
-async def get_current_user(
-    claims: Annotated[dict[str, Any], Depends(get_current_claims)],
-    session: Annotated[AsyncSession, Depends(get_db)],
-) -> User:
-    """Decode JWT and load the user from the DB. 401 if token invalid / user missing."""
-    # Agent-bridge JWTs (iss=agent-bridge, minted by the Django sales-agent):
-    # resolve by email + auto-provision instead of the local sub lookup below.
-    if claims.get("iss") == _BRIDGE_ISSUER:
-        if not get_settings().agent_bridge_enabled:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Bridge authentication disabled",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        user = await _provision_bridge_user(session, claims)
-        # Same suspension chokepoint as the normal path below — bridge
-        # provisioning must not become a way around an admin suspension.
-        if user.is_suspended:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Account suspended",
-            )
-        return user
-    # A token carrying a *foreign* issuer must never fall through to the
-    # normal sub lookup: iss != agent-bridge on an otherwise-valid token is a
-    # hard 401. WarmPulse-issued tokens carry no iss claim at all, so the
-    # normal path below is unchanged for the mobile app.
-    if claims.get("iss") is not None:
+async def _bridge_user_or_reject_foreign_iss(
+    session: AsyncSession, claims: dict[str, Any]
+) -> User | None:
+    """Shared ``iss`` handling for both JWT bearer paths.
+
+    - no ``iss`` claim (every WarmPulse-issued token) → ``None``: caller
+      continues with the normal sub lookup, unchanged for the mobile app.
+    - ``iss=agent-bridge`` (Django-minted) → resolve through provisioning and
+      return that user. The bridge ``sub`` is a Django user id and must never
+      be fed to ``load_user_by_id`` — on these routes it would resolve to
+      whatever WarmPulse user shares that id (cross-tenant confusion).
+    - any other issuer → hard 401: a foreign-iss token must never fall
+      through to the normal path, even when its sub matches a real user.
+
+    Bridge users pass the same admin-suspension chokepoint as the normal
+    path — provisioning must not become a way around a suspension.
+    """
+    iss = claims.get("iss")
+    if iss is None:
+        return None
+    if iss != _BRIDGE_ISSUER:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Untrusted token issuer",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    if not get_settings().agent_bridge_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Bridge authentication disabled",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    user = await _provision_bridge_user(session, claims)
+    if user.is_suspended:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account suspended",
+        )
+    return user
+
+
+async def get_current_user(
+    claims: Annotated[dict[str, Any], Depends(get_current_claims)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> User:
+    """Decode JWT and load the user from the DB. 401 if token invalid / user missing."""
+    # Agent-bridge JWTs (iss=agent-bridge, minted by the Django sales-agent)
+    # resolve by email + auto-provision instead of the local sub lookup below;
+    # foreign issuers are a hard 401 (see _bridge_user_or_reject_foreign_iss).
+    bridge_user = await _bridge_user_or_reject_foreign_iss(session, claims)
+    if bridge_user is not None:
+        return bridge_user
     sub = claims.get("sub")
     if not sub:
         raise HTTPException(
@@ -224,6 +243,14 @@ async def get_current_user_or_api_key(
             detail="Expected access token",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    # Same iss handling as get_current_user: bridge JWTs resolve through
+    # provisioning (their sub is a Django id — load_user_by_id must never see
+    # it), foreign issuers are a hard 401. WarmPulse-issued tokens carry no
+    # iss claim, so the normal path below is unchanged; the wp_live_ API-key
+    # path above is untouched.
+    bridge_user = await _bridge_user_or_reject_foreign_iss(session, claims)
+    if bridge_user is not None:
+        return bridge_user
     sub = claims.get("sub")
     if not sub:
         raise HTTPException(

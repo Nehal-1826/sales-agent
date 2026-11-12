@@ -39,8 +39,12 @@ async def app_and_client() -> AsyncIterator[
     from app.db import models  # noqa: F401 — register tables on Base.metadata
     from app.db.base import Base
     from app.db.models.audit_logs import AuditLog
+    from app.db.models.mailboxes import Mailbox
     from app.db.models.notifications import Notification
+    from app.db.models.peer_inboxes import PeerInbox
     from app.db.models.plans import Plan
+    from app.db.models.warmup_logs import WarmupLog
+    from app.db.models.warmup_threads import WarmupThread
     from app.db.models.workspace_settings import WorkspaceSetting
     from app.db.session import get_db
     from app.main import create_app
@@ -51,8 +55,15 @@ async def app_and_client() -> AsyncIterator[
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    # Same table set as test_auth.py — /me reads plans + workspace_settings.
-    tables = [t.__table__ for t in (User, Plan, AuditLog, Notification, WorkspaceSetting)]
+    # Same table set as test_auth.py (— /me reads plans + workspace_settings),
+    # plus the activity tables for the get_current_user_or_api_key route tests.
+    tables = [
+        t.__table__
+        for t in (
+            User, Plan, AuditLog, Notification, WorkspaceSetting,
+            Mailbox, PeerInbox, WarmupLog, WarmupThread,
+        )
+    ]
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all, tables=tables)
 
@@ -219,3 +230,69 @@ class TestBridgeAuth:
         good = create_access_token(subject=str(existing.id), role="client")
         ok = await client.get("/api/auth/me", headers={"Authorization": f"Bearer {good}"})
         assert ok.status_code == 200, ok.text
+
+
+class TestBridgeAuthViaUserOrApiKeyDependency:
+    """Endpoints behind get_current_user_or_api_key (activity, analytics,
+    workspace_billing, workspace_reputation, selected mailbox/inbox routes).
+
+    Bridge JWTs must resolve through provisioning there too — their ``sub`` is
+    a Django user id and must never be fed to load_user_by_id — and foreign
+    issuers must be rejected. The wp_live_ API-key path is covered by
+    tests/test_api_key_auth.py and stays untouched.
+    """
+
+    ROUTE = "/api/workspace/warmup-activity/today-stats"
+
+    @pytest.mark.asyncio
+    async def test_bridge_jwt_provisions_and_authenticates(
+        self, client, settings, db_session
+    ):
+        token = _bridge_token(settings, sub="17")
+        res = await client.get(self.ROUTE, headers={"Authorization": f"Bearer {token}"})
+        assert res.status_code == 200, res.text
+        assert res.json() == {
+            "sent": 0, "opens": 0, "replies": 0,
+            "spam_rescues": 0, "stars": 0, "marked_important": 0,
+        }
+        # Resolved via email-provisioned bridge user, not a sub lookup.
+        user = await _fetch_user(db_session, "bridge@shailog.com")
+        assert user.hashed_password is None
+        assert user.role == UserRole.client
+
+    @pytest.mark.asyncio
+    async def test_wrong_iss_rejected(self, client, settings):
+        now = int(time.time())
+        bad = jwt.encode(
+            {"iss": "other", "type": "access", "sub": "1", "role": "client",
+             "exp": now + 60},
+            settings.jwt_secret,
+            algorithm="HS256",
+        )
+        res = await client.get(self.ROUTE, headers={"Authorization": f"Bearer {bad}"})
+        assert res.status_code == 401, res.text
+
+    @pytest.mark.asyncio
+    async def test_wrong_iss_rejected_even_with_matching_sub(
+        self, client, settings, db_session
+    ):
+        """Foreign-iss token whose sub matches a real WarmPulse user must not
+        fall through to load_user_by_id on this dependency either."""
+        existing = User(
+            email="apikey-route-user@warmpulse-example.com",
+            hashed_password="x",
+            role=UserRole.client,
+            onboarding_status=OnboardingStatus.active,
+            email_verified=True,
+        )
+        db_session.add(existing)
+        await db_session.commit()
+        now = int(time.time())
+        bad = jwt.encode(
+            {"iss": "other", "type": "access", "sub": str(existing.id),
+             "role": "client", "exp": now + 60},
+            settings.jwt_secret,
+            algorithm="HS256",
+        )
+        res = await client.get(self.ROUTE, headers={"Authorization": f"Bearer {bad}"})
+        assert res.status_code == 401, res.text

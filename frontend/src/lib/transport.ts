@@ -13,6 +13,7 @@
  */
 
 import { clearAll } from './store';
+import { clearWarmupToken } from './warmupApi';
 
 /** Base URL the Django API is served from (Vite proxies /api in dev). */
 export const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? '/api';
@@ -231,6 +232,8 @@ export function logout(): void {
   }
   authToken = null;
   clearAll();
+  // the FastAPI bridge JWT derives from this session — it must not survive it
+  clearWarmupToken();
 }
 
 /** Authenticated download (CSV export) — fetch + blob, token in the header. */

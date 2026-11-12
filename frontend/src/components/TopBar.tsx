@@ -10,6 +10,7 @@ const TITLES: Record<PageKey, string> = {
   leads: 'Leads',
   activity: 'Activity',
   assistant: 'Assistant',
+  warmup: 'Warmup',
   settings: 'Settings',
 };
 

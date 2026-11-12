@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { IconBot, IconBuilding, IconCheck, IconHome, IconInbox, IconMail, IconLogout, IconPulse, IconSettings } from './icons';
+import { IconBot, IconBuilding, IconCheck, IconHome, IconInbox, IconLoop, IconMail, IconLogout, IconPulse, IconSettings } from './icons';
 import type { IconProps } from './icons';
 import { AutopilotPill } from './AutopilotPill';
 import { getCurrentUser } from '../lib/api';
@@ -16,6 +16,7 @@ const NAV: { key: PageKey; label: string; icon: (p: IconProps) => JSX.Element }[
   { key: 'leads', label: 'Leads', icon: IconBuilding },
   { key: 'activity', label: 'Activity', icon: IconPulse },
   { key: 'assistant', label: 'Assistant', icon: IconBot },
+  { key: 'warmup', label: 'Warmup', icon: IconLoop },
   { key: 'settings', label: 'Settings', icon: IconSettings },
 ];
 

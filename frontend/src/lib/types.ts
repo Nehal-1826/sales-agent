@@ -10,8 +10,17 @@ export type AgentKey = 'search' | 'profile' | 'copywright' | 'responder';
 /** Wire ids are integers; bundled demo data uses string ids ('lead-1'). */
 export type Id = string | number;
 
-/** Top-level pages — Home · Approvals · Leads · Activity · Assistant · Settings. */
-export type PageKey = 'home' | 'approvals' | 'replies' | 'tasks' | 'leads' | 'activity' | 'assistant' | 'settings';
+/** Top-level pages — Home · Approvals · Leads · Activity · Assistant · Warmup · Settings. */
+export type PageKey =
+  | 'home'
+  | 'approvals'
+  | 'replies'
+  | 'tasks'
+  | 'leads'
+  | 'activity'
+  | 'assistant'
+  | 'warmup'
+  | 'settings';
 
 /** Tabs inside the Leads page. */
 export type LeadsTab = 'all' | 'board' | 'reports';

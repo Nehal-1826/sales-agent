@@ -10,6 +10,7 @@ import { TasksPage } from './pages/TasksPage';
 import { LeadsPage } from './pages/LeadsPage';
 import { ActivityPage } from './pages/ActivityPage';
 import { ChatPage } from './pages/ChatPage';
+import { WarmupPage } from './pages/WarmupPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { LoginPage } from './pages/LoginPage';
 import { SignupPage } from './pages/SignupPage';
@@ -282,6 +283,7 @@ function Shell({ demo, onSignOut }: { demo: boolean; onSignOut: () => void }) {
           {page === 'leads' && <LeadsPage tab={sub} />}
           {page === 'activity' && <ActivityPage />}
           {page === 'assistant' && <ChatPage />}
+          {page === 'warmup' && <WarmupPage />}
           {page === 'settings' && <SettingsPage section={sub} />}
         </main>
       </div>

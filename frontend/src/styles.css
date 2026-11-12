@@ -483,6 +483,32 @@ ul {
   margin-left: auto;
 }
 
+/* ---- Warmup stub: FastAPI backend reachability panel ---- */
+.warmup-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+}
+
+.warmup-status.probing {
+  background: var(--panel-2);
+  border-color: var(--border-soft);
+  color: var(--text-2);
+}
+
+.warmup-status.up {
+  background: var(--success-soft);
+  border-color: var(--success-border);
+  color: var(--success-ink);
+}
+
+.warmup-status.down {
+  background: var(--danger-soft);
+  border-color: var(--danger-border);
+  color: var(--danger-ink);
+}
+
 .panel-note {
   margin-bottom: 14px;
   color: var(--text-2);

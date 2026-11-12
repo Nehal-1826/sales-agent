@@ -22,12 +22,12 @@ help: ## Show this help
 
 install: ## Install backend (pip -e .[dev]) and frontend (pnpm install)
 	cd backend && pip install -e ".[dev]"
-	cd frontend && pnpm install
+	cd frontend-warmpulse && pnpm install
 
 # -------- Local infra (Postgres + Redis via docker compose) ------------------
 
 db-up: ## Start local Postgres + Redis via docker compose
-	docker compose up -d postgres redis
+	docker compose up -d db redis
 
 db-down: ## Stop local Postgres + Redis
 	docker compose down
@@ -46,8 +46,8 @@ migrate-create: ## Create a new Alembic revision.  Usage: make migrate-create MS
 backend: ## Run FastAPI dev server on :8001 with reload
 	cd backend && uvicorn app.main:app --reload --port 8001
 
-frontend: ## Run Vite dev server
-	cd frontend && pnpm dev
+frontend: ## Run WarmPulse Vite dev server (frontend-warmpulse/)
+	cd frontend-warmpulse && pnpm dev
 
 worker: ## Run Celery worker for default + smtp queues
 	cd backend && celery -A app.celery_app worker -Q default,smtp -l info
@@ -74,11 +74,11 @@ test: ## Run backend pytest suite
 
 lint: ## Lint backend (ruff) and frontend (eslint via pnpm)
 	cd backend && ruff check .
-	cd frontend && pnpm lint
+	cd frontend-warmpulse && pnpm lint
 
 format: ## Format backend (ruff) and frontend (prettier)
 	cd backend && ruff format .
-	cd frontend && pnpm exec prettier -w .
+	cd frontend-warmpulse && pnpm exec prettier -w .
 
 # -------- Clean --------------------------------------------------------------
 

@@ -1,18 +1,37 @@
+# =============================================================================
+# Email-Warmup monorepo — full merged stack.
+#
+#   gateway (nginx :80)  →  frontend (agent SPA, nginx)
+#                        →  django  :8000  (/api/**    — sales-agent API)
+#                        →  fastapi :8001  (/wp-api/** — WarmPulse API)
+#   fastapi + celery-worker + celery-beat  →  db (Postgres) + redis
+#   django                                →  db (agent database)
+#
+# One Postgres cluster, two databases: `warmpulse_db` (POSTGRES_DB below) and
+# `agent` (created by ops/db/init-agent-db.sql on first init).
+#
+# Routing contract (ops/gateway/nginx.conf):
+#   /api/**    → django   (prefix kept as-is)
+#   /wp-api/** → fastapi  (external /wp-api/x  →  internal /x or /api/x)
+#   everything else → frontend SPA
+# =============================================================================
+
 services:
-  postgres:
+  db:
     image: postgres:16-alpine
     container_name: warmpulse-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: warmpulse
-      POSTGRES_PASSWORD: warmpulse
-      POSTGRES_DB: warmpulse_db
+      POSTGRES_USER: ${POSTGRES_USER:-warmpulse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-warmpulse}
+      POSTGRES_DB: ${POSTGRES_DB:-warmpulse_db}
     ports:
       - "127.0.0.1:5433:5432"
     volumes:
       - warmpulse_pg_data:/var/lib/postgresql/data
+      - ./ops/db/init-agent-db.sql:/docker-entrypoint-initdb.d/10-create-agent-db.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U warmpulse -d warmpulse_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-warmpulse} -d ${POSTGRES_DB:-warmpulse_db}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -31,72 +50,113 @@ services:
       timeout: 5s
       retries: 10
 
-  api:
-    build:
-      context: ./backend
-      network: host
+  # --- WarmPulse FastAPI (service renamed api → fastapi; app dir is backend/) --
+  fastapi:
+    build: ./backend
     container_name: warmpulse-api
     restart: unless-stopped
     env_file: ./backend/.env.docker
     environment:
+      # Bridge network (gateway proxies by service name) — override the
+      # host-network 127.0.0.1 URLs baked into .env.docker with service DNS.
+      # `environment` wins over `env_file`.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-warmpulse}:${POSTGRES_PASSWORD:-warmpulse}@db:5432/${POSTGRES_DB:-warmpulse_db}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      # One secret, two names: compose-level WARMUP_JWT_SECRET feeds the
+      # FastAPI JWT_SECRET and the Django WARMUP_JWT_SECRET (JWT bridge).
+      JWT_SECRET: ${WARMUP_JWT_SECRET}
       # Admin maintenance toggle mirrors into this file (repo root on the
-      # host) — nginx serves the static maintenance page while it exists.
-      # See ops/nginx/warmpulse.conf + ops/maintenance.sh.
-      - MAINTENANCE_FLAG_PATH=/host-app/maintenance.on
+      # host) — ops/maintenance.sh drives it; see ops/maintenance.html.
+      MAINTENANCE_FLAG_PATH: /host-app/maintenance.on
     volumes:
       - .:/host-app
-    network_mode: host
     depends_on:
-      postgres:
+      db:
         condition: service_healthy
       redis:
         condition: service_healthy
 
-  worker:
-    build:
-      context: ./backend
-      network: host
+  celery-worker:
+    build: ./backend
     container_name: warmpulse-worker
     restart: unless-stopped
     env_file: ./backend/.env.docker
-    network_mode: host
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-warmpulse}:${POSTGRES_PASSWORD:-warmpulse}@db:5432/${POSTGRES_DB:-warmpulse_db}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      JWT_SECRET: ${WARMUP_JWT_SECRET}
     depends_on:
-      postgres:
+      db:
         condition: service_healthy
       redis:
         condition: service_healthy
     command: celery -A app.celery_app.celery_app worker --loglevel=info -Q default,smtp -c 4 --hostname=warmpulse-worker@%n
 
-  beat:
-    build:
-      context: ./backend
-      network: host
+  celery-beat:
+    build: ./backend
     container_name: warmpulse-beat
     restart: unless-stopped
     env_file: ./backend/.env.docker
-    network_mode: host
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-warmpulse}:${POSTGRES_PASSWORD:-warmpulse}@db:5432/${POSTGRES_DB:-warmpulse_db}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      JWT_SECRET: ${WARMUP_JWT_SECRET}
     depends_on:
-      postgres:
+      db:
         condition: service_healthy
       redis:
         condition: service_healthy
     command: celery -A app.celery_app.celery_app beat --loglevel=info -s /tmp/celerybeat-schedule
 
+  # --- Sales-agent Django API + agent worker ----------------------------------
+  django:
+    build: ./backend-agent
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-warmpulse}:${POSTGRES_PASSWORD:-warmpulse}@db:5432/agent
+      WARMUP_JWT_SECRET: ${WARMUP_JWT_SECRET}
+      SEED_DEMO: ${SEED_DEMO:-0}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+  # --- Agent frontend SPA (prerendered build served by nginx) -----------------
   frontend:
     build:
       context: ./frontend
-      network: host
-    container_name: warmpulse-frontend
+      dockerfile: deploy/Dockerfile
     restart: unless-stopped
-    network_mode: host
-    # Mobile APK served at /downloads/warmpulse.apk. Bind-mounted so the
-    # artifact can be refreshed without rebuilding the frontend image, and
-    # the ~60MB binary stays out of git / the Docker build context.
-    volumes:
-      - ./frontend/downloads:/usr/share/nginx/html/downloads:ro
-      - ./frontend/nginx-frontend.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
-      - api
+      - django
+
+  # --- Single entry point: / → SPA, /api → django, /wp-api → fastapi ----------
+  gateway:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./ops/gateway/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - frontend
+      - django
+      - fastapi
 
 volumes:
   warmpulse_pg_data:

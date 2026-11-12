@@ -25,6 +25,8 @@ urlpatterns = [
     path('auth/me/', views.me, name='me'),
     path('auth/logout/', views.logout, name='logout'),
     path('auth/password/', views.change_password, name='change-password'),
+    # bridge: HS256 JWT for backend-warmup (FastAPI) — same DRF token auth
+    path('auth/warmup-token/', views.warmup_token, name='warmup-token'),
     # CRM — custom lead routes BEFORE the router (else 'export' is treated as a pk)
     path('leads/export/', views.leads_export, name='leads-export'),
     path('leads/<int:lead_id>/draft_email/', views.lead_draft_email, name='lead-draft-email'),

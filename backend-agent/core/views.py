@@ -31,6 +31,7 @@ from .models import AgentConfig, AppSettings, ChatMessage, EmailDraft, EmailTemp
 from .pipeline import PipelineBusy, pipeline_status, run_pipeline, start_pipeline_async
 from .reports import _resolve_recipients, send_daily_report
 from .runlock import running_since
+from .warmup_bridge import mint_warmup_token
 from .serializers import (
     AgentConfigSerializer,
     AgentMetaSerializer,
@@ -169,6 +170,15 @@ def change_password(request):
     # a password change must end every existing session, including any copied token
     Token.objects.filter(user=user).delete()
     return Response({'detail': 'password updated — sign in again'})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def warmup_token(request):
+    """Mint the HS256 bridge JWT that backend-warmup (FastAPI) accepts."""
+    ws = getattr(request.user, 'workspace', None)
+    slug = getattr(ws, 'slug', None) or 'default'
+    return Response({'token': mint_warmup_token(user=request.user, workspace_slug=slug)})
 
 
 # ------------------------------------------------------------------

@@ -234,6 +234,12 @@ function MailboxModal({ mailbox, onClose, onSaved }: { mailbox: Mailbox | null; 
     set(presetFor(p, zone));
   };
 
+  // manual SMTP/IMAP host/port edits invalidate the last probe too
+  const setServers = (patch: MailboxInput) => {
+    setProbe(null);
+    set(patch);
+  };
+
   const passwordTyped = Boolean(v.smtpPassword) && !(v.smtpPassword ?? '').includes('•');
   const verified = Boolean(probe?.imap.ok && probe?.smtp.ok);
 
@@ -246,7 +252,9 @@ function MailboxModal({ mailbox, onClose, onSaved }: { mailbox: Mailbox | null; 
     const res = await testMailboxConnection({
       imapHost: v.imapHost ?? '', imapPort: v.imapPort ?? 993,
       smtpHost: v.smtpHost ?? '', smtpPort: v.smtpPort ?? 587,
-      username: v.fromEmail.trim(), password: v.smtpPassword ?? '',
+      // probe the login the send path will actually use (save() sends
+      // smtpUser || fromEmail; mailer._open_smtp authenticates as smtp_user)
+      username: (v.smtpUser || v.fromEmail).trim(), password: v.smtpPassword ?? '',
     });
     setTesting(false);
     if (!res.ok) return toast.error(res.error);
@@ -315,18 +323,18 @@ function MailboxModal({ mailbox, onClose, onSaved }: { mailbox: Mailbox | null; 
 
       <div className="mailbox-hours">
         <Field label="Sending server (SMTP)" hint={provider === 'custom' ? 'From your email provider, e.g. smtp.yourhost.com.' : undefined}>
-          <input value={v.smtpHost ?? ''} placeholder="smtp.gmail.com" onChange={(e) => set({ smtpHost: e.target.value })} />
+          <input value={v.smtpHost ?? ''} placeholder="smtp.gmail.com" onChange={(e) => setServers({ smtpHost: e.target.value })} />
         </Field>
         <Field label="Port">
-          <input type="number" value={v.smtpPort ?? 587} onChange={(e) => set({ smtpPort: Number(e.target.value) || 587 })} />
+          <input type="number" value={v.smtpPort ?? 587} onChange={(e) => setServers({ smtpPort: Number(e.target.value) || 587 })} />
         </Field>
       </div>
       <div className="mailbox-hours">
         <Field label="Replies server (IMAP)" hint="Used to read answers and bounces. Leave the provider default when possible.">
-          <input value={v.imapHost ?? ''} placeholder="imap.gmail.com" onChange={(e) => set({ imapHost: e.target.value })} />
+          <input value={v.imapHost ?? ''} placeholder="imap.gmail.com" onChange={(e) => setServers({ imapHost: e.target.value })} />
         </Field>
         <Field label="Port">
-          <input type="number" value={v.imapPort ?? 993} onChange={(e) => set({ imapPort: Number(e.target.value) || 993 })} />
+          <input type="number" value={v.imapPort ?? 993} onChange={(e) => setServers({ imapPort: Number(e.target.value) || 993 })} />
         </Field>
       </div>
 

@@ -3291,7 +3291,7 @@ input[type='radio'] {
 .lp-contact-card .lp-cta { justify-self: start; }
 .lp-contact-done { color: var(--accent-strong); font-weight: 600; }
 
-/* ---------- footer ---------- */
+/* ---------- footer (slim: brand + contact + legal) ---------- */
 .lp-footer {
   margin-top: 40px;
   background: linear-gradient(150deg, var(--accent), var(--accent-strong));
@@ -3300,51 +3300,36 @@ input[type='radio'] {
 .lp-footer-inner {
   max-width: 1180px;
   margin: 0 auto;
-  padding: 46px 24px 30px;
+  padding: 32px 24px 22px;
   display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr;
-  gap: 36px;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 28px;
 }
-.lp-footer-brand { display: grid; gap: 10px; justify-items: start; }
-.lp-footer-brand img { height: 48px; width: auto; }
-.lp-footer-brand strong { font-size: 21px; letter-spacing: -0.01em; }
+.lp-footer-brand { display: grid; gap: 8px; justify-items: start; }
+.lp-footer-brand img { height: 36px; width: auto; }
+.lp-footer-brand strong { font-size: 18px; letter-spacing: -0.01em; }
 .lp-footer-brand p {
   margin: 0;
   color: rgba(255, 255, 255, 0.88);
   font-size: 14px;
-  line-height: 1.6;
-  max-width: 34ch;
+  line-height: 1.55;
+  max-width: 40ch;
 }
-.lp-footer-col { display: grid; gap: 10px; align-content: start; }
-.lp-footer-col h4 {
-  margin: 0 0 4px;
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.75);
-}
-.lp-footer-col a,
-.lp-footer-col button {
-  background: none;
-  border: 0;
-  padding: 0;
-  cursor: pointer;
-  font: inherit;
+.lp-footer-contact { display: grid; gap: 8px; justify-items: end; }
+.lp-footer-contact a {
   font-size: 14.5px;
   font-weight: 600;
   color: #fff;
-  text-align: left;
-  width: fit-content;
+  text-decoration: none;
   opacity: 0.95;
   transition: opacity 0.15s ease, transform 0.15s ease;
 }
-.lp-footer-col a:hover,
-.lp-footer-col button:hover { opacity: 1; transform: translateX(3px); }
+.lp-footer-contact a:hover { opacity: 1; transform: translateX(-3px); }
 .lp-footer-bar {
   max-width: 1180px;
   margin: 0 auto;
-  padding: 16px 24px 26px;
+  padding: 14px 24px 22px;
   border-top: 1px solid rgba(255, 255, 255, 0.28);
   display: flex;
   align-items: center;
@@ -3354,19 +3339,15 @@ input[type='radio'] {
   font-size: 13px;
   color: rgba(255, 255, 255, 0.85);
 }
-.lp-footer-bar button {
-  background: #fff;
-  color: var(--accent-strong);
-  border: 0;
-  border-radius: 999px;
-  padding: 9px 18px;
-  cursor: pointer;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 800;
-  transition: transform 0.15s ease;
+.lp-footer-legal { display: flex; gap: 18px; }
+.lp-footer-legal a {
+  color: #fff;
+  text-decoration: none;
+  font-weight: 600;
+  opacity: 0.95;
+  transition: opacity 0.15s ease;
 }
-.lp-footer-bar button:hover { transform: translateY(-1px); }
+.lp-footer-legal a:hover { opacity: 1; }
 
 /* ==========================================================
    HOW IT WORKS — scroll-triggered horizontal card carousel
@@ -3728,7 +3709,8 @@ img, video, svg { max-width: 100%; }
   .lp-card { width: 78vw; height: auto; min-height: 260px; padding: 26px 24px; }
   .lp-demo-wrap, .lp-contact-card { padding: 22px 18px; }
   .lp-demo-grid { gap: 22px; }
-  .lp-footer-inner { grid-template-columns: 1fr; gap: 26px; padding: 36px 18px 24px; }
+  .lp-footer-inner { grid-template-columns: 1fr; gap: 22px; padding: 28px 18px 18px; }
+  .lp-footer-contact { justify-items: start; }
   .lp-footer-bar { flex-wrap: wrap; gap: 10px; justify-content: center; text-align: center; }
 
   /* ---- login ---- */

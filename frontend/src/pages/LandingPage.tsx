@@ -1,5 +1,6 @@
 import { HowItWorks } from '../components/HowItWorks';
 import { DemoBooking } from '../components/DemoBooking';
+import { AuroraBackdrop } from '../components/reactbits/AuroraBackdrop';
 import { MarketingLayout } from '../marketing/MarketingLayout';
 import { BuiltBy, Proof, SafetyPromises, SampleAudit } from '../marketing/TrustSections';
 import { useDocumentMeta } from '../marketing/seo';
@@ -20,6 +21,7 @@ export function LandingPage({ onEnterDashboard }: { onEnterDashboard?: () => voi
     <MarketingLayout onEnterDashboard={onEnterDashboard}>
       {/* ---------- HERO ---------- */}
       <section className="lp-hero">
+        <AuroraBackdrop />
         <div className="lp-hero-copy">
           <h1 className="lp-hero-line">
             Find the <span className="lp-accent">Lead.</span>

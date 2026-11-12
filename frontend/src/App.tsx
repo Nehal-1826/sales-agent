@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
+import LatticeLoader from './components/reactbits/LatticeLoader';
 import { GuideWidget } from './components/GuideWidget';
 import { Banner, Toaster, toast } from './components/feedback';
 import { HomePage } from './pages/HomePage';
@@ -110,8 +111,7 @@ function AppGate() {
       <div className="login-wrap">
         <div className="panel login-card login-card-center">
           <img src="/warmpulse-logo.svg" alt="WarmPulse" className="login-logo" />
-          <span className="spinner" aria-hidden />
-          <small className="login-footnote">Connecting to your workspace…</small>
+          <LatticeLoader label="Connecting to your workspace…" cellSize={7} color="var(--accent)" showTimer={false} />
         </div>
         <Toaster />
       </div>
@@ -201,7 +201,9 @@ function RoleGate({ demo, onSignOut }: { demo: boolean; onSignOut: () => void })
   if (!me) {
     return (
       <div className="login-wrap">
-        <div className="panel login-card login-card-center"><span className="spinner" aria-hidden /></div>
+        <div className="panel login-card login-card-center">
+          <LatticeLoader label="Loading your account…" cellSize={7} color="var(--accent)" showTimer={false} />
+        </div>
       </div>
     );
   }

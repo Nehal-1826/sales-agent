@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { resendVerification, scrapeCompanyDetails, signup } from '../lib/api';
+import { AuroraBackdrop } from '../components/reactbits/AuroraBackdrop';
 import type { BillingInterval } from '../lib/api';
 import { TIERS } from '../marketing/pricing';
 
@@ -106,6 +107,7 @@ export function SignupPage({ onSignedUp, onHome, onSignIn }: { onSignedUp: () =>
   if (sent) {
     return (
       <div className="login-wrap">
+        <AuroraBackdrop />
         <div className="panel login-card login-card-center" role="status">
           <img src="/warmpulse-logo.svg" alt="WarmPulse" className="login-logo" />
           <strong className="login-headline">Verify your email</strong>
@@ -127,6 +129,7 @@ export function SignupPage({ onSignedUp, onHome, onSignIn }: { onSignedUp: () =>
   const err = (k: string) => fields[k] && <small className="login-error" role="alert">{fields[k]}</small>;
   return (
     <div className="login-wrap">
+      <AuroraBackdrop />
       <button type="button" className="login-home" onClick={onHome}>
         ← Back to home
       </button>

@@ -5,6 +5,11 @@ One Playwright pass over the live dev stack:
   -> Leads tabs -> #/warmup deep link + health panel -> logout (token purge)
 plus a browser-less dist/ check (one meta description + PNG favicon per route).
 
+Shell & UX batch (Task 6) additions: sign-out reachable in the rail (desktop
+and in the 375px drawer), sidebar is a full-height rail (no bottom nav),
+signup password rules flip fail->pass live, removed WarmPulse/WhatsApp
+strings absent from Settings, footer slim (<=6 links).
+
 Prereqs (see scripts/e2e/README.md):
   Django on :8000, FastAPI on :8001, Vite dev on :5173 (IPv4 or IPv6),
   `npm run build` in frontend/ if you want the dist checks counted.
@@ -105,6 +110,9 @@ with sync_playwright() as p:
         check(f"asset 200: {asset}", http_ok(BASE + asset))
     cta_color = page.locator("a.lp-cta-solid").first.evaluate("el => getComputedStyle(el).backgroundImage")
     check("rebrand: violet on primary CTA", "107, 73, 255" in cta_color, cta_color)
+    # Task A4: slim footer — wordmark, contact, legal only
+    footer_links = page.locator("footer.lp-footer a").count()
+    check("footer: slim — ≤6 links", footer_links <= 6, f"{footer_links} links")
     page.screenshot(path=str(SHOTS / "01-landing.png"))
 
     # ── 2. Sign in -> login page ────────────────────────────────────
@@ -126,6 +134,9 @@ with sync_playwright() as p:
     check("auth: Django token stored", page.evaluate("() => !!localStorage.getItem('agentic-ai:token')"))
     check("auth: app shell reached", page.locator("aside.sidebar").count() == 1,
           page.locator("body").inner_text()[:120].replace("\n", " "))
+    # Task A1: sign-out is a full row in the sidebar rail — reachable on desktop
+    check("shell: side-logout visible in rail after login",
+          page.locator("button.side-logout").is_visible())
     page.screenshot(path=str(SHOTS / "03-after-login.png"))
 
     # ── 3. Sidebar nav: every page renders ─────────────────────────
@@ -137,6 +148,13 @@ with sync_playwright() as p:
         body = page.locator("body").inner_text()
         check(f"nav: {label} renders", len(body) > 200 and "Sign in" not in body)
         page.screenshot(path=str(SHOTS / f"04-{label.lower()}.png"))
+
+    # ── 3b. Settings DOM: removed WarmPulse/WhatsApp strings stay gone (A3)
+    page.locator("button.nav-item", has_text="Settings").first.click()
+    page.wait_for_timeout(1200)
+    settings_text = page.locator("body").inner_text()
+    check('settings: "WarmPulse (optional)" absent from DOM', "WarmPulse (optional)" not in settings_text)
+    check('settings: "Risk of a ban" absent from DOM', "Risk of a ban" not in settings_text)
 
     # ── 4. Leads sub-tabs (pipeline-tab analog) ─────────────────────
     page.locator("button.nav-item", has_text="Leads").first.click()
@@ -188,6 +206,22 @@ with sync_playwright() as p:
     page.wait_for_timeout(1500)
     check("live: /api/ calls succeeded", len(ok_api) > 5, f"{len(ok_api)} ok /api/ responses")
 
+    # ── 6b. 375px: full-height rail, no bottom nav; sign-out in drawer (A1)
+    page.set_viewport_size({"width": 375, "height": 812})
+    page.wait_for_timeout(500)
+    rail = page.locator("aside.sidebar").bounding_box()
+    check("mobile: sidebar is a full-height rail (>500px, not a bottom strip)",
+          bool(rail) and rail["height"] > 500, str(rail))
+    page.locator("button.menu-btn").click()
+    page.wait_for_timeout(500)
+    check("mobile: side-logout reachable after opening drawer",
+          page.locator("button.side-logout").is_visible())
+    page.screenshot(path=str(SHOTS / "06b-mobile-drawer.png"))
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(400)
+    page.set_viewport_size({"width": 1920, "height": 1080})
+    page.wait_for_timeout(400)
+
     # ── 7. Logout — both token namespaces must be gone ─────────────
     page.locator("button.side-logout").first.click()
     page.wait_for_timeout(1500)
@@ -198,6 +232,25 @@ with sync_playwright() as p:
     )
     check("logout: neither agentic-ai:token nor warmpulse:wp-token remains", not leftovers, str(leftovers))
     page.screenshot(path=str(SHOTS / "07-logged-out.png"))
+
+    # ── 7b. Signup: password rules flip fail -> pass live (A2)
+    page.goto(BASE + "/?signup=1")
+    page.wait_for_selector("ul.pw-rules", timeout=10000)
+    pw = page.locator("input[autocomplete='new-password']")
+    pw.fill("weak")
+    page.wait_for_timeout(300)
+    fails = page.locator("ul.pw-rules li.fail").count()
+    passes = page.locator("ul.pw-rules li.pass").count()
+    check("signup: weak password — all 3 rules fail", fails == 3 and passes == 0,
+          f"fail={fails} pass={passes}")
+    pw.fill("StrongPass123")
+    page.wait_for_timeout(300)
+    fails = page.locator("ul.pw-rules li.fail").count()
+    passes = page.locator("ul.pw-rules li.pass").count()
+    check("signup: strong password — all 3 rules pass", passes == 3 and fails == 0,
+          f"fail={fails} pass={passes}")
+    page.screenshot(path=str(SHOTS / "08-signup-rules.png"))
+    page.goto(BASE)  # back to the landing page for a clean end state
 
     # ── 8. Hygiene: console + 404s (over the whole session) ────────
     # A deliberately-down FastAPI still makes /wp-api/health proxy-500; those

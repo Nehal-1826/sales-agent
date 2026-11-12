@@ -1487,11 +1487,23 @@ input[type='radio'] {
    ================================================================ */
 
 .login-wrap {
+  position: relative;
   min-height: 100vh;
   display: grid;
   place-items: center;
   padding: 24px;
   background: radial-gradient(1000px 600px at 15% 90%, rgba(124, 92, 255, 0.22), transparent 60%), var(--chrome);
+}
+
+/* content stays above the aurora backdrop (positioned elements paint over
+   static ones, so the card and the back-home button need explicit depth) */
+.login-wrap .login-card {
+  position: relative;
+  z-index: 1;
+}
+
+.login-wrap .login-home {
+  z-index: 1;
 }
 
 .login-card {
@@ -3142,6 +3154,8 @@ input[type='radio'] {
 
 /* ---------- hero (copy left · animation right, fits one desktop screen) --- */
 .lp-hero {
+  position: relative; /* anchors the aurora backdrop */
+  overflow: hidden; /* drifting blobs clip at the hero — never a scrollbar */
   max-width: 1180px;
   margin: 0 auto;
   padding: 12px 24px 20px;
@@ -3151,6 +3165,81 @@ input[type='radio'] {
   align-items: center;
   gap: 44px;
   /* no own background — lets the sunrise shade from .lp show through */
+}
+/* hero content paints above the aurora backdrop */
+.lp-hero-copy,
+.lp-hero-media {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------- ReactBits "Aurora" — CSS port (no canvas) -----------------------
+   Violet token washes drifting behind the landing hero and the auth screens.
+   Compositor-only transforms (translate3d/scale), clipped by the parent, so
+   there is no layout shift; prefers-reduced-motion freezes the drift and
+   keeps the static gradient. Component: components/reactbits/AuroraBackdrop */
+.aurora-backdrop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.aurora-backdrop .aurora-blob {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+  filter: blur(42px);
+  will-change: transform;
+}
+
+.aurora-backdrop .aurora-a {
+  top: -22%;
+  left: -12%;
+  width: 46vmax;
+  height: 46vmax;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 22%, transparent), transparent 72%);
+  animation: aurora-drift-a 26s ease-in-out infinite alternate;
+}
+
+.aurora-backdrop .aurora-b {
+  bottom: -26%;
+  right: -10%;
+  width: 40vmax;
+  height: 40vmax;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--accent-chrome) 18%, transparent), transparent 72%);
+  animation: aurora-drift-b 34s ease-in-out infinite alternate;
+}
+
+.aurora-backdrop .aurora-c {
+  top: 30%;
+  left: 55%;
+  width: 24vmax;
+  height: 24vmax;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 14%, transparent), transparent 70%);
+  animation: aurora-drift-c 44s ease-in-out infinite alternate;
+}
+
+@keyframes aurora-drift-a {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(6%, 5%, 0) scale(1.12); }
+}
+
+@keyframes aurora-drift-b {
+  from { transform: translate3d(0, 0, 0) scale(1.08); }
+  to { transform: translate3d(-5%, -6%, 0) scale(1); }
+}
+
+@keyframes aurora-drift-c {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-8%, 6%, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora-backdrop .aurora-blob {
+    animation: none;
+  }
 }
 .lp-hero-media {
   display: flex;

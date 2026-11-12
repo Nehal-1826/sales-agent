@@ -3550,6 +3550,12 @@ input[type='radio'] {
 .mailbox-meter-bar span { display: block; height: 100%; background: var(--accent, #6b49ff); }
 .mailbox-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .mailbox-hours { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+/* wizard Test Connection block: button + per-leg IMAP/SMTP results */
+.mailbox-test { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 14px; }
+.mailbox-test ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.mailbox-test li { display: flex; gap: 8px; font-size: 13px; }
+.mailbox-test li small { display: block; color: var(--text-muted, #6b7280); }
+.btn .spinner { width: 14px; height: 14px; border-width: 2px; }
 .dns-checklist ul { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
 .dns-checklist li { display: flex; gap: 8px; font-size: 13px; }
 .dns-checklist li small { display: block; color: var(--text-muted, #6b7280); }

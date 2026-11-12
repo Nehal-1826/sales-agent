@@ -49,6 +49,9 @@ BOUNCE_WINDOW, BOUNCE_LIMIT = 50, 0.03
 OVERDUE_RESPACE = timedelta(minutes=2)    # backlog older than this is re-spaced
 DRAIN_LIMIT = 100                         # drafts looked at per drain
 AUTH_PAUSE_REASON = 'The mailbox rejected our login — check its password / app password.'
+CONNECT_PAUSE_REASON = ('Could not reach the mail server ({host}) — check the host, port and '
+                        'network, then press Resume sending. Paused so this is visible instead '
+                        'of silently retrying forever.')
 BOUNCE_PAUSE_REASON = 'Too many emails bounced (over 3% of the last 50) — check your list.'
 
 Q_ = EmailDraft.Statuses
@@ -383,11 +386,14 @@ def _send_batch(mailbox, drafts, now, s, stats):
             _reschedule(d, now, s, exclude=(mailbox.pk,))
             stats['deferred'] += 1
         return
-    except Exception as exc:  # unreachable server — try again next drain
+    except Exception as exc:  # unreachable server — pause visibly (root-cause fix:
+        # the old silent +5 min re-defer loop meant a wrong host/port "saved fine
+        # but never worked" with no error anywhere; drafts move to other mailboxes)
         log.warning('Outbox: cannot connect %s: %s', mailbox.from_email, exc)
-        EmailDraft.objects.filter(pk__in=[d.pk for d in drafts], status=Q_.QUEUED).update(
-            scheduled_for=now + timedelta(minutes=5), updated_at=now)
-        stats['deferred'] += len(drafts)
+        pause_mailbox(mailbox, CONNECT_PAUSE_REASON.format(host=mailbox.smtp_host or 'no host set'), now)
+        for d in drafts:
+            _reschedule(d, now, s, exclude=(mailbox.pk,))
+            stats['deferred'] += 1
         return
     try:
         for d in drafts:

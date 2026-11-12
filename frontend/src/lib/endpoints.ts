@@ -27,6 +27,7 @@ import type {
   Lead,
   Mailbox,
   MailboxInput,
+  MailboxProbeResult,
   OnboardingState,
   OutreachStatus,
   OutreachTask,
@@ -268,6 +269,20 @@ export async function checkMailboxDns(id: number): Promise<Result<Mailbox>> {
 export async function resumeMailbox(id: number): Promise<Result<Mailbox>> {
   if (await inDemo()) return demoFail();
   return attempt(() => request<Mailbox>(`/mailboxes/${id}/resume/`, post()));
+}
+
+/** Wizard Test Connection — real IMAP + SMTP login probe on the given
+ *  servers; per-leg {ok, detail}; the password is never echoed back. */
+export async function testMailboxConnection(input: {
+  imapHost: string;
+  imapPort: number | null;
+  smtpHost: string;
+  smtpPort: number;
+  username: string;
+  password: string;
+}): Promise<Result<MailboxProbeResult>> {
+  if (await inDemo()) return demoFail();
+  return attempt(() => request<MailboxProbeResult>('/mailboxes/test/', post(input), 30_000));
 }
 
 /* ---------------- settings ---------------- */

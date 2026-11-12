@@ -62,6 +62,7 @@ urlpatterns = [
     # inbox — read replies + bounces from the mailboxes now (core.inbox)
     path('inbox/poll/', views.inbox_poll, name='inbox-poll'),
     path('mailboxes/', views.mailboxes, name='mailboxes'),
+    path('mailboxes/test/', views.mailbox_test, name='mailbox-test'),
     path('mailboxes/<int:mailbox_id>/', views.mailbox_detail, name='mailbox-detail'),
     path('mailboxes/<int:mailbox_id>/dns_check/', views.mailbox_dns_check, name='mailbox-dns-check'),
     path('mailboxes/<int:mailbox_id>/resume/', views.mailbox_resume, name='mailbox-resume'),

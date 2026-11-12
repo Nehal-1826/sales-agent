@@ -871,6 +871,33 @@ def mailboxes(request):
     return Response(MailboxSerializer(Mailbox.objects.all(), many=True).data)
 
 
+@api_view(['POST'])
+@permission_classes([IsWorkspaceAdmin])
+def mailbox_test(request):
+    """Wizard Test Connection: real IMAP + SMTP login probe (core.mailbox_probe).
+    Body {imapHost, imapPort, smtpHost, smtpPort, username, password} →
+    {imap: {ok, detail}, smtp: {ok, detail}}.  The password is used for the
+    probe only — never echoed in the response or logged."""
+    from .mailbox_probe import PROBE_TIMEOUT, probe_mailbox
+    username = (request.data.get('username') or '').strip()
+    password = request.data.get('password') or ''
+    if not username or not password:
+        return Response({'detail': 'Enter the mailbox address and its password / app password.'},
+                        status=400)
+    try:
+        result = probe_mailbox(
+            imap_host=request.data.get('imapHost') or '',
+            imap_port=request.data.get('imapPort') or 993,
+            smtp_host=request.data.get('smtpHost') or '',
+            smtp_port=request.data.get('smtpPort') or 587,
+            username=username, password=password, timeout=PROBE_TIMEOUT,
+        )
+    except Exception:  # probe is never-raises by contract; belt and braces
+        result = {'imap': {'ok': False, 'detail': 'Probe failed unexpectedly.'},
+                  'smtp': {'ok': False, 'detail': 'Probe failed unexpectedly.'}}
+    return Response(result)
+
+
 @api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
 @permission_classes([IsWorkspaceAdminOrReadOnly])
 def mailbox_detail(request, mailbox_id):

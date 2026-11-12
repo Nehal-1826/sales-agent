@@ -161,6 +161,18 @@ export type MailboxInput = Partial<Pick<Mailbox,
   'label' | 'fromEmail' | 'fromName' | 'smtpHost' | 'smtpPort' | 'smtpUser' | 'smtpPassword' |
   'imapHost' | 'imapPort' | 'dailyCap' | 'rampStart' | 'isActive'>>;
 
+/** One leg of POST /api/mailboxes/test — {ok, detail}, never the password. */
+export interface MailboxProbeLeg {
+  ok: boolean;
+  detail: string;
+}
+
+/** Wizard Test Connection result: IMAP (replies) + SMTP (sending) legs. */
+export interface MailboxProbeResult {
+  imap: MailboxProbeLeg;
+  smtp: MailboxProbeLeg;
+}
+
 /** Outbox sending window (Asia/Kolkata hours). */
 export interface OutboxConfig {
   windowStart: number;

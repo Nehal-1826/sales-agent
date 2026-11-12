@@ -9,10 +9,19 @@ import {
   getMailboxes,
   putSettings,
   resumeMailbox,
+  testMailboxConnection,
   updateMailbox,
 } from '../../lib/api';
 import { useAsync } from '../../lib/hooks';
-import type { DnsCheckItem, Mailbox, MailboxInput, OutboxConfig, SettingsState } from '../../lib/types';
+import type {
+  DnsCheckItem,
+  Mailbox,
+  MailboxInput,
+  MailboxProbeLeg,
+  MailboxProbeResult,
+  OutboxConfig,
+  SettingsState,
+} from '../../lib/types';
 import { SaveBar, useSectionForm } from './useSectionForm';
 
 const DNS_LABELS: { key: 'spf' | 'dkim' | 'dmarc' | 'mx'; label: string; what: string }[] = [
@@ -147,14 +156,102 @@ const EMPTY_INPUT: MailboxInput = {
   imapHost: '', imapPort: null, dailyCap: 30, isActive: true,
 };
 
+/* Wizard presets — Gmail-like add flow: pick the provider, the servers fill
+ * in, Test Connection proves the login before saving.  Zoho auth is
+ * datacenter-locked, so its zone (.in / .eu / .com) picks the hosts. */
+type ProviderKey = 'gmail' | 'zoho' | 'outlook' | 'custom';
+
+const PROVIDERS: { key: ProviderKey; label: string }[] = [
+  { key: 'gmail', label: 'Gmail' },
+  { key: 'zoho', label: 'Zoho Mail' },
+  { key: 'outlook', label: 'Outlook' },
+  { key: 'custom', label: 'Custom' },
+];
+
+const ZOHO_ZONES = [
+  { key: 'in', label: 'India (.in)', imapHost: 'imap.zoho.in', smtpHost: 'smtp.zoho.in' },
+  { key: 'eu', label: 'Europe (.eu)', imapHost: 'imap.zoho.eu', smtpHost: 'smtp.zoho.eu' },
+  { key: 'com', label: 'Global (.com)', imapHost: 'imap.zoho.com', smtpHost: 'smtp.zoho.com' },
+];
+
+function presetFor(provider: ProviderKey, zone: string): Pick<MailboxInput, 'imapHost' | 'imapPort' | 'smtpHost' | 'smtpPort'> {
+  if (provider === 'gmail')
+    return { imapHost: 'imap.gmail.com', imapPort: 993, smtpHost: 'smtp.gmail.com', smtpPort: 587 };
+  if (provider === 'outlook')
+    return { imapHost: 'outlook.office365.com', imapPort: 993, smtpHost: 'smtp.office365.com', smtpPort: 587 };
+  if (provider === 'zoho') {
+    const z = ZOHO_ZONES.find((x) => x.key === zone) ?? ZOHO_ZONES[0];
+    return { imapHost: z.imapHost, imapPort: 993, smtpHost: z.smtpHost, smtpPort: 587 };
+  }
+  return { imapHost: '', imapPort: 993, smtpHost: '', smtpPort: 587 };
+}
+
+function detectProvider(mb: Mailbox): ProviderKey {
+  const p = presetFor('gmail', '');
+  const o = presetFor('outlook', '');
+  if (mb.imapHost === p.imapHost && mb.smtpHost === p.smtpHost) return 'gmail';
+  if (mb.imapHost === o.imapHost && mb.smtpHost === o.smtpHost) return 'outlook';
+  if ((mb.smtpHost || '').endsWith('zoho.in') || (mb.smtpHost || '').endsWith('zoho.eu') || (mb.smtpHost || '').endsWith('zoho.com')) return 'zoho';
+  return 'custom';
+}
+
+function detectZone(mb: Mailbox): string {
+  const host = mb.smtpHost || '';
+  if (host.endsWith('zoho.in')) return 'in';
+  if (host.endsWith('zoho.eu')) return 'eu';
+  if (host.endsWith('zoho.com')) return 'com';
+  return 'in';
+}
+
+function ProbeLegRow({ name, leg }: { name: string; leg: MailboxProbeLeg }) {
+  return (
+    <li className={leg.ok ? 'dns-ok' : 'dns-missing'}>
+      <span className="dns-mark" aria-hidden>{leg.ok ? '✓' : '!'}</span>
+      <div>
+        <strong>{name}</strong> — {leg.ok ? 'login works' : 'failed'}
+        <small>{leg.detail}</small>
+      </div>
+    </li>
+  );
+}
+
 function MailboxModal({ mailbox, onClose, onSaved }: { mailbox: Mailbox | null; onClose: () => void; onSaved: () => void }) {
   const [v, setV] = useState<MailboxInput>(mailbox ? {
     label: mailbox.label, fromEmail: mailbox.fromEmail, fromName: mailbox.fromName, smtpHost: mailbox.smtpHost,
     smtpPort: mailbox.smtpPort, smtpUser: mailbox.smtpUser, smtpPassword: mailbox.smtpPassword,
     imapHost: mailbox.imapHost, imapPort: mailbox.imapPort, dailyCap: mailbox.dailyCap, isActive: mailbox.isActive,
-  } : EMPTY_INPUT);
+  } : { ...EMPTY_INPUT, ...presetFor('gmail', 'in') });
+  const [provider, setProvider] = useState<ProviderKey>(mailbox ? detectProvider(mailbox) : 'gmail');
+  const [zohoZone, setZohoZone] = useState(mailbox ? detectZone(mailbox) : 'in');
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [probe, setProbe] = useState<MailboxProbeResult | null>(null);
   const set = (patch: MailboxInput) => setV({ ...v, ...patch });
+
+  const applyProvider = (p: ProviderKey, zone = zohoZone) => {
+    setProvider(p);
+    setProbe(null); // hosts changed — the old result no longer applies
+    set(presetFor(p, zone));
+  };
+
+  const passwordTyped = Boolean(v.smtpPassword) && !(v.smtpPassword ?? '').includes('•');
+  const verified = Boolean(probe?.imap.ok && probe?.smtp.ok);
+
+  const test = async () => {
+    if (!v.fromEmail?.trim()) return toast.error('Enter the email address this mailbox sends from.');
+    if (!passwordTyped)
+      return toast.error('Type the app password first — the saved one is hidden and cannot be retested.');
+    setTesting(true);
+    setProbe(null);
+    const res = await testMailboxConnection({
+      imapHost: v.imapHost ?? '', imapPort: v.imapPort ?? 993,
+      smtpHost: v.smtpHost ?? '', smtpPort: v.smtpPort ?? 587,
+      username: v.fromEmail.trim(), password: v.smtpPassword ?? '',
+    });
+    setTesting(false);
+    if (!res.ok) return toast.error(res.error);
+    setProbe(res.data);
+  };
 
   const save = async () => {
     if (!v.fromEmail?.trim()) return toast.error('Enter the email address this mailbox sends from.');
@@ -163,7 +260,11 @@ function MailboxModal({ mailbox, onClose, onSaved }: { mailbox: Mailbox | null; 
     const res = mailbox ? await updateMailbox(mailbox.id, body) : await createMailbox(body);
     setSaving(false);
     if (!res.ok) return toast.error(res.error);
-    toast.success(mailbox ? 'Mailbox updated.' : 'Mailbox added — it starts slowly and speeds up over two weeks.');
+    toast.success(mailbox
+      ? 'Mailbox updated.'
+      : verified
+        ? 'Mailbox added — login verified, sending starts slowly and speeds up over two weeks.'
+        : 'Mailbox added — it starts slowly and speeds up over two weeks.');
     onSaved();
   };
 
@@ -175,29 +276,75 @@ function MailboxModal({ mailbox, onClose, onSaved }: { mailbox: Mailbox | null; 
         <>
           <button className="btn btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
           <button className="btn btn-primary" onClick={() => void save()} disabled={saving}>
-            {saving ? 'Saving…' : 'Save mailbox'}
+            {saving ? 'Saving…' : verified ? 'Save verified mailbox' : 'Save mailbox'}
           </button>
         </>
       }
     >
+      {!mailbox && (
+        <fieldset className="segmented" aria-label="Email provider">
+          <legend className="field-label">Where is this mailbox hosted?</legend>
+          {PROVIDERS.map((p) => (
+            <label key={p.key} className={provider === p.key ? 'active' : ''}>
+              <input type="radio" name="mailbox-provider" checked={provider === p.key} onChange={() => applyProvider(p.key)} />
+              {p.label}
+            </label>
+          ))}
+        </fieldset>
+      )}
+      {provider === 'zoho' && (
+        <Field label="Zoho region" hint="Zoho logins only work against the datacenter that hosts the account.">
+          <select value={zohoZone} onChange={(e) => { setZohoZone(e.target.value); applyProvider('zoho', e.target.value); }}>
+            {ZOHO_ZONES.map((z) => <option key={z.key} value={z.key}>{z.label}</option>)}
+          </select>
+        </Field>
+      )}
+
       <Field label="Send from (email address)">
         <input type="email" value={v.fromEmail ?? ''} placeholder="sales@yourcompany.com" onChange={(e) => set({ fromEmail: e.target.value })} />
       </Field>
       <Field label="Sender name" hint="What people see next to your email, e.g. “Priya at Acme”.">
         <input value={v.fromName ?? ''} onChange={(e) => set({ fromName: e.target.value })} />
       </Field>
-      <Field label="Mail server" hint="From your email provider, e.g. smtp.gmail.com or smtp.zoho.in.">
-        <input value={v.smtpHost ?? ''} placeholder="smtp.gmail.com" onChange={(e) => set({ smtpHost: e.target.value })} />
-      </Field>
-      <Field label="Port" hint="Usually 587 (or 465).">
-        <input type="number" value={v.smtpPort ?? 587} onChange={(e) => set({ smtpPort: Number(e.target.value) || 587 })} />
-      </Field>
       <Field label="Login (usually the same email)">
         <input value={v.smtpUser ?? ''} placeholder={v.fromEmail || ''} onChange={(e) => set({ smtpUser: e.target.value })} />
       </Field>
-      <Field label="Password / app password" hint="Gmail and Zoho need an app password, not your normal login.">
-        <input type="password" value={v.smtpPassword ?? ''} autoComplete="new-password" onChange={(e) => set({ smtpPassword: e.target.value })} />
+      <Field label="Password / app password" hint="Gmail, Zoho and Outlook all need an app password, not your normal login.">
+        <input type="password" value={v.smtpPassword ?? ''} autoComplete="new-password" onChange={(e) => { set({ smtpPassword: e.target.value }); setProbe(null); }} />
       </Field>
+
+      <div className="mailbox-hours">
+        <Field label="Sending server (SMTP)" hint={provider === 'custom' ? 'From your email provider, e.g. smtp.yourhost.com.' : undefined}>
+          <input value={v.smtpHost ?? ''} placeholder="smtp.gmail.com" onChange={(e) => set({ smtpHost: e.target.value })} />
+        </Field>
+        <Field label="Port">
+          <input type="number" value={v.smtpPort ?? 587} onChange={(e) => set({ smtpPort: Number(e.target.value) || 587 })} />
+        </Field>
+      </div>
+      <div className="mailbox-hours">
+        <Field label="Replies server (IMAP)" hint="Used to read answers and bounces. Leave the provider default when possible.">
+          <input value={v.imapHost ?? ''} placeholder="imap.gmail.com" onChange={(e) => set({ imapHost: e.target.value })} />
+        </Field>
+        <Field label="Port">
+          <input type="number" value={v.imapPort ?? 993} onChange={(e) => set({ imapPort: Number(e.target.value) || 993 })} />
+        </Field>
+      </div>
+
+      <div className="mailbox-test">
+        <button className="btn btn-sm" onClick={() => void test()} disabled={testing || saving || !v.smtpHost || !v.imapHost}>
+          {testing ? <><span className="spinner" aria-hidden /> Testing…</> : 'Test connection'}
+        </button>
+        {mailbox && !passwordTyped && (
+          <small className="mailbox-muted">Re-type the app password to test the saved login.</small>
+        )}
+        {probe && (
+          <ul className="dns-checklist">
+            <ProbeLegRow name="Sending (SMTP)" leg={probe.smtp} />
+            <ProbeLegRow name="Replies (IMAP)" leg={probe.imap} />
+          </ul>
+        )}
+      </div>
+
       <Field label="Most emails per day" hint="30 is a safe number for one mailbox. A new mailbox starts at 5 a day and grows to this over two weeks.">
         <input type="number" min={1} max={500} value={v.dailyCap ?? 30} onChange={(e) => set({ dailyCap: Number(e.target.value) || 30 })} />
       </Field>

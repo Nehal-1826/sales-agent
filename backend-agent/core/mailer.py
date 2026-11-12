@@ -222,18 +222,25 @@ def _ssl_contexts():
 
 
 def _open_smtp(s):
-    """Connect + authenticate to the configured SMTP server, TLS-safe on Windows."""
+    """Connect + authenticate to the configured SMTP server, TLS-safe on Windows.
+    STARTTLS is used whenever the server offers it; a server that does not
+    offer STARTTLS is logged loudly and used over plain SMTP (otherwise a
+    plain relay would defer every send forever with no visible error)."""
     port = s.smtp_port or 587
     last_error = None
     for context in _ssl_contexts():
         try:
             if port == 465:  # implicit SSL
                 server = smtplib.SMTP_SSL(s.smtp_host, port, timeout=SMTP_TIMEOUT, context=context)
-            else:  # STARTTLS (587 and friends)
+            else:  # STARTTLS when offered (587 and friends)
                 server = smtplib.SMTP(s.smtp_host, port, timeout=SMTP_TIMEOUT)
                 server.ehlo()
-                server.starttls(context=context)
-                server.ehlo()
+                if getattr(server, 'has_extn', lambda _n: False)('starttls'):
+                    server.starttls(context=context)
+                    server.ehlo()
+                else:
+                    log.warning('SMTP %s:%s offers no STARTTLS — logging in over an '
+                                'UNENCRYPTED connection', s.smtp_host, port)
             server.login(s.smtp_user, s.smtp_password)
             return server
         except ssl.SSLCertVerificationError as exc:

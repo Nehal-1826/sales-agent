@@ -8,11 +8,13 @@ on:
     paths:
       - backend-agent/**
       - frontend/**
+      - .github/workflows/ci-agent.yml
   pull_request:
     branches: [main]
     paths:
       - backend-agent/**
       - frontend/**
+      - .github/workflows/ci-agent.yml
 
 jobs:
   backend:

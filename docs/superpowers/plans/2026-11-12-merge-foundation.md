@@ -54,17 +54,14 @@ git mv agent-origin/tsconfig.json frontend/tsconfig.json
 git mv agent-origin/package.json frontend/package.json
 git mv agent-origin/package-lock.json frontend/package-lock.json
 git mv agent-origin/DEPLOY.md docs/DEPLOY-agent.md
-git rm -r agent-origin   # remaining files: README.md, Dockerfile, nginx.conf, docker-compose*, scripts/, .env.example, backend leftovers
-```
-
-Keep `agent-origin/nginx.conf` + `agent-origin/scripts/prerender.mjs` + `agent-origin/Dockerfile` — they are the frontend build image (Task 2 uses them):
-
-```bash
 mkdir -p frontend/deploy
 git mv agent-origin/Dockerfile frontend/deploy/Dockerfile
 git mv agent-origin/nginx.conf frontend/deploy/nginx.conf
-git mv agent-origin/scripts frontend/scripts   # prerender.mjs (build script references ../scripts — fix path in Task 3)
+git mv agent-origin/scripts frontend/scripts   # prerender.mjs lands at frontend/scripts/prerender.mjs
+git rm -r agent-origin   # whatever remains (README.md, docker-compose*, .env.example)
 ```
+
+Note: `frontend/deploy/Dockerfile` + `nginx.conf` are the frontend build image (Task 2 builds it); the prerender script now sits at `frontend/scripts/prerender.mjs`, which the build script already references correctly relative to `frontend/`.
 
 - [ ] **Step 3: Verify layout + history survives**
 

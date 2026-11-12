@@ -142,8 +142,8 @@ export function PricingPage() {
               <td>≈ {formatUsd(STACK_TOTAL_USD)}</td>
             </tr>
             <tr className="mk-table-us">
-              <td>Shailog AI Business</td>
-              <td>find, audit, enrich, draft, approve & send</td>
+              <td>WarmPulse Business</td>
+              <td>warmup, find, audit, enrich, draft, approve & send</td>
               <td>{formatUsd(99)}</td>
             </tr>
           </tbody>

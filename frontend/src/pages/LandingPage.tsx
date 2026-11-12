@@ -11,7 +11,7 @@ import { useDocumentMeta } from '../marketing/seo';
  * Prerendered to dist/index.html at build time (scripts/prerender.mjs), so
  * everything here must render without `window` during the first render.
  *
- * Theme: orange & white (reuses the app's CSS variables).
+ * Theme: violet & white (reuses the app's CSS variables).
  */
 export function LandingPage({ onEnterDashboard }: { onEnterDashboard?: () => void }) {
   useDocumentMeta('/');
@@ -28,10 +28,13 @@ export function LandingPage({ onEnterDashboard }: { onEnterDashboard?: () => voi
             <br />
             Win the <span className="lp-accent">Deal.</span>
           </h1>
+          <p className="lp-hero-tagline">
+            Keep every sender <span className="lp-accent">warm.</span> Land every <span className="lp-accent">send.</span>
+          </p>
           <p className="lp-desc">
-            Shailog AI finds real businesses in the cities and industries you pick, reads each website, and writes a
-            short audit of what it is missing. Then it drafts a cold email that points to those exact gaps — and waits
-            for you to approve it.
+            WarmPulse warms every sender mailbox so your sends land in the inbox. Then it finds real businesses in the
+            cities and industries you pick, reads each website, and writes a short audit of what it is missing. Then it
+            drafts a cold email that points to those exact gaps — and waits for you to approve it.
           </p>
           <div className="lp-actions">
             <a className="lp-cta lp-cta-solid" href="/?signup=1">
@@ -53,13 +56,13 @@ export function LandingPage({ onEnterDashboard }: { onEnterDashboard?: () => voi
           <video
             className="lp-hero-video"
             src="/hero-animation.mp4"
-            poster="/shailog-logo.png"
+            poster="/warmpulse-logo.svg"
             preload="metadata"
             autoPlay
             loop
             muted
             playsInline
-            aria-label="Animation of Shailog AI finding leads and drafting emails"
+            aria-label="Animation of WarmPulse warming mailboxes, finding leads and drafting emails"
           />
         </div>
       </section>

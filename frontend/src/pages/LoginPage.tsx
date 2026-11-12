@@ -31,9 +31,9 @@ export function LoginPage({ onLoggedIn, onHome }: { onLoggedIn: () => void; onHo
         </button>
       )}
       <form className="panel login-card" onSubmit={submit} noValidate>
-        <img src="/logo.png" alt="Shailog Technologies" className="login-logo" />
+        <img src="/warmpulse-logo.svg" alt="WarmPulse" className="login-logo" />
         <div className="login-title">
-          <strong>Your sales assistant</strong>
+          <strong>WarmPulse</strong>
           <small>Sign in to see new leads and the emails waiting for you.</small>
         </div>
         <label className="login-field">

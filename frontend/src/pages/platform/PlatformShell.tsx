@@ -41,7 +41,7 @@ export function PlatformShell({ demo, onSignOut }: { demo: boolean; onSignOut: (
     <div className="app-shell pf-shell">
       <aside className="sidebar" aria-label="Platform navigation">
         <div className="pf-brand">
-          <img src="/logo.png" alt="" className="brand-logo" />
+          <img src="/warmpulse-logo.svg" alt="" className="brand-logo" />
         </div>
         <nav className="side-nav">
           {PLATFORM_PAGES.map((p) => (
@@ -63,7 +63,7 @@ export function PlatformShell({ demo, onSignOut }: { demo: boolean; onSignOut: (
       </aside>
       <div className="main">
         <header className="topbar">
-          <div className="topbar-title">Shailog Technologies — Platform console</div>
+          <div className="topbar-title">WarmPulse — Platform console</div>
           {demo && <span className="chip chip-warn">Demo data (read-only)</span>}
         </header>
         <main className="content" id="main" tabIndex={-1}>

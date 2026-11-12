@@ -4,7 +4,7 @@ import { COMPANY } from '../marketing/site';
 /**
  * DEMO BOOKING — heading + walkthrough form.
  * No backend: submitting opens the visitor's own email app with a prefilled
- * request to the Shailog address, so a request is never silently dropped.
+ * request to the WarmPulse demo address, so a request is never silently dropped.
  * The phone number is shown as a fallback.
  */
 export function DemoBooking() {
@@ -28,7 +28,7 @@ export function DemoBooking() {
             const name = String(data.get('name') || '').trim();
             const email = String(data.get('email') || '').trim();
             const market = String(data.get('market') || '').trim();
-            const subject = `Demo request — ${name || 'Shailog AI'}`;
+            const subject = `Demo request — ${name || 'WarmPulse'}`;
             const body = [
               `Name: ${name}`,
               `Email: ${email}`,

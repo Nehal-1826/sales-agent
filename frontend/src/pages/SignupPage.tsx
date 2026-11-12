@@ -81,7 +81,7 @@ export function SignupPage({ onSignedUp, onHome, onSignIn }: { onSignedUp: () =>
     return (
       <div className="login-wrap">
         <div className="panel login-card login-card-center" role="status">
-          <img src="/logo.png" alt="Shailog Technologies" className="login-logo" />
+          <img src="/warmpulse-logo.svg" alt="WarmPulse" className="login-logo" />
           <strong className="login-headline">Verify your email</strong>
           <small className="login-footnote">
             We sent a link to {email}. Open it to confirm your address. You need this before you can pay.
@@ -105,7 +105,7 @@ export function SignupPage({ onSignedUp, onHome, onSignIn }: { onSignedUp: () =>
         ← Back to home
       </button>
       <form className="panel login-card" onSubmit={submit} noValidate>
-        <img src="/logo.png" alt="Shailog Technologies" className="login-logo" />
+        <img src="/warmpulse-logo.svg" alt="WarmPulse" className="login-logo" />
         <div className="login-title">
           <strong>Start your workspace</strong>
           <small>Create your account, then pick how to pay. 10 bonus days on your first payment.</small>

@@ -5,8 +5,9 @@ import { useEffect, useRef, useState } from 'react';
  * HOW IT WORKS — scroll-triggered horizontal card carousel.
  * As the visitor scrolls through the tall section, the card track slides
  * horizontally (sticky viewport + scroll-linked transform), walking them
- * through the agent workflow: Discover → Vet → Enrich → Reach out → Close.
- * Orange & white theme, front-end only.
+ * through the agent workflow: Warm up → Discover → Vet → Enrich →
+ * Reach out → Close.
+ * Violet & white theme, front-end only.
  */
 
 /* modest line icons (stroke follows the theme colour) */
@@ -53,7 +54,16 @@ const IconRocket = icon(<>
   <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
 </>);
 
+const IconFlame = icon(<>
+  <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z" />
+</>);
+
 const STEPS = [
+  {
+    Icon: IconFlame,
+    title: 'Warm the Sender',
+    text: 'WarmPulse warms your mailbox first. Every sender builds real reputation on a natural daily schedule — so when outreach starts, sends land in the inbox instead of spam.',
+  },
   {
     Icon: IconSearch,
     title: 'Find the Lead',
@@ -110,7 +120,7 @@ export function HowItWorks() {
         <div className="lp-hiw-sticky">
           <div className="lp-hiw-pin">
             <h2>How it works</h2>
-            <p>Keep scrolling — one autonomous loop, five moves, while your team just sells.</p>
+            <p>Keep scrolling — one autonomous loop, six moves, while your team just sells.</p>
           </div>
           <motion.div ref={trackRef} style={{ x }} className="lp-hiw-track">
             {STEPS.map(({ Icon, title, text }) => (

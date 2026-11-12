@@ -26,9 +26,9 @@ const COMPARISONS: Record<'apollo' | 'leadsgorilla', Comparison> = {
   apollo: {
     path: '/compare/apollo-alternative',
     name: 'Apollo',
-    h1: 'Shailog AI vs Apollo: an honest Apollo alternative',
+    h1: 'WarmPulse vs Apollo: an honest Apollo alternative',
     intro:
-      'Apollo is a large B2B contact database with built-in email sequences — great when you know the job titles you want at mid-size and large companies. Shailog AI solves a different problem: finding local and small businesses whose website is holding them back, and telling you exactly what to pitch.',
+      'Apollo is a large B2B contact database with built-in email sequences — great when you know the job titles you want at mid-size and large companies. WarmPulse solves a different problem: finding local and small businesses whose website is holding them back, and telling you exactly what to pitch.',
     rows: [
       {
         need: 'Where leads come from',
@@ -56,7 +56,7 @@ const COMPARISONS: Record<'apollo' | 'leadsgorilla', Comparison> = {
         them: 'Coverage is stronger for larger, Western companies',
       },
       {
-        need: 'Use Apollo inside Shailog AI',
+        need: 'Use Apollo inside WarmPulse',
         us: 'Yes — optional: add your own Apollo key for extra contact lookups',
         them: '—',
       },
@@ -75,9 +75,9 @@ const COMPARISONS: Record<'apollo' | 'leadsgorilla', Comparison> = {
   leadsgorilla: {
     path: '/compare/leadsgorilla-alternative',
     name: 'LeadsGorilla',
-    h1: 'Shailog AI vs LeadsGorilla: an honest LeadsGorilla alternative',
+    h1: 'WarmPulse vs LeadsGorilla: an honest LeadsGorilla alternative',
     intro:
-      'LeadsGorilla and Shailog AI both help agencies find local businesses with a weak online presence. The difference is what happens next: Shailog AI has an AI read every website, write a plain-language gap audit, and draft an email citing those exact gaps — which you approve before it sends.',
+      'LeadsGorilla and WarmPulse both help agencies find local businesses with a weak online presence. The difference is what happens next: WarmPulse has an AI read every website, write a plain-language gap audit, and draft an email citing those exact gaps — which you approve before it sends.',
     rows: [
       {
         need: 'Finding local businesses',
@@ -136,7 +136,7 @@ export function ComparePage({ which }: { which: 'apollo' | 'leadsgorilla' }) {
           <thead>
             <tr>
               <th scope="col">What you need</th>
-              <th scope="col">Shailog AI</th>
+              <th scope="col">WarmPulse</th>
               <th scope="col">{c.name}</th>
             </tr>
           </thead>
@@ -167,7 +167,7 @@ export function ComparePage({ which }: { which: 'apollo' | 'leadsgorilla' }) {
             </ul>
           </article>
           <article className="mk-card mk-card-accent">
-            <h2 className="mk-h3">Choose Shailog AI if…</h2>
+            <h2 className="mk-h3">Choose WarmPulse if…</h2>
             <ul className="mk-list">
               {c.chooseUs.map((x) => (
                 <li key={x}>{x}</li>
@@ -177,8 +177,8 @@ export function ComparePage({ which }: { which: 'apollo' | 'leadsgorilla' }) {
         </div>
 
         <p className="mk-fine mk-gap-top">
-          Honest note: Shailog AI does not reply to prospects for you. Sending caps, mailbox rotation, WarmPulse warmup,
-          a reply inbox and follow-up sequences are coming soon. See <a href="/pricing">pricing</a>.
+          Honest note: WarmPulse does not reply to prospects for you. Mailbox warmup is built in; sending caps, mailbox
+          rotation, a reply inbox and follow-up sequences are coming soon. See <a href="/pricing">pricing</a>.
         </p>
       </section>
 

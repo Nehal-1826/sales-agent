@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { IconBot, IconBuilding, IconCheck, IconHome, IconInbox, IconLoop, IconMail, IconLogout, IconPulse, IconSettings } from './icons';
+import { IconBot, IconBuilding, IconCheck, IconFlame, IconHome, IconInbox, IconMail, IconLogout, IconPulse, IconSettings } from './icons';
 import type { IconProps } from './icons';
 import { AutopilotPill } from './AutopilotPill';
 import { getCurrentUser } from '../lib/api';
@@ -16,7 +16,7 @@ const NAV: { key: PageKey; label: string; icon: (p: IconProps) => JSX.Element }[
   { key: 'leads', label: 'Leads', icon: IconBuilding },
   { key: 'activity', label: 'Activity', icon: IconPulse },
   { key: 'assistant', label: 'Assistant', icon: IconBot },
-  { key: 'warmup', label: 'Warmup', icon: IconLoop },
+  { key: 'warmup', label: 'Warmup', icon: IconFlame },
   { key: 'settings', label: 'Settings', icon: IconSettings },
 ];
 
@@ -52,7 +52,7 @@ export function Sidebar({
   return (
     <aside className={`sidebar${open ? ' open' : ''}`} aria-label="Main navigation">
       <button className="sidebar-brand" onClick={() => navigate('home')} aria-label="Go to Home">
-        <img src="/logo.png" alt="" className="brand-logo" />
+        <img src="/warmpulse-logo.svg" alt="" className="brand-logo" />
       </button>
       {user?.workspace && (
         <div className="workspace-badge" title="Your company workspace. Everything here is private to it.">

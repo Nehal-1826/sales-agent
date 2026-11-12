@@ -7,12 +7,16 @@ import { useDocumentMeta } from '../marketing/seo';
 
 const STEPS = [
   {
+    title: 'WarmPulse warms your mailbox',
+    text: 'Before any outreach, every sender mailbox is warmed on a natural daily schedule — real reputation, built gradually, so your sends land in the inbox instead of spam.',
+  },
+  {
     title: 'You pick the market',
     text: 'Choose industries and cities — for example "dentists in Chennai" or "real-estate agents in Dubai". India metros are covered first; any city worldwide works.',
   },
   {
     title: 'It finds real businesses',
-    text: 'Shailog AI searches the web and Google Maps for matching businesses. Directories, listing sites and competitors of yours are rejected automatically.',
+    text: 'WarmPulse searches the web and Google Maps for matching businesses. Directories, listing sites and competitors of yours are rejected automatically.',
   },
   {
     title: 'AI reads each website',
@@ -37,7 +41,7 @@ const STEPS = [
 ];
 
 const SOON = [
-  'Sending caps, mailbox rotation and warmup via WarmPulse',
+  'Sending caps and mailbox rotation',
   'A reply inbox inside the app',
   'Follow-up sequences',
   'WhatsApp and LinkedIn assisted steps',
@@ -48,10 +52,10 @@ export function HowItWorksPage() {
   return (
     <MarketingLayout>
       <section className="lp-section mk-section mk-page-head">
-        <h1>How Shailog AI works</h1>
+        <h1>How WarmPulse works</h1>
         <p className="lp-section-sub">
-          Seven plain steps from “which market?” to an email in your prospect’s inbox. You stay in control of the only
-          step that matters: what gets sent.
+          Eight plain steps from “which market?” to an email in your prospect’s inbox — after your mailbox is warm. You
+          stay in control of the only step that matters: what gets sent.
         </p>
         <ol className="mk-steps">
           {STEPS.map((s, i) => (
@@ -75,7 +79,7 @@ export function HowItWorksPage() {
             ))}
           </ul>
           <p className="mk-fine">
-            Shailog AI reads replies, sorts them and suggests an answer — but it never answers a prospect by itself. You approve every answer before it goes out.
+            WarmPulse reads replies, sorts them and suggests an answer — but it never answers a prospect by itself. You approve every answer before it goes out.
           </p>
         </div>
       </section>

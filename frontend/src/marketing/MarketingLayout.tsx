@@ -44,7 +44,7 @@ export function MarketingLayout({
       <header className={`lp-nav ${scrolled ? 'lp-nav-scrolled' : ''}`}>
         <div className="lp-nav-inner">
           <a className="lp-brand" href="/">
-            <img src="/shailog-logo.png" alt="Shailog Technologies — Shailog AI home" />
+            <img src="/warmpulse-logo.svg" alt="WarmPulse home" />
           </a>
           <nav className="lp-links" aria-label="Main">
             <a href="/">Home</a>
@@ -61,11 +61,11 @@ export function MarketingLayout({
       <footer className="lp-footer">
         <div className="lp-footer-inner mk-footer-inner">
           <div className="lp-footer-brand">
-            <img src="/shailog-logo.png" alt="Shailog Technologies logo" />
+            <img src="/warmpulse-logo.svg" alt="WarmPulse logo" />
             <strong>{COMPANY.product}</strong>
             <p>
-              Built in {COMPANY.city}, {COMPANY.region} by {COMPANY.name}. Finds leads, audits their
-              website and drafts the email. You approve every send.
+              Built in {COMPANY.city}, {COMPANY.region} by {COMPANY.name}. Warms every sender, finds
+              leads, audits their website and drafts the email. You approve every send.
             </p>
           </div>
 
@@ -97,7 +97,7 @@ export function MarketingLayout({
         </div>
 
         <div className="lp-footer-bar">
-          <span>© {new Date().getFullYear()} {COMPANY.name} · Marketing &amp; Sales AI. All rights reserved.</span>
+          <span>© {new Date().getFullYear()} {COMPANY.name} · WarmPulse — Inbox Warmup &amp; AI Outbound. All rights reserved.</span>
           <a className="mk-footer-pill" href="/#contact">
             Book a demo →
           </a>

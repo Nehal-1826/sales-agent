@@ -37,7 +37,7 @@ export function TotpScreen({ onVerified, onSignOut }: { onVerified: () => void; 
   return (
     <div className="login-wrap">
       <form className="panel login-card" onSubmit={(e) => void submit(e)}>
-        <strong className="login-headline">Shailog Technologies — Platform console</strong>
+        <strong className="login-headline">WarmPulse — Platform console</strong>
         <small className="login-footnote">
           {enrolling
             ? 'Add this key to your authenticator app, then enter the 6-digit code it shows.'

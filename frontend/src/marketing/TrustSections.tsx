@@ -145,7 +145,7 @@ export function BuiltBy() {
             Built in {COMPANY.city}, {COMPANY.region}
           </h2>
           <p>
-            Shailog AI is made by {COMPANY.name}, a small team in {COMPANY.city}. We are early, and we say so: we set up
+            WarmPulse is made by {COMPANY.name}, a small team in {COMPANY.city}. We are early, and we say so: we set up
             every account ourselves and you can talk to the people who build it.
           </p>
         </div>

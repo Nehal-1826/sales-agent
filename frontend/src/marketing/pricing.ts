@@ -104,7 +104,7 @@ export const signupHref = (code: string, interval: Interval) =>
 export const BONUS_DAYS = 10;
 export const REFUND_WINDOW_DAYS = 10;
 
-/** The tool stack Shailog AI replaces — approximate entry-level list prices (USD / month). */
+/** The tool stack WarmPulse replaces — approximate entry-level list prices (USD / month). */
 export const STACK = [
   { tool: 'Apollo', job: 'contact data', usd: 59 },
   { tool: 'Clay', job: 'enrichment and research', usd: 149 },
@@ -119,12 +119,12 @@ export const FAQ: { q: string; a: string }[] = [
     a: 'No contract. You sign up and pay online, monthly or yearly. Cancel within 10 days of your first payment for a partial refund, or any time after to stop at the end of the period.',
   },
   {
-    q: 'Does Shailog AI send emails on its own?',
+    q: 'Does WarmPulse send emails on its own?',
     a: 'No. It finds the business, audits the website and writes a draft. Nothing is sent until you press Approve. Autopilot only means it finds and drafts on a schedule.',
   },
   {
     q: 'Which mailbox do the emails come from?',
-    a: 'Your own mailbox and your own domain. Replies land in your normal inbox. Shailog AI does not reply to prospects for you.',
+    a: 'Your own mailbox and your own domain. Replies land in your normal inbox. WarmPulse does not reply to prospects for you.',
   },
   {
     q: 'What is an "audited lead"?',

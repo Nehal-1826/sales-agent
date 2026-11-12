@@ -109,7 +109,7 @@ function AppGate() {
     return (
       <div className="login-wrap">
         <div className="panel login-card login-card-center">
-          <img src="/logo.png" alt="Shailog Technologies" className="login-logo" />
+          <img src="/warmpulse-logo.svg" alt="WarmPulse" className="login-logo" />
           <span className="spinner" aria-hidden />
           <small className="login-footnote">Connecting to your workspace…</small>
         </div>
@@ -128,7 +128,7 @@ function AppGate() {
     return (
       <div className="login-wrap">
         <div className="panel login-card login-card-center" role="alert">
-          <img src="/logo.png" alt="Shailog Technologies" className="login-logo" />
+          <img src="/warmpulse-logo.svg" alt="WarmPulse" className="login-logo" />
           <strong className="login-headline">Can't reach your workspace</strong>
           <small className="login-footnote">
             The server didn't answer. It may be restarting. Check your connection and try again.

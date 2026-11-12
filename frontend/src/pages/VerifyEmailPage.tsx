@@ -41,7 +41,7 @@ export function VerifyEmailPage({ token, onDone }: { token: string; onDone: () =
   return (
     <div className="login-wrap">
       <div className="panel login-card login-card-center" role="status">
-        <img src="/logo.png" alt="Shailog Technologies" className="login-logo" />
+        <img src="/warmpulse-logo.svg" alt="WarmPulse" className="login-logo" />
         {state === 'working' && <span className="spinner" aria-hidden />}
         {state === 'ok' && <strong className="login-headline">Email verified</strong>}
         {state === 'failed' && (

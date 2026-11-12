@@ -36,7 +36,7 @@ export function softwareLd(): Json {
     operatingSystem: 'Web',
     url: `${SITE_URL}/`,
     description:
-      'Finds real businesses by industry and city, audits each website with AI, and drafts cold emails citing the specific gaps. Every email is approved by a human and sent from your own mailbox.',
+      'Warms every sender mailbox so sends land in the inbox, finds real businesses by industry and city, audits each website with AI, and drafts cold emails citing the specific gaps. Every email is approved by a human and sent from your own mailbox.',
     publisher: { '@type': 'Organization', name: COMPANY.name },
     offers: TIERS.flatMap((t) => [
       {

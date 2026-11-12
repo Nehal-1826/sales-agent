@@ -11,7 +11,7 @@ from rest_framework.decorators import action, api_view, permission_classes, thro
 from rest_framework.throttling import AnonRateThrottle
 
 from . import lockout
-from .authz import auth_extras
+from .authz import auth_extras, is_platform_admin, otp_satisfied
 from .throttles import LoginThrottle
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -176,6 +176,11 @@ def change_password(request):
 @permission_classes([IsAuthenticated])
 def warmup_token(request):
     """Mint the HS256 bridge JWT that backend-warmup (FastAPI) accepts."""
+    # A platform admin's DRF token alone must not buy a 12 h super_admin
+    # FastAPI session — the mint demands the same satisfied TOTP session
+    # (12 h) as every other privileged platform surface (billing.views_platform).
+    if is_platform_admin(request.user) and not otp_satisfied(request):
+        return Response({'detail': 'OTP required'}, status=403)
     ws = getattr(request.user, 'workspace', None)
     slug = getattr(ws, 'slug', None) or 'default'
     return Response({'token': mint_warmup_token(user=request.user, workspace_slug=slug)})

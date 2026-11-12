@@ -9,6 +9,18 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
 
+# Anything outside this set counts as production for security hardening
+# (strong-secret validation, docs disabled). Keep one canonical list.
+DEV_ENVIRONMENTS = frozenset({"development", "dev", "test", "testing"})
+
+# Well-known placeholder secrets from .env templates — these must never boot
+# outside development, or every deployed instance would share a forgeable key.
+PLACEHOLDER_JWT_SECRETS = frozenset({
+    "change-me-in-production",
+    "replace_me_random_64_bytes",   # .env.example
+    "generate_me",                  # .env.docker.example
+})
+
 
 class Settings(BaseSettings):
     """All runtime settings sourced from environment variables (see .env.example)."""
@@ -215,16 +227,33 @@ class Settings(BaseSettings):
                     out[k] = v
         return out
 
+    @property
+    def docs_enabled(self) -> bool:
+        """Interactive API docs (/docs, /redoc, /openapi.json) — dev/test only.
+
+        Production (any APP_ENV outside DEV_ENVIRONMENTS) turns them off: the
+        OpenAPI schema advertises the entire API surface to anyone."""
+        return self.app_env.lower() in DEV_ENVIRONMENTS
+
     @model_validator(mode="after")
     def _require_strong_jwt_secret(self) -> "Settings":
-        """Fail closed outside development if JWT_SECRET is missing or the
-        well-known placeholder — otherwise tokens would be forgeable by anyone.
+        """Fail closed outside development if JWT_SECRET is missing, a
+        well-known placeholder, or shorter than 32 chars — otherwise tokens
+        would be forgeable by anyone.
         Mirrors FernetService, which already raises when FERNET_KEY is absent."""
-        weak = (not self.jwt_secret) or self.jwt_secret == "change-me-in-production"
-        if weak and self.app_env.lower() not in ("development", "dev", "test", "testing"):
+        if self.app_env.lower() in DEV_ENVIRONMENTS:
+            return self
+        secret = self.jwt_secret.strip()
+        if (not secret) or secret.lower() in PLACEHOLDER_JWT_SECRETS:
             raise ValueError(
                 "JWT_SECRET must be set to a strong random value in "
                 f"{self.app_env!r} (refusing the empty/placeholder default)."
+            )
+        if len(secret) < 32:
+            raise ValueError(
+                f"JWT_SECRET must be at least 32 characters in {self.app_env!r} "
+                f"(got {len(secret)}). Generate one: "
+                "python -c \"import secrets; print(secrets.token_urlsafe(64))\""
             )
         return self
 

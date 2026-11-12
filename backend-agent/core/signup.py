@@ -27,7 +27,7 @@ from rest_framework.throttling import AnonRateThrottle
 from billing.models import Plan, Subscription
 
 from .authz import auth_extras
-from .models import User, Workspace
+from .models import AppSettings, User, Workspace
 from .serializers import UserSerializer
 from .tenancy import workspace_context
 from .throttles import ResendThrottle, SignupThrottle
@@ -124,6 +124,7 @@ def signup(request):
         return v.strip()[:n] if isinstance(v, str) else ''
 
     company, name = text('company'), text('name', 150)
+    website = text('website', 300)
     email = text('email', 254).lower()
     password = d.get('password') if isinstance(d.get('password'), str) else ''
     if not company:
@@ -163,6 +164,12 @@ def signup(request):
             user = User.objects.create_user(username=email, email=email, password=password,
                                             first_name=name, role=User.Roles.OWNER, workspace=ws)
             with workspace_context(ws):
+                # Settings → Your business reads AppSettings, not Workspace.name —
+                # seed the company profile at signup so the owner never re-types it
+                settings_row = AppSettings.load()
+                settings_row.company_name = company
+                settings_row.company_website = website
+                settings_row.save(update_fields=['company_name', 'company_website'])
                 # NOT ensure_manual_subscription: self-serve starts pending, awaiting payment
                 Subscription.objects.create(
                     workspace=ws, plan=plan, interval=interval, currency=currency,

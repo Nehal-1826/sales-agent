@@ -11,7 +11,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from billing.models import Subscription
 from billing.tests.helpers import no_template_capture, quiet_logs
 from core import signup as su
-from core.models import User, Workspace
+from core.models import AppSettings, User, Workspace
 
 PW = 'Zq7-hollow-River-93'
 
@@ -56,6 +56,23 @@ class SignupTests(TestCase):
         cur = {u.username: Subscription.all_tenants.get(workspace=u.workspace).currency
                for u in User.objects.filter(username__in=['a@x.test', 'b@x.test'])}
         self.assertEqual(cur, {'a@x.test': 'USD', 'b@x.test': 'USD'})
+
+    def test_company_persists_into_settings_profile(self):
+        """Settings → Your business (BusinessSection) reads AppSettings, not
+        Workspace.name — signup must fill both or the owner re-types it."""
+        r = self.post(website='https://acme.test')
+        self.assertEqual(r.status_code, 201, r.content)
+        u = User.objects.get(username='ann@acme.test')
+        s = AppSettings.all_tenants.get(workspace=u.workspace)
+        self.assertEqual(s.company_name, 'Acme Rockets')
+        self.assertEqual(s.company_website, 'https://acme.test')
+
+    def test_settings_profile_filled_even_without_website(self):
+        self.post(email='nowebsite@x.test')
+        u = User.objects.get(username='nowebsite@x.test')
+        s = AppSettings.all_tenants.get(workspace=u.workspace)
+        self.assertEqual(s.company_name, 'Acme Rockets')
+        self.assertEqual(s.company_website, '')
 
     def test_duplicate_email_any_case(self):
         self.assertEqual(self.post().status_code, 201)

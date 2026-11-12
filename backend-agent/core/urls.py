@@ -3,7 +3,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from . import signup, unsubscribe, views, views_sequences as vs
+from . import company_scrape, signup, unsubscribe, views, views_sequences as vs
 
 router = DefaultRouter()
 router.register('leads', views.LeadViewSet, basename='lead')
@@ -37,6 +37,8 @@ urlpatterns = [
     path('agents/<str:agent_key>/config/', views.agent_config, name='agent-config'),
     # settings
     path('settings/', views.settings_view, name='settings'),
+    # signup helper — fetch the user's own site, return brand name + blurb
+    path('company/scrape/', company_scrape.company_scrape, name='company-scrape'),
     # one-click mailbox connect (Zoho/Gmail/custom) — verifies + saves SMTP
     path('settings/smtp_connect/', views.smtp_connect, name='smtp-connect'),
     # search profiles — saved lead-targeting presets w/ one-click switching

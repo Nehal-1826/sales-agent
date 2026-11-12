@@ -70,6 +70,7 @@ export interface SignupInput {
   country: string;
   plan_code: string;
   interval: BillingInterval;
+  website?: string;
   utm_source?: string;
   utm_campaign?: string;
   referrer?: string;
@@ -184,3 +185,15 @@ export async function verifyEmail(token: string): Promise<{ ok: true } | Fail> {
 
 export const resendVerification = async (): Promise<Result<unknown>> =>
   (await inDemo()) ? demoFail() : attempt(() => request('/auth/resend_verification/', post()));
+
+/* ---------------- company scrape (signup helper) ---------------- */
+
+/** POST /api/company/scrape — fetch the user's own site, get its brand name + blurb. */
+export interface CompanyScrapeDetails {
+  name: string;
+  description: string;
+}
+
+export const scrapeCompanyDetails = async (url: string): Promise<Result<CompanyScrapeDetails>> =>
+  (await inDemo()) ? demoFail<CompanyScrapeDetails>() : attempt(() =>
+    request<CompanyScrapeDetails>('/company/scrape/', post({ url })));

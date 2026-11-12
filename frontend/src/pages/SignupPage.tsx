@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { resendVerification, signup } from '../lib/api';
+import { resendVerification, scrapeCompanyDetails, signup } from '../lib/api';
 import type { BillingInterval } from '../lib/api';
 import { TIERS } from '../marketing/pricing';
 
@@ -25,6 +25,13 @@ function defaultCountry(): string {
 
 const trim200 = (v: string | null | undefined) => (v ?? '').trim().slice(0, 200);
 
+/** Live password checklist — same bar the backend's validators set (min 10). */
+const PW_RULES: { label: string; met: (v: string) => boolean }[] = [
+  { label: 'At least 10 characters', met: (v) => v.length >= 10 },
+  { label: 'Upper and lower case letters', met: (v) => /[a-z]/.test(v) && /[A-Z]/.test(v) },
+  { label: 'A number', met: (v) => /\d/.test(v) },
+];
+
 /** SIGNUP — /?signup=1&plan=business&interval=month. On success the app shows the verify-email state. */
 export function SignupPage({ onSignedUp, onHome, onSignIn }: { onSignedUp: () => void; onHome: () => void; onSignIn: () => void }) {
   const q = new URLSearchParams(window.location.search);
@@ -32,6 +39,7 @@ export function SignupPage({ onSignedUp, onHome, onSignIn }: { onSignedUp: () =>
   const [plan, setPlan] = useState(TIERS.some((t) => t.id === planParam) ? planParam : 'business');
   const [interval, setInterval_] = useState<BillingInterval>(q.get('interval') === 'year' ? 'year' : 'month');
   const [company, setCompany] = useState('');
+  const [website, setWebsite] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -41,8 +49,25 @@ export function SignupPage({ onSignedUp, onHome, onSignIn }: { onSignedUp: () =>
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
   const [resent, setResent] = useState('');
+  const [fetching, setFetching] = useState(false);
+  const [fetchError, setFetchError] = useState('');
 
-  const ready = company.trim() && name.trim() && email.includes('@') && password.length >= 10;
+  const pwOk = PW_RULES.every((r) => r.met(password));
+  const ready = Boolean(company.trim() && name.trim() && email.includes('@')) && pwOk;
+
+  const fetchDetails = async () => {
+    const url = website.trim();
+    if (!url || fetching) return;
+    setFetching(true);
+    setFetchError('');
+    const res = await scrapeCompanyDetails(url);
+    setFetching(false);
+    if (res.ok) {
+      if (res.data.name) setCompany(res.data.name);
+    } else {
+      setFetchError(res.error || 'Could not fetch details from that site.');
+    }
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,6 +83,7 @@ export function SignupPage({ onSignedUp, onHome, onSignIn }: { onSignedUp: () =>
       country,
       plan_code: plan,
       interval,
+      website: website.trim(),
       utm_source: trim200(q.get('utm_source')),
       utm_campaign: trim200(q.get('utm_campaign')),
       referrer: trim200(document.referrer),
@@ -116,6 +142,35 @@ export function SignupPage({ onSignedUp, onHome, onSignIn }: { onSignedUp: () =>
           {err('company')}
         </label>
         <label className="login-field">
+          <span>Website (optional)</span>
+          <div className="login-fetch">
+            <input
+              value={website}
+              onChange={(e) => {
+                setWebsite(e.target.value);
+                setFetchError('');
+              }}
+              placeholder="yourcompany.com"
+              inputMode="url"
+              autoComplete="url"
+            />
+            <button
+              type="button"
+              className="btn"
+              onClick={() => void fetchDetails()}
+              disabled={fetching || !website.trim()}
+            >
+              {fetching ? 'Fetching…' : 'Fetch details'}
+            </button>
+          </div>
+          <small className="login-footnote">Fetch reads your homepage to fill the company name.</small>
+          {fetchError && (
+            <small className="login-error" role="alert">
+              {fetchError}
+            </small>
+          )}
+        </label>
+        <label className="login-field">
           <span>Your name</span>
           <input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required />
           {err('name')}
@@ -128,7 +183,13 @@ export function SignupPage({ onSignedUp, onHome, onSignIn }: { onSignedUp: () =>
         <label className="login-field">
           <span>Password</span>
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" required />
-          <small>At least 10 characters. Avoid common passwords.</small>
+          <ul className="pw-rules" aria-label="Password requirements">
+            {PW_RULES.map((r) => (
+              <li key={r.label} className={password && r.met(password) ? 'pass' : 'fail'}>
+                {r.label}
+              </li>
+            ))}
+          </ul>
           {err('password')}
         </label>
         <label className="login-field">

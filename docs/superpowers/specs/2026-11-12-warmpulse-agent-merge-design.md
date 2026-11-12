@@ -101,6 +101,13 @@ Base: sales-agent frontend from `feat/saas-billing`.
     is down the section renders an explicit offline state.
   - Ports keep page logic; styles re-written to the shell's CSS conventions
     (no Tailwind runtime in the merged frontend).
+- Admin without loss, one UI for every role: WarmPulse admin pages port into
+  the SAME shell as a role-gated section (`src/pages/admin/`), visible only
+  to platform admins (Django `platform_admin`). No separate admin app, no
+  second dashboard — role determines which nav items appear inside the one
+  unified dashboard. WarmPulse admin client area, impersonation, alerting
+  admin, and user management all port; nothing is dropped or left behind on
+  the old FastAPI-served UI.
 - Prerendered marketing build pipeline (SSR + prerender script) is preserved.
 
 ## 5 · Data alignment
@@ -141,7 +148,9 @@ Single `docker-compose.yml` at root:
    + auto-provision, integration test.
 3. **Rebrand + landing** — tokens, wordmark, titles, landing restyle.
 4. **Warmup section port** — Dashboard → Mailboxes → Onboarding → Peer →
-   Reports → Alerts, page by page, each verified in the shell.
+   Reports → Alerts, page by page, each verified in the shell; then the
+   role-gated Admin section (user management, impersonation, alerting
+   admin) in the same unified shell.
 5. **Ops + docs + full E2E** — compose hardening, DEPLOY/README merge,
    end-to-end pass, push.
 
@@ -151,8 +160,6 @@ Single `docker-compose.yml` at root:
 - No Tailwind in the merged frontend.
 - No single-database consolidation (token-layer alignment only).
 - No mobile app rework (it keeps native login).
-- WarmPulse admin area: served from FastAPI/docs where it lives today; full
-  in-shell admin port is a follow-up, not this merge.
 
 ## Risks
 

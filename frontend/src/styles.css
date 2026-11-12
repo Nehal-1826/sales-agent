@@ -2991,13 +2991,13 @@ input[type='radio'] {
    ========================================================== */
 .lp {
   min-height: 100vh;
-  /* sunrise skin-tone shade falling from above — warm peach at the very top,
+  /* violet wash falling from above — soft lavender at the very top,
      melted into pure white before the hero media zone so the video blends clean */
   background:
     radial-gradient(120% 34% at 50% -12%,
-      #ffd9b8 0%,
-      #ffe7d3 38%,
-      #fff6ee 68%,
+      #e3d9ff 0%,
+      #ede6ff 38%,
+      #f7f3ff 68%,
       #ffffff 100%)
     no-repeat,
     #ffffff;
@@ -3518,10 +3518,10 @@ input[type='radio'] {
 .mailbox-card { border: 1px solid var(--border, #e5e7eb); border-radius: 12px; padding: 14px 16px; background: var(--surface, #fff); }
 .mailbox-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
 .mailbox-head small { display: block; color: var(--text-muted, #6b7280); }
-.mailbox-paused { background: #fff7ed; border-left: 3px solid #e8720c; padding: 8px 10px; border-radius: 6px; font-size: 13px; margin: 10px 0; }
+.mailbox-paused { background: var(--warn-soft, #fef3c7); border-left: 3px solid var(--warn, #a16207); padding: 8px 10px; border-radius: 6px; font-size: 13px; margin: 10px 0; }
 .mailbox-meter { margin: 10px 0; }
 .mailbox-meter-bar { height: 6px; border-radius: 3px; background: var(--border, #e5e7eb); overflow: hidden; margin-bottom: 4px; }
-.mailbox-meter-bar span { display: block; height: 100%; background: var(--accent, #e8720c); }
+.mailbox-meter-bar span { display: block; height: 100%; background: var(--accent, #6b49ff); }
 .mailbox-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .mailbox-hours { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
 .dns-checklist ul { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
@@ -3536,7 +3536,7 @@ input[type='radio'] {
 /* Replies page */
 .reply-list { display: grid; gap: 14px; margin-top: 14px; }
 .reply-card { border: 1px solid var(--line, #e7e1d8); border-radius: 12px; padding: 14px 16px; background: #fff; display: grid; gap: 10px; }
-.reply-card.needs-you { border-left: 4px solid var(--accent, #e8720c); }
+.reply-card.needs-you { border-left: 4px solid var(--accent, #6b49ff); }
 .reply-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
 .reply-head small { display: block; color: var(--muted, #6b6359); }
 .reply-chips { display: flex; gap: 6px; flex-wrap: wrap; }

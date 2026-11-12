@@ -34,8 +34,11 @@ if (!template.includes('<div id="root"></div>')) {
 if (!template.includes('<!--app-head-->')) {
   throw new Error('prerender: dist/index.html is missing the <!--app-head--> marker');
 }
-// the default <title> in index.html is replaced by the route's own title
-const baseTemplate = template.replace(/<title>[\s\S]*?<\/title>\s*/, '');
+// the default <title> and <meta name="description"> in index.html are replaced
+// by the route's own head tags — otherwise every page ships both, duplicated
+const baseTemplate = template
+  .replace(/<title>[\s\S]*?<\/title>\s*/, '')
+  .replace(/<meta name="description"[^>]*>\s*/, '');
 
 for (const route of ROUTES) {
   const { html, head } = render(route.path);

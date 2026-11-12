@@ -4,7 +4,7 @@ import { COMPANY } from '../marketing/site';
 /**
  * DEMO BOOKING — heading + walkthrough form.
  * No backend: submitting opens the visitor's own email app with a prefilled
- * request to the WarmPulse demo address, so a request is never silently dropped.
+ * request, so a request is never silently dropped.
  * The phone number is shown as a fallback.
  */
 export function DemoBooking() {

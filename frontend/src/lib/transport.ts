@@ -79,6 +79,8 @@ function expireSession(): void {
   } catch {
     /* ignore */
   }
+  // the bridge JWT outlives its minting session — kill it with the session
+  clearWarmupToken();
   window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
 }
 
@@ -214,6 +216,8 @@ export async function login(username: string, password: string): Promise<Result<
     } catch {
       /* ignore */
     }
+    // a fresh session must never inherit a previous user's bridge JWT
+    clearWarmupToken();
     return { ok: true, data: true };
   } catch {
     return { ok: false, error: "Couldn't reach your workspace. Check your connection and try again." };
@@ -262,6 +266,8 @@ export function setSessionToken(token: string): void {
   } catch {
     /* ignore */
   }
+  // defensive: signup also starts a fresh session — drop any stale bridge JWT
+  clearWarmupToken();
 }
 
 /** Open (unauthenticated) POST that returns field errors; never sends a stale token. */

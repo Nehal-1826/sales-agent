@@ -20,7 +20,7 @@
 
 ---
 
-### Task B1: Warmup dev bootstrap (sqlite create_all + demo seed)
+### Task 1: Warmup dev bootstrap (sqlite create_all + demo seed)
 
 **Files:** Create `backend/scripts/dev_bootstrap.py` (or follow repo's script conventions — check `backend/_seed_*.py` placement), maybe `backend/app/db/bootstrap.py`; Test: `backend/tests/test_dev_bootstrap.py`.
 
@@ -32,7 +32,7 @@
 - [ ] Step 4: Live verify — restart FastAPI (sqlite) with bootstrap env, mint bridge JWT (Django :8000 up), GET one dashboard endpoint through /wp-api → real seeded data 200.
 - [ ] Step 5: Commit: `warmup: dev bootstrap — sqlite create_all + demo warmup data (env-gated, prod-refused)`.
 
-### Task B2: warmupApi typed dashboard methods
+### Task 2: warmupApi typed dashboard methods
 
 **Files:** Modify `frontend/src/lib/warmupApi.ts` (+ types beside it following lib conventions).
 
@@ -42,7 +42,7 @@
 - [ ] Step 2: Implement methods + TS types; unit-free (no frontend test infra) — validated by B3 usage + B4 E2E; typecheck green.
 - [ ] Step 3: Commit: `warmupApi: typed dashboard methods (today/warmth/placement/mailboxes/alerts/activity)`.
 
-### Task B3: Dashboard page port
+### Task 3: Dashboard page port
 
 **Files:** Modify `frontend/src/pages/WarmupPage.tsx`; Create `frontend/src/pages/warmup/` components (WarmthHero, WarmthChart, TodayStats, PlacementDonut, MailboxRows, AlertsStack, ActivityFeed — port from source, restyle); Modify `frontend/package.json` (apexcharts + react-apexcharts), `frontend/src/styles.css` (warmup dashboard styles, tokens only).
 
@@ -53,7 +53,7 @@
 - [ ] Step 3: Visual pass — screenshots desktop + 375px, console clean, reduced-motion check.
 - [ ] Step 4: Build green. Commit: `warmup: real dashboard — hero, 30d warmth, placement, mailbox rows, alerts, activity (ported)`.
 
-### Task B4: E2E + full gate
+### Task 4: E2E + full gate
 
 **Files:** Modify `scripts/e2e/flow.py`; README quickstart note for the bootstrap command.
 

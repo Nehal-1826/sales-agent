@@ -43,6 +43,8 @@ python -m venv .venv && source .venv/Scripts/activate
 pip install -e ".[dev]"
 export DATABASE_URL=sqlite+aiosqlite:///db-warmup.sqlite3   # Postgres+Redis via `docker compose up -d db redis`
 alembic upgrade head
+# sqlite dev stack (migrations are Postgres-only): seed schema + demo warmup
+# data with the one-off bootstrap instead — see backend/README.md "Dev bootstrap"
 uvicorn app.main:app --reload --port 8001
 
 # 4. Frontend — http://localhost:5173  (Terminal 3; dev-proxies /api and /wp-api)

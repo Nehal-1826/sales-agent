@@ -2,7 +2,8 @@
 
 One Playwright pass over the live dev stack:
   landing (rebrand + SEO assets) -> login (operator demo) -> sidebar nav
-  -> Leads tabs -> #/warmup deep link + health panel -> logout (token purge)
+  -> Leads tabs -> #/warmup deep link + live dashboard assertions
+  -> logout (token purge)
 plus a browser-less dist/ check (one meta description + PNG favicon per route).
 
 Shell & UX batch (Task 6) additions: sign-out reachable in the rail (desktop
@@ -14,7 +15,7 @@ Prereqs (see scripts/e2e/README.md):
   Django on :8000, FastAPI on :8001, Vite dev on :5173 (IPv4 or IPv6),
   `npm run build` in frontend/ if you want the dist checks counted.
 
-If FastAPI is down the warmup-live check flips to SKIPPED and the
+If FastAPI is down the warmup dashboard checks flip to SKIPPED and the
 "not reachable" panel is asserted instead — the gate still passes.
 
 Accent checks are theme-agnostic (owner may retune the palette any time):
@@ -188,7 +189,7 @@ with sync_playwright() as p:
             check(f"leads tab: {tab}", False, "subtab not found")
     page.screenshot(path=str(SHOTS / "05-leads-tabs.png"))
 
-    # ── 5. Warmup: sidebar order, deep link, TopBar, health panel ──
+    # ── 5. Warmup: sidebar order, deep link, live dashboard (B3) ─────
     order = page.evaluate(
         """() => Array.from(document.querySelectorAll('button.nav-item span'))
                  .map(s => s.textContent.trim())"""
@@ -203,21 +204,43 @@ with sync_playwright() as p:
     page.wait_for_timeout(1800)
     top_title = safe_text(page.locator(".topbar-title"))
     check("warmup: deep link stays on Warmup (TopBar title)", top_title.strip() == "Warmup", top_title)
-    body = page.locator("body").inner_text()
-    check("warmup: page renders (no bounce home)", "Warmup backend" in body, body[:120])
     check("warmup: sidebar item present", page.locator("button.nav-item", has_text="Warmup").count() == 1)
-    page.wait_for_timeout(1500)  # let the health probe settle
-    ws = page.locator(".warmup-status")
-    ws_txt = safe_text(ws)
     if WP_UP:
-        check("warmup: health live · FastAPI",
-              page.locator(".warmup-status.up").count() > 0 and "live · FastAPI" in ws_txt,
-              ws_txt)
+        # ── real dashboard (B3): health probe -> summary fetch must both
+        # resolve before the gated content paints, so wait for the gauge ──
+        try:
+            page.wait_for_selector(".warmup-gauge-value", timeout=12000)
+            mounted = True
+        except Exception:
+            mounted = False
+        check("warmup: dashboard mounts behind live backend", mounted,
+              page.locator("body").inner_text()[:120].replace("\n", " "))
+        hero = page.locator(".warmup-gauge-value").text_content() if mounted else None
+        check("warmup: hero warmth score visible (digits)",
+              bool(hero) and re.fullmatch(r"\d+", hero.strip()) is not None, str(hero))
+        n_canvas = page.locator(".apexcharts-canvas").count()
+        check("warmup: apex chart canvas mounts", n_canvas >= 1, f"{n_canvas} canvases")
+        n_mailboxes = page.locator("li.warmup-mailbox-row").count()
+        check("warmup: mailbox rows ≥1", n_mailboxes >= 1, f"{n_mailboxes} rows")
+        n_alerts = page.locator("ul.warmup-alert-list li.warmup-alert").count()
+        n_alerts_empty = page.locator(".warmup-alerts-empty").count()
+        check("warmup: alerts render (rows or all-clear panel)",
+              n_alerts >= 1 or n_alerts_empty == 1, f"rows={n_alerts} all_clear={n_alerts_empty}")
+        n_feed = page.locator("ul.warmup-feed li.warmup-feed-row").count()
+        check("warmup: activity feed items ≥1", n_feed >= 1, f"{n_feed} rows")
+        page.wait_for_timeout(600)  # let apex charts settle before the shot
     else:
+        ws_txt = safe_text(page.locator(".warmup-status.down"))
         check("warmup: not-reachable panel when FastAPI down",
               page.locator(".warmup-status.down").count() > 0 and "not reachable" in ws_txt,
               ws_txt)
-        skip("warmup: health live · FastAPI", "FastAPI not reachable on :8001")
+        for dash_check in ("dashboard mounts behind live backend",
+                           "hero warmth score visible (digits)",
+                           "apex chart canvas mounts",
+                           "mailbox rows ≥1",
+                           "alerts render (rows or all-clear panel)",
+                           "activity feed items ≥1"):
+            skip(f"warmup: {dash_check}", "FastAPI not reachable on :8001")
     page.screenshot(path=str(SHOTS / "06-warmup.png"))
 
     # ── 6. Live-backend proof + network hygiene ────────────────────

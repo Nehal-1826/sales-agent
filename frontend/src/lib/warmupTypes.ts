@@ -50,6 +50,56 @@ export interface WarmupDashboardSummary {
 }
 
 // --------------------------------------------------------------------------- //
+// GET /api/workspace/analytics/daily-metrics?from&to&granularity&mailbox_id    //
+// (backend/app/schemas/analytics.py::DailyMetricRow — per-date aggregates;    //
+//  counts SUM across mailboxes, pct/score columns are the mean)               //
+// --------------------------------------------------------------------------- //
+
+/** One day (or ISO week when granularity=week) of warmup volume/engagement. */
+export interface WarmupDailyMetricRow {
+  date: string;
+  emails_sent: number;
+  emails_received: number;
+  opens: number;
+  replies: number;
+  spam_rescues: number;
+  bounce_count: number;
+  inbox_placement_pct: number;
+  warmth_score: number;
+}
+
+// --------------------------------------------------------------------------- //
+// GET /api/workspace/analytics/placement-trend?from&to                        //
+// --------------------------------------------------------------------------- //
+
+/** One day of the inbox/promotions/spam split, percent 0-100. */
+export interface WarmupPlacementTrendPoint {
+  date: string;
+  inbox_pct: number;
+  promotions_pct: number;
+  spam_pct: number;
+}
+
+/** Inclusive date range for the analytics endpoints (`from`/`to`, YYYY-MM-DD). */
+export interface WarmupAnalyticsRange {
+  from: string;
+  to: string;
+}
+
+/** One per-mailbox rollup for the Reports tab / PDF (client-side aggregation). */
+export interface WarmupMailboxReportRow {
+  mailbox_id: string;
+  email_address: string;
+  /** current warmth from the mailbox row (not the range mean) */
+  warmth_score: number;
+  sent: number;
+  opens: number;
+  replies: number;
+  /** mean daily inbox placement over the range, percent 0-100 (null = no rows) */
+  inbox_pct: number | null;
+}
+
+// --------------------------------------------------------------------------- //
 // GET /api/workspace/mailboxes                                                //
 // --------------------------------------------------------------------------- //
 

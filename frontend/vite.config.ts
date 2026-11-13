@@ -17,6 +17,9 @@ export default defineConfig(({ isSsrBuild }) => ({
           : {
               manualChunks: {
                 apexcharts: ['apexcharts', 'react-apexcharts'],
+                // jspdf (~350kB min) only fires on the Reports tab's PDF
+                // export — same treatment as the charts (C8)
+                jspdf: ['jspdf'],
                 // keeps the app chunk under 500kB; react rarely changes, so
                 // this chunk stays cached across deploys too
                 react: ['react', 'react-dom'],

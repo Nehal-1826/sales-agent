@@ -18,20 +18,22 @@ import {
   EnrollMailbox,
   MailboxRows,
   PlacementDonut,
+  Reports,
   TodayStats,
   WarmthChart,
   WarmthHero,
   useChartTheme,
 } from './warmup';
 
-type WarmupView = 'overview' | 'dns';
+type WarmupView = 'overview' | 'dns' | 'reports';
 
 /**
  * WARMUP — the real mailbox-warmup dashboard, ported from the WarmPulse
  * client. Data comes from the FastAPI backend through the Django bridge
  * (lib/warmupApi). One manual Refresh refreshes every section; there is no
  * polling by design. The DNS tab is the onboarding wizard (domain → SPF /
- * DKIM / DMARC status cards + records-to-publish guidance).
+ * DKIM / DMARC status cards + records-to-publish guidance); the Reports tab
+ * is the C8 port — range rollups + per-mailbox table + jspdf export.
  */
 export function WarmupPage() {
   const [view, setView] = useState<WarmupView>('overview');
@@ -246,8 +248,22 @@ export function WarmupPage() {
         >
           DNS / Deliverability
         </button>
+        <button
+          role="tab"
+          aria-selected={view === 'reports'}
+          className={`subtab${view === 'reports' ? ' active' : ''}`}
+          onClick={() => setView('reports')}
+        >
+          Reports
+        </button>
       </div>
-      {view === 'dns' && health.data === true ? <DnsWizard /> : body}
+      {view === 'dns' && health.data === true ? (
+        <DnsWizard />
+      ) : view === 'reports' && health.data === true ? (
+        <Reports />
+      ) : (
+        body
+      )}
       {enrollOpen && (
         <EnrollMailbox onClose={() => setEnrollOpen(false)} onEnrolled={refreshMailboxData} />
       )}

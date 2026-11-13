@@ -10,14 +10,18 @@ import { post, request } from './api';
 import type {
   WarmupActivityFeedResponse,
   WarmupAlertsResponse,
+  WarmupAnalyticsRange,
+  WarmupDailyMetricRow,
   WarmupDashboardSummary,
   WarmupDnsCheckRequest,
   WarmupDnsCheckResponse,
   WarmupMailbox,
   WarmupMailboxCreate,
   WarmupMailboxListResponse,
+  WarmupMailboxReportRow,
   WarmupMailboxUpdate,
   WarmupPlacementSplit,
+  WarmupPlacementTrendPoint,
   WarmupTodayStats,
   WarmupWarmthPoint,
 } from './warmupTypes';
@@ -29,7 +33,9 @@ export type {
   WarmupActivityItem,
   WarmupAlert,
   WarmupAlertsResponse,
+  WarmupAnalyticsRange,
   WarmupContentMode,
+  WarmupDailyMetricRow,
   WarmupDashboardSummary,
   WarmupDkimResult,
   WarmupDmarcPolicy,
@@ -44,9 +50,11 @@ export type {
   WarmupMailboxCreateSmtp,
   WarmupMailboxListResponse,
   WarmupMailboxProvider,
+  WarmupMailboxReportRow,
   WarmupMailboxStatus,
   WarmupMailboxUpdate,
   WarmupPlacementSplit,
+  WarmupPlacementTrendPoint,
   WarmupScheduleWindow,
   WarmupSpfResult,
   WarmupTodayStats,
@@ -168,6 +176,82 @@ export function warmupMailboxStates(): Promise<WarmupMailboxListResponse> {
   return warmupGet<WarmupMailboxListResponse>(
     'api/workspace/mailboxes?page=1&page_size=100',
   );
+}
+
+// --------------------------------------------------------------------------- //
+// Reports (analytics.py range routes + per-mailbox rollup)                    //
+// --------------------------------------------------------------------------- //
+
+/** `from`/`to` query string for the range-scoped analytics routes. */
+function rangeParams(range: WarmupAnalyticsRange, extra?: Record<string, string>): string {
+  const q = new URLSearchParams({ from: range.from, to: range.to });
+  if (extra) for (const [k, v] of Object.entries(extra)) q.set(k, v);
+  return q.toString();
+}
+
+/**
+ * Daily (or weekly) volume/engagement rows for the range. Without `mailboxId`
+ * the backend aggregates across every mailbox in the workspace.
+ */
+export function warmupDailyMetrics(
+  range: WarmupAnalyticsRange,
+  mailboxId?: string,
+  granularity: 'day' | 'week' = 'day',
+): Promise<WarmupDailyMetricRow[]> {
+  const extra = mailboxId ? { mailbox_id: mailboxId } : undefined;
+  return warmupGet<WarmupDailyMetricRow[]>(
+    `api/workspace/analytics/daily-metrics?${rangeParams(range, { ...extra, granularity })}`,
+  );
+}
+
+/** Inbox/promotions/spam split per day for the range. */
+export function warmupPlacementTrend(range: WarmupAnalyticsRange): Promise<WarmupPlacementTrendPoint[]> {
+  return warmupGet<WarmupPlacementTrendPoint[]>(
+    `api/workspace/analytics/placement-trend?${rangeParams(range)}`,
+  );
+}
+
+/**
+ * Per-mailbox report rows for the Reports tab / PDF export: current warmth
+ * from each mailbox row plus sent/opens/replies totals and mean inbox
+ * placement aggregated client-side from that mailbox's daily-metrics rows.
+ *
+ * One request per mailbox (the backend has no per-mailbox rollup endpoint —
+ * same approach the source frontend's reports adapter took). A mailbox whose
+ * request fails simply gets no range numbers rather than sinking the table;
+ * a total failure rejects so the caller can show its error state.
+ */
+export async function warmupPerMailboxReport(
+  mailboxes: WarmupMailbox[],
+  range: WarmupAnalyticsRange,
+): Promise<WarmupMailboxReportRow[]> {
+  const rows = await Promise.all(
+    mailboxes.map(async (m) => {
+      let daily: WarmupDailyMetricRow[] = [];
+      try {
+        daily = await warmupDailyMetrics(range, m.id);
+      } catch {
+        daily = []; // zero-fill the range columns; warmth still shows
+      }
+      const sent = daily.reduce((a, r) => a + r.emails_sent, 0);
+      const opens = daily.reduce((a, r) => a + r.opens, 0);
+      const replies = daily.reduce((a, r) => a + r.replies, 0);
+      const inbox =
+        daily.length > 0
+          ? Math.round(daily.reduce((a, r) => a + r.inbox_placement_pct, 0) / daily.length)
+          : null;
+      return {
+        mailbox_id: m.id,
+        email_address: m.email_address,
+        warmth_score: m.warmth_score,
+        sent,
+        opens,
+        replies,
+        inbox_pct: inbox,
+      } satisfies WarmupMailboxReportRow;
+    }),
+  );
+  return rows;
 }
 
 // --------------------------------------------------------------------------- //

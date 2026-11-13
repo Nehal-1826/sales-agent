@@ -4671,3 +4671,120 @@ img, video, svg { max-width: 100%; }
     width: 100%;
   }
 }
+
+/* ================================================================
+   WARMUP REPORTS (C8 — reports tab + PDF export button)
+   ================================================================ */
+
+.warmup-report-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.warmup-range-picker {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.warmup-range-btn {
+  padding: 6px 13px;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  background: var(--panel);
+  color: var(--text-2);
+  border: none;
+  border-right: 1px solid var(--border-soft);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+
+.warmup-range-btn:last-child {
+  border-right: none;
+}
+
+.warmup-range-btn:hover {
+  background: var(--panel-2);
+}
+
+.warmup-range-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* six KPI cards → 3-up (the base .stat-row is 4-up; needs one more column) */
+.warmup-report-stats {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.warmup-report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.warmup-report-table th {
+  padding: 9px 14px;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.warmup-report-table td {
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.warmup-report-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.warmup-report-table tbody tr:hover {
+  background: var(--panel-2);
+}
+
+.warmup-report-mailbox {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.warmup-report-warmth {
+  font-weight: 700;
+}
+
+.warmup-report-table tfoot th,
+.warmup-report-table tfoot td {
+  padding: 10px 14px;
+  border-top: 2px solid var(--border);
+  border-bottom: none;
+  font-weight: 700;
+}
+
+@media (max-width: 768px) {
+  .warmup-report-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 400px) {
+  .warmup-report-stats {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .warmup-report-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+}

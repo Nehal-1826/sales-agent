@@ -4446,3 +4446,228 @@ img, video, svg { max-width: 100%; }
     align-self: flex-start;
   }
 }
+
+/* ---- warmup: DNS wizard (DnsWizard.tsx) ---- */
+
+.dns-form {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.dns-form-domain {
+  flex: 2 1 320px;
+  margin-bottom: 0;
+}
+
+.dns-form-selector {
+  flex: 1 1 150px;
+  margin-bottom: 0;
+}
+
+.dns-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 16px 0 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--warn-border, var(--border));
+  border-radius: var(--radius-md, var(--radius-sm));
+  background: var(--warn-soft, var(--panel-2));
+}
+
+.dns-summary.pass {
+  border-color: var(--success-border, var(--border));
+  background: var(--success-soft, var(--panel-2));
+}
+
+.dns-summary-main {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.dns-summary-main strong {
+  font-size: 14px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.dns-summary-count {
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.dns-summary-side {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dns-checked-at {
+  font-size: 11.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.dns-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.dns-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, var(--radius-sm));
+  background: var(--panel-2);
+  min-width: 0;
+}
+
+.dns-card.fail {
+  border-color: var(--danger-border, var(--border));
+}
+
+.dns-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dns-card-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.dns-selector {
+  font-size: 11px;
+  color: var(--text-3);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 45%;
+}
+
+.dns-card-head .chip {
+  margin-left: auto;
+}
+
+.dns-verdict {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.dns-verdict.pass {
+  color: var(--success-ink, var(--success));
+  background: var(--success-soft, var(--panel-3, transparent));
+}
+
+.dns-verdict.fail {
+  color: var(--danger-ink, var(--danger));
+  background: var(--danger-soft, var(--panel-3, transparent));
+}
+
+.dns-record {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--panel, var(--bg-2, transparent));
+  border: 1px solid var(--border);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 88px;
+  overflow-y: auto;
+}
+
+.dns-issues {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dns-issues li {
+  font-size: 12.5px;
+  line-height: 1.45;
+  padding-left: 16px;
+  position: relative;
+}
+
+.dns-issues.error li {
+  color: var(--danger-ink, var(--text-2));
+}
+
+.dns-issues.error li::before {
+  content: '×';
+  position: absolute;
+  left: 2px;
+  font-weight: 700;
+}
+
+.dns-issues.warning li {
+  color: var(--warn-ink, var(--text-3));
+}
+
+.dns-issues.warning li::before {
+  content: '!';
+  position: absolute;
+  left: 4px;
+  font-weight: 700;
+}
+
+.dns-fix {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border);
+  background: var(--panel, var(--bg-2, transparent));
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.dns-next-hint {
+  margin: 14px 0 0;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+@media (max-width: 640px) {
+  .dns-form {
+    flex-direction: column;
+  }
+
+  /* the row-axis flex-basis above would become a fixed HEIGHT once the
+     form stacks — reset both fields to natural content height */
+  .dns-form-domain,
+  .dns-form-selector {
+    flex: none;
+    width: 100%;
+  }
+}

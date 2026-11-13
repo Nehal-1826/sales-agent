@@ -194,3 +194,68 @@ export interface WarmupActivityFeedResponse {
   items: WarmupActivityItem[];
   next_cursor: number | null;
 }
+
+// --------------------------------------------------------------------------- //
+// POST /api/workspace/dns/check (free-form domain/email)                      //
+// POST /api/workspace/mailboxes/{id}/dns-check (persists on the mailbox row)  //
+// (backend/app/schemas/dns.py + app/api/routes/dns.py — same DnsCheckResponse //
+//  for both routes, so one component renders either flow)                    //
+// --------------------------------------------------------------------------- //
+
+export type WarmupDmarcPolicy = 'none' | 'quarantine' | 'reject';
+
+/** SPF leg of the check — `record` is the live TXT value, null when absent. */
+export interface WarmupSpfResult {
+  valid: boolean;
+  record: string | null;
+  errors: string[];
+  warnings: string[];
+}
+
+/** DKIM leg — `selector` is the probed selector that answered (best-effort:
+ *  the backend falls back through common Google/M365/Mailchimp selectors). */
+export interface WarmupDkimResult {
+  valid: boolean;
+  selector: string;
+  record: string | null;
+  errors: string[];
+}
+
+/** DMARC leg — valid only for p=quarantine/reject; p=none is monitoring-only. */
+export interface WarmupDmarcResult {
+  valid: boolean;
+  record: string | null;
+  policy: WarmupDmarcPolicy | null;
+  errors: string[];
+  warnings: string[];
+}
+
+export interface WarmupDnsSummary {
+  passing: number;
+  total: number;
+  overall_pass: boolean;
+}
+
+/** "Records to publish" guidance strings — backend sends them only for failed legs. */
+export interface WarmupDnsFixes {
+  spf: string[];
+  dkim: string[];
+  dmarc: string[];
+}
+
+/** Request body — `email` wins over `domain` when both are given (backend rule). */
+export interface WarmupDnsCheckRequest {
+  domain?: string;
+  email?: string;
+  dkim_selector?: string;
+}
+
+export interface WarmupDnsCheckResponse {
+  domain: string;
+  spf: WarmupSpfResult;
+  dkim: WarmupDkimResult;
+  dmarc: WarmupDmarcResult;
+  summary: WarmupDnsSummary;
+  checked_at: string;
+  fixes: WarmupDnsFixes;
+}

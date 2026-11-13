@@ -11,6 +11,8 @@ import type {
   WarmupActivityFeedResponse,
   WarmupAlertsResponse,
   WarmupDashboardSummary,
+  WarmupDnsCheckRequest,
+  WarmupDnsCheckResponse,
   WarmupMailbox,
   WarmupMailboxCreate,
   WarmupMailboxListResponse,
@@ -29,6 +31,13 @@ export type {
   WarmupAlertsResponse,
   WarmupContentMode,
   WarmupDashboardSummary,
+  WarmupDkimResult,
+  WarmupDmarcPolicy,
+  WarmupDmarcResult,
+  WarmupDnsCheckRequest,
+  WarmupDnsCheckResponse,
+  WarmupDnsFixes,
+  WarmupDnsSummary,
   WarmupMailbox,
   WarmupMailboxCreate,
   WarmupMailboxCreateOauth,
@@ -39,6 +48,7 @@ export type {
   WarmupMailboxUpdate,
   WarmupPlacementSplit,
   WarmupScheduleWindow,
+  WarmupSpfResult,
   WarmupTodayStats,
   WarmupWarmthPoint,
 } from './warmupTypes';
@@ -199,6 +209,31 @@ export function deleteWarmupMailbox(id: string): Promise<void> {
 /** Most recent alerts (in-app notifications) + unread badge count. */
 export function warmupAlerts(): Promise<WarmupAlertsResponse> {
   return warmupGet<WarmupAlertsResponse>('api/workspace/notifications-inbox?limit=20');
+}
+
+// --------------------------------------------------------------------------- //
+// DNS validation (dns.py routes; response shared by both)                     //
+// --------------------------------------------------------------------------- //
+
+/**
+ * Free-form SPF/DKIM/DMARC check for any domain or email address (email wins
+ * when both are given — the backend extracts its domain). `dkim_selector` is a
+ * best-effort hint; the backend falls back through common selectors.
+ */
+export function checkWarmupDns(payload: WarmupDnsCheckRequest): Promise<WarmupDnsCheckResponse> {
+  return warmupSend<WarmupDnsCheckResponse>('api/workspace/dns/check', 'POST', payload);
+}
+
+/**
+ * Mailbox-scoped check — same response shape, plus the backend persists
+ * spf/dkim/dmarc validity on the warmup mailbox row (the list view surfaces
+ * those flags) and notifies the user when all three pass.
+ */
+export function checkWarmupMailboxDns(mailboxId: string): Promise<WarmupDnsCheckResponse> {
+  return warmupSend<WarmupDnsCheckResponse>(
+    `api/workspace/mailboxes/${mailboxId}/dns-check`,
+    'POST',
+  );
 }
 
 /** Warmup activity feed (cursor-paginated; we take the newest `limit` items, 1-200). */

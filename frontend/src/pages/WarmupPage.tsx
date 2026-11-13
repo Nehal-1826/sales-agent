@@ -14,6 +14,7 @@ import {
 import {
   ActivityFeed,
   AlertsStack,
+  DnsWizard,
   EnrollMailbox,
   MailboxRows,
   PlacementDonut,
@@ -23,13 +24,17 @@ import {
   useChartTheme,
 } from './warmup';
 
+type WarmupView = 'overview' | 'dns';
+
 /**
  * WARMUP — the real mailbox-warmup dashboard, ported from the WarmPulse
  * client. Data comes from the FastAPI backend through the Django bridge
  * (lib/warmupApi). One manual Refresh refreshes every section; there is no
- * polling by design.
+ * polling by design. The DNS tab is the onboarding wizard (domain → SPF /
+ * DKIM / DMARC status cards + records-to-publish guidance).
  */
 export function WarmupPage() {
+  const [view, setView] = useState<WarmupView>('overview');
   const theme = useChartTheme();
   const health = useAsync(warmupHealth, []);
   const summary = useAsync(warmupDashboardSummary, []);
@@ -224,7 +229,25 @@ export function WarmupPage() {
           </button>
         }
       />
-      {body}
+      <div className="subtabs compact" role="tablist">
+        <button
+          role="tab"
+          aria-selected={view === 'overview'}
+          className={`subtab${view === 'overview' ? ' active' : ''}`}
+          onClick={() => setView('overview')}
+        >
+          Overview
+        </button>
+        <button
+          role="tab"
+          aria-selected={view === 'dns'}
+          className={`subtab${view === 'dns' ? ' active' : ''}`}
+          onClick={() => setView('dns')}
+        >
+          DNS / Deliverability
+        </button>
+      </div>
+      {view === 'dns' && health.data === true ? <DnsWizard /> : body}
       {enrollOpen && (
         <EnrollMailbox onClose={() => setEnrollOpen(false)} onEnrolled={refreshMailboxData} />
       )}

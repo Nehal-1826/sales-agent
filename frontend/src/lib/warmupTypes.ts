@@ -100,6 +100,62 @@ export interface WarmupMailboxReportRow {
 }
 
 // --------------------------------------------------------------------------- //
+// GET /api/workspace/analytics/bounce-spam?from&to                            //
+// --------------------------------------------------------------------------- //
+
+/** One day of reputation-risk rates, percent 0-100 (spam rate is the
+ *  spam-rescue proxy: rescues / emails_sent — lower is better). */
+export interface WarmupBounceSpamPoint {
+  date: string;
+  bounce_rate: number;
+  spam_rate: number;
+}
+
+// --------------------------------------------------------------------------- //
+// GET /api/workspace/reputation/overview                                      //
+// GET /api/workspace/reputation/trend?days&mailbox_id                         //
+// GET /api/workspace/reputation/blacklist?domain                              //
+// (backend/app/api/routes/workspace_reputation.py — dict responses)           //
+// --------------------------------------------------------------------------- //
+
+/** Per-domain rollup row from the reputation overview. */
+export interface WarmupDomainHealth {
+  domain: string;
+  spf_valid: boolean | null;
+  dkim_valid: boolean | null;
+  dmarc_valid: boolean | null;
+  reputation_score: number | null;
+  /** names of DNSBLs the domain is currently listed on (cached) */
+  blacklist_hits: string[];
+}
+
+export interface WarmupReputationOverview {
+  domains: WarmupDomainHealth[];
+  /** 0-100 mean across mailboxes (same value as overall_warmth) */
+  overall_reputation: number;
+  overall_warmth: number;
+  /** bounces / sent over the last 30 days, percent */
+  bounce_rate: number;
+}
+
+/** One provider leg of a live blacklist check. */
+export interface WarmupBlacklistProviderResult {
+  name: string;
+  listed: boolean;
+}
+
+/** Live DNSBL result for one domain (Spamhaus, Barracuda, SpamCop, …). */
+export interface WarmupBlacklistResult {
+  domain: string;
+  checked_against: string[];
+  hits: string[];
+  checked_at: string;
+  /** sending IP the IP-based lists were evaluated against (null if unresolved) */
+  checked_ip?: string | null;
+  providers?: WarmupBlacklistProviderResult[];
+}
+
+// --------------------------------------------------------------------------- //
 // GET /api/workspace/mailboxes                                                //
 // --------------------------------------------------------------------------- //
 

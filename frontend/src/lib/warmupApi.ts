@@ -11,6 +11,8 @@ import type {
   WarmupActivityFeedResponse,
   WarmupAlertsResponse,
   WarmupAnalyticsRange,
+  WarmupBounceSpamPoint,
+  WarmupBlacklistResult,
   WarmupDailyMetricRow,
   WarmupDashboardSummary,
   WarmupDnsCheckRequest,
@@ -22,6 +24,7 @@ import type {
   WarmupMailboxUpdate,
   WarmupPlacementSplit,
   WarmupPlacementTrendPoint,
+  WarmupReputationOverview,
   WarmupTodayStats,
   WarmupWarmthPoint,
 } from './warmupTypes';
@@ -34,6 +37,9 @@ export type {
   WarmupAlert,
   WarmupAlertsResponse,
   WarmupAnalyticsRange,
+  WarmupBounceSpamPoint,
+  WarmupBlacklistProviderResult,
+  WarmupBlacklistResult,
   WarmupContentMode,
   WarmupDailyMetricRow,
   WarmupDashboardSummary,
@@ -44,6 +50,7 @@ export type {
   WarmupDnsCheckResponse,
   WarmupDnsFixes,
   WarmupDnsSummary,
+  WarmupDomainHealth,
   WarmupMailbox,
   WarmupMailboxCreate,
   WarmupMailboxCreateOauth,
@@ -55,6 +62,7 @@ export type {
   WarmupMailboxUpdate,
   WarmupPlacementSplit,
   WarmupPlacementTrendPoint,
+  WarmupReputationOverview,
   WarmupScheduleWindow,
   WarmupSpfResult,
   WarmupTodayStats,
@@ -252,6 +260,44 @@ export async function warmupPerMailboxReport(
     }),
   );
   return rows;
+}
+
+// --------------------------------------------------------------------------- //
+// Reputation (workspace_reputation.py + analytics bounce-spam)                //
+// --------------------------------------------------------------------------- //
+
+/**
+ * Per-domain rollup (auth flags, reputation score, cached blacklist hits)
+ * plus the workspace-wide reputation and 30-day bounce rate.
+ */
+export function warmupReputationOverview(): Promise<WarmupReputationOverview> {
+  return warmupGet<WarmupReputationOverview>('api/workspace/reputation/overview');
+}
+
+/**
+ * Daily reputation score trend (mean warmth across mailboxes). The route
+ * returns `{date, score}` rows — the same wire shape as the dashboard's
+ * `warmth_30d`, so it reuses the WarmupWarmthPoint type and WarmthChart.
+ */
+export function warmupReputationTrend(days = 30): Promise<WarmupWarmthPoint[]> {
+  return warmupGet<WarmupWarmthPoint[]>(`api/workspace/reputation/trend?days=${days}`);
+}
+
+/** Daily bounce + spam rates for the range (both percent, lower is better). */
+export function warmupBounceSpam(range: WarmupAnalyticsRange): Promise<WarmupBounceSpamPoint[]> {
+  return warmupGet<WarmupBounceSpamPoint[]>(
+    `api/workspace/analytics/bounce-spam?${rangeParams(range)}`,
+  );
+}
+
+/**
+ * Live DNSBL check for one domain (Spamhaus ZEN/DBL, Barracuda, SpamCop, …).
+ * Also refreshes the blacklist cache the reputation overview reads from —
+ * call it, then `warmupReputationOverview().reload()` to see updated hits.
+ */
+export function warmupBlacklistCheck(domain: string): Promise<WarmupBlacklistResult> {
+  const q = new URLSearchParams({ domain });
+  return warmupGet<WarmupBlacklistResult>(`api/workspace/reputation/blacklist?${q.toString()}`);
 }
 
 // --------------------------------------------------------------------------- //

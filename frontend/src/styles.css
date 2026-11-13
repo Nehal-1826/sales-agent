@@ -4076,6 +4076,13 @@ img, video, svg { max-width: 100%; }
   align-items: stretch;
 }
 
+/* grid/flex items default to min-width:auto — a chart's stale inline width
+   (apexcharts re-measures async) or a wide table would keep the panel from
+   shrinking on viewport resize and push the page column past the phone */
+.warmup-two-col > .panel {
+  min-width: 0;
+}
+
 .chip-warmup-unread {
   background: var(--accent-soft);
   border-color: var(--accent-border);
@@ -4787,4 +4794,73 @@ img, video, svg { max-width: 100%; }
     width: 100%;
     justify-content: space-between;
   }
+}
+
+/* ---- Warmup → Reputation tab (C9) — score banner + domain table ---- */
+
+.warmup-rep-banner {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 6px 2px 14px;
+  flex-wrap: wrap;
+}
+
+.warmup-rep-score {
+  font-size: 44px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.warmup-rep-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 52ch;
+}
+
+.warmup-rep-copy p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-2);
+  line-height: 1.45;
+}
+
+.warmup-rep-status {
+  align-self: flex-start;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border: 1.5px solid currentColor;
+  border-radius: 999px;
+}
+
+.warmup-rep-auth {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.warmup-rep-clean {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.warmup-rep-hits {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.warmup-rep-provider-note {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 12px;
+  color: var(--text-3);
 }

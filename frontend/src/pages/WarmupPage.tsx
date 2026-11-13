@@ -19,13 +19,14 @@ import {
   MailboxRows,
   PlacementDonut,
   Reports,
+  Reputation,
   TodayStats,
   WarmthChart,
   WarmthHero,
   useChartTheme,
 } from './warmup';
 
-type WarmupView = 'overview' | 'dns' | 'reports';
+type WarmupView = 'overview' | 'dns' | 'reports' | 'reputation';
 
 /**
  * WARMUP — the real mailbox-warmup dashboard, ported from the WarmPulse
@@ -33,7 +34,9 @@ type WarmupView = 'overview' | 'dns' | 'reports';
  * (lib/warmupApi). One manual Refresh refreshes every section; there is no
  * polling by design. The DNS tab is the onboarding wizard (domain → SPF /
  * DKIM / DMARC status cards + records-to-publish guidance); the Reports tab
- * is the C8 port — range rollups + per-mailbox table + jspdf export.
+ * is the C8 port — range rollups + per-mailbox table + jspdf export; the
+ * Reputation tab is the C9 port — score banner, spam rate, placement and
+ * provider trends, per-domain blocklist checks.
  */
 export function WarmupPage() {
   const [view, setView] = useState<WarmupView>('overview');
@@ -256,11 +259,21 @@ export function WarmupPage() {
         >
           Reports
         </button>
+        <button
+          role="tab"
+          aria-selected={view === 'reputation'}
+          className={`subtab${view === 'reputation' ? ' active' : ''}`}
+          onClick={() => setView('reputation')}
+        >
+          Reputation
+        </button>
       </div>
       {view === 'dns' && health.data === true ? (
         <DnsWizard />
       ) : view === 'reports' && health.data === true ? (
         <Reports />
+      ) : view === 'reputation' && health.data === true ? (
+        <Reputation />
       ) : (
         body
       )}

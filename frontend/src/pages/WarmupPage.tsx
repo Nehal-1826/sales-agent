@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { PageHeader } from '../components/ui';
 import { EmptyState, LoadError, Skeleton, StaleNotice } from '../components/feedback';
 import LatticeLoader from '../components/reactbits/LatticeLoader';
@@ -39,8 +40,12 @@ export function WarmupPage() {
   const sections = [summary, today, mailboxes, alerts, activity];
   const busy = sections.some((s) => s.loading);
 
+  // useAsync.reload() never re-sets `loading` (it keeps old data on screen),
+  // so the manual refresh tracks its own in-flight state for the busy label.
+  const [refreshing, setRefreshing] = useState(false);
   const refreshAll = () => {
-    for (const s of sections) void s.reload();
+    setRefreshing(true);
+    void Promise.allSettled(sections.map((s) => s.reload())).finally(() => setRefreshing(false));
   };
 
   // ---- gate on the FastAPI backend before anything else ----
@@ -200,8 +205,8 @@ export function WarmupPage() {
         title="Warmup"
         subtitle="Mailbox warmup network — warmth, inbox placement and live events across your mailboxes."
         actions={
-          <button className="btn" onClick={refreshAll} disabled={busy || health.data === false}>
-            Refresh{busy ? 'ing…' : ''}
+          <button className="btn" onClick={refreshAll} disabled={busy || refreshing || health.data === false}>
+            Refresh{refreshing ? 'ing…' : ''}
           </button>
         }
       />

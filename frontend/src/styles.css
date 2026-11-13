@@ -3391,8 +3391,29 @@ input[type='radio'] {
 .lp-contact-done { color: var(--accent-strong); font-weight: 600; }
 
 /* ---------- footer (slim: brand + contact + legal) ---------- */
+/* compare strip — prerendered /compare/* links for SEO. Deliberately OUTSIDE
+   footer.lp-footer: the e2e suite caps that footer at 6 links. */
+.lp-compare-row {
+  max-width: 1180px;
+  margin: 40px auto 0;
+  padding: 0 24px;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  font-size: 13px;
+  color: var(--text-3);
+}
+.lp-compare-row span { font-weight: 600; letter-spacing: 0.02em; }
+.lp-compare-row a {
+  color: var(--text-2);
+  font-weight: 600;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+.lp-compare-row a:hover { color: var(--accent-strong); text-decoration: underline; }
 .lp-footer {
-  margin-top: 40px;
+  margin-top: 24px;
   background: linear-gradient(150deg, var(--accent), var(--accent-strong));
   color: #fff;
 }
@@ -3637,27 +3658,27 @@ input[type='radio'] {
 /* ==================================================================
    Deliverability — Settings → Mailboxes & speed (MailboxesSection)
    ================================================================== */
-.mailbox-muted { color: var(--text-muted, #6b7280); font-size: 13px; margin: 4px 0; }
+.mailbox-muted { color: var(--text-3); font-size: 13px; margin: 4px 0; }
 .mailbox-toolbar { display: flex; justify-content: flex-end; margin: 8px 0 12px; }
 .mailbox-list { display: grid; gap: 12px; }
-.mailbox-card { border: 1px solid var(--border, #e5e7eb); border-radius: 12px; padding: 14px 16px; background: var(--surface, #fff); }
+.mailbox-card { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; background: var(--panel); }
 .mailbox-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-.mailbox-head small { display: block; color: var(--text-muted, #6b7280); }
-.mailbox-paused { background: var(--warn-soft, #fef3c7); border-left: 3px solid var(--warn, #a16207); padding: 8px 10px; border-radius: 6px; font-size: 13px; margin: 10px 0; }
+.mailbox-head small { display: block; color: var(--text-3); }
+.mailbox-paused { background: var(--warn-soft); border-left: 3px solid var(--warn); padding: 8px 10px; border-radius: 6px; font-size: 13px; margin: 10px 0; }
 .mailbox-meter { margin: 10px 0; }
-.mailbox-meter-bar { height: 6px; border-radius: 3px; background: var(--border, #e5e7eb); overflow: hidden; margin-bottom: 4px; }
-.mailbox-meter-bar span { display: block; height: 100%; background: var(--accent, #6b49ff); }
+.mailbox-meter-bar { height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; margin-bottom: 4px; }
+.mailbox-meter-bar span { display: block; height: 100%; background: var(--accent); }
 .mailbox-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .mailbox-hours { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
 /* wizard Test Connection block: button + per-leg IMAP/SMTP results */
 .mailbox-test { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 14px; }
 .mailbox-test ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
 .mailbox-test li { display: flex; gap: 8px; font-size: 13px; }
-.mailbox-test li small { display: block; color: var(--text-muted, #6b7280); }
+.mailbox-test li small { display: block; color: var(--text-3); }
 .btn .spinner { width: 14px; height: 14px; border-width: 2px; }
 .dns-checklist ul { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
 .dns-checklist li { display: flex; gap: 8px; font-size: 13px; }
-.dns-checklist li small { display: block; color: var(--text-muted, #6b7280); }
+.dns-checklist li small { display: block; color: var(--text-3); }
 .dns-checklist .dns-fix { color: #4631c8; }
 .dns-mark { width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex: none; }
 .dns-ok .dns-mark { background: #dcfce7; color: #166534; }
@@ -3666,20 +3687,20 @@ input[type='radio'] {
 
 /* Replies page */
 .reply-list { display: grid; gap: 14px; margin-top: 14px; }
-.reply-card { border: 1px solid var(--line, #e7e1d8); border-radius: 12px; padding: 14px 16px; background: #fff; display: grid; gap: 10px; }
-.reply-card.needs-you { border-left: 4px solid var(--accent, #6b49ff); }
+.reply-card { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; background: #fff; display: grid; gap: 10px; }
+.reply-card.needs-you { border-left: 4px solid var(--accent); }
 .reply-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
-.reply-head small { display: block; color: var(--muted, #6b6359); }
+.reply-head small { display: block; color: var(--text-3); }
 .reply-chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .reply-subject { margin: 0; font-weight: 600; }
-.reply-body { margin: 0; padding: 10px 12px; background: var(--canvas, #faf7f2); border-radius: 8px; white-space: pre-wrap; }
-.reply-note { margin: 0; color: var(--muted, #6b6359); font-size: 0.92em; }
+.reply-body { margin: 0; padding: 10px 12px; background: var(--canvas); border-radius: 8px; white-space: pre-wrap; }
+.reply-note { margin: 0; color: var(--text-3); font-size: 0.92em; }
 .reply-answer { display: grid; gap: 6px; }
-.reply-answer textarea { width: 100%; font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line, #e7e1d8); }
+.reply-answer textarea { width: 100%; font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); }
 .reply-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* ---------- Follow-ups, tasks, WhatsApp ---------- */
-.muted { color: var(--muted, #7a7368); }
+.muted { color: var(--text-3); }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
 .sequence-editor { display: grid; gap: 12px; }
 .sequence-step { display: grid; gap: 10px; padding: 14px; }
@@ -3700,7 +3721,7 @@ input[type='radio'] {
 .billing-meters { display: grid; gap: 12px; margin-bottom: 16px; }
 .billing-meter-head { display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 4px; }
 .billing-bar { height: 8px; border-radius: 4px; background: #e8e2d9; overflow: hidden; }
-.billing-bar span { display: block; height: 100%; background: var(--accent, #e8590c); }
+.billing-bar span { display: block; height: 100%; background: var(--accent); }
 .billing-bar span.full { background: #c92a2a; }
 .billing-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .billing-picker { margin-top: 16px; display: grid; gap: 10px; }

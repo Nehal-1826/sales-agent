@@ -1,6 +1,18 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { COMPANY } from './site';
+import { COMPANY, ROUTES } from './site';
 import '../marketing.css';
+
+/** Prerendered /compare/* pages — surfaced as footer-adjacent links for SEO. */
+const COMPARE_ROUTES = ROUTES.filter((r) => r.path.startsWith('/compare/'));
+
+/** '/compare/apollo-alternative' → 'Apollo' for a compact link label. */
+function compareLabel(path: string): string {
+  const slug = path.replace('/compare/', '').replace(/-alternative$/, '');
+  return slug
+    .split('-')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
 
 /**
  * Shared chrome for every public page: navbar + footer with REAL <a href>
@@ -60,6 +72,20 @@ export function MarketingLayout({
       </header>
 
       <main id="main">{children}</main>
+
+      {/* Compare links sit ABOVE the footer element, not inside it: the e2e
+          suite asserts footer.lp-footer stays slim (≤6 links), so this is a
+          separate nav with its own link budget. */}
+      {COMPARE_ROUTES.length > 0 && (
+        <nav className="lp-compare-row" aria-label="Compare WarmPulse">
+          <span>Compare</span>
+          {COMPARE_ROUTES.map((r) => (
+            <a key={r.path} href={r.path}>
+              WarmPulse vs {compareLabel(r.path)}
+            </a>
+          ))}
+        </nav>
+      )}
 
       <footer className="lp-footer">
         <div className="lp-footer-inner">

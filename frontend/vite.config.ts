@@ -2,8 +2,29 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ isSsrBuild }) => ({
   plugins: [react()],
+  build: {
+    rollupOptions: {
+      output: {
+        // apexcharts (~440kB min) is only needed on the logged-in warmup
+        // dashboard; keep it out of the main entry so first paint of the
+        // marketing site / login stays light. Skipped for the SSR bundle —
+        // scripts/prerender.mjs imports dist-ssr/entry-server.js as one file
+        // and the SSR graph never pulls the charts in anyway.
+        ...(isSsrBuild
+          ? {}
+          : {
+              manualChunks: {
+                apexcharts: ['apexcharts', 'react-apexcharts'],
+                // keeps the app chunk under 500kB; react rarely changes, so
+                // this chunk stays cached across deploys too
+                react: ['react', 'react-dom'],
+              },
+            }),
+      },
+    },
+  },
   server: {
     port: 5173,
     // The Python venvs churn thousands of files (pycache, Django templates)
@@ -34,4 +55,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

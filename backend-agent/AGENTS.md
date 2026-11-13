@@ -1,6 +1,8 @@
-> **Monorepo note (2026-11-12):** this directory is the Django backend inside
-> the Email-Warmup monorepo. Frontend now lives at `../frontend` (was `./src`),
-> Docker at `../frontend/deploy/`. Ignore pre-move path references below.
+> **SUPERSEDED (2026-11-13):** the merged monorepo's root `AGENTS.md` is the
+> source of truth (layout, commands, bridge contract, gotchas). Everything
+> below is the pre-merge sales-agent document kept for history — its paths
+> (`src/`, `backend/`, root Dockerfile, `backend/.venv`) predate the move into
+> this monorepo and must be read as `../frontend/…`, `./…` here, etc.
 
 # AGENTS.md
 

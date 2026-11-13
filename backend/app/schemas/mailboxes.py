@@ -1,7 +1,8 @@
 """Pydantic v2 schemas for the workspace-scoped mailbox CRUD endpoints.
 
 The create request is a discriminated union on ``provider``:
-* ``smtp`` / ``yahoo`` — classic IMAP+SMTP credentials.
+* ``smtp`` / ``yahoo`` / ``self_hosted`` (+ the ``zoho`` wire alias) — classic
+  IMAP+SMTP credentials.
 * ``gmail`` / ``outlook`` — OAuth refresh-token flow.
 
 ``MailboxOut`` never surfaces encrypted credential columns. It carries the
@@ -23,6 +24,7 @@ class MailboxProviderEnum(str, enum.Enum):
     outlook = "outlook"
     yahoo = "yahoo"
     smtp = "smtp"
+    self_hosted = "self_hosted"
 
 
 class MailboxStatusEnum(str, enum.Enum):
@@ -78,16 +80,22 @@ def _normalize_app_password(v):
 
 
 class MailboxCreateSmtp(BaseModel):
-    """Classic SMTP+IMAP credential flow (provider=smtp, yahoo, or zoho).
+    """Classic SMTP+IMAP credential flow (provider=smtp, yahoo, zoho, or
+    self_hosted).
 
     "zoho" is accepted as an alias of "smtp" — older/mobile clients send the
     raw provider tile name; Zoho mailboxes are stored as provider=smtp either
     way (no zoho value exists in the DB enum). The alias is normalised here so
     ``MailboxCreateSmtp(provider="zoho", ...)`` behaves identically to smtp.
+
+    "self_hosted" (Postfix, docker-mailserver, Mailcow, Mail-in-a-Box — the
+    mobile onboarding tile) is NOT an alias: the DB enum carries its own
+    ``self_hosted`` value (migration 0044), so it is stored and returned
+    verbatim.
     """
 
     email_address: EmailStr
-    provider: Literal["smtp", "yahoo", "zoho"]
+    provider: Literal["smtp", "yahoo", "zoho", "self_hosted"]
     smtp_host: str = Field(min_length=1, max_length=255)
     smtp_port: int = Field(default=587, ge=1, le=65535)
     smtp_username: str = Field(min_length=1, max_length=255)

@@ -39,6 +39,9 @@ def _dev_settings() -> "Settings":  # type: ignore[name-defined]
         APP_ENV="development",
         JWT_SECRET=GOOD_SECRET,
         warmup_dev_bootstrap=True,
+        # The bootstrap is sqlite-only (create_all vs alembic); without this
+        # the Settings default (Postgres) trips the non-sqlite refusal.
+        DATABASE_URL="sqlite+aiosqlite:///:memory:",
     )
 
 
@@ -88,6 +91,39 @@ def test_refused_in_production_even_with_flag():
 
 def test_allowed_in_dev_with_flag():
     assert ensure_bootstrap_allowed(_dev_settings()) is None
+
+
+def _pg_settings() -> "Settings":  # type: ignore[name-defined]
+    from app.config import Settings
+
+    return Settings(
+        _env_file=None,
+        APP_ENV="development",
+        JWT_SECRET=GOOD_SECRET,
+        warmup_dev_bootstrap=True,
+        DATABASE_URL="postgresql+asyncpg://u:p@localhost:5432/warmpulse_db",
+    )
+
+
+def test_refused_on_non_sqlite_database_url():
+    """create_all must never run against a non-sqlite database: off-sqlite,
+    alembic migrations own the schema and a create_all would fight them
+    (dev-Postgres drift, or worse). Same refusal class as the prod guard."""
+    with pytest.raises(BootstrapRefused, match="sqlite"):
+        ensure_bootstrap_allowed(_pg_settings())
+
+
+async def test_run_bootstrap_refuses_non_sqlite_without_create_all(engine):
+    """End-to-end guard: run_bootstrap raises BEFORE create_all touches the
+    engine — the sqlite target must stay empty."""
+    from sqlalchemy import inspect as sa_inspect
+
+    with pytest.raises(BootstrapRefused):
+        await run_bootstrap(engine, settings=_pg_settings())
+
+    async with engine.connect() as conn:
+        tables = await conn.run_sync(lambda c: sa_inspect(c).get_table_names())
+    assert tables == []
 
 
 # --------------------------------------------------------------------------- #
@@ -156,7 +192,8 @@ async def test_seed_feeds_real_dashboard_services(engine, maker):
 
 async def test_seed_serializes_through_mailbox_service(engine, maker):
     """The mailboxes list route 500s if a provider falls outside the
-    MailboxOut response enum (e.g. the DB-only self_hosted value)."""
+    MailboxOut response enum (the response enum now covers every DB value —
+    pinned by tests/test_mailbox_provider_enum.py)."""
     from app.services.mailbox_service import mailbox_to_out
 
     await run_bootstrap(engine, settings=_dev_settings())

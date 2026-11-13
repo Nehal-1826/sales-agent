@@ -40,7 +40,8 @@ warmup endpoints need this one-off instead — it creates the schema via
 of warmth history, today's activity, 2 alerts) into the workspace of the
 bridge user the Django JWT resolves to (`operator@agentic.local` by default,
 override with `WARMUP_DEV_BRIDGE_EMAIL`). Idempotent — safe to re-run;
-refused unless `WARMUP_DEV_BOOTSTRAP=1` and never outside dev environments:
+refused unless `WARMUP_DEV_BOOTSTRAP=1`, never outside dev environments, and
+never against a non-sqlite `DATABASE_URL` (alembic owns the schema there):
 
 ```bash
 # from backend/

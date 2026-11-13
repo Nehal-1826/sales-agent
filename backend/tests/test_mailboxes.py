@@ -277,6 +277,41 @@ async def test_create_mailbox_encrypts_smtp_password(
 
 
 @pytest.mark.asyncio
+async def test_create_self_hosted_mailbox_round_trips_provider(
+    app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
+) -> None:
+    """Regression (C5): the mobile onboarding flow sends provider=self_hosted
+    (Postfix / docker-mailserver / Mailcow custom servers) with the classic
+    SMTP credential shape. The create union used to reject the value, and
+    MailboxOut used to 500 on serializing such a row. Both ends must
+    round-trip it as its own DB enum value (not the smtp alias)."""
+    from app.db.models.mailboxes import Mailbox, MailboxProvider
+
+    app, maker, _ = app_and_maker
+    plan_id = await _seed_plan(maker)
+    user = await _make_user(maker, email="selfhost@example.com", plan_id=plan_id)
+
+    body = _smtp_body(email="root@mail.example.com")
+    body["provider"] = "self_hosted"
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        resp = await c.post(
+            "/api/workspace/mailboxes",
+            json=body,
+            headers=_auth_header_for(user),
+        )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["provider"] == "self_hosted"
+
+    async with maker() as session:
+        mbx = (
+            await session.execute(select(Mailbox))
+        ).scalar_one()
+        assert mbx.provider == MailboxProvider.self_hosted
+
+
+@pytest.mark.asyncio
 async def test_create_mailbox_respects_plan_cap(
     app_and_maker: tuple[object, async_sessionmaker[AsyncSession], object],
 ) -> None:

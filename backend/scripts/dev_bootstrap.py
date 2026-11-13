@@ -9,7 +9,10 @@ Postgres-only, so the sqlite DB has no tables and authed warmup endpoints
 Guards:
 - refuses unless WARMUP_DEV_BOOTSTRAP=1;
 - refuses outright when APP_ENV is anything outside DEV_ENVIRONMENTS
-  (production can never run create_all against live tables).
+  (production can never run create_all against live tables);
+- refuses non-sqlite DATABASE_URL — create_all is a sqlite-only dev
+  shortcut; on any other database alembic owns the schema and a create_all
+  would fight it.
 
 Idempotent: deterministic UUIDs (uuid5) for every seeded row + get-or-create
 semantics, so re-running never duplicates. Safe to run before OR after the
@@ -58,9 +61,9 @@ _NAMESPACE = uuid.UUID("9e6d0bb1-2d24-4d1a-8f6e-4b8d9a3c0001")
 HISTORY_DAYS = 30
 
 # (email, provider, start warmth, current warmth, status)
-# provider must stay inside the MailboxOut response enum (gmail/outlook/
-# yahoo/smtp) — the DB enum also has self_hosted, but the response schema
-# rejects it and the mailboxes list route 500s on serialization.
+# provider must stay inside the DB MailboxProvider enum; the MailboxOut
+# response enum now mirrors it fully (self_hosted included — see
+# tests/test_mailbox_provider_enum.py).
 _MAILBOX_PLAN = [
     ("devesh@shailog.tech", MailboxProvider.gmail, 28.0, 86.0, WarmupStatus.active),
     ("sales@shailog.tech", MailboxProvider.smtp, 24.0, 71.0, WarmupStatus.active),
@@ -79,7 +82,8 @@ class BootstrapRefused(RuntimeError):
 
 
 def ensure_bootstrap_allowed(settings: Settings) -> None:
-    """Hard guards: dev environments only, and only when explicitly enabled."""
+    """Hard guards: dev environments only, only when explicitly enabled, and
+    only against sqlite (create_all must never fight alembic off-sqlite)."""
     if settings.app_env.lower() not in DEV_ENVIRONMENTS:
         raise BootstrapRefused(
             f"WARMUP_DEV_BOOTSTRAP refused: APP_ENV={settings.app_env!r} is not a "
@@ -88,6 +92,14 @@ def ensure_bootstrap_allowed(settings: Settings) -> None:
     if not settings.warmup_dev_bootstrap:
         raise BootstrapRefused(
             "WARMUP_DEV_BOOTSTRAP=1 is required to run the dev bootstrap."
+        )
+    if not settings.database_url.startswith("sqlite"):
+        scheme = settings.database_url.split("://")[0]
+        raise BootstrapRefused(
+            f"WARMUP_DEV_BOOTSTRAP refused: DATABASE_URL is {scheme}://, not "
+            "sqlite — create_all is a sqlite-only dev shortcut and would fight "
+            "alembic (which owns the schema on every other database). Run "
+            "alembic migrations against this database instead."
         )
 
 
@@ -353,13 +365,6 @@ async def _ensure_alerts(session: AsyncSession, user: User) -> int:
 async def main() -> int:
     settings = get_settings()
     from app.db.session import engine as app_engine
-
-    if not settings.database_url.startswith("sqlite"):
-        print(
-            f"[dev-bootstrap] WARNING: DATABASE_URL is not sqlite "
-            f"({settings.database_url.split('://')[0]}) — create_all will run anyway; "
-            "this is a dev bootstrap, not a migration tool."
-        )
 
     summary = await run_bootstrap(app_engine, settings=settings)
     print("[dev-bootstrap] done:")

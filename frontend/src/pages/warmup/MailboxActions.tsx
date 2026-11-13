@@ -17,10 +17,15 @@ import { warmthColor, type ChartTheme } from './chartTheme';
 /* Pause / resume — shared by the row and the detail drawer footer     */
 /* ------------------------------------------------------------------ */
 
+/** Which onSettled call is in flight. */
+export type SettlePhase = 'optimistic' | 'server' | 'revert';
+
 /**
  * Optimistic pause/resume. The owner swaps the row immediately; on error
  * the pre-click row is restored and the FastAPI `detail` is toasted; on
- * success the server's MailboxOut replaces the optimistic copy.
+ * success the server's MailboxOut replaces the optimistic copy. `phase`
+ * lets the owner tell the server answer (no today counters — only the
+ * LIST route computes them) from local copies that already carry them.
  */
 export function PauseResumeButton({
   mailbox,
@@ -29,8 +34,8 @@ export function PauseResumeButton({
   className = 'btn btn-ghost btn-sm',
 }: {
   mailbox: WarmupMailbox;
-  /** receives the optimistic copy at click, the server row (or the revert) later */
-  onSettled: (updated: WarmupMailbox) => void;
+  /** receives the optimistic copy at click, then the server row (or the revert) */
+  onSettled: (updated: WarmupMailbox, phase: SettlePhase) => void;
   /** fires once the server has settled (success or error) — page-level refresh hook */
   onCommitted?: () => void;
   className?: string;
@@ -41,18 +46,18 @@ export function PauseResumeButton({
     if (busy) return;
     const action = mailbox.is_paused ? 'Resume' : 'Pause';
     setBusy(true);
-    onSettled({ ...mailbox, is_paused: !mailbox.is_paused });
+    onSettled({ ...mailbox, is_paused: !mailbox.is_paused }, 'optimistic');
     try {
       const updated = mailbox.is_paused
         ? await resumeWarmupMailbox(mailbox.id)
         : await pauseWarmupMailbox(mailbox.id);
-      onSettled(updated);
+      onSettled(updated, 'server');
       onCommitted?.();
       toast.success(
         `${mailbox.email_address}: warmup ${updated.is_paused ? 'paused' : 'resumed'}`,
       );
     } catch (e) {
-      onSettled(mailbox); // revert
+      onSettled(mailbox, 'revert'); // back to the pre-click row
       onCommitted?.();
       toast.error(`${action} failed: ${errorMessage(e)}`);
     } finally {
@@ -99,9 +104,11 @@ function dnsText(ok: boolean | null): string {
 
 /**
  * Per-mailbox detail: ramp, today counters, schedule window, DNS flags,
- * paused state. Fetches GET /{id} for the schedule window (the list route
- * omits it) but keeps the row's today counters — only the list route
- * computes them; on the detail route they default to 0.
+ * paused state. Fetches GET /{id} ONCE per open — but only for the schedule
+ * window (the list route omits it). Every other field, including today
+ * counters (the detail route defaults them to 0) and the pause/live state,
+ * is pinned from the owner's live row so optimistic flips and settles show
+ * here immediately instead of being overwritten by the stale fetch.
  */
 export function MailboxDetailDrawer({
   mailbox,
@@ -114,17 +121,18 @@ export function MailboxDetailDrawer({
   mailbox: WarmupMailbox;
   theme: ChartTheme;
   onClose: () => void;
-  onSettled: (updated: WarmupMailbox) => void;
+  onSettled: (updated: WarmupMailbox, phase: SettlePhase) => void;
   /** page-level refresh after a pause/resume/delete done from the drawer */
   onChanged: () => void;
 }) {
   const detail = useAsync(() => getWarmupMailbox(mailbox.id), [mailbox.id]);
   const m: WarmupMailbox = {
     ...mailbox,
-    ...(detail.data ?? {}),
-    sent_today: mailbox.sent_today,
-    opens_today: mailbox.opens_today,
-    replies_today: mailbox.replies_today,
+    // live row wins everywhere; the one-shot detail GET only supplies the
+    // schedule window (+ its id) — its other fields are staler than the row
+    ...(detail.data
+      ? { schedule_window: detail.data.schedule_window, schedule_window_id: detail.data.schedule_window_id }
+      : {}),
   };
   const color = warmthColor(m.warmth_score, theme);
   const [deleting, setDeleting] = useState(false);
@@ -253,7 +261,7 @@ export function RowActions({
 }: {
   mailbox: WarmupMailbox;
   onDetails: () => void;
-  onSettled: (updated: WarmupMailbox) => void;
+  onSettled: (updated: WarmupMailbox, phase: SettlePhase) => void;
   onCommitted?: () => void;
 }) {
   return (

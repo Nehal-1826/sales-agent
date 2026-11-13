@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Chip } from '../../components/ui';
 import { warmthColor, type ChartTheme } from './chartTheme';
 import type { WarmupMailbox, WarmupMailboxStatus } from '../../lib/warmupApi';
-import { MailboxDetailDrawer, RowActions } from './MailboxActions';
+import { MailboxDetailDrawer, RowActions, type SettlePhase } from './MailboxActions';
 
 /** status → app Chip tone (paused always wins, like the source badge logic). */
 function statusTone(status: WarmupMailboxStatus, paused: boolean): 'success' | 'warn' | 'accent' | 'neutral' {
@@ -72,8 +72,25 @@ export function MailboxRows({
   // the prop list is authoritative whenever the page reloads it
   useEffect(() => setItems(mailboxes), [mailboxes]);
 
-  const settle = (updated: WarmupMailbox) =>
-    setItems((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+  /** Row swap from a pause/resume. Only the `server` phase needs care: the
+   *  pause/resume routes return MailboxOut WITHOUT today counters (only the
+   *  LIST route computes them, defaulting to 0 there), so keep the row's
+   *  current numbers until the page refresh lands. Optimistic/revert copies
+   *  already carry them, and the list-refresh path above is untouched — a
+   *  genuine 0 from a real reload still shows. */
+  const settle = (updated: WarmupMailbox, phase: SettlePhase) =>
+    setItems((prev) =>
+      prev.map((m) => {
+        if (m.id !== updated.id) return m;
+        if (phase !== 'server') return updated;
+        return {
+          ...updated,
+          sent_today: m.sent_today,
+          opens_today: m.opens_today,
+          replies_today: m.replies_today,
+        };
+      }),
+    );
 
   const detail = detailId ? (items.find((m) => m.id === detailId) ?? null) : null;
 

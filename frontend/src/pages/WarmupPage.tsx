@@ -92,7 +92,11 @@ export function WarmupPage() {
         {summary.error && summary.data && <StaleNotice onRetry={() => void summary.reload()} />}
 
         {/* ---- 30-day warmth trend ---- */}
-        {summary.data && theme && (summary.data.warmth_30d.length > 0 || summary.loading) && (
+        {/* No length/loading guard here: useAsync's reload never re-sets
+            loading, so guarding on either hides the empty-history panel
+            ("Warmth history builds up day by day") once the first load
+            finishes with zero points. */}
+        {summary.data && theme && (
           <section className="panel">
             <div className="panel-head">
               <div>

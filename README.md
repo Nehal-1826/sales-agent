@@ -47,7 +47,7 @@ uvicorn app.main:app --reload --port 8001
 
 # 4. Frontend — http://localhost:5173  (Terminal 3; dev-proxies /api and /wp-api)
 cd frontend
-npm install
+npm install        # frontend/.npmrc pins legacy-peer-deps (react-apexcharts peer range)
 npm run dev
 ```
 

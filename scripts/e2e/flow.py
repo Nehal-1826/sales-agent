@@ -16,6 +16,10 @@ Prereqs (see scripts/e2e/README.md):
 
 If FastAPI is down the warmup-live check flips to SKIPPED and the
 "not reachable" panel is asserted instead — the gate still passes.
+
+Accent checks are theme-agnostic (owner may retune the palette any time):
+each one resolves var(--accent) in the page (computed color of a throwaway
+probe element) and compares against that, never against a literal color.
 """
 import io
 import re
@@ -33,7 +37,19 @@ SHOTS = ROOT / ".superpowers" / "sdd" / "e2e-shots"
 SHOTS.mkdir(parents=True, exist_ok=True)
 
 USERNAME, PASSWORD = "operator", "operator-demo-2026"
-VIOLET = "rgb(107, 73, 255)"  # --accent #6b49ff
+
+# Resolve var(--accent) to a computed "rgb(r, g, b)" string inside the page —
+# the probe element forces the browser to normalize whatever color format the
+# token holds (hex, rgb(), oklch …) so comparisons are literal string equality.
+RESOLVE_ACCENT = """() => {
+  const probe = document.createElement('span');
+  probe.style.display = 'none';
+  probe.style.color = 'var(--accent)';
+  document.body.appendChild(probe);
+  const v = getComputedStyle(probe).color;
+  probe.remove();
+  return v;
+}"""
 
 
 def http_ok(url: str) -> bool:
@@ -108,8 +124,10 @@ with sync_playwright() as p:
           f"cards={cards[:2]}")
     for asset in ("/warmpulse-mark.svg", "/warmpulse-logo.svg", "/warmpulse-logo.png"):
         check(f"asset 200: {asset}", http_ok(BASE + asset))
-    cta_color = page.locator("a.lp-cta-solid").first.evaluate("el => getComputedStyle(el).backgroundImage")
-    check("rebrand: violet on primary CTA", "107, 73, 255" in cta_color, cta_color)
+    accent = page.evaluate(RESOLVE_ACCENT)
+    cta_gradient = page.locator("a.lp-cta-solid").first.evaluate("el => getComputedStyle(el).backgroundImage")
+    check("rebrand: primary CTA gradient starts at var(--accent)", accent in cta_gradient,
+          f"accent={accent} gradient={cta_gradient}")
     # Task A4: slim footer — wordmark, contact, legal only
     footer_links = page.locator("footer.lp-footer a").count()
     check("footer: slim — ≤6 links", footer_links <= 6, f"{footer_links} links")
@@ -121,7 +139,8 @@ with sync_playwright() as p:
     wordmark = safe_text(page.locator(".login-title strong"))
     check("login: wordmark 'WarmPulse'", wordmark.strip() == "WarmPulse", wordmark)
     btn_color = page.locator("button.btn-primary").first.evaluate("el => getComputedStyle(el).backgroundColor")
-    check("rebrand: primary button is violet", btn_color == VIOLET, btn_color)
+    check("rebrand: primary button background equals var(--accent)", btn_color == accent,
+          f"btn={btn_color} accent={accent}")
     user_in = page.locator("input[autocomplete=username]")
     pass_in = page.locator("input[type=password]")
     check("login: form visible", user_in.count() == 1 and pass_in.count() == 1)

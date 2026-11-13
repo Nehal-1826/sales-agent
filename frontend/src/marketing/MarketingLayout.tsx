@@ -52,7 +52,10 @@ export function MarketingLayout({
             <a href="/pricing">Pricing</a>
             <a href="/#contact">Contact</a>
           </nav>
-          <>{startNow}{signIn}</>
+          <div className="lp-nav-ctas">
+            {startNow}
+            {signIn}
+          </div>
         </div>
       </header>
 

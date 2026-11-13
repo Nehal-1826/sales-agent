@@ -51,7 +51,7 @@ a.lp-cta { display: inline-block; text-decoration: none; text-align: center; }
   border: 1.5px solid var(--accent-border);
   border-radius: 18px;
   padding: 24px 22px;
-  box-shadow: 0 12px 30px rgba(107, 73, 255, 0.08);
+  box-shadow: 0 12px 30px rgba(249, 115, 22, 0.08);
   margin: 0;
 }
 .mk-card h3 { margin: 8px 0 8px; font-size: 18px; }
@@ -80,7 +80,7 @@ a.lp-cta { display: inline-block; text-decoration: none; text-align: center; }
   border: 1.5px dashed var(--accent-border);
   border-radius: 20px;
   padding: 26px 28px;
-  box-shadow: 0 16px 40px rgba(107, 73, 255, 0.1);
+  box-shadow: 0 16px 40px rgba(249, 115, 22, 0.1);
 }
 .mk-audit-head { display: grid; grid-template-columns: 1fr auto; gap: 8px 18px; align-items: center; }
 .mk-audit-head .mk-sample-tag { grid-column: 1 / -1; justify-self: start; }
@@ -182,7 +182,7 @@ a.lp-cta { display: inline-block; text-decoration: none; text-align: center; }
   padding: 26px 22px;
 }
 .lp .mk-tier h2 { text-align: left; font-size: 22px; margin: 0 0 4px; }
-.mk-tier-pop { border-color: var(--accent); box-shadow: 0 18px 44px rgba(107, 73, 255, 0.18); }
+.mk-tier-pop { border-color: var(--accent); box-shadow: 0 18px 44px rgba(249, 115, 22, 0.18); }
 .mk-pop-badge {
   position: absolute;
   top: -13px;

@@ -3737,6 +3737,8 @@ input[type='radio'] {
 .pf-hbar-track { background: var(--border-soft); border-radius: var(--radius-pill); height: 10px; overflow: hidden; }
 .pf-hbar-track span { display: block; height: 100%; background: var(--accent); }
 .pf-secret { display: grid; gap: 8px; }
+.pf-qr { display: grid; justify-items: center; gap: 8px; padding: 12px; background: #fff; border: 1px solid var(--border-soft); border-radius: var(--radius-md, 10px); }
+.pf-qr svg { display: block; }
 .pf-plan { margin-bottom: 14px; }
 .dash-profile strong { font-size: 13.5px; color: var(--text); }
 

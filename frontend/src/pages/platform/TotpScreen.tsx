@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import { Field } from '../../components/ui';
 import { totpConfirm, totpSetup, totpVerify } from '../../lib/platform';
 import type { TotpSetup } from '../../lib/platform';
@@ -45,7 +46,15 @@ export function TotpScreen({ onVerified, onSignOut }: { onVerified: () => void; 
         </small>
         {enrolling && setup && (
           <div className="pf-secret">
-            <Field label="Secret key">
+            {uri && (
+              <div className="pf-qr">
+                <QRCodeSVG value={uri} size={176} level="M" marginSize={2} />
+                <small className="login-footnote">
+                  Scan with any authenticator — Google Authenticator, Authy, 1Password, Microsoft Authenticator.
+                </small>
+              </div>
+            )}
+            <Field label="Secret key (type it in if you can't scan)">
               <input readOnly value={setup.secret} onFocus={(e) => e.currentTarget.select()} />
             </Field>
             {uri && (

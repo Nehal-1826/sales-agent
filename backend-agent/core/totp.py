@@ -12,7 +12,7 @@ from urllib.parse import quote
 STEP = 30
 DIGITS = 6
 WINDOW = 1
-ISSUER = 'Shailog Technologies'
+ISSUER = 'WarmPulse'
 
 
 def new_secret():

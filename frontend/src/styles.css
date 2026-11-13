@@ -3831,3 +3831,480 @@ img, video, svg { max-width: 100%; }
   .content { padding-left: 12px; padding-right: 12px; }
   .lp-brand img { height: 32px; }
 }
+
+/* ================================================================
+   WARMUP DASHBOARD (ported from WarmPulse client; tokens only)
+   ================================================================ */
+
+.warmup-loader-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 220px;
+}
+
+.panel-head .panel-note {
+  margin: 2px 0 0;
+}
+
+/* ---- hero row: gauge panel + today tiles ---- */
+
+.warmup-hero-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.warmup-hero {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  flex-wrap: wrap;
+}
+
+.warmup-gauge {
+  flex: 0 0 auto;
+  width: 200px;
+}
+
+.warmup-gauge svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.warmup-gauge-value {
+  font-family: var(--display);
+  font-size: 52px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.warmup-gauge-label {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  font-weight: 600;
+}
+
+.warmup-hero-copy {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.warmup-hero-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.warmup-hero-copy h2 {
+  font-family: var(--display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-top: 2px;
+}
+
+.warmup-hero-sub {
+  margin-top: 6px;
+  color: var(--text-2);
+  font-size: 13.5px;
+  max-width: 44ch;
+}
+
+.warmup-hero-delta {
+  margin-top: 10px;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-2);
+}
+
+.warmup-hero-delta span:last-child {
+  font-weight: 500;
+  color: var(--text-3);
+}
+
+.warmup-hero-delta.up {
+  color: var(--success-ink);
+}
+
+.warmup-hero-delta.down {
+  color: var(--danger-ink);
+}
+
+.warmup-today {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.warmup-tile {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+}
+
+.warmup-tile-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-3);
+}
+
+.warmup-tile-value {
+  font-family: var(--display);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- charts ---- */
+
+.warmup-chart-empty,
+.warmup-donut-empty,
+.warmup-alerts-empty,
+.warmup-feed-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  text-align: center;
+  color: var(--text-2);
+  font-size: 13.5px;
+  padding: 12px;
+}
+
+.warmup-donut {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.warmup-donut-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 16px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.warmup-donut-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.warmup-donut-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.warmup-donut-name {
+  color: var(--text-2);
+}
+
+.warmup-donut-pct {
+  font-weight: 650;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* apex tooltip restyled to app tokens (class passed via tooltip.cssClass) */
+.warmup-chart-tooltip.apexcharts-tooltip {
+  background: var(--panel) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm) !important;
+  box-shadow: var(--shadow-md) !important;
+  color: var(--text) !important;
+  font-size: 12px !important;
+}
+
+.warmup-chart-tooltip.apexcharts-tooltip .apexcharts-tooltip-title {
+  background: var(--panel-2) !important;
+  border-bottom: 1px solid var(--border-soft) !important;
+  font-weight: 650;
+}
+
+.warmup-chart-tooltip.apexcharts-tooltip .apexcharts-tooltip-series-group {
+  background: transparent !important;
+}
+
+/* ---- placement + alerts two-column ---- */
+
+.warmup-two-col {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.chip-warmup-unread {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--accent-ink);
+}
+
+.warmup-alert-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.warmup-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-soft);
+  border-left-width: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+}
+
+.warmup-alert.sev-danger {
+  border-left-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.warmup-alert.sev-warn {
+  border-left-color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.warmup-alert.sev-info {
+  border-left-color: var(--accent);
+}
+
+.warmup-alert-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.warmup-alert-title {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.warmup-alert.unread .warmup-alert-title::after {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: 1px;
+}
+
+.warmup-alert-text {
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.warmup-alert-ago {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- mailbox rows ---- */
+
+.warmup-mailbox-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.warmup-mailbox-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 2px;
+}
+
+.warmup-mailbox-row + .warmup-mailbox-row {
+  border-top: 1px solid var(--border-soft);
+}
+
+.warmup-mailbox-id {
+  min-width: 0;
+}
+
+.warmup-mailbox-email {
+  display: block;
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.warmup-mailbox-meta {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.warmup-spark {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.warmup-mailbox-warmth {
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  min-width: 34px;
+  text-align: right;
+}
+
+/* ---- activity feed ---- */
+
+.warmup-feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.warmup-feed-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.warmup-feed-row:hover {
+  background: var(--panel-2);
+}
+
+.warmup-feed-action {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+
+.warmup-feed-row.act-opened .warmup-feed-action,
+.warmup-feed-row.act-replied .warmup-feed-action {
+  background: var(--accent);
+}
+
+.warmup-feed-row.act-rescued .warmup-feed-action {
+  background: var(--success);
+}
+
+.warmup-feed-row.act-starred .warmup-feed-action {
+  background: var(--warn);
+}
+
+.warmup-feed-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.warmup-feed-line {
+  font-size: 13px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.warmup-feed-line strong {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.warmup-feed-subject {
+  font-size: 12px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.warmup-feed-ago {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+
+/* ---- responsive ---- */
+
+@media (max-width: 960px) {
+  .warmup-hero-row,
+  .warmup-two-col {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .warmup-hero {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .warmup-hero-sub {
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .warmup-mailbox-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      'id warmth chip'
+      'id spark chip';
+    row-gap: 4px;
+  }
+
+  .warmup-mailbox-id {
+    grid-area: id;
+  }
+
+  .warmup-mailbox-warmth {
+    grid-area: warmth;
+    justify-self: end;
+  }
+
+  .warmup-spark {
+    grid-area: spark;
+    justify-self: end;
+  }
+
+  .warmup-mailbox-row .chip {
+    grid-area: chip;
+    align-self: center;
+  }
+}

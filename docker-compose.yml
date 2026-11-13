@@ -132,6 +132,8 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-warmpulse}:${POSTGRES_PASSWORD:-warmpulse}@db:5432/agent
       WARMUP_JWT_SECRET: ${WARMUP_JWT_SECRET}
+      # server-to-server enroll/warmup calls target the FastAPI service directly
+      WARMUP_API_URL: http://fastapi:8001
       SEED_DEMO: ${SEED_DEMO:-0}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}

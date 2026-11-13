@@ -940,6 +940,28 @@ def mailbox_resume(request, mailbox_id):
 
 @api_view(['POST'])
 @permission_classes([IsWorkspaceAdmin])
+def mailbox_enroll_warmup(request, mailbox_id):
+    """Enroll one sending mailbox into the WarmPulse warmup network.
+
+    SMTP credentials never reach the browser (masked on read): this view
+    reads them server-side and posts to the warmup create route over the
+    bridge JWT — see core.warmup_enroll. Idempotent by email address.
+    """
+    from .warmup_enroll import WarmupEnrollError, enroll_mailbox
+    mb = _get_mailbox(mailbox_id)
+    if mb is None:
+        return Response({'detail': 'mailbox not found'}, status=404)
+    ws = getattr(request.user, 'workspace', None)
+    slug = getattr(ws, 'slug', None) or 'default'
+    try:
+        result = enroll_mailbox(user=request.user, workspace_slug=slug, mailbox=mb)
+    except WarmupEnrollError as exc:
+        return Response({'detail': exc.detail}, status=exc.status_code)
+    return Response(result, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsWorkspaceAdmin])
 def outbox_drain(request):
     """Best-effort 'send what is due now' (the worker does this every 30 s)."""
     from .outbox import drain_outbox

@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react';
 import { Chip } from '../../components/ui';
 import { warmthColor, type ChartTheme } from './chartTheme';
 import type { WarmupMailbox, WarmupMailboxStatus } from '../../lib/warmupApi';
+import { MailboxDetailDrawer, RowActions } from './MailboxActions';
 
 /** status → app Chip tone (paused always wins, like the source badge logic). */
 function statusTone(status: WarmupMailboxStatus, paused: boolean): 'success' | 'warn' | 'accent' | 'neutral' {
@@ -49,31 +51,69 @@ function Sparkline({ values, color }: { values: number[]; color: string }) {
 }
 
 /**
- * One row per mailbox: status chip, email, sent-today, sparkline, warmth.
- * Port of the source MailboxSparklineRow — horizontal scroll cards become a
- * vertical list to fit this shell's panel conventions.
+ * One row per mailbox: status chip, email, sent-today, sparkline, warmth,
+ * pause/resume + details. Local state mirrors the prop list so pause/resume
+ * can flip optimistically and settle from the server row; `onChanged` lets
+ * the page refresh its counters after any committed change.
  */
-export function MailboxRows({ mailboxes, theme }: { mailboxes: WarmupMailbox[]; theme: ChartTheme }) {
+export function MailboxRows({
+  mailboxes,
+  theme,
+  onChanged,
+}: {
+  mailboxes: WarmupMailbox[];
+  theme: ChartTheme;
+  /** page-level refresh (summary counters) after any committed change */
+  onChanged?: () => void;
+}) {
+  const [items, setItems] = useState(mailboxes);
+  const [detailId, setDetailId] = useState<string | null>(null);
+
+  // the prop list is authoritative whenever the page reloads it
+  useEffect(() => setItems(mailboxes), [mailboxes]);
+
+  const settle = (updated: WarmupMailbox) =>
+    setItems((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+
+  const detail = detailId ? (items.find((m) => m.id === detailId) ?? null) : null;
+
   return (
-    <ul className="warmup-mailbox-list">
-      {mailboxes.map((m) => {
-        const color = warmthColor(m.warmth_score, theme);
-        return (
-          <li key={m.id} className="warmup-mailbox-row">
-            <div className="warmup-mailbox-id">
-              <span className="warmup-mailbox-email" title={m.email_address}>{m.email_address}</span>
-              <span className="warmup-mailbox-meta">
-                {m.provider} · day {m.current_day} · {m.sent_today} sent today
+    <>
+      <ul className="warmup-mailbox-list">
+        {items.map((m) => {
+          const color = warmthColor(m.warmth_score, theme);
+          return (
+            <li key={m.id} className="warmup-mailbox-row">
+              <div className="warmup-mailbox-id">
+                <span className="warmup-mailbox-email" title={m.email_address}>{m.email_address}</span>
+                <span className="warmup-mailbox-meta">
+                  {m.provider} · day {m.current_day} · {m.sent_today} sent today
+                </span>
+              </div>
+              <Sparkline values={sparkPoints(m.warmth_score)} color={color} />
+              <span className="warmup-mailbox-warmth" style={{ color }}>
+                {Math.round(m.warmth_score)}
               </span>
-            </div>
-            <Sparkline values={sparkPoints(m.warmth_score)} color={color} />
-            <span className="warmup-mailbox-warmth" style={{ color }}>
-              {Math.round(m.warmth_score)}
-            </span>
-            <Chip tone={statusTone(m.warmup_status, m.is_paused)}>{statusLabel(m.warmup_status, m.is_paused)}</Chip>
-          </li>
-        );
-      })}
-    </ul>
+              <Chip tone={statusTone(m.warmup_status, m.is_paused)}>{statusLabel(m.warmup_status, m.is_paused)}</Chip>
+              <RowActions
+                mailbox={m}
+                onDetails={() => setDetailId(m.id)}
+                onSettled={settle}
+                onCommitted={() => onChanged?.()}
+              />
+            </li>
+          );
+        })}
+      </ul>
+      {detail && (
+        <MailboxDetailDrawer
+          mailbox={detail}
+          theme={theme}
+          onClose={() => setDetailId(null)}
+          onSettled={settle}
+          onChanged={() => onChanged?.()}
+        />
+      )}
+    </>
   );
 }

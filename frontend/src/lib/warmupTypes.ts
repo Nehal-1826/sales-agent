@@ -53,7 +53,7 @@ export interface WarmupDashboardSummary {
 // GET /api/workspace/mailboxes                                                //
 // --------------------------------------------------------------------------- //
 
-export type WarmupMailboxProvider = 'gmail' | 'outlook' | 'yahoo' | 'smtp';
+export type WarmupMailboxProvider = 'gmail' | 'outlook' | 'yahoo' | 'smtp' | 'self_hosted';
 export type WarmupMailboxStatus = 'pending' | 'active' | 'paused' | 'completed';
 export type WarmupContentMode = 'A' | 'B' | 'C' | 'D';
 
@@ -95,6 +95,46 @@ export interface WarmupMailboxListResponse {
   page: number;
   page_size: number;
   total: number;
+}
+
+// --------------------------------------------------------------------------- //
+// POST /api/workspace/mailboxes (create — discriminated union on `provider`)  //
+// PATCH /api/workspace/mailboxes/{id} (update — whitelisted optional fields)  //
+// (backend/app/schemas/mailboxes.py — MailboxCreateSmtp | MailboxCreateOauth, //
+//  MailboxUpdate)                                                             //
+// --------------------------------------------------------------------------- //
+
+/** SMTP+IMAP credential variant (provider smtp | yahoo | zoho | self_hosted). */
+export interface WarmupMailboxCreateSmtp {
+  email_address: string;
+  provider: 'smtp' | 'yahoo' | 'zoho' | 'self_hosted';
+  smtp_host: string;
+  smtp_port?: number;
+  smtp_username: string;
+  smtp_password: string;
+  imap_host?: string;
+  imap_port?: number;
+  daily_target?: number;
+  content_mode?: WarmupContentMode;
+}
+
+/** OAuth variant (provider gmail | outlook). */
+export interface WarmupMailboxCreateOauth {
+  email_address: string;
+  provider: 'gmail' | 'outlook';
+  oauth_refresh_token: string;
+  daily_target?: number;
+  content_mode?: WarmupContentMode;
+}
+
+export type WarmupMailboxCreate = WarmupMailboxCreateSmtp | WarmupMailboxCreateOauth;
+
+/** PATCH body — exactly the four mutable fields the route accepts. */
+export interface WarmupMailboxUpdate {
+  daily_target?: number;
+  content_mode?: WarmupContentMode;
+  schedule_window_id?: string;
+  is_paused?: boolean;
 }
 
 // --------------------------------------------------------------------------- //

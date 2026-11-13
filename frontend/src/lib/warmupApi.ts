@@ -11,7 +11,10 @@ import type {
   WarmupActivityFeedResponse,
   WarmupAlertsResponse,
   WarmupDashboardSummary,
+  WarmupMailbox,
+  WarmupMailboxCreate,
   WarmupMailboxListResponse,
+  WarmupMailboxUpdate,
   WarmupPlacementSplit,
   WarmupTodayStats,
   WarmupWarmthPoint,
@@ -27,9 +30,13 @@ export type {
   WarmupContentMode,
   WarmupDashboardSummary,
   WarmupMailbox,
+  WarmupMailboxCreate,
+  WarmupMailboxCreateOauth,
+  WarmupMailboxCreateSmtp,
   WarmupMailboxListResponse,
   WarmupMailboxProvider,
   WarmupMailboxStatus,
+  WarmupMailboxUpdate,
   WarmupPlacementSplit,
   WarmupScheduleWindow,
   WarmupTodayStats,
@@ -101,6 +108,22 @@ export async function warmupGet<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/** Non-GET on the warmup API — same token/401-retry contract as warmupGet. */
+async function warmupSend<T>(
+  path: string,
+  method: 'POST' | 'PATCH' | 'DELETE',
+  body?: unknown,
+): Promise<T> {
+  const res = await wpFetch(path, {
+    method,
+    ...(body !== undefined && { body: JSON.stringify(body) }),
+    headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+  });
+  if (!res.ok) throw await toWarmupError(res, path);
+  if (res.status === 204) return undefined as T;
+  return res.json() as Promise<T>;
+}
+
 // --------------------------------------------------------------------------- //
 // Dashboard endpoints (wire shapes in ./warmupTypes)                          //
 // --------------------------------------------------------------------------- //
@@ -135,6 +158,42 @@ export function warmupMailboxStates(): Promise<WarmupMailboxListResponse> {
   return warmupGet<WarmupMailboxListResponse>(
     'api/workspace/mailboxes?page=1&page_size=100',
   );
+}
+
+// --------------------------------------------------------------------------- //
+// Mailbox management (mailboxes.py write routes; the mobile app uses these)   //
+// --------------------------------------------------------------------------- //
+
+/** Full MailboxOut incl. the schedule window (the list view omits it). */
+export function getWarmupMailbox(id: string): Promise<WarmupMailbox> {
+  return warmupGet<WarmupMailbox>(`api/workspace/mailboxes/${id}`);
+}
+
+export function pauseWarmupMailbox(id: string): Promise<WarmupMailbox> {
+  return warmupSend<WarmupMailbox>(`api/workspace/mailboxes/${id}/pause`, 'POST');
+}
+
+export function resumeWarmupMailbox(id: string): Promise<WarmupMailbox> {
+  return warmupSend<WarmupMailbox>(`api/workspace/mailboxes/${id}/resume`, 'POST');
+}
+
+/** PATCH the whitelisted mutable fields (daily_target / content_mode / is_paused). */
+export function updateWarmupMailbox(id: string, patch: WarmupMailboxUpdate): Promise<WarmupMailbox> {
+  return warmupSend<WarmupMailbox>(`api/workspace/mailboxes/${id}`, 'PATCH', patch);
+}
+
+/**
+ * Connect a mailbox to warmup. NOTE for SMTP variants the backend runs a
+ * live credential probe before persisting — credentials are stored
+ * server-side and never echoed back (MailboxOut has no credential fields).
+ */
+export function createWarmupMailbox(payload: WarmupMailboxCreate): Promise<WarmupMailbox> {
+  return warmupSend<WarmupMailbox>('api/workspace/mailboxes', 'POST', payload);
+}
+
+/** 204 on success — removes the mailbox and its warmup history linkage. */
+export function deleteWarmupMailbox(id: string): Promise<void> {
+  return warmupSend<void>(`api/workspace/mailboxes/${id}`, 'DELETE');
 }
 
 /** Most recent alerts (in-app notifications) + unread badge count. */

@@ -14,6 +14,7 @@ import {
 import {
   ActivityFeed,
   AlertsStack,
+  EnrollMailbox,
   MailboxRows,
   PlacementDonut,
   TodayStats,
@@ -47,6 +48,16 @@ export function WarmupPage() {
     setRefreshing(true);
     void Promise.allSettled(sections.map((s) => s.reload())).finally(() => setRefreshing(false));
   };
+
+  // after a pause/resume/enroll/delete the rows and the summary counters
+  // (active mailboxes, today stats) both go stale — reload them together
+  const refreshMailboxData = () => {
+    void mailboxes.reload();
+    void summary.reload();
+    void today.reload();
+  };
+
+  const [enrollOpen, setEnrollOpen] = useState(false);
 
   // ---- gate on the FastAPI backend before anything else ----
   let body: React.ReactNode;
@@ -163,6 +174,9 @@ export function WarmupPage() {
                 {mailboxes.data ? `${mailboxes.data.total} in this workspace` : 'Warmth per mailbox, latest day.'}
               </p>
             </div>
+            <button className="btn btn-sm" onClick={() => setEnrollOpen(true)}>
+              Add mailbox
+            </button>
           </div>
           {mailboxes.loading && !mailboxes.data ? (
             <Skeleton rows={3} height={48} />
@@ -173,7 +187,7 @@ export function WarmupPage() {
               Connect a mailbox and the warmup network starts building its reputation.
             </EmptyState>
           ) : mailboxes.data && theme ? (
-            <MailboxRows mailboxes={mailboxes.data.items} theme={theme} />
+            <MailboxRows mailboxes={mailboxes.data.items} theme={theme} onChanged={refreshMailboxData} />
           ) : null}
           {mailboxes.error && mailboxes.data && <StaleNotice onRetry={() => void mailboxes.reload()} />}
         </section>
@@ -211,6 +225,9 @@ export function WarmupPage() {
         }
       />
       {body}
+      {enrollOpen && (
+        <EnrollMailbox onClose={() => setEnrollOpen(false)} onEnrolled={refreshMailboxData} />
+      )}
     </div>
   );
 }

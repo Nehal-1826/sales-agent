@@ -4163,7 +4163,8 @@ img, video, svg { max-width: 100%; }
 
 .warmup-mailbox-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  /* id · spark · warmth · chip · actions (pause/resume + details) */
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
   align-items: center;
   gap: 14px;
   padding: 12px 2px;
@@ -4206,6 +4207,106 @@ img, video, svg { max-width: 100%; }
   font-variant-numeric: tabular-nums;
   min-width: 34px;
   text-align: right;
+}
+
+/* ---- mailbox row actions + detail drawer ---- */
+
+.warmup-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.warmup-drawer-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.warmup-drawer-warmth {
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.warmup-dns-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.warmup-dns-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-2);
+  font-weight: 600;
+}
+
+/* ---- enroll picker ---- */
+
+.warmup-enroll-note {
+  margin: 6px 0 10px;
+}
+
+.warmup-enroll-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.warmup-enroll-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 10px 2px;
+}
+
+.warmup-enroll-row + .warmup-enroll-row {
+  border-top: 1px solid var(--border-soft);
+}
+
+.warmup-enroll-id {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.warmup-enroll-email {
+  display: block;
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.warmup-enroll-meta {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.warmup-enroll-error {
+  flex: 1 1 100%;
+  font-size: 12.5px;
+  color: var(--danger-ink);
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  overflow-wrap: anywhere;
 }
 
 /* ---- activity feed ---- */
@@ -4308,8 +4409,8 @@ img, video, svg { max-width: 100%; }
     grid-template-columns: minmax(0, 1fr) auto auto;
     grid-template-areas:
       'id warmth chip'
-      'id spark chip';
-    row-gap: 4px;
+      'id spark actions';
+    row-gap: 6px;
   }
 
   .warmup-mailbox-id {
@@ -4329,5 +4430,19 @@ img, video, svg { max-width: 100%; }
   .warmup-mailbox-row .chip {
     grid-area: chip;
     align-self: center;
+  }
+
+  .warmup-row-actions {
+    grid-area: actions;
+    justify-self: end;
+  }
+
+  .warmup-enroll-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .warmup-enroll-row .btn {
+    align-self: flex-start;
   }
 }

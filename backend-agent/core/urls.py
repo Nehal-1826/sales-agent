@@ -66,6 +66,7 @@ urlpatterns = [
     path('mailboxes/<int:mailbox_id>/', views.mailbox_detail, name='mailbox-detail'),
     path('mailboxes/<int:mailbox_id>/dns_check/', views.mailbox_dns_check, name='mailbox-dns-check'),
     path('mailboxes/<int:mailbox_id>/resume/', views.mailbox_resume, name='mailbox-resume'),
+    path('mailboxes/<int:mailbox_id>/enroll_warmup/', views.mailbox_enroll_warmup, name='mailbox-enroll-warmup'),
     path('warmpulse/sync/', views.warmpulse_sync, name='warmpulse-sync'),
     # follow-up sequences, assisted tasks, WhatsApp (core.sequences / core.whatsapp)
     path('sequences/', vs.sequences_list, name='sequences'),

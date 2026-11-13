@@ -3,6 +3,7 @@ export { WarmthChart } from './WarmthChart';
 export { TodayStats } from './TodayStats';
 export { PlacementDonut } from './PlacementDonut';
 export { MailboxRows } from './MailboxRows';
+export { EnrollMailbox } from './EnrollMailbox';
 export { AlertsStack } from './AlertsStack';
 export { ActivityFeed } from './ActivityFeed';
 export { useChartTheme, warmthColor } from './chartTheme';

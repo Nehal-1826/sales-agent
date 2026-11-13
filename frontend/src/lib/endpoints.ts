@@ -271,6 +271,20 @@ export async function resumeMailbox(id: number): Promise<Result<Mailbox>> {
   return attempt(() => request<Mailbox>(`/mailboxes/${id}/resume/`, post()));
 }
 
+/** Result of enrolling a sending mailbox into the WarmPulse warmup network. */
+export interface WarmupEnrollResult {
+  status: 'enrolled' | 'already_enrolled';
+  mailbox: { id: string; email_address: string };
+}
+
+/** Enroll one sending mailbox into warmup. The SMTP credentials the warmup
+ *  service needs live in this backend — they are read server-side and
+ *  forwarded over the bridge JWT, never through the browser. Idempotent. */
+export async function enrollMailboxWarmup(id: number): Promise<Result<WarmupEnrollResult>> {
+  if (await inDemo()) return demoFail();
+  return attempt(() => request<WarmupEnrollResult>(`/mailboxes/${id}/enroll_warmup/`, post(), 30_000));
+}
+
 /** Wizard Test Connection — real IMAP + SMTP login probe on the given
  *  servers; per-leg {ok, detail}; the password is never echoed back. */
 export async function testMailboxConnection(input: {

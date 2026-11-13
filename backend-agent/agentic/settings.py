@@ -169,9 +169,18 @@ CORS_ALLOWED_ORIGINS = [
 ] + [o.strip() for o in os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',') if o.strip()]
 CORS_ALLOW_CREDENTIALS = True
 
-# Django admin login behind HTTPS needs explicit trusted origins:
-# CSRF_TRUSTED_ORIGINS=https://yourdomain.com
-CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',') if o.strip()]
+def _env_csv(name: str) -> list:
+    """Comma-separated env var → stripped, de-emptied list. Missing → []."""
+    return [v.strip() for v in os.environ.get(name, '').split(',') if v.strip()]
+
+
+# Django admin login behind HTTPS needs explicit trusted origins
+# (scheme + host, e.g. https://yourdomain.com — set it when serving via the
+# docker-compose.https.yml Caddy overlay). Entries WITHOUT a scheme are
+# tolerated here and passed through verbatim: Django itself rejects
+# scheme-less origins at request time, so a typo fails loudly on the exact
+# request that needs it instead of refusing the whole settings module to boot.
+CSRF_TRUSTED_ORIGINS = _env_csv('CSRF_TRUSTED_ORIGINS')
 
 # Public origin used for absolute links in outgoing email (unsubscribe).
 # PUBLIC_BASE_URL=https://yourdomain.com — falls back to the first trusted origin.

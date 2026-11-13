@@ -265,7 +265,8 @@ Migrations apply automatically during the restart. Downtime: a few seconds.
 - It works from any browser (phone included) because the layout is responsive.
 
 **HTTPS (recommended once you have a domain, ~₹200–800/yr):** point the
-domain's A record to your VPS IP, add `DOMAIN=myagent.com` to `.env`, add
+domain's A record to your VPS IP, add `DOMAIN=myagent.com` and
+`ACME_EMAIL=you@example.com` to `.env`, add
 `CSRF_TRUSTED_ORIGINS=https://myagent.com`, then:
 
 ```bash

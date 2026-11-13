@@ -1,0 +1,43 @@
+# =============================================================================
+# Optional HTTPS overlay — use WITH docker-compose.yml once you have a domain:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.https.yml up -d
+#
+# Caddy takes over :80/:443 (ACME HTTP-01 challenge + auto redirect on 80,
+# TLS on 443) and proxies to the internal nginx gateway. The gateway stops
+# publishing :80 (ports override below) and keeps routing as before; its
+# X-Forwarded-Proto map forwards the https scheme to Django/FastAPI.
+#
+# Prereqs (see docs/DEPLOY-agent.md §10):
+#   1. Point the domain's DNS A record at the VPS IP.
+#   2. Set in .env:  DOMAIN=your.domain.com   ACME_EMAIL=you@example.com
+#      and on the Django side  CSRF_TRUSTED_ORIGINS=https://your.domain.com
+#   3. Certs persist in the caddy_data volume — do not `docker compose down -v`.
+# =============================================================================
+
+services:
+  # Gateway stays on the docker network only; Caddy owns the host ports.
+  gateway:
+    ports: !override []
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: warmpulse-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"    # ACME HTTP-01 challenge + redirect to https
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env (HTTPS cert is issued for it)}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env (Let's Encrypt expiry notices)}
+    volumes:
+      - ./ops/gateway/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      gateway:
+        condition: service_healthy
+
+volumes:
+  caddy_data:
+  caddy_config:

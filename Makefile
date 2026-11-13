@@ -10,7 +10,7 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 .PHONY: help install dev backend frontend worker beat \
-        db-up db-down migrate migrate-create test lint format clean
+        db-up db-down stack-down migrate migrate-create test lint format clean
 
 help: ## Show this help
 	@echo "WarmPulse — make targets"
@@ -29,7 +29,13 @@ install: ## Install backend (pip -e .[dev]) and frontend (pnpm install)
 db-up: ## Start local Postgres + Redis via docker compose
 	docker compose up -d db redis
 
-db-down: ## Stop local Postgres + Redis
+# Scoped on purpose: only the two dev-infra containers. A bare
+# `docker compose down` here would also kill the full prod-style stack
+# (django/fastapi/frontend/gateway) — that is what `stack-down` is for.
+db-down: ## Stop local Postgres + Redis ONLY (keeps the rest of the stack)
+	docker compose stop db redis
+
+stack-down: ## Tear down the FULL compose stack (all services + network)
 	docker compose down
 
 # -------- Migrations ---------------------------------------------------------

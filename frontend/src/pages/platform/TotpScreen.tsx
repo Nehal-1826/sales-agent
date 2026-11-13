@@ -54,14 +54,6 @@ export function TotpScreen({ onVerified, onSignOut }: { onVerified: () => void; 
                 </small>
               </div>
             )}
-            <Field label="Secret key (type it in if you can't scan)">
-              <input readOnly value={setup.secret} onFocus={(e) => e.currentTarget.select()} />
-            </Field>
-            {uri && (
-              <Field label="otpauth link (paste into your authenticator if it supports it)">
-                <textarea readOnly rows={3} value={uri} onFocus={(e) => e.currentTarget.select()} />
-              </Field>
-            )}
           </div>
         )}
         <Field label="6-digit code">

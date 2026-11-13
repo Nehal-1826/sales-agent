@@ -92,6 +92,16 @@ class Settings(BaseSettings):
     # this app's JWT_SECRET). Flip off to hard-disable bridge logins.
     agent_bridge_enabled: bool = Field(default=True, alias="AGENT_BRIDGE_ENABLED")
 
+    # Dev-only warmup bootstrap (scripts/dev_bootstrap.py): create_all +
+    # demo seed on the local sqlite stack. Refused outside dev environments
+    # and never active unless explicitly flipped on here.
+    warmup_dev_bootstrap: bool = Field(default=False, alias="WARMUP_DEV_BOOTSTRAP")
+    # Email the bridge JWT carries (Django operator). The bootstrap seeds
+    # into that user's workspace so the data is visible through the bridge.
+    warmup_dev_bridge_email: str = Field(
+        default="operator@agentic.local", alias="WARMUP_DEV_BRIDGE_EMAIL"
+    )
+
     # Google OAuth (mailbox-connect)
     google_client_id: str = Field(default="", alias="GOOGLE_CLIENT_ID")
     google_client_secret: str = Field(default="", alias="GOOGLE_CLIENT_SECRET")

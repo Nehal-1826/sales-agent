@@ -32,6 +32,24 @@ uvicorn app.main:app --reload --port 8001
 # -> http://localhost:8001/docs   (OpenAPI UI)
 ```
 
+## Dev bootstrap (sqlite, no Docker)
+
+Alembic migrations are Postgres-only. For the local sqlite stack the authed
+warmup endpoints need this one-off instead — it creates the schema via
+`Base.metadata.create_all` and seeds demo warmup data (3 mailboxes, 30 days
+of warmth history, today's activity, 2 alerts) into the workspace of the
+bridge user the Django JWT resolves to (`operator@agentic.local` by default,
+override with `WARMUP_DEV_BRIDGE_EMAIL`). Idempotent — safe to re-run;
+refused unless `WARMUP_DEV_BOOTSTRAP=1` and never outside dev environments:
+
+```bash
+# from backend/
+WARMUP_DEV_BOOTSTRAP=1 \
+DATABASE_URL=sqlite+aiosqlite:///db.sqlite3 \
+JWT_SECRET=<same value as Django's WARMUP_JWT_SECRET> \
+python -m scripts.dev_bootstrap
+```
+
 ## Celery
 
 ```bash

@@ -174,6 +174,43 @@ class TestBridgeAuth:
         assert user.hashed_password == "x"
 
     @pytest.mark.asyncio
+    async def test_bridge_token_matches_mixed_case_native_user(
+        self, client, settings, db_session
+    ):
+        """A pre-existing native user stored with mixed case (legacy row)
+        must be matched case-insensitively — provisioning must never create
+        a second row for the same inbox identity."""
+        db_session.add(
+            User(
+                email="Bob@shailog.com",
+                hashed_password="x",
+                role=UserRole.super_admin,
+                onboarding_status=OnboardingStatus.active,
+                email_verified=True,
+            )
+        )
+        await db_session.commit()
+        res = await client.get(
+            "/api/auth/me",
+            headers={
+                "Authorization": f"Bearer {_bridge_token(settings, email='bob@shailog.com')}"
+            },
+        )
+        assert res.status_code == 200, res.text
+        count = (
+            await db_session.execute(
+                select(func.count())
+                .select_from(User)
+                .where(func.lower(User.email) == "bob@shailog.com")
+            )
+        ).scalar_one()
+        assert count == 1
+        # Existing row is returned untouched — role preserved, no re-provision.
+        user = await _fetch_user(db_session, "Bob@shailog.com")
+        assert user.role == UserRole.super_admin
+        assert user.hashed_password == "x"
+
+    @pytest.mark.asyncio
     async def test_platform_admin_maps_to_super_admin(
         self, client, settings, db_session
     ):
@@ -296,3 +333,27 @@ class TestBridgeAuthViaUserOrApiKeyDependency:
         )
         res = await client.get(self.ROUTE, headers={"Authorization": f"Bearer {bad}"})
         assert res.status_code == 401, res.text
+
+    @pytest.mark.asyncio
+    async def test_suspended_user_blocked_with_iss_less_token(
+        self, client, settings, db_session
+    ):
+        """Suspended users must hit the same 403 chokepoint as
+        get_current_user: an iss-less WarmPulse JWT on an endpoint behind
+        get_current_user_or_api_key may not bypass the suspension."""
+        from app.services.security import create_access_token
+
+        existing = User(
+            email="suspended-user@warmpulse-example.com",
+            hashed_password="x",
+            role=UserRole.client,
+            onboarding_status=OnboardingStatus.active,
+            email_verified=True,
+            is_suspended=True,
+        )
+        db_session.add(existing)
+        await db_session.commit()
+        token = create_access_token(subject=str(existing.id), role="client")
+        res = await client.get(self.ROUTE, headers={"Authorization": f"Bearer {token}"})
+        assert res.status_code == 403, res.text
+        assert res.json()["detail"] == "Account suspended"

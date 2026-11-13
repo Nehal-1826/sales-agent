@@ -6,7 +6,7 @@ from typing import Annotated, Any
 
 import bcrypt
 from fastapi import Depends, Header, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -67,12 +67,16 @@ async def _provision_bridge_user(session: AsyncSession, claims: dict[str, Any]) 
     (email-verified, mailbox_pending onboarding, role from claims), return
     the existing row on every later login. Existing users are returned
     untouched — role/email are never modified (idempotent re-login).
+    Lookup is case-insensitive (``func.lower``): a native row stored with
+    mixed case must be matched, never duplicated by a re-provision.
     """
     email = str(claims.get("email", "")).lower()
     if not email:
         raise HTTPException(status_code=401, detail="Bridge token missing email")
     role = UserRole.super_admin if claims.get("role") == "super_admin" else UserRole.client
-    user = (await session.execute(select(User).where(User.email == email))).scalar_one_or_none()
+    user = (
+        await session.execute(select(User).where(func.lower(User.email) == email))
+    ).scalar_one_or_none()
     if user is None:
         user = User(
             email=email,
@@ -264,6 +268,13 @@ async def get_current_user_or_api_key(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User no longer exists",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+    # Same suspension chokepoint as get_current_user — an iss-less JWT on
+    # these routes must not be a way around an admin suspension.
+    if user.is_suspended:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account suspended",
         )
     return user
 

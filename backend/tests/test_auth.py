@@ -182,6 +182,49 @@ async def test_login_unknown_user(async_client: AsyncClient) -> None:
     assert resp.status_code == 401
 
 
+@pytest.mark.asyncio
+async def test_login_email_case_insensitive(app_and_client, async_client: AsyncClient) -> None:
+    """Email compare must be case-insensitive: a row stored with mixed case
+    (legacy data) still matches a login typed with any casing — same account,
+    never a second row."""
+    from sqlalchemy import select
+
+    from app.db.models.users import OnboardingStatus, User, UserRole
+    from app.services.security import hash_password
+
+    _, _, maker = app_and_client
+    async with maker() as session:
+        existing = User(
+            email="Bob@x.com",
+            hashed_password=hash_password("correcthorse"),
+            role=UserRole.client,
+            onboarding_status=OnboardingStatus.active,
+            email_verified=True,
+        )
+        session.add(existing)
+        await session.commit()
+        user_id = str(existing.id)
+
+    resp = await async_client.post(
+        "/api/auth/login",
+        json={"email": "BOB@X.com", "password": "correcthorse"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["user"]["id"] == user_id
+
+    async with maker() as session:
+        from sqlalchemy import func
+
+        count = (
+            await session.execute(
+                select(func.count())
+                .select_from(User)
+                .where(func.lower(User.email) == "bob@x.com")
+            )
+        ).scalar_one()
+    assert count == 1
+
+
 # ---------- refresh ----------
 
 @pytest.mark.asyncio

@@ -11,7 +11,7 @@ import uuid
 from typing import Any
 
 import pyotp
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -129,7 +129,12 @@ def _issue_token_pair(user: User, plan_name: str | None) -> TokenPair:
 
 
 async def _fetch_user_by_email(session: AsyncSession, email: str) -> User | None:
-    result = await session.execute(select(User).where(User.email == email.lower()))
+    """Case-insensitive lookup: signup stores emails lowercased, but legacy
+    rows may hold mixed case — compare via ``func.lower`` so login and the
+    signup duplicate check match the same account regardless of casing."""
+    result = await session.execute(
+        select(User).where(func.lower(User.email) == email.lower())
+    )
     return result.scalar_one_or_none()
 
 

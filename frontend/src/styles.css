@@ -260,6 +260,21 @@ ul {
   flex-direction: column;
   gap: 2px;
   padding: 14px 12px;
+  /* Short viewports: the nav list scrolls, the footer (user + Sign out) stays pinned */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--chrome-border) transparent;
+}
+
+.side-nav::-webkit-scrollbar {
+  width: 6px;
+}
+
+.side-nav::-webkit-scrollbar-thumb {
+  background: var(--chrome-border);
+  border-radius: 3px;
 }
 
 .nav-item {
@@ -315,6 +330,7 @@ ul {
 
 .sidebar-foot {
   margin-top: auto;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   gap: 12px;

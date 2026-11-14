@@ -6,15 +6,32 @@ concrete next steps ("you haven't set SMTP yet — Settings → Email Delivery")
 Language matches the user (Tanglish / Tamil / English), same as the Responder.
 """
 
+import itertools
 import logging
 
 from .ai import llm_available, llm_complete
 from .chat import _humanize, detect_language_style
 from .mailer import smtp_configured
 from .permissions import is_privileged
-from .models import Enrollment, OutreachTask, WhatsAppMessage, AppSettings, EmailDraft, EmailTemplate, Lead, PipelineRun, Potential
+from .models import Enrollment, OutreachTask, WhatsAppMessage, AppSettings, EmailDraft, EmailTemplate, Lead, Mailbox, PipelineRun, Potential
 
 log = logging.getLogger(__name__)
+
+# Rotated into the LLM prompt so consecutive answers don't all open the same
+# way. Handed to the model as a directive (translated naturally when the
+# reply is Tamil/Tanglish), never pasted blindly.
+GUIDE_OPENERS = (
+    'Hey — ',
+    'Happy you asked — ',
+    "Let's get you moving — ",
+    'Good timing — ',
+)
+_OPENER_CYCLE = itertools.cycle(GUIDE_OPENERS)
+
+
+def _next_opener():
+    """Next opener in the rotation — variety without an LLM."""
+    return next(_OPENER_CYCLE)
 
 FALLBACK_ANSWER = (
     'Quick tour: Pipeline → Run cycle discovers new leads. CRM → OUTREACH shows the drafted '
@@ -139,6 +156,10 @@ def workspace_state(user=None):
             f'- Prospect replies:\n{replies_digest(3)}\n'
             '- Workspace configuration is managed by the owner; do not describe it.\n'
         )
+    # mailbox numbers are owner configuration — privileged branch only
+    mailboxes = list(Mailbox.objects.all())
+    m_configured = sum(1 for m in mailboxes if m.configured())
+    m_warmup = sum(1 for m in mailboxes if m.configured() and m.is_active)
     return (
         'WORKSPACE STATE (live right now):\n'
         f'- Leads in CRM: {Lead.objects.count()} '
@@ -148,6 +169,9 @@ def workspace_state(user=None):
         f'{EmailDraft.objects.filter(status="draft").count()}\n'
         f'- AI key configured: {"yes" if s.ai_key else "NO — tell the user to set Settings → AI Key"}\n'
         f'- SMTP configured: {"yes" if smtp_configured(s) else "NO — tell the user to set Settings → Email Delivery"}\n'
+        f'- Sending mailboxes: {len(mailboxes)} total, {m_configured} fully configured, '
+        f'{m_warmup} warmup-capable (fully configured + active)'
+        f'{"" if mailboxes else " — none yet: Settings → Mailboxes"}\n'
         f'- Email templates: {EmailTemplate.objects.count()} '
         f'(default exists: {EmailTemplate.objects.filter(is_default=True).exists()})\n'
         f'- Daily report email: {s.report_email or "not set"}\n'
@@ -163,6 +187,27 @@ def workspace_state(user=None):
         f'{WhatsAppMessage.objects.filter(status="draft").count()} messages awaiting approval\n'
         f'- Prospect replies:\n{replies_digest(3)}\n'
     )
+
+
+def _fallback_answer():
+    """No-AI-key tour — still anchored in this workspace's live numbers and
+    ending in one concrete next step."""
+    base = FALLBACK_ANSWER
+    try:
+        drafts = EmailDraft.objects.filter(status='draft').count()
+        leads = Lead.objects.count()
+        if drafts:
+            base += (f' Right now: {leads} lead{"s" if leads != 1 else ""} in the CRM and '
+                     f'{drafts} draft{"s" if drafts != 1 else ""} waiting — '
+                     'CRM → OUTREACH is your next stop.')
+        elif leads:
+            base += (f' You already have {leads} lead{"s" if leads != 1 else ""} in the CRM — '
+                     'start at CRM → LEADS.')
+        else:
+            base += ' CRM is empty — Pipeline → Run cycle fills it with your first leads.'
+    except Exception:
+        pass
+    return base
 
 
 def guide_answer(question, history=None, user=None):
@@ -183,7 +228,7 @@ def guide_answer(question, history=None, user=None):
         return _phrase_action(question, result)
 
     if not llm_available():
-        return FALLBACK_ANSWER
+        return _fallback_answer()
     style = detect_language_style(question)
     convo = ''
     if history:
@@ -201,7 +246,16 @@ def guide_answer(question, history=None, user=None):
         '(under 120 words), step-by-step, plain text, no markdown bold/headings. If the user '
         'asks something unrelated to the product, steer gently back to it. '
         'If the conversation shows an action was already performed and the user asks you to '
-        'do it, confirm it is already done — do NOT send them clicking. ' +
+        'do it, confirm it is already done — do NOT send them clicking. '
+        'VOICE — warm, direct, human: open with the OPENER line given in the prompt '
+        '(translate it naturally when you reply in Tamil or Tanglish), then answer '
+        'immediately. Anchor every claim about the workspace in the WORKSPACE STATE live '
+        'numbers and quote them exactly — "you have 4 drafts waiting", never "you may have '
+        'drafts". Short sentences, one idea each. No filler ("certainly", "great question", '
+        '"sure", "of course", "I would be happy to"). End with exactly ONE concrete next '
+        'step as a click-path (page → section → button); when the first-run checklist has '
+        'missing items, the first missing item IS that next step — offer it as the single '
+        'best action, not a menu. ' +
         ('The user writes in Tanglish — reply in natural Tanglish.'
          if style == 'tanglish' else
          'The user writes in Tamil script — reply in Tamil script.'
@@ -211,17 +265,21 @@ def guide_answer(question, history=None, user=None):
     prompt = (
         f'{PRODUCT_KB}\n\n{workspace_state(user)}\n\n'
         f'{convo}'
+        f'OPENER: {_next_opener()}\n\n'
         f'USER QUESTION: {question}\n\n'
-        'Answer with the exact click-path and, when the workspace state shows something '
-        'missing, the logical next step. When an action was already performed for the '
-        'user, do not tell them to click it themselves — report what happened instead.'
+        'Answer with the exact click-path. Anchor every workspace claim in the live '
+        'numbers above — quote them, never hedge ("you have 4 drafts waiting", not "you '
+        'may have drafts"). Finish with the single best next step and its page path; if '
+        'the first-run checklist has a missing item, name that item and its page. When an '
+        'action was already performed for the user, do not tell them to click it '
+        'themselves — report what happened instead.'
     )
     try:
         result = llm_complete(prompt, system=system, timeout=60)
-        return _humanize(result) if result else FALLBACK_ANSWER
+        return _humanize(result) if result else _fallback_answer()
     except Exception as exc:
         log.warning('Guide LLM call failed: %s', exc)
-        return FALLBACK_ANSWER
+        return _fallback_answer()
 
 
 def _phrase_action(question, action_result):
@@ -233,7 +291,11 @@ def _phrase_action(question, action_result):
             f'USER ASKED: {question}\n\nACTION PERFORMED: {action_result}\n\n'
             f'Confirm to the user what you just did, in 1-2 short friendly sentences.',
             system=('You executed an action in the product for the user. Confirm exactly what '
-                    'happened, plain text, no markdown, no new claims. ' +
+                    'happened, plain text, no markdown, no new claims. Open directly with the '
+                    'confirmation — no filler ("certainly", "great question", "sure"). Use the '
+                    'live numbers from the action result when it has them. If one obvious next '
+                    'step helps (e.g. "next: CRM → OUTREACH to send the rest"), end with that '
+                    'single step and its page — otherwise stop after the confirmation. ' +
                     {'tanglish': 'Reply in natural Tanglish.',
                      'tamil': 'Reply in Tamil script.'}.get(detect_language_style(question),
                                                             'Reply in friendly English.')),

@@ -31,7 +31,7 @@ class TotpMathTests(TestCase):
     def test_secret_shape(self):
         s = totp.new_secret()
         self.assertEqual(len(s), 32)
-        self.assertIn('Shailog%20Technologies', totp.otpauth_uri(s, 'a@b.c'))
+        self.assertIn('WarmPulse', totp.otpauth_uri(s, 'a@b.c'))
 
 
 class AccessTests(TestCase):

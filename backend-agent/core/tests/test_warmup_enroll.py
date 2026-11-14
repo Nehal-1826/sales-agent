@@ -13,8 +13,10 @@ All enrollment HTTP is mocked: tests patch ``core.warmup_enroll.enroll_mailbox``
 
 from unittest import mock
 
+import requests
 from rest_framework.authtoken.models import Token
 
+from core import warmup_enroll
 from core.models import Mailbox, User, Workspace
 from core.tenancy import reset_workspace, set_workspace
 from core.tests.base import TenantTestCase
@@ -133,6 +135,70 @@ class AutoEnrollOnVerifiedSaveTests(WarmupEnrollTestBase):
         self.assertEqual(res.status_code, 201)
         mb = Mailbox.objects.get(from_email='warm@x.test')
         self.assertIn('kaboom', mb.warmup_enroll_error)
+
+
+class HookTimeoutTests(WarmupEnrollTestBase):
+    """The save hook is capped at 5 s per HTTP call; the retry endpoint is not."""
+
+    def test_hook_passes_short_timeout(self):
+        with mock.patch('core.warmup_enroll.enroll_mailbox',
+                        return_value=ENROLL_RESULT) as enroll:
+            res = self.client.post('/api/mailboxes/', mailbox_payload(loginVerified=True),
+                                   content_type='application/json', **self.auth)
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(enroll.call_args.kwargs['timeout'], 5)
+
+    def test_retry_endpoint_keeps_interactive_timeouts(self):
+        mb = self.make_mailbox()
+        with mock.patch('core.warmup_enroll.enroll_mailbox',
+                        return_value=ENROLL_RESULT) as enroll:
+            res = self.client.post(f'/api/mailboxes/{mb.id}/enroll_warmup/', **self.auth)
+        self.assertEqual(res.status_code, 200)
+        self.assertNotIn('timeout', enroll.call_args.kwargs)
+
+    def test_timeout_reaches_every_http_call(self):
+        # timeout= caps both the list probe and the create; None keeps the
+        # interactive per-call defaults
+        mb = self.make_mailbox()
+        listing = mock.Mock(status_code=200)
+        listing.json.return_value = {'items': []}
+        created = mock.Mock(status_code=201)
+        created.json.return_value = {'id': 'wm-1', 'email_address': 'warm@x.test'}
+        with mock.patch('core.warmup_enroll.mint_warmup_token', return_value='tok'), \
+                mock.patch('core.warmup_enroll.requests.get', return_value=listing) as get, \
+                mock.patch('core.warmup_enroll.requests.post', return_value=created) as post:
+            warmup_enroll.enroll_mailbox(user=self.user, workspace_slug='test', mailbox=mb,
+                                         timeout=5)
+            self.assertEqual(get.call_args.kwargs['timeout'], 5)
+            self.assertEqual(post.call_args.kwargs['timeout'], 5)
+            warmup_enroll.enroll_mailbox(user=self.user, workspace_slug='test', mailbox=mb)
+            self.assertEqual(get.call_args.kwargs['timeout'], warmup_enroll.LIST_TIMEOUT)
+            self.assertEqual(post.call_args.kwargs['timeout'], warmup_enroll.TIMEOUT)
+
+    def test_hook_timeout_stored_save_succeeds(self):
+        # real enroll_mailbox, warmup service hangs → error stored, 201 anyway
+        with mock.patch('core.warmup_enroll.mint_warmup_token', return_value='tok'), \
+                mock.patch('core.warmup_enroll.requests.get',
+                           side_effect=requests.Timeout('read timed out')):
+            res = self.client.post('/api/mailboxes/', mailbox_payload(loginVerified=True),
+                                   content_type='application/json', **self.auth)
+        self.assertEqual(res.status_code, 201)
+        mb = Mailbox.objects.get(from_email='warm@x.test')
+        self.assertEqual(mb.warmup_enroll_error, 'Timed out contacting warmup service')
+
+    def test_create_call_timeout_maps_to_error(self):
+        mb = self.make_mailbox()
+        listing = mock.Mock(status_code=200)
+        listing.json.return_value = {'items': []}
+        with mock.patch('core.warmup_enroll.mint_warmup_token', return_value='tok'), \
+                mock.patch('core.warmup_enroll.requests.get', return_value=listing), \
+                mock.patch('core.warmup_enroll.requests.post',
+                           side_effect=requests.Timeout('read timed out')):
+            with self.assertRaises(WarmupEnrollError) as ctx:
+                warmup_enroll.enroll_mailbox(user=self.user, workspace_slug='test', mailbox=mb,
+                                             timeout=5)
+        self.assertEqual(ctx.exception.detail, 'Timed out contacting warmup service')
+        self.assertEqual(ctx.exception.status_code, 504)
 
 
 class RetryEndpointTests(WarmupEnrollTestBase):

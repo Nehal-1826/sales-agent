@@ -881,9 +881,12 @@ def _auto_enroll_warmup(request, mb):
     """
     if not request.data.get('loginVerified') or not mb.warmup_enrolled:
         return
-    from .warmup_enroll import WarmupEnrollError, enroll_mailbox
+    from .warmup_enroll import HOOK_TIMEOUT, WarmupEnrollError, enroll_mailbox
     try:
-        enroll_mailbox(user=request.user, workspace_slug=_warmup_slug(request), mailbox=mb)
+        # inline in the save request → per-call 5 s cap, unlike the
+        # interactive enroll endpoint which can afford the full probe
+        enroll_mailbox(user=request.user, workspace_slug=_warmup_slug(request), mailbox=mb,
+                       timeout=HOOK_TIMEOUT)
         error = ''
     except WarmupEnrollError as exc:
         error = str(exc.detail)

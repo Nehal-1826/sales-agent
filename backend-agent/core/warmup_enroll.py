@@ -28,6 +28,11 @@ DEFAULT_BASE = 'http://127.0.0.1:8001'
 TIMEOUT = 20          # the create route runs a live SMTP AUTH probe first
 LIST_TIMEOUT = 8
 MAX_LIST_PAGES = 10   # page_size=100 → idempotency check up to 1000 rows
+# The auto-enroll hook (core.views._auto_enroll_warmup) runs inside the
+# mailbox save request, so it gets a much shorter per-call cap than the
+# interactive enroll endpoint: 5 s, not TIMEOUT/LIST_TIMEOUT.
+HOOK_TIMEOUT = 5
+TIMED_OUT = 'Timed out contacting warmup service'
 
 
 class WarmupEnrollError(Exception):
@@ -47,7 +52,7 @@ def _bridge_headers(token):
     return {'Authorization': f'Bearer {token}', 'Accept': 'application/json'}
 
 
-def _find_enrolled(token, email):
+def _find_enrolled(token, email, timeout=LIST_TIMEOUT):
     """Return the warmup mailbox row for `email` (lower-cased match), or None."""
     target = email.strip().lower()
     base = warmup_api_base()
@@ -57,10 +62,12 @@ def _find_enrolled(token, email):
                 f'{base}/api/workspace/mailboxes',
                 params={'page': page, 'page_size': 100},
                 headers=_bridge_headers(token),
-                timeout=LIST_TIMEOUT,
+                timeout=timeout,
             )
             resp.raise_for_status()
             items = resp.json().get('items', [])
+        except requests.Timeout as exc:
+            raise WarmupEnrollError(TIMED_OUT, 504) from exc
         except requests.RequestException as exc:
             raise WarmupEnrollError(f'Could not reach the warmup service: {exc}') from exc
         for item in items:
@@ -71,11 +78,15 @@ def _find_enrolled(token, email):
     return None
 
 
-def enroll_mailbox(user, workspace_slug, mailbox):
+def enroll_mailbox(user, workspace_slug, mailbox, timeout=None):
     """Enroll one configured sending mailbox into WarmPulse.
 
     Returns ``{'status': 'enrolled' | 'already_enrolled', 'mailbox': {...}}``
     (the created/EXISTING MailboxOut verbatim) or raises WarmupEnrollError.
+
+    ``timeout`` (seconds) caps every HTTP call of this enrollment; None keeps
+    the interactive defaults (TIMEOUT / LIST_TIMEOUT). The auto-enroll hook
+    passes HOOK_TIMEOUT so a slow warmup service cannot stall a save.
     """
     if not mailbox.configured():
         raise WarmupEnrollError(
@@ -87,7 +98,8 @@ def enroll_mailbox(user, workspace_slug, mailbox):
     except RuntimeError as exc:
         raise WarmupEnrollError(f'Warmup bridge is not configured: {exc}', 503) from exc
 
-    existing = _find_enrolled(token, mailbox.from_email)
+    existing = _find_enrolled(token, mailbox.from_email,
+                              timeout=LIST_TIMEOUT if timeout is None else timeout)
     if existing is not None:
         return {'status': 'already_enrolled', 'mailbox': existing}
 
@@ -109,8 +121,11 @@ def enroll_mailbox(user, workspace_slug, mailbox):
             json=payload,
             headers={**_bridge_headers(token),
                      'Content-Type': 'application/json'},
-            timeout=TIMEOUT,
+            timeout=TIMEOUT if timeout is None else timeout,
         )
+    except requests.Timeout as exc:
+        log.warning('warmup enroll: timed out for %s', mailbox.from_email)
+        raise WarmupEnrollError(TIMED_OUT, 504) from exc
     except requests.RequestException as exc:
         log.warning('warmup enroll: request failed for %s: %s', mailbox.from_email, exc)
         raise WarmupEnrollError(

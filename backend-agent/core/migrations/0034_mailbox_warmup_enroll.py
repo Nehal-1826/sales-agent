@@ -3,6 +3,13 @@
 from django.db import migrations, models
 
 
+def legacy_rows_opt_in(apps, schema_editor):
+    """Mailboxes that predate auto-enroll were never enrolled by it: their
+    flag switches off, so they opt in explicitly (Settings toggle / retry).
+    The model default stays True — new mailboxes still auto-enroll."""
+    apps.get_model('core', 'Mailbox').objects.update(warmup_enrolled=False)
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -20,4 +27,5 @@ class Migration(migrations.Migration):
             name='warmup_enrolled',
             field=models.BooleanField(default=True),
         ),
+        migrations.RunPython(legacy_rows_opt_in, migrations.RunPython.noop),
     ]

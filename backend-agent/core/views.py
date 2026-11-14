@@ -1,5 +1,7 @@
 """API views — JSON endpoints consumed by the frontend."""
 
+import logging
+
 from django.contrib.auth import authenticate
 from django.db import connection
 from django.utils import timezone
@@ -859,6 +861,40 @@ def _get_mailbox(mailbox_id):
     return Mailbox.objects.filter(pk=mailbox_id).first()
 
 
+WARMUP_NOT_CONFIGURED = ('Mailbox is not fully configured — add the SMTP host, username and '
+                         'password first (Settings → Mailboxes).')
+
+
+def _warmup_slug(request):
+    ws = getattr(request.user, 'workspace', None)
+    return getattr(ws, 'slug', None) or 'default'
+
+
+def _auto_enroll_warmup(request, mb):
+    """Enroll a just-verified mailbox into warmup; never blocks the save.
+
+    Fires only when the wizard sends ``loginVerified`` (Test Connection
+    passed, then save) — a plain field edit never re-enrolls. The per-mailbox
+    ``warmup_enrolled`` toggle opts out. Any failure is stored on
+    ``warmup_enroll_error`` (the Settings retry state) and swallowed: warmup
+    is an add-on, the mailbox save has already succeeded.
+    """
+    if not request.data.get('loginVerified') or not mb.warmup_enrolled:
+        return
+    from .warmup_enroll import WarmupEnrollError, enroll_mailbox
+    try:
+        enroll_mailbox(user=request.user, workspace_slug=_warmup_slug(request), mailbox=mb)
+        error = ''
+    except WarmupEnrollError as exc:
+        error = str(exc.detail)
+    except Exception as exc:  # noqa: BLE001 — enrollment must never fail a save
+        logging.getLogger(__name__).exception('warmup auto-enroll crashed for mailbox %s', mb.pk)
+        error = f'Warmup enrollment failed unexpectedly: {exc}'
+    if error != mb.warmup_enroll_error:
+        mb.warmup_enroll_error = error
+        mb.save(update_fields=['warmup_enroll_error'])
+
+
 @api_view(['GET', 'POST'])
 @permission_classes([IsWorkspaceAdminOrReadOnly])
 def mailboxes(request):
@@ -867,6 +903,7 @@ def mailboxes(request):
         serializer.is_valid(raise_exception=True)
         quota_check(current_workspace(), 'mailboxes')   # billing: 402 when the plan is full
         mb = serializer.save()
+        _auto_enroll_warmup(request, mb)
         return Response(MailboxSerializer(mb).data, status=status.HTTP_201_CREATED)
     return Response(MailboxSerializer(Mailbox.objects.all(), many=True).data)
 
@@ -912,6 +949,7 @@ def mailbox_detail(request, mailbox_id):
         serializer = MailboxSerializer(mb, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         mb = serializer.save()
+        _auto_enroll_warmup(request, mb)
     return Response(MailboxSerializer(mb).data)
 
 
@@ -951,12 +989,18 @@ def mailbox_enroll_warmup(request, mailbox_id):
     mb = _get_mailbox(mailbox_id)
     if mb is None:
         return Response({'detail': 'mailbox not found'}, status=404)
-    ws = getattr(request.user, 'workspace', None)
-    slug = getattr(ws, 'slug', None) or 'default'
+    if not mb.configured():   # nothing to forward — refuse before any bridge call
+        return Response({'detail': WARMUP_NOT_CONFIGURED}, status=400)
     try:
-        result = enroll_mailbox(user=request.user, workspace_slug=slug, mailbox=mb)
+        result = enroll_mailbox(user=request.user, workspace_slug=_warmup_slug(request), mailbox=mb)
     except WarmupEnrollError as exc:
+        mb.warmup_enroll_error = str(exc.detail)
+        mb.save(update_fields=['warmup_enroll_error'])
         return Response({'detail': exc.detail}, status=exc.status_code)
+    # an explicit enroll/retry is also the opt-in: flag on, stale error cleared
+    mb.warmup_enrolled = True
+    mb.warmup_enroll_error = ''
+    mb.save(update_fields=['warmup_enrolled', 'warmup_enroll_error'])
     return Response(result, status=status.HTTP_200_OK)
 
 

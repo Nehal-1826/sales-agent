@@ -522,11 +522,15 @@ class MailboxSerializer(serializers.ModelSerializer):
     dailyCap = serializers.IntegerField(source='daily_cap', required=False, min_value=1, max_value=500)
     rampStart = serializers.DateField(source='ramp_start', required=False, allow_null=True)
     isActive = serializers.BooleanField(source='is_active', required=False)
+    # per-mailbox warmup auto-enroll toggle (default on); the enroll error is
+    # read-only state written by the views, exposed in to_representation
+    warmupEnrolled = serializers.BooleanField(source='warmup_enrolled', required=False)
 
     class Meta:
         model = Mailbox
         fields = ['id', 'label', 'fromEmail', 'fromName', 'smtpHost', 'smtpPort', 'smtpUser',
-                  'smtpPassword', 'imapHost', 'imapPort', 'imapUser', 'imapPassword', 'dailyCap', 'rampStart', 'isActive']
+                  'smtpPassword', 'imapHost', 'imapPort', 'imapUser', 'imapPassword', 'dailyCap', 'rampStart', 'isActive',
+                  'warmupEnrolled']
 
     def validate_fromEmail(self, value):
         value = value.strip().lower()
@@ -574,6 +578,8 @@ class MailboxSerializer(serializers.ModelSerializer):
             'healthScore': instance.health_score,
             'warmpulseSyncedAt': instance.warmpulse_synced_at,
             'stillWarming': still_warming(instance),
+            'warmupEnrolled': instance.warmup_enrolled,
+            'warmupEnrollError': instance.warmup_enroll_error,
         }
 
     def _apply_password(self, validated, instance=None):

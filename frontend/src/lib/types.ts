@@ -155,11 +155,19 @@ export interface Mailbox {
   healthScore: number | null;
   warmpulseSyncedAt: string | null;
   stillWarming: boolean;
+  /** Per-mailbox warmup auto-enroll toggle (default on). */
+  warmupEnrolled: boolean;
+  /** Last failed warmup enrollment — blank once one succeeds. */
+  warmupEnrollError: string;
 }
 
 export type MailboxInput = Partial<Pick<Mailbox,
   'label' | 'fromEmail' | 'fromName' | 'smtpHost' | 'smtpPort' | 'smtpUser' | 'smtpPassword' |
-  'imapHost' | 'imapPort' | 'dailyCap' | 'rampStart' | 'isActive'>>;
+  'imapHost' | 'imapPort' | 'dailyCap' | 'rampStart' | 'isActive' | 'warmupEnrolled'>> & {
+  /** Write-only: Test Connection passed for exactly what is being saved —
+   *  the backend then enrolls the mailbox into warmup (when the toggle is on). */
+  loginVerified?: boolean;
+};
 
 /** One leg of POST /api/mailboxes/test — {ok, detail}, never the password. */
 export interface MailboxProbeLeg {

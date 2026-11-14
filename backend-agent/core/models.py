@@ -222,6 +222,11 @@ class Mailbox(TenantOwned, Timestamped):
     warmup_status = models.CharField(max_length=30, blank=True)
     health_score = models.FloatField(null=True, blank=True)
     warmpulse_synced_at = models.DateTimeField(null=True, blank=True)
+    # auto-enroll into the warmup network (core.warmup_enroll): the flag is
+    # the per-mailbox choice (default on); the error is the last failed
+    # attempt, blank once an enrollment succeeds — it never blocks a save
+    warmup_enrolled = models.BooleanField(default=True)
+    warmup_enroll_error = models.TextField(blank=True, default='')
 
     class Meta(TenantOwned.Meta):
         ordering = ['id']

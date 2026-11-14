@@ -6,6 +6,7 @@ import {
   checkMailboxDns,
   createMailbox,
   deleteMailbox,
+  enrollMailboxWarmup,
   getMailboxes,
   putSettings,
   resumeMailbox,
@@ -77,6 +78,12 @@ function statusChip(mb: Mailbox) {
   return <Chip tone="success">Sending</Chip>;
 }
 
+function warmupChip(mb: Mailbox) {
+  if (!mb.warmupEnrolled) return <Chip>Warmup off</Chip>;
+  if (mb.warmupEnrollError) return <Chip tone="warn">⚠ Warmup not enrolled</Chip>;
+  return <Chip tone="success">✓ Warmup enrolled</Chip>;
+}
+
 function MailboxCard({ mb, onChanged, onEdit }: { mb: Mailbox; onChanged: () => void; onEdit: () => void }) {
   const [busy, setBusy] = useState(false);
   const run = async (fn: () => Promise<{ ok: boolean; error?: string }>, done: string) => {
@@ -125,6 +132,34 @@ function MailboxCard({ mb, onChanged, onEdit }: { mb: Mailbox; onChanged: () => 
           {mb.stillWarming && ' · still warming, so we keep sending slowly'}
         </p>
       )}
+
+      <div className="settings-row">
+        <div>
+          <strong>Warmup {warmupChip(mb)}</strong>
+          <small>
+            {!mb.warmupEnrolled
+              ? 'Off — this mailbox is not added to the warmup network when its login is verified.'
+              : mb.warmupEnrollError
+                ? `Could not add it to warmup: ${mb.warmupEnrollError}`
+                : 'Added to the warmup network when its login is verified.'}
+          </small>
+        </div>
+        {mb.warmupEnrolled && mb.warmupEnrollError && (
+          <button className="btn btn-sm" disabled={busy} onClick={() => void run(() => enrollMailboxWarmup(mb.id), 'Mailbox added to warmup.')}>
+            Retry
+          </button>
+        )}
+        <Toggle
+          checked={mb.warmupEnrolled}
+          onChange={(warmupEnrolled) => void run(
+            // switching on enrolls right away (the endpoint stores the flag
+            // itself on success); switching off only stores the flag
+            () => (warmupEnrolled ? enrollMailboxWarmup(mb.id) : updateMailbox(mb.id, { warmupEnrolled: false })),
+            warmupEnrolled ? 'Mailbox added to warmup.' : 'Warmup switched off for this mailbox.',
+          )}
+          label="Enroll this mailbox in warmup"
+        />
+      </div>
 
       <div className="mailbox-actions">
         <button className="btn btn-sm" disabled={busy} onClick={() => void run(() => checkMailboxDns(mb.id), 'Domain check finished.')}>
@@ -264,7 +299,9 @@ function MailboxModal({ mailbox, onClose, onSaved }: { mailbox: Mailbox | null; 
   const save = async () => {
     if (!v.fromEmail?.trim()) return toast.error('Enter the email address this mailbox sends from.');
     setSaving(true);
-    const body = { ...v, smtpUser: v.smtpUser || v.fromEmail };
+    // loginVerified: the probe passed for exactly these servers + password
+    // (any edit to them clears it) — the backend then auto-enrolls into warmup
+    const body = { ...v, smtpUser: v.smtpUser || v.fromEmail, loginVerified: verified };
     const res = mailbox ? await updateMailbox(mailbox.id, body) : await createMailbox(body);
     setSaving(false);
     if (!res.ok) return toast.error(res.error);

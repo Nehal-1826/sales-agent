@@ -1,46 +1,114 @@
 import { useEffect, useState } from 'react';
 import { GlassBackdrop } from '../../components/Lightfall';
 import {
+  IconBranch,
   IconBuilding,
+  IconChart,
+  IconCrm,
   IconCreditCard,
   IconDashboard,
+  IconFlame,
+  IconHeart,
   IconLayers,
   IconLogout,
+  IconMailSearch,
+  IconNetwork,
+  IconPackage,
   IconPulse,
   IconReceipt,
+  IconReport,
+  IconSend,
+  IconSettings,
   IconShield,
+  IconSpark,
+  IconUsers,
+  IconWallet,
   type IconProps,
 } from '../../components/icons';
 import { Toaster } from '../../components/feedback';
 import { OverviewPage } from './OverviewPage';
+import { PlatformAnalyticsPage } from './PlatformAnalyticsPage';
+import { SystemHealthPage } from './SystemHealthPage';
+import { PeerInboxesPage } from './PeerInboxesPage';
+import { PoolRoutingPage } from './PoolRoutingPage';
+import { LlmUsagePage } from './LlmUsagePage';
+import { PlatformMailPage } from './PlatformMailPage';
+import { MailViewerPage } from './MailViewerPage';
+import { AdminUsersPage } from './AdminUsersPage';
 import { TenantsPage } from './TenantsPage';
+import { RevengePage } from './RevengePage';
+import { CrmManagementPage } from './CrmManagementPage';
+import { PlansPage } from './PlansPage';
+import { AddonsPage } from './AddonsPage';
+import { AdminBillingPage } from './AdminBillingPage';
 import { PaymentsPage } from './PaymentsPage';
 import { InvoicesPage } from './InvoicesPage';
-import { MarketingPage } from './MarketingPage';
-import { PlansPage } from './PlansPage';
+import { AdminReportsPage } from './AdminReportsPage';
 import { AuditPage } from './AuditPage';
+import { AdminSettingsPage } from './AdminSettingsPage';
+import { MarketingPage } from './MarketingPage';
 import { PLATFORM_PAGES } from './shared';
 import type { PlatformPage } from './shared';
 
 const LABELS: Record<PlatformPage, string> = {
   overview: 'Overview',
+  analytics: 'Platform stats',
+  health: 'System status',
+  peers: 'Test accounts',
+  routing: 'Account routing',
+  llm: 'AI usage',
+  'platform-mail': 'Platform mail',
+  'mail-viewer': 'Mail viewer',
+  users: 'Users',
   tenants: 'Tenants',
+  revenge: 'Retention',
+  crm: 'Leads',
+  plans: 'Plans',
+  addons: 'Add-ons',
+  billing: 'Billing',
   payments: 'Payments',
   invoices: 'Invoices',
-  marketing: 'Marketing',
-  plans: 'Plans',
+  reports: 'Reports',
   audit: 'Audit log',
+  settings: 'Settings',
+  marketing: 'Marketing',
 };
 
 const ICONS: Record<PlatformPage, (p: IconProps) => JSX.Element> = {
   overview: IconDashboard,
+  analytics: IconChart,
+  health: IconHeart,
+  peers: IconNetwork,
+  routing: IconBranch,
+  llm: IconSpark,
+  'platform-mail': IconSend,
+  'mail-viewer': IconMailSearch,
+  users: IconUsers,
   tenants: IconBuilding,
+  revenge: IconFlame,
+  crm: IconCrm,
+  plans: IconLayers,
+  addons: IconPackage,
+  billing: IconWallet,
   payments: IconCreditCard,
   invoices: IconReceipt,
-  marketing: IconPulse,
-  plans: IconLayers,
+  reports: IconReport,
   audit: IconShield,
+  settings: IconSettings,
+  marketing: IconPulse,
 };
+
+/** Grouped sidebar nav — mirrors the WarmPulse admin nav clusters
+ *  (nav-config.ts ADMIN_NAV_GROUPS) with the console-only pages folded in. */
+const NAV_GROUPS: { group: string; pages: PlatformPage[] }[] = [
+  { group: 'Overview', pages: ['overview', 'analytics', 'health'] },
+  { group: 'Email network', pages: ['peers', 'routing', 'llm', 'platform-mail', 'mail-viewer'] },
+  {
+    group: 'Customers & money',
+    pages: ['users', 'tenants', 'revenge', 'crm', 'plans', 'addons', 'billing', 'payments', 'invoices'],
+  },
+  { group: 'Management', pages: ['reports', 'audit', 'settings', 'marketing'] },
+];
 
 function parse(hash = window.location.hash): PlatformPage {
   const [root = '', page = ''] = hash.replace(/^#\/?/, '').split('/');
@@ -90,21 +158,26 @@ export function PlatformShell({ demo, onSignOut }: { demo: boolean; onSignOut: (
         </div>
 
         <nav className="side-nav">
-          {PLATFORM_PAGES.map((p) => {
-            const Icon = ICONS[p];
-            return (
-              <a
-                key={p}
-                href={`#/platform/${p}`}
-                className={`nav-item${page === p ? ' active' : ''}`}
-                aria-current={page === p ? 'page' : undefined}
-                onClick={() => setMenuOpen(false)}
-              >
-                <Icon size={18} />
-                <span>{LABELS[p]}</span>
-              </a>
-            );
-          })}
+          {NAV_GROUPS.map(({ group, pages }) => (
+            <div key={group} className="nav-group">
+              <small className="nav-group-label">{group}</small>
+              {pages.map((p) => {
+                const Icon = ICONS[p];
+                return (
+                  <a
+                    key={p}
+                    href={`#/platform/${p}`}
+                    className={`nav-item${page === p ? ' active' : ''}`}
+                    aria-current={page === p ? 'page' : undefined}
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    <Icon size={18} />
+                    <span>{LABELS[p]}</span>
+                  </a>
+                );
+              })}
+            </div>
+          ))}
         </nav>
 
         <div className="sidebar-foot">
@@ -140,12 +213,26 @@ export function PlatformShell({ demo, onSignOut }: { demo: boolean; onSignOut: (
         </header>
         <main className="content" id="main" tabIndex={-1}>
           {page === 'overview' && <OverviewPage />}
+          {page === 'analytics' && <PlatformAnalyticsPage />}
+          {page === 'health' && <SystemHealthPage />}
+          {page === 'peers' && <PeerInboxesPage demo={demo} />}
+          {page === 'routing' && <PoolRoutingPage demo={demo} />}
+          {page === 'llm' && <LlmUsagePage demo={demo} />}
+          {page === 'platform-mail' && <PlatformMailPage demo={demo} />}
+          {page === 'mail-viewer' && <MailViewerPage />}
+          {page === 'users' && <AdminUsersPage demo={demo} />}
           {page === 'tenants' && <TenantsPage demo={demo} />}
+          {page === 'revenge' && <RevengePage demo={demo} />}
+          {page === 'crm' && <CrmManagementPage />}
+          {page === 'plans' && <PlansPage demo={demo} />}
+          {page === 'addons' && <AddonsPage demo={demo} />}
+          {page === 'billing' && <AdminBillingPage demo={demo} />}
           {page === 'payments' && <PaymentsPage demo={demo} />}
           {page === 'invoices' && <InvoicesPage />}
-          {page === 'marketing' && <MarketingPage />}
-          {page === 'plans' && <PlansPage demo={demo} />}
+          {page === 'reports' && <AdminReportsPage demo={demo} />}
           {page === 'audit' && <AuditPage />}
+          {page === 'settings' && <AdminSettingsPage demo={demo} />}
+          {page === 'marketing' && <MarketingPage />}
         </main>
       </div>
       <Toaster />

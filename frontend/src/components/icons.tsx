@@ -216,6 +216,77 @@ export const IconShield = ({ size, className }: IconProps) => (
   </svg>
 );
 
+export const IconChart = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M4 4v16h16" />
+    <path d="m7.5 14.5 3.5-4 3 2.5 4.5-6.5" />
+  </svg>
+);
+
+export const IconHeart = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M12 20.2s-7.2-4.4-8.9-8.6A5.2 5.2 0 0 1 12 7.4a5.2 5.2 0 0 1 8.9 4.2c-1.7 4.2-8.9 8.6-8.9 8.6Z" />
+    <path d="M4 12.5h3.2l1.6-2.4 2.4 4 1.6-1.6H20" />
+  </svg>
+);
+
+export const IconNetwork = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <circle cx="12" cy="5" r="2" />
+    <circle cx="5" cy="19" r="2" />
+    <circle cx="19" cy="19" r="2" />
+    <path d="M12 7v4.5M12 11.5 6.4 17.3M12 11.5l5.6 5.8" />
+  </svg>
+);
+
+export const IconBranch = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <circle cx="6" cy="5" r="2" />
+    <circle cx="6" cy="19" r="2" />
+    <circle cx="18" cy="12" r="2" />
+    <path d="M6 7v10M8 5.7 16 10.4M8 18.3 16 13.6" />
+  </svg>
+);
+
+export const IconMailSearch = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <rect x="3.5" y="5.5" width="13.5" height="10" rx="2" />
+    <path d="m4 7.3 6.2 4.7L16.5 7.3" />
+    <circle cx="17" cy="16.5" r="3.2" />
+    <path d="m19.4 18.9 2 2" />
+  </svg>
+);
+
+export const IconUsers = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <circle cx="9" cy="8.5" r="3.2" />
+    <path d="M3 19.5c.7-3.2 3-4.7 6-4.7s5.3 1.5 6 4.7" />
+    <path d="M15.5 5.8a3.2 3.2 0 0 1 0 5.9M17.5 14.9c2 .6 3.3 2 3.8 4.1" />
+  </svg>
+);
+
+export const IconPackage = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="m12 3.5 8 4.3v8.4l-8 4.3-8-4.3V7.8l8-4.3Z" />
+    <path d="m4 7.8 8 4.3 8-4.3M12 12.1v8.4" />
+  </svg>
+);
+
+export const IconWallet = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M4 7A2.5 2.5 0 0 1 6.5 4.5H18v3" />
+    <rect x="4" y="7.5" width="16.5" height="12" rx="2.2" />
+    <path d="M15.5 13.5h2.5" />
+  </svg>
+);
+
+export const IconReport = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M6 3.5h8l4 4v13H6v-17Z" />
+    <path d="M14 3.5v4h4M9 12h6M9 15.5h6" />
+  </svg>
+);
+
 export const iconForAgent: Record<string, (p: IconProps) => JSX.Element> = {
   search: IconSearch,
   profile: IconProfile,

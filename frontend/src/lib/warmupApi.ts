@@ -135,7 +135,7 @@ export async function warmupGet<T>(path: string): Promise<T> {
 }
 
 /** Non-GET on the warmup API — same token/401-retry contract as warmupGet. */
-async function warmupSend<T>(
+export async function warmupSend<T>(
   path: string,
   method: 'POST' | 'PATCH' | 'DELETE',
   body?: unknown,

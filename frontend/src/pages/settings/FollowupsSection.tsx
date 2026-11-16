@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { GlideSelect } from '../../components/GlideSelect';
 import { LoadError, Skeleton, toast } from '../../components/feedback';
 import { Field, Toggle } from '../../components/ui';
 import { getSequences, putSettings, saveSequence } from '../../lib/api';
@@ -129,13 +130,13 @@ function SequenceEditor() {
             </div>
             <div className="form-grid">
               <Field label="Type">
-                <select value={st.channel} onChange={(e) => setStep(i, { channel: e.target.value as SequenceChannel })}>
-                  {CHANNELS.map((c) => (
-                    <option key={c.value} value={c.value}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
+                <GlideSelect
+                  ariaLabel="Step type"
+                  size="lg"
+                  value={st.channel}
+                  onChange={(next) => setStep(i, { channel: next as SequenceChannel })}
+                  options={CHANNELS.map((c) => ({ value: c.value, label: c.label }))}
+                />
               </Field>
               <Field label="Wait (days after the previous step)">
                 <input

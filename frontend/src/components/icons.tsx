@@ -188,6 +188,34 @@ export const IconLogout = ({ size, className }: IconProps) => (
   </svg>
 );
 
+export const IconCreditCard = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <rect x="3" y="5" width="18" height="14" rx="2.5" />
+    <path d="M3 10h18M7 15h4" />
+  </svg>
+);
+
+export const IconReceipt = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M5 3.5h14v17l-2.5-1.5-2.5 1.5-2-1.5-2 1.5-2.5-1.5L5 20.5v-17Z" />
+    <path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4" />
+  </svg>
+);
+
+export const IconLayers = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="m12 3.5 8.5 4.5L12 12.5 3.5 8 12 3.5Z" />
+    <path d="m3.5 12 8.5 4.5 8.5-4.5M3.5 16l8.5 4.5 8.5-4.5" />
+  </svg>
+);
+
+export const IconShield = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M12 3.5 19 6.5v5.8c0 4.2-3 7.4-7 8.7-4-1.3-7-4.5-7-8.7V6.5l7-3Z" />
+    <path d="m9.2 12.2 2 2 3.8-4" />
+  </svg>
+);
+
 export const iconForAgent: Record<string, (p: IconProps) => JSX.Element> = {
   search: IconSearch,
   profile: IconProfile,

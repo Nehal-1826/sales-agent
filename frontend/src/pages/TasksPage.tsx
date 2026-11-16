@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { AnimatedList } from '../components/AnimatedList';
 import { EmptyState, LoadError, Skeleton, toast } from '../components/feedback';
 import { Chip, PageHeader } from '../components/ui';
 import { getTasks, updateTask } from '../lib/api';
@@ -49,9 +50,22 @@ export function TasksPage() {
             Follow-ups.
           </EmptyState>
         ) : (
-          <div className="task-list">
-            {loaded.data.map((t) => (
-              <article key={t.id} className="panel task-card">
+          <AnimatedList
+            items={loaded.data}
+            interactiveRows
+            listClassName="task-list"
+            itemClassName="task-card-item"
+            getItemKey={(t) => t.id}
+            animation="pop"
+            theme="dark"
+            frame={false}
+            width="100%"
+            maxHeight="none"
+            showGradients={false}
+            gap={10}
+            accentColor="var(--accent)"
+            renderItem={(t) => (
+              <article className="task-card">
                 <div className="seq-progress">
                   <strong>{t.company || 'Company'}</strong>
                   <Chip>{LABEL[t.channel].title}</Chip>
@@ -77,8 +91,8 @@ export function TasksPage() {
                   </button>
                 </div>
               </article>
-            ))}
-          </div>
+            )}
+          />
         )}
       </section>
     </div>

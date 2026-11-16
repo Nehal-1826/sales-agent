@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { AnimatedList } from '../../components/AnimatedList';
 import { LoadError, toast } from '../../components/feedback';
 import { TagInput } from '../../components/TagInput';
 import { Chip, Field } from '../../components/ui';
@@ -62,9 +63,23 @@ export function TargetingSection({ settings, onSaved }: { settings: SettingsStat
         {profiles.error && !profiles.data ? (
           <LoadError message={profiles.error} onRetry={() => void profiles.reload()} />
         ) : (
-          <ul className="profile-list">
-            {(profiles.data ?? []).map((p) => (
-              <li key={p.id} className={`profile-row${p.isActive ? ' active' : ''}`}>
+          <AnimatedList
+            items={profiles.data ?? []}
+            asList
+            interactiveRows
+            listClassName="profile-list"
+            itemClassName={(p) => `profile-row${p.isActive ? ' active' : ''}`}
+            getItemKey={(p) => p.id}
+            animation="pop"
+            theme="dark"
+            frame={false}
+            width="100%"
+            maxHeight="none"
+            showGradients={false}
+            gap={8}
+            accentColor="var(--accent)"
+            renderItem={(p) => (
+              <>
                 <div>
                   <strong>{p.name}</strong>
                   {p.description && <small>{p.description}</small>}
@@ -80,9 +95,9 @@ export function TargetingSection({ settings, onSaved }: { settings: SettingsStat
                     {switching === p.id ? 'Switching…' : 'Use this'}
                   </button>
                 )}
-              </li>
-            ))}
-          </ul>
+              </>
+            )}
+          />
         )}
       </div>
 

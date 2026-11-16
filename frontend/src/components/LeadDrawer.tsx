@@ -3,6 +3,7 @@ import { draftLeadEmail, getEnrollments, optOutWhatsApp, stopEnrollment } from '
 import { useAsync } from '../lib/hooks';
 import { navigate } from '../lib/router';
 import type { EmailDraft, Enrollment, Lead } from '../lib/types';
+import { AnimatedList } from './AnimatedList';
 import { DraftStatusChip } from './draftUtils';
 import { toast } from './feedback';
 import { Drawer } from './overlay';
@@ -114,14 +115,27 @@ export function LeadDrawer({
       {lead.findings.length > 0 && (
         <section className="drawer-section">
           <h3 className="section-title">What we noticed</h3>
-          <ul className="finding-list">
-            {lead.findings.slice(0, 6).map((f, i) => (
-              <li key={i}>
+          <AnimatedList
+            items={lead.findings.slice(0, 6)}
+            asList
+            interactiveRows
+            listClassName="finding-list"
+            itemClassName="finding-item"
+            getItemKey={(f, i) => `${i}-${f.issue}`}
+            animation="slide"
+            theme="dark"
+            frame={false}
+            width="100%"
+            maxHeight={260}
+            gap={6}
+            accentColor="var(--accent)"
+            renderItem={(f) => (
+              <div className="finding-item-body">
                 <strong>{f.issue}</strong>
                 <span>{f.recommendation}</span>
-              </li>
-            ))}
-          </ul>
+              </div>
+            )}
+          />
         </section>
       )}
 
@@ -130,15 +144,28 @@ export function LeadDrawer({
         {mine.length === 0 ? (
           <p className="dim">No email written for this company yet.</p>
         ) : (
-          <ul className="drawer-drafts">
-            {mine.map((d) => (
-              <li key={d.id}>
+          <AnimatedList
+            items={mine}
+            asList
+            interactiveRows
+            listClassName="drawer-drafts"
+            itemClassName="drawer-draft-item"
+            getItemKey={(d) => d.id}
+            animation="slide"
+            theme="dark"
+            frame={false}
+            width="100%"
+            maxHeight={240}
+            gap={6}
+            accentColor="var(--accent)"
+            renderItem={(d) => (
+              <>
                 <DraftStatusChip draft={d} />
-                <span>{d.subject}</span>
+                <span className="drawer-draft-subject">{d.subject}</span>
                 <small className="dim">{d.lastActivity}</small>
-              </li>
-            ))}
-          </ul>
+              </>
+            )}
+          />
         )}
       </section>
 

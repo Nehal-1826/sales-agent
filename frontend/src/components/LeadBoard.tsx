@@ -1,4 +1,5 @@
 import type { EmailDraft, Lead } from '../lib/types';
+import { AnimatedList } from './AnimatedList';
 import { FitChip } from './LeadDrawer';
 
 /** Where a company is in the journey — derived, never stored. */
@@ -48,19 +49,37 @@ export function LeadBoard({
               <span className="board-count">{items.length}</span>
             </header>
             <p className="board-hint">{hint}</p>
-            <ul className="board-list">
-              {items.slice(0, 50).map((l) => (
-                <li key={l.id}>
-                  <button className="board-card" onClick={() => onOpen(l)}>
-                    <strong>{l.company}</strong>
-                    <small>{[l.industry, l.country].filter(Boolean).join(' · ') || l.website || '—'}</small>
-                    <FitChip lead={l} />
-                  </button>
-                </li>
-              ))}
-              {items.length === 0 && <li className="board-empty">Nothing here yet</li>}
-              {items.length > 50 && <li className="board-empty">+{items.length - 50} more in All leads</li>}
-            </ul>
+            {items.length === 0 ? (
+              <ul className="board-list">
+                <li className="board-empty">Nothing here yet</li>
+              </ul>
+            ) : (
+              <>
+                <AnimatedList
+                  items={items.slice(0, 50)}
+                  asList
+                  listClassName="board-list"
+                  itemClassName="board-card-item"
+                  getItemKey={(l) => l.id}
+                  onItemSelect={(l) => onOpen(l)}
+                  animation="pop"
+                  theme="dark"
+                  frame={false}
+                  width="100%"
+                  maxHeight={460}
+                  gap={8}
+                  accentColor="var(--accent)"
+                  renderItem={(l) => (
+                    <div className="board-card-inner">
+                      <strong>{l.company}</strong>
+                      <small>{[l.industry, l.country].filter(Boolean).join(' · ') || l.website || '—'}</small>
+                      <FitChip lead={l} />
+                    </div>
+                  )}
+                />
+                {items.length > 50 && <p className="board-empty">+{items.length - 50} more in All leads</p>}
+              </>
+            )}
           </section>
         );
       })}

@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { GlideSelect } from '../components/GlideSelect';
+import { GlassBackdrop } from '../components/Lightfall';
 import { resendVerification, scrapeCompanyDetails, signup } from '../lib/api';
-import { AuroraBackdrop } from '../components/reactbits/AuroraBackdrop';
 import type { BillingInterval } from '../lib/api';
 import { TIERS } from '../marketing/pricing';
 
@@ -107,7 +108,7 @@ export function SignupPage({ onSignedUp, onHome, onSignIn }: { onSignedUp: () =>
   if (sent) {
     return (
       <div className="login-wrap">
-        <AuroraBackdrop />
+        <GlassBackdrop />
         <div className="panel login-card login-card-center" role="status">
           <img src="/warmpulse-logo.svg" alt="WarmPulse" className="login-logo" />
           <strong className="login-headline">Verify your email</strong>
@@ -129,7 +130,7 @@ export function SignupPage({ onSignedUp, onHome, onSignIn }: { onSignedUp: () =>
   const err = (k: string) => fields[k] && <small className="login-error" role="alert">{fields[k]}</small>;
   return (
     <div className="login-wrap">
-      <AuroraBackdrop />
+      <GlassBackdrop />
       <button type="button" className="login-home" onClick={onHome}>
         ← Back to home
       </button>
@@ -195,29 +196,39 @@ export function SignupPage({ onSignedUp, onHome, onSignIn }: { onSignedUp: () =>
           </ul>
           {err('password')}
         </label>
-        <label className="login-field">
+        <div className="login-field">
           <span>Country</span>
-          <select value={country} onChange={(e) => setCountry(e.target.value)}>
-            {COUNTRIES.map(([c, n]) => (
-              <option key={c} value={c}>{n}</option>
-            ))}
-          </select>
-        </label>
-        <label className="login-field">
+          <GlideSelect
+            ariaLabel="Country"
+            size="lg"
+            value={country}
+            onChange={(v) => setCountry(v)}
+            options={COUNTRIES.map(([c, n]) => ({ value: c, label: n }))}
+          />
+        </div>
+        <div className="login-field">
           <span>Plan</span>
-          <select value={plan} onChange={(e) => setPlan(e.target.value)}>
-            {TIERS.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
-          </select>
-        </label>
-        <label className="login-field">
+          <GlideSelect
+            ariaLabel="Plan"
+            size="lg"
+            value={plan}
+            onChange={(v) => setPlan(v)}
+            options={TIERS.map((t) => ({ value: t.id, label: t.name }))}
+          />
+        </div>
+        <div className="login-field">
           <span>Billing</span>
-          <select value={interval} onChange={(e) => setInterval_(e.target.value as BillingInterval)}>
-            <option value="month">Monthly</option>
-            <option value="year">Yearly</option>
-          </select>
-        </label>
+          <GlideSelect
+            ariaLabel="Billing"
+            size="lg"
+            value={interval}
+            onChange={(v) => setInterval_(v as BillingInterval)}
+            options={[
+              { value: 'month', label: 'Monthly' },
+              { value: 'year', label: 'Yearly' },
+            ]}
+          />
+        </div>
         {error && <p className="login-error" role="alert">{error}</p>}
         <button className="btn btn-primary login-submit" type="submit" disabled={busy || !ready}>
           {busy ? 'Creating…' : 'Create account'}

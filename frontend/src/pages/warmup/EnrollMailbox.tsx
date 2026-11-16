@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { AnimatedList } from '../../components/AnimatedList';
 import { EmptyState, LoadError, Skeleton, toast } from '../../components/feedback';
 import { Modal } from '../../components/overlay';
 import { Chip } from '../../components/ui';
@@ -67,12 +68,25 @@ export function EnrollMailbox({
           ready to warm.
         </EmptyState>
       ) : (
-        <ul className="warmup-enroll-list">
-          {agentMailboxes.data.map((mb) => {
+        <AnimatedList
+          items={agentMailboxes.data}
+          asList
+          interactiveRows
+          listClassName="warmup-enroll-list"
+          itemClassName="warmup-enroll-row"
+          getItemKey={(mb) => mb.id}
+          animation="pop"
+          theme="dark"
+          frame={false}
+          width="100%"
+          maxHeight={340}
+          gap={8}
+          accentColor="var(--accent)"
+          renderItem={(mb) => {
             const state = rows[mb.id] ?? { kind: 'idle' };
             const enrolled = state.kind === 'enrolled';
             return (
-              <li key={mb.id} className="warmup-enroll-row">
+              <>
                 <div className="warmup-enroll-id">
                   <span className="warmup-enroll-email" title={mb.fromEmail}>{mb.fromEmail}</span>
                   <span className="warmup-enroll-meta">
@@ -100,10 +114,10 @@ export function EnrollMailbox({
                 ) : (
                   <Chip tone="neutral">Not ready</Chip>
                 )}
-              </li>
+              </>
             );
-          })}
-        </ul>
+          }}
+        />
       )}
       <p className="panel-note warmup-enroll-note">
         Warmup ramps volume automatically from a few mails a day — you can

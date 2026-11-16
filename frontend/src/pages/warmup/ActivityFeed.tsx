@@ -1,3 +1,4 @@
+import { AnimatedList } from '../../components/AnimatedList';
 import { timeAgo } from '../../lib/format';
 import { parseWarmupTs } from './chartTheme';
 import type { WarmupActivityAction, WarmupActivityItem } from '../../lib/warmupApi';
@@ -26,11 +27,27 @@ export function ActivityFeed({ items }: { items: WarmupActivityItem[] }) {
     return <div className="warmup-feed-empty">Nothing to report yet — activity appears as warmup mail moves between inboxes.</div>;
   }
   return (
-    <ul className="warmup-feed">
-      {items.map((ev) => {
+    <AnimatedList
+      items={items}
+      asList
+      interactiveRows
+      listClassName="warmup-feed"
+      itemClassName={(ev) => {
+        const meta = ACTION_META[ev.action] ?? ACTION_META.sent;
+        return `warmup-feed-row ${meta.cls}`;
+      }}
+      getItemKey={(ev) => ev.id}
+      animation="slide"
+      theme="dark"
+      frame={false}
+      width="100%"
+      maxHeight={420}
+      gap={6}
+      accentColor="var(--accent)"
+      renderItem={(ev) => {
         const meta = ACTION_META[ev.action] ?? ACTION_META.sent;
         return (
-          <li key={ev.id} className={`warmup-feed-row ${meta.cls}`}>
+          <>
             <span className="warmup-feed-action" aria-hidden />
             <div className="warmup-feed-main">
               <p className="warmup-feed-line">
@@ -40,9 +57,9 @@ export function ActivityFeed({ items }: { items: WarmupActivityItem[] }) {
               {ev.subject && <p className="warmup-feed-subject">{ev.subject}</p>}
             </div>
             <span className="warmup-feed-ago" title={ev.ts}>{ago(ev)}</span>
-          </li>
+          </>
         );
-      })}
-    </ul>
+      }}
+    />
   );
 }

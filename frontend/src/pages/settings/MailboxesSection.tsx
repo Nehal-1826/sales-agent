@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { AnimatedList } from '../../components/AnimatedList';
+import { GlideSelect } from '../../components/GlideSelect';
 import { EmptyState, LoadError, Skeleton, toast } from '../../components/feedback';
 import { ConfirmButton, Modal } from '../../components/overlay';
 import { Chip, Field, Toggle } from '../../components/ui';
@@ -339,9 +341,16 @@ function MailboxModal({ mailbox, onClose, onSaved }: { mailbox: Mailbox | null; 
       )}
       {provider === 'zoho' && (
         <Field label="Zoho region" hint="Zoho logins only work against the datacenter that hosts the account.">
-          <select value={zohoZone} onChange={(e) => { setZohoZone(e.target.value); applyProvider('zoho', e.target.value); }}>
-            {ZOHO_ZONES.map((z) => <option key={z.key} value={z.key}>{z.label}</option>)}
-          </select>
+          <GlideSelect
+            ariaLabel="Zoho region"
+            size="lg"
+            value={zohoZone}
+            onChange={(next) => {
+              setZohoZone(next);
+              applyProvider('zoho', next);
+            }}
+            options={ZOHO_ZONES.map((z) => ({ value: z.key, label: z.label }))}
+          />
         </Field>
       )}
 
@@ -442,25 +451,46 @@ export function MailboxesSection({ settings, onSaved }: { settings: SettingsStat
           approved emails are only written to the server log — they are not delivered.
         </EmptyState>
       ) : (
-        <div className="mailbox-list">
-          {list.data.map((mb) => (
-            <MailboxCard key={mb.id} mb={mb} onChanged={() => void list.reload()} onEdit={() => setEditing(mb)} />
-          ))}
-        </div>
+        <AnimatedList
+          items={list.data}
+          interactiveRows
+          listClassName="mailbox-list"
+          itemClassName="mailbox-card-item"
+          getItemKey={(mb) => mb.id}
+          animation="pop"
+          theme="dark"
+          frame={false}
+          width="100%"
+          maxHeight="none"
+          showGradients={false}
+          gap={12}
+          accentColor="var(--accent)"
+          renderItem={(mb) => (
+            <MailboxCard mb={mb} onChanged={() => void list.reload()} onEdit={() => setEditing(mb)} />
+          )}
+        />
       )}
 
       <hr className="divider" />
       <h3 className="field-label">Sending hours (India time)</h3>
       <div className="mailbox-hours">
         <Field label="Start sending at">
-          <select value={outbox.windowStart} onChange={(e) => setOutbox({ windowStart: Number(e.target.value) })}>
-            {HOURS.slice(0, 24).map((h) => <option key={h} value={h}>{hourLabel(h)}</option>)}
-          </select>
+          <GlideSelect
+            ariaLabel="Start sending at"
+            size="lg"
+            value={String(outbox.windowStart)}
+            onChange={(next) => setOutbox({ windowStart: Number(next) })}
+            options={HOURS.slice(0, 24).map((h) => ({ value: String(h), label: hourLabel(h) }))}
+          />
         </Field>
         <Field label="Stop sending at">
-          <select value={outbox.windowEnd} onChange={(e) => setOutbox({ windowEnd: Number(e.target.value) })}>
-            {HOURS.slice(1).map((h) => <option key={h} value={h}>{hourLabel(h)}</option>)}
-          </select>
+          <GlideSelect
+            ariaLabel="Stop sending at"
+            size="lg"
+            value={String(outbox.windowEnd)}
+            onChange={(next) => setOutbox({ windowEnd: Number(next) })}
+            options={HOURS.slice(1).map((h) => ({ value: String(h), label: hourLabel(h) }))}
+          />
         </Field>
       </div>
       <div className="settings-row">

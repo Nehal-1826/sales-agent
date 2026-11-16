@@ -4,6 +4,7 @@ import { useAsync } from '../lib/hooks';
 import { navigate } from '../lib/router';
 import { useWorkspaceStatus } from '../lib/status';
 import type { EmailDraft, Id } from '../lib/types';
+import { AnimatedList } from './AnimatedList';
 import { DraftModal } from './DraftModal';
 import { DraftStatusChip, approveOutcome, isUnsent, isValidEmail, sendTimeLabel } from './draftUtils';
 import { Banner, EmptyState, LoadError, Skeleton, StaleNotice, toast } from './feedback';
@@ -170,12 +171,26 @@ export function ApprovalQueue({ limit }: { limit?: number }) {
             </div>
           )}
 
-          <ul className="queue-list">
-            {shown.map((d) => {
+          <AnimatedList
+            items={shown}
+            asList
+            interactiveRows
+            listClassName="queue-list"
+            itemClassName={(d) => `queue-card${selected.has(d.id) ? ' selected' : ''}`}
+            getItemKey={(d) => d.id}
+            animation="pop"
+            theme="dark"
+            frame={false}
+            width="100%"
+            maxHeight="none"
+            showGradients={false}
+            gap={10}
+            accentColor="var(--accent)"
+            renderItem={(d) => {
               const hasRecipient = isValidEmail(d.toEmail);
               const busy = busyId === d.id || !!bulk;
               return (
-                <li className={`queue-card${selected.has(d.id) ? ' selected' : ''}`} key={d.id}>
+                <>
                   {!preview && (
                     <input
                       type="checkbox"
@@ -216,10 +231,10 @@ export function ApprovalQueue({ limit }: { limit?: number }) {
                       </button>
                     )}
                   </div>
-                </li>
+                </>
               );
-            })}
-          </ul>
+            }}
+          />
           {preview && pending.length > shown.length && (
             <button className="link-btn" onClick={() => navigate('approvals')}>
               See all {pending.length} waiting →
@@ -269,19 +284,30 @@ function ProcessedList({
           </div>
         )}
       </div>
-      <ul className="queue-rows">
-        {rows.map((d) => (
-          <li key={d.id}>
-            <button className="queue-row" onClick={() => onOpen(d)}>
-              <DraftStatusChip draft={d} />
-              <KindChip draft={d} />
-              <strong>{d.company}</strong>
-              <span className="queue-row-subject">{d.subject}</span>
-              <small className="dim">{d.lastActivity}</small>
-            </button>
-          </li>
-        ))}
-      </ul>
+      <AnimatedList
+        items={rows}
+        asList
+        listClassName="queue-rows"
+        itemClassName="queue-row"
+        getItemKey={(d) => d.id}
+        onItemSelect={(d) => onOpen(d)}
+        animation="pop"
+        theme="dark"
+        frame={false}
+        width="100%"
+        maxHeight={380}
+        gap={6}
+        accentColor="var(--accent)"
+        renderItem={(d) => (
+          <>
+            <DraftStatusChip draft={d} />
+            <KindChip draft={d} />
+            <strong>{d.company}</strong>
+            <span className="queue-row-subject">{d.subject}</span>
+            <small className="dim">{d.lastActivity}</small>
+          </>
+        )}
+      />
     </section>
   );
 }

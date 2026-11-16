@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { GlassBackdrop } from '../components/Lightfall';
 import { verifyEmail } from '../lib/api';
 
 // the token is single-use: StrictMode / remounts must share one request, or the
@@ -40,6 +41,7 @@ export function VerifyEmailPage({ token, onDone }: { token: string; onDone: () =
 
   return (
     <div className="login-wrap">
+      <GlassBackdrop />
       <div className="panel login-card login-card-center" role="status">
         <img src="/warmpulse-logo.svg" alt="WarmPulse" className="login-logo" />
         {state === 'working' && <span className="spinner" aria-hidden />}

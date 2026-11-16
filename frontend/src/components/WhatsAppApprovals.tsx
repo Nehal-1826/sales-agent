@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { AnimatedList } from './AnimatedList';
 import { approveOutcome } from './draftUtils';
 import { Banner, LoadError, toast } from './feedback';
 import { Chip } from './ui';
@@ -35,9 +36,22 @@ export function WhatsAppApprovals() {
       <Banner tone="warn" title="Sent through the WhatsApp helper">
         Approve only messages to businesses that published this number. Prefer "Open in WhatsApp" to send it yourself.
       </Banner>
-      <div className="task-list">
-        {rows.map((m) => (
-          <article key={m.id} className="panel task-card">
+      <AnimatedList
+        items={rows}
+        interactiveRows
+        listClassName="task-list"
+        itemClassName="task-card-item"
+        getItemKey={(m) => m.id}
+        animation="pop"
+        theme="dark"
+        frame={false}
+        width="100%"
+        maxHeight="none"
+        showGradients={false}
+        gap={10}
+        accentColor="var(--accent)"
+        renderItem={(m) => (
+          <article className="task-card">
             <div className="seq-progress">
               <strong>{m.company || 'Company'}</strong>
               <Chip tone="accent">WhatsApp</Chip>
@@ -65,8 +79,8 @@ export function WhatsAppApprovals() {
               </button>
             </div>
           </article>
-        ))}
-      </div>
+        )}
+      />
     </section>
   );
 }

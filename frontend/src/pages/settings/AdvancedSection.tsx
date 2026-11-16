@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { GlideSelect } from '../../components/GlideSelect';
 import { LoadError, Skeleton, toast } from '../../components/feedback';
 import { Field } from '../../components/ui';
 import { getAgentConfig, putAgentConfig, putSettings } from '../../lib/api';
@@ -71,11 +72,13 @@ export function AdvancedSection({ settings, onSaved }: { settings: SettingsState
         </p>
         <div className="settings-grid">
           <Field label="AI provider">
-            <select value={v.provider} onChange={(e) => set({ provider: e.target.value })}>
-              {AI_PROVIDERS.map((p) => (
-                <option key={p}>{p}</option>
-              ))}
-            </select>
+            <GlideSelect
+              ariaLabel="AI provider"
+              size="lg"
+              value={v.provider}
+              onChange={(next) => set({ provider: next })}
+              options={[...AI_PROVIDERS]}
+            />
           </Field>
           <Field label="API key" hint={storedKey ? `Saved (${storedKey}). Leave blank to keep it.` : 'No key saved yet.'}>
             <span className="input-with-action">

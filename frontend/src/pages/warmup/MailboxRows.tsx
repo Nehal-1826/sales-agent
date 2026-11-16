@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { AnimatedList } from '../../components/AnimatedList';
 import { Chip } from '../../components/ui';
 import { warmthColor, type ChartTheme } from './chartTheme';
 import type { WarmupMailbox, WarmupMailboxStatus } from '../../lib/warmupApi';
@@ -96,11 +97,26 @@ export function MailboxRows({
 
   return (
     <>
-      <ul className="warmup-mailbox-list">
-        {items.map((m) => {
+      <AnimatedList
+        items={items}
+        asList
+        interactiveRows
+        listClassName="warmup-mailbox-list"
+        itemClassName="warmup-mailbox-row"
+        getItemKey={(m) => m.id}
+        onItemSelect={(m) => setDetailId(m.id)}
+        animation="pop"
+        theme="dark"
+        frame={false}
+        width="100%"
+        maxHeight="none"
+        showGradients={false}
+        gap={8}
+        accentColor="var(--accent)"
+        renderItem={(m) => {
           const color = warmthColor(m.warmth_score, theme);
           return (
-            <li key={m.id} className="warmup-mailbox-row">
+            <>
               <div className="warmup-mailbox-id">
                 <span className="warmup-mailbox-email" title={m.email_address}>{m.email_address}</span>
                 <span className="warmup-mailbox-meta">
@@ -118,10 +134,10 @@ export function MailboxRows({
                 onSettled={settle}
                 onCommitted={() => onChanged?.()}
               />
-            </li>
+            </>
           );
-        })}
-      </ul>
+        }}
+      />
       {detail && (
         <MailboxDetailDrawer
           mailbox={detail}

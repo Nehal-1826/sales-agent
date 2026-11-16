@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { AnimatedList } from '../components/AnimatedList';
 import { approveReplySuggestion, getReplies, markReplyHandled, pollInbox } from '../lib/api';
 import { useAsync } from '../lib/hooks';
 import { useWorkspaceStatus } from '../lib/status';
@@ -59,7 +60,7 @@ function ReplyCard({ reply, onChange }: { reply: Reply; onChange: () => void }) 
 
   const status = answerLine(reply);
   return (
-    <article className={`reply-card${reply.needsAttention ? ' needs-you' : ''}`}>
+    <>
       <header className="reply-head">
         <div>
           <strong>{reply.company}</strong>
@@ -95,7 +96,7 @@ function ReplyCard({ reply, onChange }: { reply: Reply; onChange: () => void }) 
           {reply.handled ? 'Mark as not done' : 'Mark handled'}
         </button>
       </div>
-    </article>
+    </>
   );
 }
 
@@ -153,11 +154,22 @@ export function RepliesPage() {
             out-of-office messages are handled for you.
           </EmptyState>
         ) : (
-          <div className="reply-list">
-            {shown.map((r) => (
-              <ReplyCard key={`${r.id}-${r.handled}-${r.answer?.status ?? ''}`} reply={r} onChange={reload} />
-            ))}
-          </div>
+          <AnimatedList
+            items={shown}
+            interactiveRows
+            listClassName="reply-list"
+            itemClassName={(r) => `reply-card${r.needsAttention ? ' needs-you' : ''}`}
+            getItemKey={(r) => `${r.id}-${r.handled}-${r.answer?.status ?? ''}`}
+            animation="pop"
+            theme="dark"
+            frame={false}
+            width="100%"
+            maxHeight="none"
+            showGradients={false}
+            gap={12}
+            accentColor="var(--accent)"
+            renderItem={(r) => <ReplyCard reply={r} onChange={reload} />}
+          />
         )}
       </section>
     </div>

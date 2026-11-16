@@ -98,3 +98,6 @@ frontend-warmpulse/node_modules/
 whatsapp-sidecar/node_modules/
 # WarmPulse frontend moved to frontend-warmpulse/ — keep its APK artifact ignored there too
 frontend-warmpulse/downloads/*.apk
+
+# ZCode session data
+.zcode/

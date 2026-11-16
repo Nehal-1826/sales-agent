@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { SpecularButton } from '../components/SpecularButton';
 import { COMPANY, ROUTES } from './site';
 import '../marketing.css';
 
@@ -46,9 +47,21 @@ export function MarketingLayout({
   );
 
   const startNow = (
-    <a className="lp-cta lp-cta-ghost" href="/?signup=1">
-      Start now
-    </a>
+    <SpecularButton
+      href="/?signup=1"
+      size="sm"
+      radius={999}
+      tint="#181512"
+      tintOpacity={0.82}
+      blur={14}
+      textColor="#fff7ed"
+      lineColor="#fb923c"
+      baseColor="#7c2d12"
+      idleIntensity={0.45}
+      style={{ padding: '12px 22px', fontSize: 15 }}
+    >
+      Get Started
+    </SpecularButton>
   );
 
   return (

@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { Field } from '../../components/ui';
+import { CodeSlots, type CodeSlotsStatus } from '../../components/CodeSlots';
+import { GlassBackdrop } from '../../components/Lightfall';
 import { totpConfirm, totpSetup, totpVerify } from '../../lib/platform';
 import type { TotpSetup } from '../../lib/platform';
 
@@ -9,12 +10,28 @@ export function TotpScreen({ onVerified, onSignOut }: { onVerified: () => void; 
   const [setup, setSetup] = useState<TotpSetup | null>(null);
   const [enrolling, setEnrolling] = useState(false);
   const [code, setCode] = useState('');
+  const [slotStatus, setSlotStatus] = useState<CodeSlotsStatus>('idle');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [compactSlots, setCompactSlots] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 460px)').matches,
+  );
+  const doneTimer = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const mq = window.matchMedia('(max-width: 460px)');
+    const onChange = () => setCompactSlots(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  useEffect(() => () => window.clearTimeout(doneTimer.current), []);
 
   async function startEnroll() {
     setBusy(true);
     setError('');
+    setSlotStatus('idle');
     const r = await totpSetup();
     setBusy(false);
     if (!r.ok) return setError(r.error);
@@ -22,21 +39,33 @@ export function TotpScreen({ onVerified, onSignOut }: { onVerified: () => void; 
     setEnrolling(true);
   }
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
+  async function verifyCode(rawCode: string) {
+    if (busy || rawCode.length !== 6) return;
     setBusy(true);
     setError('');
-    const r = await (enrolling ? totpConfirm(code) : totpVerify(code));
+    setSlotStatus('idle');
+    const r = await (enrolling ? totpConfirm(rawCode) : totpVerify(rawCode));
     setBusy(false);
+    if (!r.ok) {
+      setSlotStatus('error');
+      setError(r.error);
+      return;
+    }
+    setSlotStatus('success');
     setCode(''); // never keep the code around
-    if (!r.ok) return setError(r.error);
-    onVerified();
+    doneTimer.current = window.setTimeout(onVerified, 450);
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    await verifyCode(code);
   }
 
   const uri = setup?.otpauth_uri ?? setup?.otpauth_url ?? setup?.provisioning_uri;
 
   return (
     <div className="login-wrap">
+      <GlassBackdrop />
       <form className="panel login-card" onSubmit={(e) => void submit(e)}>
         <strong className="login-headline">WarmPulse — Platform console</strong>
         <small className="login-footnote">
@@ -56,18 +85,34 @@ export function TotpScreen({ onVerified, onSignOut }: { onVerified: () => void; 
             )}
           </div>
         )}
-        <Field label="6-digit code">
-          <input
+        <div className="field otp-slots-field">
+          <span className="field-label">6-digit code</span>
+          <CodeSlots
+            length={6}
             value={code}
-            onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            pattern="[0-9]{6}"
+            status={slotStatus}
+            disabled={busy}
+            slotSize={compactSlots ? 38 : 49}
+            gap={compactSlots ? 6 : 10}
+            accentColor="#f97316"
+            inkColor="#ffffff"
+            slotColor="rgba(255, 255, 255, 0.08)"
+            digitColor="#f5f2ed"
+            dangerColor="#f87171"
             autoFocus
+            ariaLabel="6-digit verification code"
+            onChange={(next) => {
+              setCode(next);
+              if (slotStatus === 'error') {
+                setSlotStatus('idle');
+                setError('');
+              }
+            }}
+            onComplete={(full) => void verifyCode(full)}
           />
-        </Field>
+        </div>
         {error && <p className="pf-error" role="alert">{error}</p>}
-        <button className="btn btn-primary" disabled={busy || code.length !== 6}>
+        <button className="btn btn-primary" disabled={busy || code.length !== 6 || slotStatus === 'success'}>
           {busy ? 'Checking…' : enrolling ? 'Confirm and sign in' : 'Verify'}
         </button>
         {!enrolling && (

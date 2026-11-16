@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
+import { GlassBackdrop } from './components/Lightfall';
 import LatticeLoader from './components/reactbits/LatticeLoader';
 import { GuideWidget } from './components/GuideWidget';
 import { Banner, Toaster, toast } from './components/feedback';
@@ -109,6 +110,7 @@ function AppGate() {
   if (gate === 'checking') {
     return (
       <div className="login-wrap">
+        <GlassBackdrop />
         <div className="panel login-card login-card-center">
           <img src="/warmpulse-logo.svg" alt="WarmPulse" className="login-logo" />
           <LatticeLoader label="Connecting to your workspace…" cellSize={7} color="var(--accent)" showTimer={false} />
@@ -127,6 +129,7 @@ function AppGate() {
   if (gate === 'offline') {
     return (
       <div className="login-wrap">
+        <GlassBackdrop />
         <div className="panel login-card login-card-center" role="alert">
           <img src="/warmpulse-logo.svg" alt="WarmPulse" className="login-logo" />
           <strong className="login-headline">Can't reach your workspace</strong>
@@ -191,6 +194,7 @@ function RoleGate({ demo, onSignOut }: { demo: boolean; onSignOut: () => void })
   if (failed) {
     return (
       <div className="login-wrap">
+        <GlassBackdrop />
         <div className="panel login-card login-card-center" role="alert">
           <strong className="login-headline">Couldn't load your account</strong>
           <button className="btn btn-primary" onClick={load}>Try again</button>
@@ -201,6 +205,7 @@ function RoleGate({ demo, onSignOut }: { demo: boolean; onSignOut: () => void })
   if (!me) {
     return (
       <div className="login-wrap">
+        <GlassBackdrop />
         <div className="panel login-card login-card-center">
           <LatticeLoader label="Loading your account…" cellSize={7} color="var(--accent)" showTimer={false} />
         </div>
@@ -256,6 +261,7 @@ function Shell({ demo, onSignOut }: { demo: boolean; onSignOut: () => void }) {
 
   return (
     <div className="app-shell">
+      <GlassBackdrop />
       {/* a button, not #main: the hash router would read that as an unknown page and bounce to Home */}
       <button type="button" className="skip-link" onClick={() => document.getElementById('main')?.focus()}>
         Skip to content

@@ -1,6 +1,6 @@
 import { useState } from 'react';
+import { GlassBackdrop } from '../components/Lightfall';
 import { login } from '../lib/api';
-import { AuroraBackdrop } from '../components/reactbits/AuroraBackdrop';
 
 /**
  * LOGIN — the product entry point. No shipped credentials: the owner account
@@ -26,7 +26,7 @@ export function LoginPage({ onLoggedIn, onHome }: { onLoggedIn: () => void; onHo
 
   return (
     <div className="login-wrap">
-      <AuroraBackdrop />
+      <GlassBackdrop />
       {onHome && (
         <button type="button" className="login-home" onClick={onHome}>
           ← Back to home

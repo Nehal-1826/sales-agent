@@ -1,8 +1,10 @@
+import { AnimatedList } from '../components/AnimatedList';
 import { useAutopilotSummary } from '../components/AutopilotPill';
 import { CycleButton } from '../components/CycleButton';
 import { EmptyState, LoadError, Skeleton, StaleNotice } from '../components/feedback';
 import { IconBot, IconInbox, IconPen, IconSearch } from '../components/icons';
 import type { IconProps } from '../components/icons';
+import { ThoughtLine } from '../components/ThoughtLine';
 import { PageHeader } from '../components/ui';
 import { getDrafts, getLeads, getPipelineRuns, isDemo } from '../lib/api';
 import { plural, timeAgo } from '../lib/format';
@@ -68,6 +70,18 @@ export function ActivityPage() {
         <div className="status-hero-text">
           <strong>{summary.label}</strong>
           <span>{summary.detail}</span>
+          {running && (
+            <ThoughtLine
+              className="activity-thought"
+              working
+              label="AI agents running…"
+              steps={['Finding companies', 'Researching websites', 'Writing emails', 'Preparing approvals']}
+              color="var(--text)"
+              glyphColor="var(--accent-strong)"
+              fontSize={13.5}
+              showTimer
+            />
+          )}
         </div>
         <button className="btn btn-ghost btn-sm" onClick={() => navigate('settings', 'schedule')}>
           Change schedule
@@ -110,11 +124,22 @@ export function ActivityPage() {
             Run your first search to see what the assistant finds.
           </EmptyState>
         ) : (
-          <ul className="run-list">
-            {(runs.data ?? []).map((r, i) => (
-              <RunItem key={r.id} run={r} defaultOpen={i === 0} />
-            ))}
-          </ul>
+          <AnimatedList
+            items={runs.data ?? []}
+            asList
+            interactiveRows
+            listClassName="run-list"
+            itemClassName="run-item"
+            getItemKey={(r) => r.id}
+            animation="pop"
+            theme="dark"
+            frame={false}
+            width="100%"
+            maxHeight={520}
+            gap={8}
+            accentColor="var(--accent)"
+            renderItem={(r, i) => <RunItemBody run={r} defaultOpen={i === 0} />}
+          />
         )}
       </section>
     </div>
@@ -124,40 +149,38 @@ export function ActivityPage() {
 const TRIGGER_LABEL = (t: string) =>
   t === 'scheduler' ? 'Autopilot' : t.startsWith('chat') ? 'Assistant chat' : t === 'manual' ? 'You' : t === 'seed' ? 'Setup' : t;
 
-function RunItem({ run, defaultOpen }: { run: PipelineRunRecord; defaultOpen: boolean }) {
+function RunItemBody({ run, defaultOpen }: { run: PipelineRunRecord; defaultOpen: boolean }) {
   const minutes = Math.max(1, Math.round((Date.parse(run.finishedAt) - Date.parse(run.startedAt)) / 60000));
   return (
-    <li className="run-item">
-      <details open={defaultOpen}>
-        <summary>
-          <span className="run-when">
-            <strong>{timeAgo(run.startedAt)}</strong>
-            <small>
-              started by {TRIGGER_LABEL(run.triggeredBy)} · took {plural(minutes, 'minute')}
-            </small>
+    <details className="run-item-details" open={defaultOpen}>
+      <summary>
+        <span className="run-when">
+          <strong>{timeAgo(run.startedAt)}</strong>
+          <small>
+            started by {TRIGGER_LABEL(run.triggeredBy)} · took {plural(minutes, 'minute')}
+          </small>
+        </span>
+        <span className="run-stats">
+          <span>
+            <strong>{run.leadsCreated}</strong> found
           </span>
-          <span className="run-stats">
-            <span>
-              <strong>{run.leadsCreated}</strong> found
-            </span>
-            <span>
-              <strong>{run.potentialsCreated}</strong> good fits
-            </span>
-            <span>
-              <strong>{run.draftsCreated}</strong> emails
-            </span>
+          <span>
+            <strong>{run.potentialsCreated}</strong> good fits
           </span>
-        </summary>
-        {run.notes.length > 0 ? (
-          <ul className="run-notes">
-            {run.notes.map((n, i) => (
-              <li key={i}>{n}</li>
-            ))}
-          </ul>
-        ) : (
-          <p className="dim">No details were recorded for this search.</p>
-        )}
-      </details>
-    </li>
+          <span>
+            <strong>{run.draftsCreated}</strong> emails
+          </span>
+        </span>
+      </summary>
+      {run.notes.length > 0 ? (
+        <ul className="run-notes">
+          {run.notes.map((n, i) => (
+            <li key={i}>{n}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="dim">No details were recorded for this search.</p>
+      )}
+    </details>
   );
 }

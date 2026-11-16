@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { LoadError, Skeleton } from '../components/feedback';
 import { IconBot, IconSend, IconUser } from '../components/icons';
 import { ConfirmButton } from '../components/overlay';
+import { ThoughtLine, useThoughtProgress } from '../components/ThoughtLine';
+import { VoicePill, useVoiceDictation } from '../components/VoicePill';
 import { clearChat, getChatHistory, getOnboarding, isDemo, sendChatMessage } from '../lib/api';
 import { useAsync } from '../lib/hooks';
 import { useWorkspaceStatus } from '../lib/status';
@@ -17,9 +19,14 @@ const QUICK = [
   'Pause the runs',
 ];
 
+const CHAT_STEPS = ['Reading your request', 'Checking leads & drafts', 'Writing response'] as const;
+const SETUP_STEPS = ['Reading your answer', 'Updating assistant setup', 'Preparing next step'] as const;
+
 interface Bubble extends ChatMessage {
   error?: boolean;
   retryText?: string;
+  thoughtSeconds?: number;
+  thoughtSteps?: string[];
 }
 
 const now = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -36,6 +43,9 @@ export function ChatPage() {
   const [pending, setPending] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [typing, setTyping] = useState(false);
+  const voice = useVoiceDictation({ value: input, onChange: setInput, append: true });
+  const thoughtSteps = onboarding?.needed ? SETUP_STEPS : CHAT_STEPS;
+  const liveSteps = useThoughtProgress(typing, thoughtSteps);
   const scroller = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -62,7 +72,9 @@ export function ChatPage() {
     setPending(null);
     setMessages((m) => [...m, { id: Date.now(), from: 'user', text, time: now() }]);
     setTyping(true);
+    const startedAt = performance.now();
     const res = await sendChatMessage(text);
+    const elapsed = Math.max(0.1, (performance.now() - startedAt) / 1000);
     setTyping(false);
     if (!res.ok) {
       setMessages((m) => [
@@ -71,7 +83,10 @@ export function ChatPage() {
       ]);
       return;
     }
-    setMessages((m) => [...m, res.data.reply]);
+    setMessages((m) => [
+      ...m,
+      { ...res.data.reply, thoughtSeconds: elapsed, thoughtSteps: [...thoughtSteps] },
+    ]);
     setOnboarding(res.data.onboarding);
     setPending(res.data.pendingAction);
     void status.refresh();
@@ -152,6 +167,19 @@ export function ChatPage() {
                   {m.from === 'ai' ? <IconBot size={14} /> : <IconUser size={14} />}
                 </span>
                 <div className="chat-bubble">
+                  {m.from === 'ai' && m.thoughtSteps && m.thoughtSeconds != null && (
+                    <ThoughtLine
+                      className="chat-thought-settled"
+                      working={false}
+                      elapsed={m.thoughtSeconds}
+                      steps={m.thoughtSteps}
+                      collapseOnSettle
+                      color="var(--text-2)"
+                      glyphColor="var(--accent-strong)"
+                      fontSize={12.5}
+                      showTimer
+                    />
+                  )}
                   <p>{m.text}</p>
                   <span className="time">
                     {m.from === 'ai' ? 'Assistant' : 'You'} · {m.time}
@@ -169,10 +197,16 @@ export function ChatPage() {
                 <span className="chat-avatar" aria-hidden>
                   <IconBot size={14} />
                 </span>
-                <div className="chat-bubble typing" aria-label="Assistant is typing">
-                  <span className="dot" />
-                  <span className="dot" />
-                  <span className="dot" />
+                <div className="chat-bubble chat-bubble-thought" aria-label="Assistant is thinking">
+                  <ThoughtLine
+                    working
+                    label="Thinking…"
+                    steps={liveSteps}
+                    color="var(--text)"
+                    glyphColor="var(--accent-strong)"
+                    fontSize={14}
+                    showTimer
+                  />
                 </div>
               </div>
             )}
@@ -226,16 +260,26 @@ export function ChatPage() {
               />
             </>
           )}
-          <input
-            ref={inputRef}
-            value={input}
-            placeholder={inSetup ? 'Type your answer…' : 'Ask anything, or say what to do…'}
-            onChange={(e) => setInput(e.target.value)}
-            // don't send mid-composition (Tamil / other IME input)
-            onKeyDown={(e) => e.nativeEvent.isComposing && e.key === 'Enter' && e.preventDefault()}
-            aria-label="Message"
-            autoComplete="off"
-          />
+          <div className="search-voice-wrap chat-voice-input">
+            <input
+              ref={inputRef}
+              value={input}
+              placeholder={inSetup ? 'Type your answer…' : 'Ask anything, or say what to do…'}
+              onChange={(e) => setInput(e.target.value)}
+              // don't send mid-composition (Tamil / other IME input)
+              onKeyDown={(e) => e.nativeEvent.isComposing && e.key === 'Enter' && e.preventDefault()}
+              aria-label="Message"
+              autoComplete="off"
+            />
+            <VoicePill
+              size={28}
+              mode="toggle"
+              disabled={typing}
+              ariaLabel="Speak message"
+              onStart={voice.onStart}
+              onStop={voice.onStop}
+            />
+          </div>
           <button className="btn btn-primary" type="submit" disabled={!input.trim() || typing}>
             <IconSend size={15} /> Send
           </button>

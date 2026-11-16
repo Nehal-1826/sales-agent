@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { DemoBooking } from '../components/DemoBooking';
+import { SpecularButton } from '../components/SpecularButton';
 import { fetchPlans } from '../lib/billing';
 import type { ApiPlan } from '../lib/billing';
 import { MarketingLayout } from '../marketing/MarketingLayout';
@@ -98,12 +99,21 @@ export function PricingPage() {
                     <li key={f}>{f}</li>
                   ))}
                 </ul>
-                <a
-                  className={`lp-cta ${t.popular ? 'lp-cta-solid' : 'lp-cta-ghost'} mk-tier-cta`}
+                <SpecularButton
                   href={signupHref(t.id, interval)}
+                  size="md"
+                  radius={999}
+                  tint={t.popular ? '#f97316' : '#181512'}
+                  tintOpacity={t.popular ? 0.9 : 0.78}
+                  blur={14}
+                  textColor={t.popular ? '#ffffff' : '#fff7ed'}
+                  lineColor={t.popular ? '#ffffff' : '#fb923c'}
+                  baseColor={t.popular ? '#fb923c' : '#57534e'}
+                  idleIntensity={t.popular ? 0.5 : 0.35}
+                  className="mk-tier-cta"
                 >
-                  Start now
-                </a>
+                  Get Started
+                </SpecularButton>
               </article>
             );
           })}

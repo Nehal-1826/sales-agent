@@ -24,13 +24,17 @@ export function Pager({
   return (
     <div className="pf-pager">
       <small>{count} total</small>
-      <button className="btn btn-sm" disabled={!previous} onClick={() => onPage(page - 1)}>
-        Previous
-      </button>
-      <span aria-live="polite">Page {page}</span>
-      <button className="btn btn-sm" disabled={!next} onClick={() => onPage(page + 1)}>
-        Next
-      </button>
+      <div className="pf-pager-btns">
+        <button className="btn btn-sm" disabled={!previous} onClick={() => onPage(page - 1)}>
+          Previous
+        </button>
+        <span className="pf-pager-num" aria-live="polite">
+          Page {page}
+        </span>
+        <button className="btn btn-sm" disabled={!next} onClick={() => onPage(page + 1)}>
+          Next
+        </button>
+      </div>
     </div>
   );
 }

@@ -60,6 +60,7 @@ export function Sidebar({
         aria-label="Go to Home"
       >
         <img src="/warmpulse-logo.svg" alt="" className="brand-logo" />
+        <span className="brand-name">WarmPulse</span>
       </button>
       {user?.workspace && (
         <div className="workspace-badge" title="Your company workspace. Everything here is private to it.">

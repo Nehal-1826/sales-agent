@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { AnimatedList } from '../../components/AnimatedList';
 import { EmptyState, LoadError, Skeleton, toast } from '../../components/feedback';
 import { ConfirmButton, Modal } from '../../components/overlay';
 import { Chip, Field } from '../../components/ui';
@@ -89,9 +90,23 @@ export function TemplatesSection() {
       ) : list.length === 0 ? (
         <EmptyState title="No template yet">A built-in email is used until you write your own.</EmptyState>
       ) : (
-        <ul className="tpl-list">
-          {list.map((t) => (
-            <li className="tpl-row" key={t.id}>
+        <AnimatedList
+          items={list}
+          asList
+          interactiveRows
+          listClassName="tpl-list"
+          itemClassName="tpl-row"
+          getItemKey={(t) => t.id}
+          animation="pop"
+          theme="dark"
+          frame={false}
+          width="100%"
+          maxHeight="none"
+          showGradients={false}
+          gap={8}
+          accentColor="var(--accent)"
+          renderItem={(t) => (
+            <>
               <div>
                 <strong>
                   {t.name} {t.isDefault && <Chip tone="success">Default</Chip>}
@@ -111,9 +126,9 @@ export function TemplatesSection() {
                   Delete
                 </ConfirmButton>
               </div>
-            </li>
-          ))}
-        </ul>
+            </>
+          )}
+        />
       )}
 
       <div className="settings-row">

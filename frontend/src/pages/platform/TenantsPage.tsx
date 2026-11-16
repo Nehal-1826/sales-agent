@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { GlideSelect } from '../../components/GlideSelect';
+import { VoicePill, useVoiceDictation } from '../../components/VoicePill';
 import { PageHeader, Field, Chip } from '../../components/ui';
 import { Drawer } from '../../components/overlay';
 import { LoadError, Skeleton, EmptyState } from '../../components/feedback';
@@ -89,17 +91,36 @@ export function TenantsPage({ demo }: { demo: boolean }) {
   const [plan, setPlan] = useState('');
   const [page, setPage] = useState(1);
   const [open, setOpen] = useState<TenantRow['id'] | null>(null);
+  const voice = useVoiceDictation({
+    value: q,
+    onChange: (next) => {
+      setQ(next);
+      setPage(1);
+    },
+  });
   const { data, error, reload } = useAsync(() => listTenants({ q, status, plan, page }), [q, status, plan, page], { keepStale: true });
 
   return (
     <>
       <PageHeader title="Tenants" subtitle="Every workspace, its plan and usage." />
       <div className="pf-filters">
-        <input type="search" placeholder="Search workspace or owner email" aria-label="Search tenants" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
-        <select aria-label="Status" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}>
-          <option value="">All statuses</option>
-          {['active', 'pending', 'past_due', 'canceled', 'suspended'].map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
+        <div className="search-voice-wrap">
+          <input type="search" placeholder="Search workspace or owner email" aria-label="Search tenants" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
+          <VoicePill size={28} mode="toggle" ariaLabel="Voice search tenants" onStart={voice.onStart} onStop={voice.onStop} />
+        </div>
+        <GlideSelect
+          ariaLabel="Status"
+          value={status}
+          onChange={(next) => {
+            setStatus(next);
+            setPage(1);
+          }}
+          menuWidth={180}
+          options={[
+            { value: '', label: 'All statuses' },
+            ...['active', 'pending', 'past_due', 'canceled', 'suspended'].map((s) => ({ value: s, label: s })),
+          ]}
+        />
         <input placeholder="Plan code" aria-label="Plan code" value={plan} onChange={(e) => { setPlan(e.target.value); setPage(1); }} />
       </div>
       {error && <LoadError message={error} onRetry={() => void reload()} />}

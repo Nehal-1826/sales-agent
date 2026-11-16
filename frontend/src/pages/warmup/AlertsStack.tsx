@@ -1,3 +1,4 @@
+import { AnimatedList } from '../../components/AnimatedList';
 import { timeAgo } from '../../lib/format';
 import { parseWarmupTs } from './chartTheme';
 import type { WarmupAlert, WarmupAlertsResponse } from '../../lib/warmupApi';
@@ -29,19 +30,29 @@ export function AlertsStack({ alerts }: { alerts: WarmupAlertsResponse }) {
     return <div className="warmup-alerts-empty">No alerts — everything looks healthy.</div>;
   }
   return (
-    <ul className="warmup-alert-list">
-      {alerts.items.map((a) => {
-        const sev = severityFor(a.kind);
-        return (
-          <li key={a.id} className={`warmup-alert sev-${sev}${a.read_at ? '' : ' unread'}`}>
-            <div className="warmup-alert-body">
-              <p className="warmup-alert-title">{a.title}</p>
-              <p className="warmup-alert-text">{a.body}</p>
-            </div>
-            <span className="warmup-alert-ago" title={a.created_at ?? undefined}>{ago(a)}</span>
-          </li>
-        );
-      })}
-    </ul>
+    <AnimatedList
+      items={alerts.items}
+      asList
+      interactiveRows
+      listClassName="warmup-alert-list"
+      itemClassName={(a) => `warmup-alert sev-${severityFor(a.kind)}${a.read_at ? '' : ' unread'}`}
+      getItemKey={(a) => a.id}
+      animation="slide"
+      theme="dark"
+      frame={false}
+      width="100%"
+      maxHeight={320}
+      gap={8}
+      accentColor="var(--accent)"
+      renderItem={(a) => (
+        <>
+          <div className="warmup-alert-body">
+            <p className="warmup-alert-title">{a.title}</p>
+            <p className="warmup-alert-text">{a.body}</p>
+          </div>
+          <span className="warmup-alert-ago" title={a.created_at ?? undefined}>{ago(a)}</span>
+        </>
+      )}
+    />
   );
 }

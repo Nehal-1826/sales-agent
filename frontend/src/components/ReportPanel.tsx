@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { generateReport, isDemo } from '../lib/api';
 import type { GeneratedReport } from '../lib/api';
+import { GlideSelect } from './GlideSelect';
 import { toast } from './feedback';
 
 /** Branded lead report on demand: preview, download as HTML, or email it now. */
@@ -43,10 +44,17 @@ export function ReportPanel() {
         <label className="sr-only" htmlFor="report-scope">
           Report period
         </label>
-        <select id="report-scope" value={scope} onChange={(e) => setScope(e.target.value as 'today' | 'all')}>
-          <option value="all">All time</option>
-          <option value="today">Today only</option>
-        </select>
+        <GlideSelect
+          id="report-scope"
+          ariaLabel="Report period"
+          value={scope}
+          onChange={(v) => setScope(v as 'today' | 'all')}
+          menuWidth={160}
+          options={[
+            { value: 'all', label: 'All time' },
+            { value: 'today', label: 'Today only' },
+          ]}
+        />
         <button className="btn btn-primary" onClick={() => void generate(false)} disabled={busy || isDemo()}>
           {busy ? 'Building…' : 'Preview report'}
         </button>

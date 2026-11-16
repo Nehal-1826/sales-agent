@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
 import { CycleButton } from '../components/CycleButton';
+import { GlideSelect } from '../components/GlideSelect';
 import { LeadBoard, STAGE_LABEL, leadStage } from '../components/LeadBoard';
 import { FitChip, LeadDrawer } from '../components/LeadDrawer';
 import { ReportPanel } from '../components/ReportPanel';
+import { VoicePill, useVoiceDictation } from '../components/VoicePill';
 import { EmptyState, LoadError, Skeleton, StaleNotice, toast } from '../components/feedback';
 import { PageHeader } from '../components/ui';
 import { downloadLeadsCsv, getDrafts, getLeads, isDemo } from '../lib/api';
@@ -112,6 +114,7 @@ function LeadTable({
   const [sort, setSort] = useState<SortKey>('newest');
   const [minFit, setMinFit] = useState(0);
   const [contact, setContact] = useState<ContactFilter>('any');
+  const voice = useVoiceDictation({ value: query, onChange: setQuery });
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -150,40 +153,71 @@ function LeadTable({
         <label className="sr-only" htmlFor="lead-search">
           Search leads
         </label>
-        <input
-          id="lead-search"
-          type="search"
-          value={query}
-          placeholder="Search name, industry, place…"
-          onChange={(e) => setQuery(e.target.value)}
-        />
+        <div className="search-voice-wrap">
+          <input
+            id="lead-search"
+            type="search"
+            value={query}
+            placeholder="Search name, industry, place…"
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <VoicePill
+            size={28}
+            mode="toggle"
+            ariaLabel="Voice search leads"
+            onStart={voice.onStart}
+            onStop={voice.onStop}
+          />
+        </div>
         <label className="sr-only" htmlFor="lead-fit">
           Minimum fit
         </label>
-        <select id="lead-fit" value={minFit} onChange={(e) => setMinFit(Number(e.target.value))}>
-          <option value={0}>Any fit</option>
-          <option value={65}>Good fits (65+)</option>
-          <option value={80}>Strong fits (80+)</option>
-        </select>
+        <GlideSelect
+          id="lead-fit"
+          ariaLabel="Minimum fit"
+          value={String(minFit)}
+          onChange={(v) => setMinFit(Number(v))}
+          menuWidth={190}
+          options={[
+            { value: '0', label: 'Any fit' },
+            { value: '65', label: 'Good fits', tag: '65+' },
+            { value: '80', label: 'Strong fits', tag: '80+' },
+          ]}
+        />
         <label className="sr-only" htmlFor="lead-contact">
           Contact details
         </label>
-        <select id="lead-contact" value={contact} onChange={(e) => setContact(e.target.value as ContactFilter)}>
-          <option value="any">Any contact</option>
-          <option value="email">Has email</option>
-          <option value="phone">Has phone</option>
-          <option value="none">No contact yet</option>
-        </select>
+        <GlideSelect
+          id="lead-contact"
+          ariaLabel="Contact details"
+          value={contact}
+          onChange={(v) => setContact(v as ContactFilter)}
+          menuWidth={184}
+          options={[
+            { value: 'any', label: 'Any contact' },
+            { value: 'email', label: 'Has email' },
+            { value: 'phone', label: 'Has phone' },
+            { value: 'none', label: 'No contact yet' },
+          ]}
+        />
         <label className="sr-only" htmlFor="lead-sort">
           Sort
         </label>
-        <select id="lead-sort" value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
-          <option value="newest">Newest first</option>
-          <option value="fit">Best fit first</option>
-          <option value="name">Name A→Z</option>
-          <option value="contact">Has email first</option>
-          <option value="nowebsite">No website first</option>
-        </select>
+        <GlideSelect
+          id="lead-sort"
+          ariaLabel="Sort"
+          value={sort}
+          onChange={(v) => setSort(v as SortKey)}
+          menuWidth={196}
+          align="right"
+          options={[
+            { value: 'newest', label: 'Newest first' },
+            { value: 'fit', label: 'Best fit first' },
+            { value: 'name', label: 'Name A→Z' },
+            { value: 'contact', label: 'Has email first' },
+            { value: 'nowebsite', label: 'No website first' },
+          ]}
+        />
         <span className="toolbar-count">
           {rows.length} of {leads.length}
         </span>

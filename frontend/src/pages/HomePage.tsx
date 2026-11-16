@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { AnimatedList } from '../components/AnimatedList';
 import { ApprovalQueue } from '../components/ApprovalQueue';
 import { useAutopilotSummary } from '../components/AutopilotPill';
 import { CycleButton } from '../components/CycleButton';
 import { FitChip, LeadDrawer } from '../components/LeadDrawer';
+import { MagicBento, type MagicBentoItem } from '../components/MagicBento';
 import { EmptyState, LoadError, Skeleton, StaleNotice } from '../components/feedback';
-import { IconCheck } from '../components/icons';
+import { IconBuilding, IconCheck } from '../components/icons';
 import { PageHeader } from '../components/ui';
 import { getDrafts, getLeads, getSettings, getTemplates, isDemo } from '../lib/api';
 import { greeting, plural, timeAgo } from '../lib/format';
@@ -13,7 +15,7 @@ import { navigate } from '../lib/router';
 import { useWorkspaceStatus } from '../lib/status';
 import type { Lead, SettingsSection } from '../lib/types';
 
-/** HOME — what happened, what needs you, what to set up next. */
+/** HOME — Liquid-glass bento overview: status, KPIs, approvals, newest leads, checklist. */
 export function HomePage() {
   const status = useWorkspaceStatus();
   const leads = useAsync(getLeads, [status.cycleVersion], { keepStale: true });
@@ -24,36 +26,71 @@ export function HomePage() {
   const goodFits = leadList.filter((l) => l.profiled !== false && l.score >= 65).length;
   const delivered = (drafts.data ?? []).filter((d) => d.status === 'Sent' && d.sentVia !== 'console').length;
   const waiting = (status.outreach?.drafts ?? 0) + (status.outreach?.failed ?? 0);
-  const newest = [...leadList]
-    .sort((a, b) => Date.parse(b.discoveredAt ?? '') - Date.parse(a.discoveredAt ?? '') || 0)
-    .slice(0, 5);
+  const newest = useMemo(
+    () =>
+      [...leadList]
+        .sort((a, b) => Date.parse(b.discoveredAt ?? '') - Date.parse(a.discoveredAt ?? '') || 0)
+        .slice(0, 5),
+    [leadList],
+  );
 
-  return (
-    <div className="page">
-      <PageHeader
-        title={greeting()}
-        subtitle="Here's what your sales assistant has been doing, and what needs you."
-        actions={<CycleButton />}
-      />
-
-      <StatusHero />
-
-      <div className="stat-row">
-        <Stat label="Companies found" value={leads.data ? leadList.length : null} onClick={() => navigate('leads')} />
-        <Stat label="Good fits" value={leads.data ? goodFits : null} note="fit score 65+" onClick={() => navigate('leads', 'board')} />
-        <Stat
+  const bentoItems: MagicBentoItem[] = [
+    {
+      id: 'status-hero',
+      colSpan: 4,
+      rowSpan: 1,
+      className: 'bento-tile--flat',
+      content: <StatusHero />,
+    },
+    {
+      id: 'stat-companies',
+      colSpan: 1,
+      rowSpan: 1,
+      onClick: () => navigate('leads'),
+      className: 'stat-card bento-stat',
+      title: 'Companies found',
+      content: <StatBody label="Companies found" value={leads.data ? leadList.length : null} note="Total discovered" />,
+    },
+    {
+      id: 'stat-good-fits',
+      colSpan: 1,
+      rowSpan: 1,
+      onClick: () => navigate('leads', 'board'),
+      className: 'stat-card bento-stat',
+      title: 'Good fits',
+      content: <StatBody label="Good fits" value={leads.data ? goodFits : null} note="fit score 65+" />,
+    },
+    {
+      id: 'stat-waiting',
+      colSpan: 1,
+      rowSpan: 1,
+      onClick: () => navigate('approvals'),
+      className: `stat-card bento-stat${waiting > 0 ? ' highlight' : ''}`,
+      title: 'Waiting for you',
+      content: (
+        <StatBody
           label="Waiting for you"
           value={status.outreach ? waiting : null}
-          highlight={waiting > 0}
-          onClick={() => navigate('approvals')}
+          note={waiting > 0 ? 'Ready for review' : 'Queue clear'}
         />
-        <Stat label="Emails delivered" value={drafts.data ? delivered : null} onClick={() => navigate('approvals')} />
-      </div>
-
-      {!isDemo() && <SetupChecklist />}
-
-      <div className="home-grid">
-        <section className="panel">
+      ),
+    },
+    {
+      id: 'stat-delivered',
+      colSpan: 1,
+      rowSpan: 1,
+      onClick: () => navigate('approvals'),
+      className: 'stat-card bento-stat',
+      title: 'Emails delivered',
+      content: <StatBody label="Emails delivered" value={drafts.data ? delivered : null} note="Sent from mailboxes" />,
+    },
+    {
+      id: 'approvals-panel',
+      colSpan: 2,
+      rowSpan: 2,
+      className: 'bento-panel-card',
+      content: (
+        <>
           <div className="panel-head">
             <h2 className="section-title">Waiting for your approval</h2>
             <button className="link-btn" onClick={() => navigate('approvals')}>
@@ -61,9 +98,16 @@ export function HomePage() {
             </button>
           </div>
           <ApprovalQueue limit={3} />
-        </section>
-
-        <section className="panel">
+        </>
+      ),
+    },
+    {
+      id: 'newest-leads-panel',
+      colSpan: 2,
+      rowSpan: 2,
+      className: 'bento-panel-card',
+      content: (
+        <>
           <div className="panel-head">
             <h2 className="section-title">Newest companies</h2>
             <button className="link-btn" onClick={() => navigate('leads')}>
@@ -80,22 +124,67 @@ export function HomePage() {
               Start a search and your assistant will find businesses that match who you sell to.
             </EmptyState>
           ) : (
-            <ul className="mini-leads">
-              {newest.map((l) => (
-                <li key={l.id}>
-                  <button className="mini-lead" onClick={() => setOpenLead(l)}>
-                    <span className="mini-lead-name">
-                      <strong>{l.company}</strong>
-                      <small>{[l.industry, l.country].filter(Boolean).join(' · ') || l.website}</small>
+            <AnimatedList
+              items={newest}
+              asList
+              listClassName="mini-leads"
+              getItemKey={(l) => l.id}
+              onItemSelect={(l) => setOpenLead(l)}
+              animation="pop"
+              theme="dark"
+              frame={false}
+              width="100%"
+              maxHeight={360}
+              gap={8}
+              accentColor="var(--accent)"
+              renderItem={(l) => (
+                <>
+                  <span className="animated-list__lead" aria-hidden="true">
+                    <IconBuilding size={17} />
+                  </span>
+                  <span className="animated-list__text">
+                    <span className="animated-list__title">{l.company}</span>
+                    <span className="animated-list__description">
+                      {[l.industry, l.country].filter(Boolean).join(' · ') || l.website}
                     </span>
+                  </span>
+                  <span className="animated-list__meta">
                     <FitChip lead={l} />
-                  </button>
-                </li>
-              ))}
-            </ul>
+                  </span>
+                </>
+              )}
+            />
           )}
-        </section>
-      </div>
+        </>
+      ),
+    },
+  ];
+
+  return (
+    <div className="page">
+      <PageHeader
+        title={greeting()}
+        subtitle="Here's what your sales assistant has been doing, and what needs you."
+        actions={<CycleButton />}
+      />
+
+      <MagicBento
+        items={bentoItems}
+        columns={4}
+        rowHeight={112}
+        flexibleRows
+        gap={14}
+        radius={18}
+        theme="dark"
+        glowColor="#fb923c"
+        enableBorderGlow
+        enableSpotlight
+        enableTilt
+        clickEffect
+        textAutoHide={false}
+      />
+
+      {!isDemo() && <SetupChecklist />}
 
       {openLead && (
         <LeadDrawer
@@ -117,7 +206,7 @@ function StatusHero() {
   const summary = useAutopilotSummary(isDemo());
   const last = pipeline?.lastRun;
   return (
-    <section className={`status-hero tone-${summary.tone}`} aria-live="polite">
+    <section className={`status-hero status-hero--bento tone-${summary.tone}`} aria-live="polite">
       <span className={`status-dot dot-${summary.tone}${summary.pulse ? ' dot-pulse' : ''}`} aria-hidden />
       <div className="status-hero-text">
         <strong>{summary.label}</strong>
@@ -142,25 +231,21 @@ function StatusHero() {
   );
 }
 
-function Stat({
+function StatBody({
   label,
   value,
   note,
-  highlight = false,
-  onClick,
 }: {
   label: string;
   value: number | null;
   note?: string;
-  highlight?: boolean;
-  onClick: () => void;
 }) {
   return (
-    <button className={`stat-card${highlight ? ' highlight' : ''}`} onClick={onClick}>
+    <div className="stat-bento-body">
       <span className="stat-value">{value ?? '–'}</span>
       <span className="stat-label">{label}</span>
       {note && <small className="stat-note">{note}</small>}
-    </button>
+    </div>
   );
 }
 
@@ -196,9 +281,25 @@ function SetupChecklist() {
       <div className="progress" aria-hidden>
         <span style={{ width: `${((items.length - remaining.length) / items.length) * 100}%` }} />
       </div>
-      <ul>
-        {items.map((i) => (
-          <li key={i.label} className={i.done ? 'done' : ''}>
+      <AnimatedList
+        items={items}
+        asList
+        interactiveRows
+        getItemKey={(i) => i.label}
+        itemClassName={(i) => (i.done ? 'done' : '')}
+        onItemSelect={(i) => {
+          if (!i.done) navigate('settings', i.section);
+        }}
+        animation="slide"
+        theme="dark"
+        frame={false}
+        width="100%"
+        maxHeight="none"
+        showGradients={false}
+        gap={8}
+        accentColor="var(--accent)"
+        renderItem={(i) => (
+          <>
             <span className="setup-check" aria-hidden>
               {i.done ? <IconCheck size={14} /> : null}
             </span>
@@ -211,9 +312,9 @@ function SetupChecklist() {
                 Set up
               </button>
             )}
-          </li>
-        ))}
-      </ul>
+          </>
+        )}
+      />
     </section>
   );
 }

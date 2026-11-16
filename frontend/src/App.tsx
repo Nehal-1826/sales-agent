@@ -12,6 +12,7 @@ import { LeadsPage } from './pages/LeadsPage';
 import { ActivityPage } from './pages/ActivityPage';
 import { ChatPage } from './pages/ChatPage';
 import { WarmupPage } from './pages/WarmupPage';
+import { MailPage } from './pages/MailPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { LoginPage } from './pages/LoginPage';
 import { SignupPage } from './pages/SignupPage';
@@ -286,6 +287,7 @@ function Shell({ demo, onSignOut }: { demo: boolean; onSignOut: () => void }) {
           {page === 'activity' && <ActivityPage />}
           {page === 'assistant' && <ChatPage />}
           {page === 'warmup' && <WarmupPage />}
+          {page === 'mail' && <MailPage />}
           {page === 'settings' && <SettingsPage section={sub} />}
         </main>
       </div>

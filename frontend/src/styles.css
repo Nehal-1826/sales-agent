@@ -242,7 +242,7 @@ ul {
   display: flex;
   align-items: center;
   /* 12px rail inset — same edge as .workspace-badge, .side-nav items and .sidebar-foot */
-  padding: 18px 12px 14px;
+  padding: 16px 12px 12px;
   border: none;
   border-bottom: 1px solid var(--chrome-border);
   background: none;
@@ -251,15 +251,25 @@ ul {
 
 .brand-logo {
   display: block;
-  height: 40px;
+  height: 34px;
   width: auto;
+  transition: opacity var(--t-fast) var(--ease);
+}
+
+.sidebar-brand:hover .brand-logo {
+  opacity: 0.85;
+}
+
+.sidebar-brand:active .brand-logo {
+  opacity: 0.7;
 }
 
 .side-nav {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 14px 12px;
+  /* bottom padding mirrors .sidebar-foot's top padding around the hairline */
+  padding: 12px 12px 12px;
   /* Short viewports: the nav list scrolls, the footer (user + Sign out) stays pinned */
   flex: 1 1 auto;
   min-height: 0;
@@ -281,17 +291,23 @@ ul {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 11px;
-  min-height: 40px;
+  gap: 10px;
+  min-height: 38px;
   padding: 0 12px;
   border: none;
   border-radius: var(--radius-sm);
   background: none;
   color: var(--chrome-text-2);
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 500;
+  letter-spacing: 0.01em;
   text-align: left;
   transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+
+/* icons never squish — keeps the icon gutter a crisp vertical line */
+.nav-item svg {
+  flex: none;
 }
 
 .nav-item:hover {
@@ -300,9 +316,22 @@ ul {
 }
 
 .nav-item.active {
-  background: rgba(124, 92, 255, 0.15);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
   color: var(--chrome-text);
-  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/* left indicator bar flush with the tinted pill's edge (a negative offset
+   would be clipped by the scroll container, so it lives within the pill) */
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 18px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
 }
 
 .nav-item.active svg {
@@ -315,15 +344,15 @@ ul {
 
 .nav-badge {
   margin-left: auto;
-  min-width: 22px;
-  height: 20px;
-  padding: 0 7px;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
   display: inline-grid;
   place-items: center;
   border-radius: var(--radius-pill);
   background: var(--accent);
   color: #1c0f06;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -333,9 +362,9 @@ ul {
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   /* 12px rail inset — matches brand, workspace badge and nav-item pills */
-  padding: 14px 12px 16px;
+  padding: 12px 12px 16px;
   border-top: 1px solid var(--chrome-border);
 }
 
@@ -343,6 +372,9 @@ ul {
   display: flex;
   align-items: center;
   gap: 10px;
+  /* hairline splits the foot into STATUS (pill) and ACCOUNT (user + sign out) */
+  border-top: 1px solid var(--chrome-border);
+  padding-top: 10px;
 }
 
 .sidebar-user strong {
@@ -354,7 +386,10 @@ ul {
 
 .sidebar-user small {
   display: block;
-  font-size: 12px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--chrome-text-3);
 }
 
@@ -365,11 +400,12 @@ ul {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: var(--chrome-2);
-  border: 1px solid var(--chrome-border);
-  color: var(--chrome-text-2);
-  font-size: 12px;
+  background: color-mix(in srgb, var(--accent) 18%, var(--chrome-2));
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, transparent);
+  color: var(--accent-chrome);
+  font-size: 11px;
   font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 /* sign-out row in the sidebar foot — .nav-item gives it the rail sizing;
@@ -799,8 +835,27 @@ button.chip:hover:not(:disabled) {
   color: var(--chrome-text-2);
 }
 
+/* sidebar status: a quiet telemetry line, not a card — boxes in the rail
+   stay reserved for interactive rows (nav pills); the topbar keeps the
+   fully-rounded status chip */
 .sidebar .status-pill {
   width: 100%;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  border-color: transparent;
+  background: none;
+  color: var(--chrome-text-2);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+/* dot floats on a ring of the rail bg — reads as a status light */
+.sidebar .status-dot {
+  width: 6px;
+  height: 6px;
+  box-sizing: content-box;
+  border: 2px solid var(--chrome);
 }
 
 .sidebar .dot-success,
@@ -3647,24 +3702,28 @@ input[type='radio'] {
   background: rgba(255, 255, 255, 0.18);
 }
 
+/* quiet metadata block — no card: containers in the rail belong to
+   interactive rows only, so the badge never competes with nav pills.
+   Text aligns with the nav labels (12px rail inset + 12px pill padding). */
 .workspace-badge {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  margin: 12px 12px 0;
-  padding: 9px 12px;
-  border: 1px solid var(--chrome-border);
-  border-radius: var(--radius-sm);
-  background: var(--chrome-2);
+  gap: 3px;
+  margin: 14px 12px 2px;
+  padding: 0 12px;
 }
 
 .workspace-badge small {
-  font-size: 12px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--chrome-text-3);
 }
 
 .workspace-badge strong {
-  font-size: 13.5px;
+  font-size: 13px;
+  letter-spacing: 0.01em;
   color: var(--chrome-text);
   overflow: hidden;
   text-overflow: ellipsis;

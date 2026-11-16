@@ -1,0 +1,12 @@
+{
+  "android": {
+    "versionCode": 16,
+    "versionName": "1.0.15",
+    "apkUrl": "/downloads/warmpulse.apk",
+    "notes": "Microsoft OAuth sign-in is now available! You can sign in with your Microsoft account in addition to Google. Improved OAuth state management and connection flow. Fixed various build issues and app stability.",
+    "publishedAt": "2026-07-02",
+    "fileSize": "79 MB",
+    "minSdkVersion": 24,
+    "targetSdkVersion": 34
+  }
+}

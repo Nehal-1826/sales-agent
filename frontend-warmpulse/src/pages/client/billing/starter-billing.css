@@ -1,0 +1,576 @@
+/* ============================================================================
+   Starter Billing — B2 Subscription Card.
+   sb- prefix (starter billing).
+
+   Status tokens reused across the file (kept inline so the file is self-contained):
+     --tone-ok    rgb(242, 101, 34)
+     --tone-warn  rgb(255, 213, 79)
+     --tone-err   rgb(255, 107, 74)
+============================================================================ */
+
+.sb {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  color: var(--wp-text, #e8e8f0);
+}
+
+/* ---------- Head ---------- */
+.sb__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.sb__title {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  margin: 0;
+}
+.sb__sub {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--wp-text-dim, #a1a1aa);
+  max-width: 64ch;
+}
+
+/* ---------- Dummy-payments banner ---------- */
+.sb-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, rgb(255, 138, 75) 40%, var(--wp-border, #2a2a3a));
+  background: color-mix(in srgb, rgb(255, 138, 75) 8%, transparent);
+  font-size: 12.5px;
+  color: rgb(255, 138, 75);
+  width: max-content;
+  max-width: 100%;
+}
+
+/* ============================================================================
+   Hero subscription card — the Spotify-style centerpiece
+============================================================================ */
+.sb-hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 30px 32px 26px;
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, rgb(242, 101, 34) 30%, var(--wp-border, #2a2a3a));
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, rgb(242, 101, 34) 22%, var(--wp-surface, #12121a)) 0%,
+      color-mix(in srgb, rgb(255, 138, 75) 14%, var(--wp-surface, #12121a)) 100%);
+  overflow: hidden;
+  box-shadow:
+    0 24px 50px -28px color-mix(in srgb, rgb(242, 101, 34) 55%, transparent),
+    0 0 0 1px color-mix(in srgb, rgb(242, 101, 34) 14%, transparent) inset;
+}
+/* Decorative atmospheric circles — the "gradient art" the B2 design is about. */
+.sb-hero::before {
+  content: '';
+  position: absolute;
+  top: -80px;
+  right: -60px;
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, color-mix(in srgb, rgb(255, 150, 112) 45%, transparent), transparent 70%);
+  filter: blur(20px);
+}
+.sb-hero::after {
+  content: '';
+  position: absolute;
+  bottom: -120px;
+  left: -40px;
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, color-mix(in srgb, rgb(255, 138, 75) 40%, transparent), transparent 70%);
+  filter: blur(24px);
+}
+
+.sb-hero__head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.sb-hero__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.78);
+}
+.sb-hero__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: white;
+  backdrop-filter: blur(4px);
+}
+.sb-hero__status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: rgb(242, 101, 34);
+  box-shadow: 0 0 8px rgb(242, 101, 34);
+  animation: sb-pulse 2.4s ease-in-out infinite;
+}
+@keyframes sb-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+.sb-hero__plan-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+.sb-hero__plan-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.18);
+  color: white;
+  backdrop-filter: blur(6px);
+}
+.sb-hero__plan-name {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: white;
+  line-height: 1;
+}
+
+.sb-hero__price-row {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 8px;
+}
+.sb-hero__currency {
+  font-size: 20px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.78);
+}
+.sb-hero__price {
+  font-size: 56px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: white;
+  line-height: 1;
+  font-family: 'Outfit', system-ui, sans-serif;
+}
+.sb-hero__period {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.78);
+  letter-spacing: 0.02em;
+}
+
+.sb-hero__meta {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.86);
+}
+.sb-hero__meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.sb-hero__meta-item strong {
+  color: white;
+  font-weight: 700;
+}
+.sb-hero__meta-divider {
+  width: 1px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.sb-hero__actions {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+.sb-hero__manage {
+  background: white !important;
+  color: rgb(242, 101, 34) !important;
+  border: 0 !important;
+  font-weight: 600 !important;
+  box-shadow: 0 8px 22px -10px rgba(255, 255, 255, 0.4) !important;
+}
+.sb-hero__manage:hover {
+  background: color-mix(in srgb, white 95%, transparent) !important;
+}
+.sb-hero__cancel {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+.sb-hero__cancel:hover {
+  color: white;
+  text-decoration: underline;
+}
+
+/* ============================================================================
+   Usage meters
+============================================================================ */
+.sb-meters {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+@media (max-width: 880px) {
+  .sb-meters {
+    grid-template-columns: 1fr;
+  }
+}
+
+.sb-meter {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--wp-border, #2a2a3a);
+  background: color-mix(in srgb, var(--wp-surface, #12121a) 80%, transparent);
+  overflow: hidden;
+}
+.sb-meter::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.4;
+}
+.sb-meter--violet::before {
+  background: radial-gradient(circle at 100% 0%, color-mix(in srgb, rgb(255, 150, 112) 14%, transparent), transparent 55%);
+}
+.sb-meter--cyan::before {
+  background: radial-gradient(circle at 100% 0%, color-mix(in srgb, rgb(255, 138, 75) 14%, transparent), transparent 55%);
+}
+.sb-meter--yellow::before {
+  background: radial-gradient(circle at 100% 0%, color-mix(in srgb, rgb(255, 213, 79) 14%, transparent), transparent 55%);
+}
+
+.sb-meter__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  position: relative;
+}
+.sb-meter__icon--violet { background: color-mix(in srgb, rgb(255, 150, 112) 22%, transparent); color: rgb(255, 150, 112); }
+.sb-meter__icon--cyan { background: color-mix(in srgb, rgb(255, 138, 75) 22%, transparent); color: rgb(255, 138, 75); }
+.sb-meter__icon--yellow { background: color-mix(in srgb, rgb(255, 213, 79) 22%, transparent); color: rgb(255, 213, 79); }
+
+.sb-meter__body {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.sb-meter__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.sb-meter__label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--wp-text-dim, #a1a1aa);
+}
+.sb-meter__val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--wp-text, #e8e8f0);
+}
+.sb-meter__val--danger {
+  color: rgb(255, 107, 74);
+}
+.sb-meter__cap {
+  color: var(--wp-text-dim, #a1a1aa);
+  font-weight: 500;
+}
+.sb-meter__track {
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-border, #2a2a3a) 70%, transparent);
+  overflow: hidden;
+}
+.sb-meter__fill {
+  height: 100%;
+  border-radius: 999px;
+}
+.sb-meter__fill--violet { background: linear-gradient(90deg, rgb(255, 150, 112), color-mix(in srgb, rgb(255, 150, 112) 60%, transparent)); }
+.sb-meter__fill--cyan { background: linear-gradient(90deg, rgb(255, 138, 75), color-mix(in srgb, rgb(255, 138, 75) 60%, transparent)); }
+.sb-meter__fill--yellow { background: linear-gradient(90deg, rgb(255, 213, 79), color-mix(in srgb, rgb(255, 213, 79) 60%, transparent)); }
+.sb-meter__fill--danger { background: linear-gradient(90deg, rgb(255, 107, 74), color-mix(in srgb, rgb(255, 107, 74) 60%, transparent)) !important; }
+.sb-meter__foot {
+  font-size: 10.5px;
+  color: var(--wp-text-dim, #a1a1aa);
+}
+
+/* ============================================================================
+   Invoices
+============================================================================ */
+.sb-invoices {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px 16px;
+  border-radius: 18px;
+  border: 1px solid var(--wp-border, #2a2a3a);
+  background: color-mix(in srgb, var(--wp-surface, #12121a) 82%, transparent);
+  overflow: hidden;
+}
+.sb-invoices__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.sb-invoices__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgb(255, 150, 112);
+}
+.sb-invoices__title {
+  margin: 4px 0 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--wp-text, #e8e8f0);
+}
+.sb-invoices__count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--wp-text-dim, #a1a1aa);
+  background: color-mix(in srgb, var(--wp-border, #2a2a3a) 50%, transparent);
+  padding: 4px 9px;
+  border-radius: 999px;
+}
+
+.sb-inv__list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+.sb-inv__row {
+  display: grid;
+  grid-template-columns: 30px 1fr 90px 70px 90px 30px;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 6px;
+  border-bottom: 1px solid color-mix(in srgb, var(--wp-border, #2a2a3a) 60%, transparent);
+}
+.sb-inv__row:last-child {
+  border-bottom: 0;
+}
+.sb-inv__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: color-mix(in srgb, rgb(255, 150, 112) 18%, transparent);
+  color: rgb(255, 150, 112);
+}
+.sb-inv__icon--dim {
+  background: color-mix(in srgb, var(--wp-border, #2a2a3a) 70%, transparent);
+  color: var(--wp-text-dim, #a1a1aa);
+}
+.sb-inv__main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.sb-inv__plan {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--wp-text, #e8e8f0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sb-inv__num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  color: var(--wp-text-dim, #a1a1aa);
+  letter-spacing: 0.02em;
+}
+.sb-inv__date {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--wp-text-dim, #a1a1aa);
+}
+.sb-inv__amount {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--wp-text, #e8e8f0);
+  text-align: right;
+}
+.sb-inv__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 4px 9px;
+  border-radius: 999px;
+  width: max-content;
+  white-space: nowrap;
+}
+.sb-inv__status--ok {
+  background: color-mix(in srgb, rgb(242, 101, 34) 18%, transparent);
+  color: rgb(242, 101, 34);
+}
+.sb-inv__status--warn {
+  background: color-mix(in srgb, rgb(255, 213, 79) 18%, transparent);
+  color: rgb(255, 213, 79);
+}
+.sb-inv__status--err {
+  background: color-mix(in srgb, rgb(255, 107, 74) 18%, transparent);
+  color: rgb(255, 107, 74);
+}
+.sb-inv__dl {
+  appearance: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  border: 1px solid var(--wp-border, #2a2a3a);
+  background: color-mix(in srgb, var(--wp-surface, #12121a) 70%, transparent);
+  color: var(--wp-text-dim, #a1a1aa);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+.sb-inv__dl:hover {
+  color: var(--wp-text, #e8e8f0);
+  border-color: color-mix(in srgb, rgb(242, 101, 34) 50%, var(--wp-border, #2a2a3a));
+  background: color-mix(in srgb, rgb(242, 101, 34) 14%, transparent);
+}
+
+/* ---------- Skeleton ---------- */
+.sb-inv__row--skeleton { pointer-events: none; }
+.sb-skel {
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--wp-border, #2a2a3a) 50%, transparent) 0%,
+    color-mix(in srgb, var(--wp-border, #2a2a3a) 90%, transparent) 50%,
+    color-mix(in srgb, var(--wp-border, #2a2a3a) 50%, transparent) 100%
+  );
+  background-size: 200% 100%;
+  animation: sb-shimmer 1.4s linear infinite;
+  display: inline-block;
+}
+.sb-skel--w-10 { width: 26px; }
+.sb-skel--w-12 { width: 60px; }
+.sb-skel--w-16 { width: 80px; }
+.sb-skel--w-24 { width: 110px; }
+.sb-skel--w-32 { width: 150px; }
+
+@keyframes sb-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ============================================================================
+   Mobile — invoice rows collapse to 2-row stacks
+============================================================================ */
+@media (max-width: 720px) {
+  .sb-inv__row {
+    grid-template-columns: 30px 1fr auto;
+    grid-template-areas:
+      'icon main amount'
+      'icon date status'
+      '. . dl';
+    gap: 4px 10px;
+    padding: 12px 6px;
+  }
+  .sb-inv__icon { grid-area: icon; align-self: start; }
+  .sb-inv__main { grid-area: main; }
+  .sb-inv__amount { grid-area: amount; }
+  .sb-inv__date { grid-area: date; }
+  .sb-inv__status { grid-area: status; justify-self: end; }
+  .sb-inv__dl { grid-area: dl; justify-self: end; }
+}
+
+@media (max-width: 540px) {
+  .sb-hero {
+    padding: 24px 22px;
+  }
+  .sb-hero__price {
+    font-size: 44px;
+  }
+}

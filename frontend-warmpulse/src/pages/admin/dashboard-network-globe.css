@@ -1,0 +1,335 @@
+/* =============================================================================
+   Admin dashboard — Network Globe design (real /admin/dashboard).
+   Lives inside .admin-shell__main which already supplies the dark canvas
+   + aurora + left padding for the floating pill sidebar.
+============================================================================= */
+
+.ng-dash {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.ng-dash__topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.55);
+  letter-spacing: 0.04em;
+}
+.ng-dash__crumb {
+  font-weight: 600;
+}
+.ng-dash__time {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.6);
+}
+.ng-dash__time svg {
+  color: var(--wp-accent);
+}
+
+.ng-dash__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.65);
+  font-weight: 700;
+}
+.ng-dash__eyebrow svg {
+  color: var(--wp-accent);
+}
+
+.ng-dash__tag {
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.ng-dash__tag--ok {
+  background: rgba(74, 222, 128, 0.18);
+  color: #86efac;
+}
+.ng-dash__tag--warn {
+  background: rgba(251, 191, 36, 0.18);
+  color: #fde68a;
+}
+
+/* ---------------------------------------------------------------------------
+   Main: globe + regional breakdown
+--------------------------------------------------------------------------- */
+
+.ng-dash__main {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 14px;
+}
+@media (max-width: 1100px) {
+  .ng-dash__main {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ng-dash__card {
+  background: color-mix(in srgb, var(--wp-surface) 70%, transparent);
+  border: 1px solid var(--wp-border);
+  border-radius: 14px;
+  padding: 16px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ng-dash__card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ng-dash__card--globe {
+  min-height: 420px;
+}
+.ng-dash__globe-wrap {
+  position: relative;
+  flex: 1;
+}
+.ng-dash__globe {
+  width: 100%;
+  height: 100%;
+  min-height: 360px;
+  display: block;
+}
+.ng-dash__globe-overlay {
+  position: absolute;
+  left: 8px;
+  bottom: 4px;
+}
+.ng-dash__globe-num {
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.ng-dash__globe-label {
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+/* ---------------------------------------------------------------------------
+   Regions
+--------------------------------------------------------------------------- */
+
+.ng-dash__card--regions {
+  gap: 16px;
+}
+.ng-dash__regions {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.ng-region {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ng-region__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.85);
+}
+.ng-region__head strong {
+  color: #fff;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+}
+.ng-region__flag {
+  margin-right: 4px;
+}
+.ng-region__bar {
+  position: relative;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.ng-region__fill {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, var(--wp-accent), #FF8A4B);
+  border-radius: 4px;
+}
+
+.ng-dash__card-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.1);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.65);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+.ng-dash__card-foot strong {
+  color: #fff;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 15px;
+}
+
+.ng-dash__note {
+  margin: 0;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  font-style: italic;
+}
+
+/* ---------------------------------------------------------------------------
+   KPIs row
+--------------------------------------------------------------------------- */
+
+.ng-dash__kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+@media (max-width: 720px) {
+  .ng-dash__kpis {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.ng-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  background: color-mix(in srgb, var(--wp-surface) 70%, transparent);
+  border: 1px solid var(--wp-border);
+  border-radius: 12px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.ng-kpi svg {
+  color: var(--wp-accent);
+}
+.ng-kpi__num {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+}
+.ng-kpi__label {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------------------
+   Activity strip
+--------------------------------------------------------------------------- */
+
+.ng-dash__strip {
+  background: color-mix(in srgb, var(--wp-surface) 70%, transparent);
+  border: 1px solid var(--wp-border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ng-dash__strip-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.ng-dash__live {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #86efac;
+  font-weight: 700;
+}
+.ng-dash__live-dot {
+  width: 6px;
+  height: 6px;
+  background: #4ade80;
+  border-radius: 50%;
+  box-shadow: 0 0 8px #4ade80;
+  animation: ng-blink 1.4s infinite;
+}
+@keyframes ng-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.ng-dash__strip-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ng-event {
+  display: grid;
+  grid-template-columns: 80px 70px 1fr;
+  gap: 10px;
+  padding: 6px 0;
+  font-size: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+}
+.ng-event:last-child {
+  border-bottom: none;
+}
+.ng-event__t {
+  color: rgba(255, 255, 255, 0.4);
+}
+.ng-event__k {
+  text-transform: uppercase;
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  align-self: center;
+}
+.ng-event--send .ng-event__k { color: #4ade80; }
+.ng-event--reply .ng-event__k { color: var(--wp-accent); }
+.ng-event--signup .ng-event__k { color: #FF8A4B; }
+.ng-event--connect .ng-event__k { color: #f472b6; }
+.ng-event--warn .ng-event__k { color: #fbbf24; }
+.ng-event__m {
+  color: rgba(255, 255, 255, 0.8);
+}

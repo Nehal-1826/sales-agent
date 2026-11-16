@@ -1,0 +1,356 @@
+/* =============================================================================
+   /admin/platform-analytics — Cockpit layout (live)
+============================================================================= */
+
+.pac {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.pac__topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.55);
+}
+.pac__crumb { font-weight: 600; letter-spacing: 0.04em; }
+.pac__time {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.pac__time svg { color: var(--wp-accent); }
+
+.pac__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.pac__title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+.pac__sub {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.55);
+  max-width: 620px;
+}
+
+.pac__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.pac__btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+.pac__btn--ghost {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.85);
+}
+.pac__btn--ghost:hover { border-color: rgba(255, 255, 255, 0.25); }
+.pac__btn--solid {
+  border: 1px solid var(--wp-accent);
+  background: linear-gradient(135deg, var(--wp-accent), var(--wp-accent-hover));
+  color: #fff;
+}
+.pac__btn--solid:hover {
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--wp-accent) 35%, transparent);
+}
+
+.pac__dd {
+  position: relative;
+}
+.pac__dd-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 200px;
+  padding: 4px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--wp-surface) 96%, transparent);
+  border: 1px solid var(--wp-border);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.4);
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+}
+.pac__dd-h {
+  padding: 8px 10px 4px;
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 700;
+}
+.pac__dd-note {
+  padding: 0 10px 6px;
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.4);
+  font-style: italic;
+}
+.pac__dd-item {
+  appearance: none;
+  display: block;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: left;
+}
+.pac__dd-item:hover {
+  background: color-mix(in srgb, var(--wp-accent) 14%, transparent);
+}
+.pac__dd-item--active {
+  background: color-mix(in srgb, var(--wp-accent) 22%, transparent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.pac__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.65);
+  font-weight: 700;
+}
+.pac__eyebrow svg { color: var(--wp-accent); }
+.pac__pill {
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.pac__pill--ok { background: rgba(74, 222, 128, 0.18); color: #86efac; }
+
+/* ============================================================================
+   Cockpit grid
+============================================================================ */
+
+.pac-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-auto-rows: 220px;
+  gap: 12px;
+}
+@media (max-width: 1200px) {
+  .pac-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+.ck {
+  background: color-mix(in srgb, var(--wp-surface) 70%, transparent);
+  border: 1px solid var(--wp-border);
+  border-radius: 14px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  backdrop-filter: blur(14px);
+}
+.ck--big { grid-column: span 2; grid-row: span 1; }
+.ck--wide { grid-column: span 2; }
+.ck__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.ck__head-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  font-weight: 800;
+  color: #fff;
+}
+.ck__note {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.4);
+  font-style: italic;
+}
+
+.ck__chart {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+}
+
+.ck__center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 1;
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.55);
+}
+.ck__center--dim svg { opacity: 0.35; }
+
+.ck__donut {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+.ck__donut svg {
+  width: 100%;
+  height: 100%;
+  max-width: 130px;
+  max-height: 130px;
+}
+.ck__donut-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.ck__donut-num {
+  font-size: 20px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.ck__donut-label {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 600;
+}
+
+.ck__legend {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 8px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.65);
+}
+.ck__legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ck__sw {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.ck__bars,
+.ck__hist {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  flex: 1;
+  min-height: 0;
+}
+.ck__bar {
+  flex: 1;
+  background: linear-gradient(180deg, var(--wp-accent), color-mix(in srgb, var(--wp-accent) 40%, transparent));
+  border-radius: 2px 2px 0 0;
+  min-height: 3px;
+}
+.ck__hist-bar {
+  flex: 1;
+  background: linear-gradient(180deg, #FF8A4B, color-mix(in srgb, #FF8A4B 40%, transparent));
+  border-radius: 2px 2px 0 0;
+  min-height: 3px;
+}
+.ck__hist-x {
+  display: flex;
+  gap: 4px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.ck__hist-x span {
+  flex: 1;
+  text-align: center;
+  font-size: 8.5px;
+  font-family: 'JetBrains Mono', monospace;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.ck__geo {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+}
+
+.ck__ring {
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 800ms ease;
+}
+.ck__ring-inner {
+  background: #0a0a14;
+  width: 86px;
+  height: 86px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  text-align: center;
+}
+.ck__ring-num {
+  font-size: 18px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.ck__ring-label {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 600;
+  margin-top: 2px;
+  line-height: 1.2;
+}

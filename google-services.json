@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "1082337714849",
+    "project_id": "email-warmup-d918e",
+    "storage_bucket": "email-warmup-d918e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1082337714849:android:92b567629ddb80baec46e0",
+        "android_client_info": {
+          "package_name": "com.warmpulse.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1082337714849-rafcaavi4v8g3u7q1aritmge2vms2dc0.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBZySgZxkxHR0SxU0yKPmufZ7qMdT87g2w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1082337714849-rafcaavi4v8g3u7q1aritmge2vms2dc0.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

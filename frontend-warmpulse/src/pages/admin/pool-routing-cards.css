@@ -1,0 +1,568 @@
+/* =============================================================================
+   /admin/pool-routing — Workspace Cards layout (live page)
+============================================================================= */
+
+.prc {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.prc__topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.55);
+}
+.prc__crumb { font-weight: 600; letter-spacing: 0.04em; }
+.prc__time {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.prc__time svg { color: var(--wp-accent); }
+
+.prc__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.prc__title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+.prc__sub {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.55);
+  max-width: 620px;
+  line-height: 1.5;
+}
+
+.prc__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.prc__btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.prc__btn:disabled { opacity: 0.4; cursor: default; }
+.prc__btn--ghost {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.85);
+}
+.prc__btn--ghost:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+.prc__btn--solid {
+  border: 1px solid var(--wp-accent);
+  background: linear-gradient(135deg, var(--wp-accent), var(--wp-accent-hover));
+  color: #fff;
+}
+.prc__btn--solid:hover:not(:disabled) {
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--wp-accent) 35%, transparent);
+}
+
+.prc__srch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  width: 240px;
+}
+.prc__srch svg { color: rgba(255, 255, 255, 0.45); }
+.prc__srch-input {
+  background: transparent;
+  border: 0;
+  outline: 0;
+  color: #fff;
+  font-size: 12.5px;
+  flex: 1;
+  min-width: 0;
+}
+.prc__srch-input::placeholder { color: rgba(255, 255, 255, 0.35); }
+
+/* Filter chips ------------------------------------------------------- */
+
+.prc__chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.prc-chip {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.72);
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+.prc-chip:hover { border-color: rgba(255, 255, 255, 0.22); }
+.prc-chip__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.prc-chip__count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.6);
+}
+.prc-chip--active {
+  background: color-mix(in srgb, var(--chip-tone, var(--wp-accent)) 22%, transparent);
+  border-color: var(--chip-tone, var(--wp-accent));
+  color: #fff;
+}
+.prc-chip--active .prc-chip__count {
+  background: rgba(0, 0, 0, 0.3);
+  color: #fff;
+}
+
+/* Status messages --------------------------------------------------- */
+
+.prc__alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, #ef4444 35%, transparent);
+  background: color-mix(in srgb, #ef4444 12%, transparent);
+  font-size: 12.5px;
+  color: #fca5a5;
+}
+.prc__loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 20px;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.55);
+}
+.prc__empty-row {
+  padding: 28px 16px;
+  text-align: center;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.45);
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+}
+
+.prc-empty {
+  background: color-mix(in srgb, var(--wp-surface) 70%, transparent);
+  border: 1px dashed var(--wp-border);
+  border-radius: 16px;
+  padding: 40px 24px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: rgba(255, 255, 255, 0.7);
+}
+.prc-empty svg { color: var(--wp-accent); opacity: 0.6; }
+.prc-empty__title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+}
+.prc-empty__sub {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.55);
+  max-width: 480px;
+  line-height: 1.5;
+}
+
+/* Cards grid -------------------------------------------------------- */
+
+.prc-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+@media (max-width: 1100px) { .prc-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 720px)  { .prc-grid { grid-template-columns: 1fr; } }
+
+.prc-card {
+  background: color-mix(in srgb, var(--wp-surface) 70%, transparent);
+  border: 1px solid var(--wp-border);
+  border-radius: 14px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: border-color 160ms ease;
+}
+.prc-card:hover {
+  border-color: color-mix(in srgb, var(--wp-accent) 35%, var(--wp-border));
+}
+.prc-card__head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+.prc-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+.prc-card__id { min-width: 0; }
+.prc-card__name {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prc-card__email {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prc-plan {
+  display: inline-flex;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.7);
+}
+.prc-plan--scale { background: rgba(242, 101, 34, 0.22); color: #FFB890; }
+.prc-plan--growth { background: rgba(255, 138, 75, 0.22); color: #FFB890; }
+.prc-plan--starter { background: rgba(244, 114, 182, 0.18); color: #f9a8d4; }
+.prc-plan--trial { background: rgba(251, 191, 36, 0.18); color: #fde68a; }
+
+.prc-card__stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 10px;
+}
+.prc-card__stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.prc-card__stat-num {
+  font-size: 14px;
+  color: #fff;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.prc-card__stat-label {
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 600;
+}
+
+.prc-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.prc-card__foot-label {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 700;
+}
+
+/* Pool pill + dropdown menu ------------------------------------------ */
+
+.prc-card__pool {
+  position: relative;
+}
+.prc-pool-pill {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--pill-tone, rgba(255,255,255,0.08)) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--pill-tone, rgba(255,255,255,0.18)) 60%, transparent);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter 160ms ease;
+}
+.prc-pool-pill:hover:not(:disabled) {
+  filter: brightness(1.15);
+}
+.prc-pool-pill:disabled { opacity: 0.5; cursor: not-allowed; }
+.prc-pool-pill--empty {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.75);
+  font-style: italic;
+}
+.prc-pool-pill__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--pill-tone, currentColor);
+}
+.prc-pool-pill__dot--empty {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.prc-pool-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 240px;
+  padding: 6px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--wp-surface) 96%, transparent);
+  border: 1px solid var(--wp-border);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.4);
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.prc-pool-menu__h {
+  padding: 6px 10px 4px;
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 700;
+}
+.prc-pool-menu__item {
+  appearance: none;
+  display: grid;
+  grid-template-columns: 10px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.prc-pool-menu__item:hover {
+  background: color-mix(in srgb, var(--wp-accent) 16%, transparent);
+}
+.prc-pool-menu__item--active {
+  background: color-mix(in srgb, var(--wp-accent) 22%, transparent);
+  color: #fff;
+}
+.prc-pool-menu__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.prc-pool-menu__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.prc-pool-menu__tag {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* =============================================================================
+   Pools section — tiles showing each peer pool above the workspace cards.
+============================================================================= */
+.prc-pools {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--wp-border, rgba(255, 255, 255, 0.08));
+  background: color-mix(in srgb, var(--wp-surface, #0a0a0a) 80%, transparent);
+}
+.prc-pools__head { display: flex; flex-direction: column; gap: 4px; }
+.prc-pools__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.92);
+}
+.prc-pools__count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-accent, #F26522) 14%, transparent);
+  color: var(--wp-accent, #F26522);
+  border: 1px solid color-mix(in srgb, var(--wp-accent, #F26522) 30%, transparent);
+}
+.prc-pools__sub {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.5;
+}
+.prc-pools__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.prc-pool-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--wp-border, rgba(255, 255, 255, 0.08));
+  background: color-mix(in srgb, var(--wp-surface, #0a0a0a) 60%, transparent);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 180ms, background 180ms, transform 180ms;
+  overflow: hidden;
+}
+.prc-pool-tile::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--tile-tone, rgba(255, 255, 255, 0.4));
+  opacity: 0.8;
+}
+.prc-pool-tile:hover {
+  border-color: color-mix(in srgb, var(--tile-tone, var(--wp-accent, #F26522)) 55%, var(--wp-border, rgba(255, 255, 255, 0.08)));
+  background: color-mix(in srgb, var(--tile-tone, var(--wp-accent, #F26522)) 4%, var(--wp-surface, #0a0a0a));
+}
+.prc-pool-tile--active {
+  border-color: color-mix(in srgb, var(--tile-tone, var(--wp-accent, #F26522)) 70%, transparent);
+  background: color-mix(in srgb, var(--tile-tone, var(--wp-accent, #F26522)) 10%, var(--wp-surface, #0a0a0a));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tile-tone, var(--wp-accent, #F26522)) 40%, transparent),
+              0 8px 24px -10px color-mix(in srgb, var(--tile-tone, var(--wp-accent, #F26522)) 50%, transparent);
+}
+.prc-pool-tile__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.prc-pool-tile__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--tile-tone, rgba(255, 255, 255, 0.4));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tile-tone, rgba(255, 255, 255, 0.4)) 22%, transparent);
+  flex: none;
+}
+.prc-pool-tile__name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.94);
+  letter-spacing: -0.01em;
+}
+.prc-pool-tile__tag {
+  margin-left: auto;
+  font-size: 9.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-accent, #F26522) 16%, transparent);
+  color: var(--wp-accent, #F26522);
+  border: 1px solid color-mix(in srgb, var(--wp-accent, #F26522) 35%, transparent);
+}
+.prc-pool-tile__desc {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.55);
+}
+.prc-pool-tile__stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid color-mix(in srgb, var(--wp-border, rgba(255, 255, 255, 0.08)) 60%, transparent);
+}
+.prc-pool-tile__stats > div { display: flex; flex-direction: column; gap: 0; }
+.prc-pool-tile__num {
+  font-size: 16px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.94);
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+.prc-pool-tile__lbl {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.45);
+  margin-top: 2px;
+}

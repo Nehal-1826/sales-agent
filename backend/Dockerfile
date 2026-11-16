@@ -1,23 +1,22 @@
-# Backend — Django API + agent worker
-FROM python:3.11-slim
+FROM python:3.12-slim AS base
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    TZ=UTC
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 WORKDIR /app
 
-# System deps: libxml2/runtime for lxml (wheels need no compiler), tzdata for ZoneInfo
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends tzdata curl \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        libpq-dev \
+        curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip && pip install -r requirements.txt && pip install 'bcrypt<5'
 
 COPY . .
 
-RUN chmod +x /app/entrypoint.sh
-EXPOSE 8000
-
-ENTRYPOINT ["/app/entrypoint.sh"]
+EXPOSE 8001
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "2", "--proxy-headers", "--forwarded-allow-ips=*"]

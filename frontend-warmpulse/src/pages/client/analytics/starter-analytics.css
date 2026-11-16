@@ -1,0 +1,369 @@
+/* ============================================================================
+   Starter Analytics — N3 Tile Grid.
+   an- prefix (analytics, narrow).
+============================================================================ */
+
+.an {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  color: var(--wp-text, #e8e8f0);
+}
+
+/* ---------- Head ---------- */
+.an__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.an__title {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  margin: 0;
+}
+.an__sub {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--wp-text-dim, #a1a1aa);
+  max-width: 56ch;
+}
+.an__head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ---------- Range chips ---------- */
+.an__range {
+  display: inline-flex;
+  border: 1px solid var(--wp-border, #2a2a3a);
+  border-radius: 999px;
+  padding: 3px;
+  background: color-mix(in srgb, var(--wp-surface, #12121a) 80%, transparent);
+}
+.an__range-chip {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--wp-text-dim, #a1a1aa);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 5px 11px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease;
+}
+.an__range-chip:hover {
+  color: var(--wp-text, #e8e8f0);
+}
+.an__range-chip--active {
+  background: color-mix(in srgb, rgb(242, 101, 34) 22%, transparent);
+  color: var(--wp-text, #e8e8f0);
+  box-shadow: 0 0 0 1px color-mix(in srgb, rgb(242, 101, 34) 40%, transparent) inset;
+}
+
+/* ---------- 2×2 grid ---------- */
+.an-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 14px;
+}
+@media (max-width: 880px) {
+  .an-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+  }
+}
+
+/* ---------- Tile shell ---------- */
+.an-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 18px 14px;
+  border-radius: 18px;
+  border: 1px solid var(--wp-border, #2a2a3a);
+  background: color-mix(in srgb, var(--wp-surface, #12121a) 82%, transparent);
+  overflow: hidden;
+  min-height: 200px;
+}
+.an-tile::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+}
+.an-tile--violet::before {
+  background: radial-gradient(circle at 10% 0%, color-mix(in srgb, rgb(255, 150, 112) 18%, transparent), transparent 55%);
+}
+.an-tile--cyan::before {
+  background: radial-gradient(circle at 10% 0%, color-mix(in srgb, rgb(255, 138, 75) 16%, transparent), transparent 55%);
+}
+.an-tile--green::before {
+  background: radial-gradient(circle at 10% 0%, color-mix(in srgb, rgb(242, 101, 34) 16%, transparent), transparent 55%);
+}
+.an-tile--yellow::before {
+  background: radial-gradient(circle at 10% 0%, color-mix(in srgb, rgb(255, 213, 79) 16%, transparent), transparent 55%);
+}
+
+.an-tile__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  position: relative;
+}
+.an-tile__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--wp-text-dim, #a1a1aa);
+}
+.an-tile__title-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+}
+.an-tile__title-icon--violet {
+  background: color-mix(in srgb, rgb(255, 150, 112) 22%, transparent);
+  color: rgb(255, 150, 112);
+}
+.an-tile__title-icon--cyan {
+  background: color-mix(in srgb, rgb(255, 138, 75) 22%, transparent);
+  color: rgb(255, 138, 75);
+}
+.an-tile__title-icon--green {
+  background: color-mix(in srgb, rgb(242, 101, 34) 22%, transparent);
+  color: rgb(242, 101, 34);
+}
+.an-tile__title-icon--yellow {
+  background: color-mix(in srgb, rgb(255, 213, 79) 22%, transparent);
+  color: rgb(255, 213, 79);
+}
+
+.an-tile__stat {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--wp-text, #e8e8f0);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.an-tile__stat-suffix {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--wp-text-dim, #a1a1aa);
+}
+
+.an-tile__body {
+  flex: 1;
+  position: relative;
+  min-height: 80px;
+}
+.an-tile__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 100%;
+  min-height: 80px;
+  color: var(--wp-text-dim, #a1a1aa);
+  font-size: 12px;
+}
+
+.an-tile__foot {
+  font-size: 11px;
+  color: var(--wp-text-dim, #a1a1aa);
+  min-height: 16px;
+}
+.an-tile__delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.an-tile__delta--up {
+  color: rgb(242, 101, 34);
+}
+.an-tile__delta--down {
+  color: rgb(255, 107, 74);
+}
+.an-tile__delta--flat {
+  color: var(--wp-text-dim, #a1a1aa);
+}
+.an-tile__foot-row {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 22px;
+}
+.an-tile__foot-row > span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+}
+.an-tile__foot-num {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--wp-text, #e8e8f0);
+}
+.an-tile__foot-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--wp-text-dim, #a1a1aa);
+}
+
+/* ---------- Sparkline ---------- */
+.an-spark {
+  width: 100%;
+  height: 80px;
+  display: block;
+}
+
+/* ---------- Vertical bars ---------- */
+.an-bars-svg {
+  width: 100%;
+  height: 80px;
+  display: block;
+}
+
+/* ---------- Donut ---------- */
+.an-donut {
+  width: 96px;
+  height: 96px;
+  display: block;
+  margin: 0 auto;
+}
+
+/* ---------- Placement legend ---------- */
+.an-tile__legend {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+.an-legend-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--wp-text-dim, #a1a1aa);
+}
+.an-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+.an-legend-dot--green { background: rgb(242, 101, 34); }
+.an-legend-dot--yellow { background: rgb(255, 213, 79); }
+.an-legend-dot--red { background: rgb(255, 107, 74); }
+.an-legend-label {
+  color: var(--wp-text-dim, #a1a1aa);
+}
+.an-legend-val {
+  font-weight: 700;
+  color: var(--wp-text, #e8e8f0);
+}
+
+/* ---------- Engagement rate bars ---------- */
+.an-rate__bars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 4px;
+}
+.an-rate__row {
+  display: grid;
+  grid-template-columns: 110px 1fr 56px;
+  align-items: center;
+  gap: 10px;
+}
+.an-rate__head {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--wp-text-dim, #a1a1aa);
+  letter-spacing: 0.02em;
+}
+.an-rate__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+}
+.an-rate__icon--green {
+  background: color-mix(in srgb, rgb(242, 101, 34) 22%, transparent);
+  color: rgb(242, 101, 34);
+}
+.an-rate__icon--yellow {
+  background: color-mix(in srgb, rgb(255, 213, 79) 22%, transparent);
+  color: rgb(255, 213, 79);
+}
+.an-rate__icon--violet {
+  background: color-mix(in srgb, rgb(255, 150, 112) 22%, transparent);
+  color: rgb(255, 150, 112);
+}
+.an-rate__icon--red {
+  background: color-mix(in srgb, rgb(255, 107, 74) 22%, transparent);
+  color: rgb(255, 107, 74);
+}
+.an-rate__track {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-border, #2a2a3a) 80%, transparent);
+  overflow: hidden;
+}
+.an-rate__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+}
+.an-rate__fill--green { background: linear-gradient(90deg, rgb(242, 101, 34), color-mix(in srgb, rgb(242, 101, 34) 60%, transparent)); }
+.an-rate__fill--yellow { background: linear-gradient(90deg, rgb(255, 213, 79), color-mix(in srgb, rgb(255, 213, 79) 60%, transparent)); }
+.an-rate__fill--violet { background: linear-gradient(90deg, rgb(255, 150, 112), color-mix(in srgb, rgb(255, 150, 112) 60%, transparent)); }
+.an-rate__fill--red { background: linear-gradient(90deg, rgb(255, 107, 74), color-mix(in srgb, rgb(255, 107, 74) 60%, transparent)); }
+.an-rate__val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--wp-text, #e8e8f0);
+  text-align: right;
+}
+
+@media (max-width: 540px) {
+  .an-rate__row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .an-rate__val {
+    text-align: left;
+  }
+}

@@ -1,0 +1,44 @@
+[Unit]
+Description=WarmPulse Celery Beat (periodic task scheduler)
+Documentation=https://github.com/yourorg/warmpulse
+After=network-online.target postgresql.service redis-server.service warmpulse-worker.service
+Wants=network-online.target
+Requires=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=warmpulse
+Group=warmpulse
+WorkingDirectory=/var/www/warmpulse/backend
+Environment=PATH=/var/www/warmpulse/backend/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+EnvironmentFile=/etc/warmpulse/warmpulse.env
+# PID file lives under a dedicated dir created by RuntimeDirectory below
+# (systemd auto-manages /run/warmpulse at service start/stop).
+RuntimeDirectory=warmpulse
+RuntimeDirectoryMode=0755
+PIDFile=/run/warmpulse/beat.pid
+ExecStart=/var/www/warmpulse/backend/.venv/bin/celery -A app.celery_app beat \
+    -l info \
+    --pidfile=/run/warmpulse/beat.pid \
+    --schedule=/var/www/warmpulse/backend/.celerybeat-schedule
+Restart=always
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# --- Hardening ------------------------------------------------------------
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/www/warmpulse /var/log/warmpulse /run/warmpulse
+
+# --- Logging --------------------------------------------------------------
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=warmpulse-beat
+
+[Install]
+WantedBy=multi-user.target

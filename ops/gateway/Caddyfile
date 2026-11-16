@@ -1,0 +1,16 @@
+# TLS termination for the merged stack (docker-compose.https.yml overlay).
+# Caddy takes over :80/:443, obtains + auto-renews the Let's Encrypt cert,
+# redirects 80 → 443, and proxies to the internal nginx gateway — which then
+# routes /api → django, /wp-api → fastapi, / → frontend SPA (its
+# X-Forwarded-Proto map forwards this :443 scheme to the backends).
+#
+# Both env vars come from the caddy service in docker-compose.https.yml:
+#   DOMAIN     — the DNS name pointing at this VPS (cert is issued for it)
+#   ACME_EMAIL — Let's Encrypt expiry-notice address
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	reverse_proxy gateway:80
+}

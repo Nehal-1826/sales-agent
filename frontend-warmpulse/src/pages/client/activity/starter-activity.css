@@ -1,0 +1,402 @@
+/* ============================================================================
+   Starter Activity — A3 Chart + Drilldown.
+   sa- prefix to avoid collisions with the legacy activity page styles.
+============================================================================ */
+
+.sa {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  color: var(--wp-text, #e8e8f0);
+}
+
+/* ---------- Head ---------- */
+.sa__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.sa__title {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  margin: 0;
+}
+.sa__sub {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--wp-text-dim, #a1a1aa);
+  max-width: 56ch;
+}
+.sa__sub-em {
+  color: var(--wp-text, #e8e8f0);
+  font-weight: 600;
+}
+
+/* ---------- Today strip ---------- */
+.sa-today {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+@media (max-width: 720px) {
+  .sa-today {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+.sa-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--wp-border, #2a2a3a);
+  background: color-mix(in srgb, var(--wp-surface, #12121a) 80%, transparent);
+  overflow: hidden;
+}
+.sa-tile::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--sa-tone, rgb(242, 101, 34)) 14%, transparent),
+    transparent 60%
+  );
+}
+.sa-tile--send { --sa-tone: rgb(255, 138, 75); }
+.sa-tile--open { --sa-tone: rgb(242, 101, 34); }
+.sa-tile--reply { --sa-tone: rgb(255, 213, 79); }
+.sa-tile--rescue { --sa-tone: rgb(255, 107, 74); }
+
+.sa-tile__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--sa-tone) 18%, transparent);
+  color: var(--sa-tone);
+}
+.sa-tile__num {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.sa-tile__label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--wp-text-dim, #a1a1aa);
+}
+
+/* ---------- Chart card ---------- */
+.sa-chart {
+  position: relative;
+  border-radius: 18px;
+  border: 1px solid var(--wp-border, #2a2a3a);
+  background: color-mix(in srgb, var(--wp-surface, #12121a) 82%, transparent);
+  padding: 18px 18px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+}
+.sa-chart::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 8% 0%, color-mix(in srgb, rgb(242, 101, 34) 12%, transparent), transparent 50%),
+    radial-gradient(circle at 92% 0%, color-mix(in srgb, rgb(255, 138, 75) 10%, transparent), transparent 50%);
+}
+
+.sa-chart__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  position: relative;
+}
+.sa-chart__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--wp-text-dim, #a1a1aa);
+}
+.sa-chart__title {
+  margin: 4px 0 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.sa-chart__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+.sa-chart__legend-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--wp-text-dim, #a1a1aa);
+}
+.sa-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+.sa-dot--send { background: rgb(255, 138, 75); }
+.sa-dot--open { background: rgb(242, 101, 34); }
+.sa-dot--reply { background: rgb(255, 213, 79); }
+.sa-dot--star { background: rgb(255, 150, 112); }
+.sa-dot--rescue { background: rgb(255, 107, 74); }
+
+.sa-chart__svg-wrap {
+  position: relative;
+  width: 100%;
+  height: 240px;
+}
+.sa-chart__svg-wrap svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.sa-chart__loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--wp-text-dim, #a1a1aa);
+  background: color-mix(in srgb, var(--wp-surface, #12121a) 60%, transparent);
+  border-radius: 12px;
+}
+
+/* ---------- Controls row (selected day + filter chips) ---------- */
+.sa-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.sa-controls__day {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--wp-text-dim, #a1a1aa);
+}
+.sa-controls__day-label {
+  color: var(--wp-text, #e8e8f0);
+  font-weight: 600;
+}
+.sa-controls__clear {
+  background: transparent;
+  border: 1px solid var(--wp-border, #2a2a3a);
+  border-radius: 999px;
+  color: var(--wp-text-dim, #a1a1aa);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 3px 9px;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+.sa-controls__clear:hover {
+  color: var(--wp-text, #e8e8f0);
+  border-color: color-mix(in srgb, rgb(242, 101, 34) 50%, var(--wp-border, #2a2a3a));
+}
+
+.sa-controls__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sa-chip {
+  appearance: none;
+  border: 1px solid var(--wp-border, #2a2a3a);
+  background: color-mix(in srgb, var(--wp-surface, #12121a) 70%, transparent);
+  color: var(--wp-text-dim, #a1a1aa);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 5px 11px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+.sa-chip:hover {
+  color: var(--wp-text, #e8e8f0);
+}
+.sa-chip--active {
+  color: var(--wp-text, #e8e8f0);
+  background: color-mix(in srgb, rgb(242, 101, 34) 18%, transparent);
+  border-color: color-mix(in srgb, rgb(242, 101, 34) 55%, var(--wp-border, #2a2a3a));
+}
+.sa-chip--send.sa-chip--active {
+  background: color-mix(in srgb, rgb(255, 138, 75) 18%, transparent);
+  border-color: color-mix(in srgb, rgb(255, 138, 75) 55%, var(--wp-border, #2a2a3a));
+}
+.sa-chip--open.sa-chip--active {
+  background: color-mix(in srgb, rgb(242, 101, 34) 18%, transparent);
+  border-color: color-mix(in srgb, rgb(242, 101, 34) 55%, var(--wp-border, #2a2a3a));
+}
+.sa-chip--reply.sa-chip--active {
+  background: color-mix(in srgb, rgb(255, 213, 79) 18%, transparent);
+  border-color: color-mix(in srgb, rgb(255, 213, 79) 55%, var(--wp-border, #2a2a3a));
+}
+.sa-chip--star.sa-chip--active {
+  background: color-mix(in srgb, rgb(255, 150, 112) 18%, transparent);
+  border-color: color-mix(in srgb, rgb(255, 150, 112) 55%, var(--wp-border, #2a2a3a));
+}
+.sa-chip--rescue.sa-chip--active {
+  background: color-mix(in srgb, rgb(255, 107, 74) 18%, transparent);
+  border-color: color-mix(in srgb, rgb(255, 107, 74) 55%, var(--wp-border, #2a2a3a));
+}
+
+/* ---------- Feed / drilldown ---------- */
+.sa-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-radius: 16px;
+  border: 1px solid var(--wp-border, #2a2a3a);
+  background: color-mix(in srgb, var(--wp-surface, #12121a) 78%, transparent);
+  padding: 8px;
+  min-height: 120px;
+}
+.sa-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 36px 16px;
+  color: var(--wp-text-dim, #a1a1aa);
+  font-size: 13px;
+  text-align: center;
+}
+
+.sa-row {
+  display: grid;
+  grid-template-columns: 64px 92px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  transition: background 140ms ease;
+}
+.sa-row:hover {
+  background: color-mix(in srgb, var(--wp-surface, #12121a) 100%, transparent);
+}
+
+.sa-row__time {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--wp-text-dim, #a1a1aa);
+}
+.sa-row__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  width: max-content;
+}
+.sa-row__action--send {
+  background: color-mix(in srgb, rgb(255, 138, 75) 18%, transparent);
+  color: rgb(255, 138, 75);
+}
+.sa-row__action--open {
+  background: color-mix(in srgb, rgb(242, 101, 34) 18%, transparent);
+  color: rgb(242, 101, 34);
+}
+.sa-row__action--reply {
+  background: color-mix(in srgb, rgb(255, 213, 79) 18%, transparent);
+  color: rgb(255, 213, 79);
+}
+.sa-row__action--star {
+  background: color-mix(in srgb, rgb(255, 150, 112) 18%, transparent);
+  color: rgb(255, 150, 112);
+}
+.sa-row__action--rescue {
+  background: color-mix(in srgb, rgb(255, 107, 74) 18%, transparent);
+  color: rgb(255, 107, 74);
+}
+
+.sa-row__peer {
+  color: var(--wp-text, #e8e8f0);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.sa-row__subject {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--wp-text-dim, #a1a1aa);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.sa-row__err {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgb(255, 107, 74);
+  background: color-mix(in srgb, rgb(255, 107, 74) 14%, transparent);
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
+.sa-feed__more {
+  display: flex;
+  justify-content: center;
+  padding: 10px 4px 4px;
+}
+
+@media (max-width: 640px) {
+  .sa-row {
+    grid-template-columns: 56px 78px 1fr;
+  }
+  .sa-row__subject {
+    grid-column: 1 / -1;
+    padding-left: 70px;
+  }
+  .sa-row__err {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
+}

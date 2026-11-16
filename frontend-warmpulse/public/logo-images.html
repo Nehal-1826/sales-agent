@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Download WarmPulse Logo Images</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: linear-gradient(135deg, #0a0a0f 0%, #1a1a26 50%, #0a0a0f 100%);
+            min-height: 100vh;
+            font-family: 'Outfit', sans-serif;
+            color: #ffffff;
+            padding: 60px 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            background: linear-gradient(90deg, #ffffff 0%, #FF6B35 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .subtitle {
+            text-align: center;
+            font-size: 1rem;
+            color: #888;
+            margin-bottom: 40px;
+        }
+        .logo-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 30px;
+        }
+        .logo-card {
+            background: linear-gradient(145deg, #151520 0%, #1a1a28 100%);
+            border-radius: 20px;
+            padding: 30px;
+            border: 1px solid rgba(255, 107, 53, 0.1);
+            text-align: center;
+        }
+        canvas {
+            max-width: 200px;
+            height: auto;
+            margin-bottom: 20px;
+        }
+        .logo-name {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #fff;
+        }
+        .logo-size {
+            font-size: 0.85rem;
+            color: #888;
+            margin-bottom: 15px;
+        }
+        .download-btn {
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #FF6B35 0%, #FF8E53 100%);
+            border: none;
+            border-radius: 10px;
+            color: #fff;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 5px;
+        }
+        .download-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 10px 30px rgba(255, 107, 53, 0.3);
+        }
+        .all-btn {
+            display: block;
+            margin: 40px auto 0;
+            padding: 15px 40px;
+            font-size: 1.1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎨 WarmPulse Logo Images</h1>
+        <p class="subtitle">Click download to save PNG images (512x512px)</p>
+
+        <div class="logo-grid" id="logoGrid"></div>
+
+        <button class="download-btn all-btn" onclick="downloadAll()">Download All as ZIP</button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script>
+        const logos = [
+            {
+                name: 'Sunset Gradient',
+                draw: (ctx, size) => {
+                    // Background
+                    const bgGrad = ctx.createLinearGradient(0, 0, size, size);
+                    bgGrad.addColorStop(0, '#FF6B35');
+                    bgGrad.addColorStop(1, '#FFB347');
+                    ctx.fillStyle = bgGrad;
+                    ctx.fillRect(0, 0, size, size);
+
+                    // Envelope
+                    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+                    roundRect(ctx, 30, 30, size-60, size*0.45, 20);
+                    ctx.fill();
+
+                    ctx.fillStyle = '#ffffff';
+                    roundRect(ctx, 40, 50, size-80, size*0.3, 15);
+                    ctx.fill();
+
+                    // Envelope lines
+                    ctx.strokeStyle = '#FF8E53';
+                    ctx.lineWidth = 4;
+                    ctx.beginPath();
+                    ctx.moveTo(40, 50);
+                    ctx.lineTo(size/2, size*0.2);
+                    ctx.lineTo(size-40, 50);
+                    ctx.stroke();
+
+                    // Pulse
+                    ctx.fillStyle = '#FFB347';
+                    ctx.beginPath();
+                    ctx.arc(size-70, size-90, 20, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.fillStyle = '#ffffff';
+                    ctx.beginPath();
+                    ctx.arc(size-70, size-90, 10, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            },
+            {
+                name: 'Minimalist Dark',
+                draw: (ctx, size) => {
+                    // Background
+                    ctx.fillStyle = '#1a1a26';
+                    ctx.fillRect(0, 0, size, size);
+
+                    // Envelope outline
+                    ctx.strokeStyle = '#FF6B35';
+                    ctx.lineWidth = 5;
+                    roundRectStroke(ctx, 50, 60, size-100, size*0.4, 20);
+                    ctx.stroke();
+
+                    // Envelope lines
+                    ctx.beginPath();
+                    ctx.moveTo(50, 60);
+                    ctx.lineTo(size/2, size*0.18);
+                    ctx.lineTo(size-50, 60);
+                    ctx.stroke();
+
+                    // Pulse
+                    ctx.fillStyle = '#FF6B35';
+                    ctx.beginPath();
+                    ctx.arc(size-80, size-100, 15, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.fillStyle = '#FFB347';
+                    ctx.beginPath();
+                    ctx.arc(size-80, size-100, 7, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            },
+            {
+                name: 'Vibrant Pop',
+                draw: (ctx, size) => {
+                    // Background gradient
+                    const bgGrad = ctx.createLinearGradient(0, 0, size, size);
+                    bgGrad.addColorStop(0, '#FF6B35');
+                    bgGrad.addColorStop(0.5, '#FF8E53');
+                    bgGrad.addColorStop(1, '#FFB347');
+                    ctx.fillStyle = bgGrad;
+                    ctx.fillRect(0, 0, size, size);
+
+                    // White envelope
+                    ctx.fillStyle = '#ffffff';
+                    roundRect(ctx, 40, 50, size-80, size*0.42, 18);
+                    ctx.fill();
+
+                    // Accent lines
+                    const accentGrad = ctx.createLinearGradient(40, 50, size-40, 50);
+                    accentGrad.addColorStop(0, '#FFD700');
+                    accentGrad.addColorStop(1, '#FF6B35');
+                    ctx.strokeStyle = accentGrad;
+                    ctx.lineWidth = 5;
+                    ctx.beginPath();
+                    ctx.moveTo(40, 50);
+                    ctx.lineTo(size/2, size*0.19);
+                    ctx.lineTo(size-40, 50);
+                    ctx.stroke();
+
+                    // Pulse
+                    ctx.fillStyle = bgGrad;
+                    ctx.beginPath();
+                    ctx.arc(size-60, size-80, 18, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.fillStyle = '#FFD700';
+                    ctx.beginPath();
+                    ctx.arc(size-60, size-80, 10, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            },
+            {
+                name: 'Modern Tech',
+                draw: (ctx, size) => {
+                    // Background
+                    ctx.fillStyle = '#0f0f1a';
+                    ctx.fillRect(0, 0, size, size);
+
+                    // Glowing envelope
+                    ctx.shadowColor = '#FF6B35';
+                    ctx.shadowBlur = 20;
+                    ctx.strokeStyle = '#FF6B35';
+                    ctx.lineWidth = 4;
+                    roundRectStroke(ctx, 45, 55, size-90, size*0.45, 20);
+                    ctx.stroke();
+                    ctx.shadowBlur = 0;
+
+                    // Lines
+                    ctx.beginPath();
+                    ctx.moveTo(45, 55);
+                    ctx.lineTo(size/2, size*0.18);
+                    ctx.lineTo(size-45, 55);
+                    ctx.stroke();
+
+                    // Bottom line
+                    ctx.beginPath();
+                    ctx.moveTo(45, size-65);
+                    ctx.lineTo(size-45, size-65);
+                    ctx.stroke();
+
+                    // Pulse
+                    ctx.shadowColor = '#FF6B35';
+                    ctx.shadowBlur = 15;
+                    ctx.fillStyle = '#FF6B35';
+                    ctx.beginPath();
+                    ctx.arc(size-75, size-100, 12, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+
+                    ctx.fillStyle = '#FFB347';
+                    ctx.beginPath();
+                    ctx.arc(size-75, size-100, 6, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            },
+            {
+                name: 'Premium Gold',
+                draw: (ctx, size) => {
+                    // Background
+                    ctx.fillStyle = '#1a1a26';
+                    ctx.fillRect(0, 0, size, size);
+
+                    // Gold envelope
+                    const goldGrad = ctx.createLinearGradient(0, 0, size, size);
+                    goldGrad.addColorStop(0, '#FFD700');
+                    goldGrad.addColorStop(0.5, '#FFA500');
+                    goldGrad.addColorStop(1, '#FF6B35');
+
+                    ctx.strokeStyle = goldGrad;
+                    ctx.lineWidth = 4;
+                    roundRectStroke(ctx, 50, 60, size-100, size*0.38, 18);
+                    ctx.stroke();
+
+                    // Lines
+                    ctx.beginPath();
+                    ctx.moveTo(50, 60);
+                    ctx.lineTo(size/2, size*0.17);
+                    ctx.lineTo(size-50, 60);
+                    ctx.stroke();
+
+                    // Pulse with glow
+                    ctx.shadowColor = '#FFD700';
+                    ctx.shadowBlur = 15;
+                    ctx.fillStyle = goldGrad;
+                    ctx.beginPath();
+                    ctx.arc(size-70, size-95, 14, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+
+                    ctx.fillStyle = '#FFD700';
+                    ctx.beginPath();
+                    ctx.arc(size-70, size-95, 7, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            },
+            {
+                name: 'Bold Coral',
+                draw: (ctx, size) => {
+                    // White background
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, size, size);
+
+                    // Coral gradient
+                    const coralGrad = ctx.createLinearGradient(0, 0, size, size);
+                    coralGrad.addColorStop(0, '#FF6B35');
+                    coralGrad.addColorStop(1, '#E63946');
+
+                    // Envelope
+                    ctx.fillStyle = coralGrad;
+                    roundRect(ctx, 35, 45, size-70, size*0.48, 22);
+                    ctx.fill();
+
+                    // White lines
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 6;
+                    ctx.lineCap = 'round';
+                    ctx.beginPath();
+                    ctx.moveTo(35, 45);
+                    ctx.lineTo(size/2, size*0.2);
+                    ctx.lineTo(size-35, 45);
+                    ctx.stroke();
+
+                    // Pulse
+                    ctx.fillStyle = '#E63946';
+                    ctx.beginPath();
+                    ctx.arc(size-50, size-90, 18, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.fillStyle = '#ffffff';
+                    ctx.beginPath();
+                    ctx.arc(size-50, size-90, 10, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+        ];
+
+        function roundRect(ctx, x, y, w, h, r) {
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.lineTo(x + w - r, y);
+            ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+            ctx.lineTo(x + w, y + h - r);
+            ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+            ctx.lineTo(x + r, y + h);
+            ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+            ctx.lineTo(x, y + r);
+            ctx.quadraticCurveTo(x, y, x + r, y);
+            ctx.closePath();
+        }
+
+        function roundRectStroke(ctx, x, y, w, h, r) {
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.lineTo(x + w - r, y);
+            ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+            ctx.lineTo(x + w, y + h - r);
+            ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+            ctx.lineTo(x + r, y + h);
+            ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+            ctx.lineTo(x, y + r);
+            ctx.quadraticCurveTo(x, y, x + r, y);
+            ctx.closePath();
+        }
+
+        function createCanvas(logo, size = 512) {
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            logo.draw(ctx, size);
+            return canvas;
+        }
+
+        function downloadLogo(logo, size = 512) {
+            const canvas = createCanvas(logo, size);
+            const link = document.createElement('a');
+            link.download = `warmpulse-${logo.name.toLowerCase().replace(/\s+/g, '-')}-${size}x${size}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+
+        function downloadAll() {
+            const zip = new JSZip();
+            logos.forEach(logo => {
+                const canvas = createCanvas(logo, 512);
+                const dataUrl = canvas.toDataURL('image/png');
+                const base64Data = dataUrl.split(',')[1];
+                zip.file(`warmpulse-${logo.name.toLowerCase().replace(/\s+/g, '-')}-512x512.png`, base64Data, {base64: true});
+            });
+            zip.generateAsync({type: 'blob'}).then(blob => {
+                const link = document.createElement('a');
+                link.download = 'warmpulse-logos.zip';
+                link.href = URL.createObjectURL(blob);
+                link.click();
+            });
+        }
+
+        // Render logos
+        const grid = document.getElementById('logoGrid');
+        logos.forEach(logo => {
+            const card = document.createElement('div');
+            card.className = 'logo-card';
+
+            const canvas = createCanvas(logo, 200);
+            canvas.style.borderRadius = '20px';
+
+            const name = document.createElement('div');
+            name.className = 'logo-name';
+            name.textContent = logo.name;
+
+            const size = document.createElement('div');
+            size.className = 'logo-size';
+            size.textContent = '512 × 512 PNG';
+
+            const btn512 = document.createElement('button');
+            btn512.className = 'download-btn';
+            btn512.textContent = 'Download 512×512';
+            btn512.onclick = () => downloadLogo(logo, 512);
+
+            const btn1024 = document.createElement('button');
+            btn1024.className = 'download-btn';
+            btn1024.textContent = 'Download 1024×1024';
+            btn1024.onclick = () => downloadLogo(logo, 1024);
+
+            card.appendChild(canvas);
+            card.appendChild(name);
+            card.appendChild(size);
+            card.appendChild(btn512);
+            card.appendChild(btn1024);
+            grid.appendChild(card);
+        });
+    </script>
+</body>
+</html>

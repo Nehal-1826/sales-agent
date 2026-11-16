@@ -1,0 +1,106 @@
+/**
+ * Public marketing site — routes, per-page SEO metadata and company facts.
+ * These are REAL path routes (/pricing, /privacy …), prerendered to static
+ * HTML at build time by scripts/prerender.mjs. The logged-in app keeps its
+ * hash router (#/leads …) and is untouched.
+ */
+
+/** Canonical origin, no trailing slash. Override with VITE_PUBLIC_SITE_URL. */
+export const SITE_URL: string = (import.meta.env.VITE_PUBLIC_SITE_URL || 'https://agent.warmpulse.tech').replace(
+  /\/+$/,
+  '',
+);
+
+export const COMPANY = {
+  name: 'Shailog Technologies',
+  product: 'WarmPulse',
+  tagline: 'Find the Lead. Spot the Gap. Win the Deal.',
+  email: 'shailog@gmail.com',
+  phone: '+91 70106 63166',
+  phoneHref: 'tel:+917010663166',
+  website: 'https://shailog.com',
+  city: 'Salem',
+  region: 'Tamil Nadu',
+  country: 'IN',
+  logo: '/warmpulse-logo.png',
+} as const;
+
+export const LAST_UPDATED = '2026-11-06';
+
+export type MarketingPath =
+  | '/'
+  | '/pricing'
+  | '/how-it-works'
+  | '/compare/apollo-alternative'
+  | '/compare/leadsgorilla-alternative'
+  | '/privacy'
+  | '/terms';
+
+export interface RouteMeta {
+  path: MarketingPath;
+  title: string;
+  description: string;
+  /** sitemap priority */
+  priority: number;
+}
+
+export const ROUTES: RouteMeta[] = [
+  {
+    path: '/',
+    title: 'WarmPulse — Inbox Warmup & AI Outbound',
+    description:
+      'WarmPulse warms every sender mailbox so sends land in the inbox, finds real businesses by industry and city, audits each website with AI, and drafts cold emails that cite the exact gaps. You approve every email.',
+    priority: 1.0,
+  },
+  {
+    path: '/pricing',
+    title: 'Pricing — WarmPulse inbox warmup, lead finder and website-gap outreach',
+    description:
+      'Simple monthly plans in INR and USD: Startups ₹2,999, Business ₹7,999, Enterprise ₹19,999 per month (USD available). Pay online, 10 bonus days, partial refund if you cancel within 10 days.',
+    priority: 0.9,
+  },
+  {
+    path: '/how-it-works',
+    title: 'How WarmPulse works — warmup, search, audit, enrich, draft, you approve',
+    description:
+      'Step by step: how WarmPulse warms your mailbox, finds businesses, reads their website, scores the gap 0–100, finds contact details and drafts an email that you approve before anything sends.',
+    priority: 0.8,
+  },
+  {
+    path: '/compare/apollo-alternative',
+    title: 'WarmPulse vs Apollo — an honest Apollo alternative for agencies',
+    description:
+      'Apollo is a large B2B contact database. WarmPulse warms your senders, finds local businesses, audits their website and writes the pitch. An honest comparison of when to use which.',
+    priority: 0.7,
+  },
+  {
+    path: '/compare/leadsgorilla-alternative',
+    title: 'WarmPulse vs LeadsGorilla — an honest LeadsGorilla alternative',
+    description:
+      'Both find local businesses with weak websites. WarmPulse adds mailbox warmup and an AI website audit per lead, drafts emails citing the real flaws, and sends only after you approve. Honest comparison.',
+    priority: 0.7,
+  },
+  {
+    path: '/privacy',
+    title: 'Privacy Policy — WarmPulse',
+    description:
+      'How Shailog Technologies handles personal data in WarmPulse: DPDP Act 2023, GDPR legitimate interest, unsubscribe and suppression on every email.',
+    priority: 0.3,
+  },
+  {
+    path: '/terms',
+    title: 'Terms of Service — WarmPulse',
+    description:
+      'Terms of Service for WarmPulse by Shailog Technologies, Salem, Tamil Nadu: acceptable use, anti-spam rules (CAN-SPAM), billing and liability.',
+    priority: 0.3,
+  },
+];
+
+export function routeMeta(path: string): RouteMeta | undefined {
+  const clean = path.length > 1 ? path.replace(/\/+$/, '') : path;
+  return ROUTES.find((r) => r.path === clean);
+}
+
+export function canonical(path: string): string {
+  return path === '/' ? `${SITE_URL}/` : `${SITE_URL}${path}`;
+}

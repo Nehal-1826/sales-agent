@@ -1,0 +1,55 @@
+# CI — warmup backend (FastAPI, backend/): network-independent test modules.
+# Sister workflow to ci-agent.yml (Django backend-agent + frontend); same shape.
+#
+# CI wishlist — what stays OUT of CI and why:
+#   * tests/test_mailboxes.py (full module): the create-path tests hit Celery
+#     .delay result-backend calls that retry Redis 20x when no broker exists
+#     (~3.5 min per test — verified locally during Stream C5); needs a Redis
+#     service container or broker-mocking before it is CI-viable.
+#   * Rest of the suite (SMTP/IMAP/DNS/payment/peer classes): same
+#     network-dependent class — exercise real sockets or vendor callbacks
+#     unless individually mocked; only modules verified green offline are
+#     listed below. Add more modules only after a local offline run proves
+#     them fast (< ~5 min total) and network-free.
+name: ci-warmup
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - backend/**
+      - .github/workflows/ci-warmup.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - backend/**
+      - .github/workflows/ci-warmup.yml
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - run: pip install -e ".[dev]"
+      # conftest.py pins the remaining test env (FERNET_KEY, JWT_SECRET,
+      # APP_ENV=test, MAILBOX_PROBES_DUMMY) via os.environ.setdefault; tests
+      # build their own in-memory engines, so DATABASE_URL never touches disk.
+      - run: >-
+          python -m pytest
+          tests/test_bridge_auth.py
+          tests/test_auth.py
+          tests/test_api_key_auth.py
+          tests/test_config_security.py
+          tests/test_dev_bootstrap.py
+          tests/test_mailbox_provider_enum.py
+          -q
+        env:
+          DATABASE_URL: "sqlite+aiosqlite:///:memory:"

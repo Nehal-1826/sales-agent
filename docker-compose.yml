@@ -1,35 +1,139 @@
-# Agentic AI — production stack for a Linux VPS.
+# =============================================================================
+# Email-Warmup monorepo — full merged stack.
 #
-#   frontend (nginx)  →  api (gunicorn)  →  db (postgres)
-#                            ↑
-#                 worker (agent scheduler, daily report)
+#   gateway (nginx :80)  →  frontend (agent SPA, nginx)
+#                        →  django  :8000  (/api/**    — sales-agent API)
+#                        →  fastapi :8001  (/wp-api/** — WarmPulse API)
+#   fastapi + celery-worker + celery-beat  →  db (Postgres) + redis
+#   django                                →  db (agent database)
 #
-# Everything restarts automatically: `restart: unless-stopped` brings each
-# service back if it crashes AND after a VPS reboot. Data persists in the
-# `pgdata` docker volume.
+# One Postgres cluster, two databases: `warmpulse_db` (POSTGRES_DB below) and
+# `agent` (created by ops/db/init-agent-db.sql on first init).
+#
+# Routing contract (ops/gateway/nginx.conf):
+#   /api/**    → django   (prefix kept as-is)
+#   /wp-api/** → fastapi  (external /wp-api/x  →  internal /x or /api/x)
+#   everything else → frontend SPA
+#
+# HTTPS: optional Caddy overlay in front of the gateway (owns :80/:443):
+#   docker compose -f docker-compose.yml -f docker-compose.https.yml up -d
+# =============================================================================
 
 services:
   db:
     image: postgres:16-alpine
+    container_name: warmpulse-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-agentic}
-      POSTGRES_USER: ${POSTGRES_USER:-agentic}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_USER: ${POSTGRES_USER:-warmpulse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-warmpulse}
+      POSTGRES_DB: ${POSTGRES_DB:-warmpulse_db}
+    ports:
+      - "127.0.0.1:5433:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - warmpulse_pg_data:/var/lib/postgresql/data
+      - ./ops/db/init-agent-db.sql:/docker-entrypoint-initdb.d/10-create-agent-db.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agentic} -d ${POSTGRES_DB:-agentic}"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-warmpulse} -d ${POSTGRES_DB:-warmpulse_db}"]
+      interval: 5s
       timeout: 5s
-      retries: 12
+      retries: 10
 
-  api:
+  redis:
+    image: redis:7-alpine
+    container_name: warmpulse-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6380:6379"
+    volumes:
+      - warmpulse_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # --- WarmPulse FastAPI (service renamed api → fastapi; app dir is backend/) --
+  fastapi:
     build: ./backend
+    container_name: warmpulse-api
+    restart: unless-stopped
+    env_file: ./backend/.env.docker
+    environment:
+      # Bridge network (gateway proxies by service name) — override the
+      # host-network 127.0.0.1 URLs baked into .env.docker with service DNS.
+      # `environment` wins over `env_file`.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-warmpulse}:${POSTGRES_PASSWORD:-warmpulse}@db:5432/${POSTGRES_DB:-warmpulse_db}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      # One secret, two names: compose-level WARMUP_JWT_SECRET feeds the
+      # FastAPI JWT_SECRET and the Django WARMUP_JWT_SECRET (JWT bridge).
+      JWT_SECRET: ${WARMUP_JWT_SECRET}
+      # Admin maintenance toggle mirrors into this file (repo root on the
+      # host) — ops/maintenance.sh drives it; see ops/maintenance.html.
+      MAINTENANCE_FLAG_PATH: /host-app/maintenance.on
+    volumes:
+      - .:/host-app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # curl ships in the backend image; /health is FastAPI's unauthed liveness route
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  celery-worker:
+    build: ./backend
+    container_name: warmpulse-worker
+    restart: unless-stopped
+    env_file: ./backend/.env.docker
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-warmpulse}:${POSTGRES_PASSWORD:-warmpulse}@db:5432/${POSTGRES_DB:-warmpulse_db}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      JWT_SECRET: ${WARMUP_JWT_SECRET}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.celery_app.celery_app worker --loglevel=info -Q default,smtp -c 4 --hostname=warmpulse-worker@%n
+
+  celery-beat:
+    build: ./backend
+    container_name: warmpulse-beat
+    restart: unless-stopped
+    env_file: ./backend/.env.docker
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-warmpulse}:${POSTGRES_PASSWORD:-warmpulse}@db:5432/${POSTGRES_DB:-warmpulse_db}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      JWT_SECRET: ${WARMUP_JWT_SECRET}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.celery_app.celery_app beat --loglevel=info -s /tmp/celerybeat-schedule
+
+  # --- Sales-agent Django API + agent worker ----------------------------------
+  django:
+    build: ./backend-agent
     restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-agentic}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agentic}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-warmpulse}:${POSTGRES_PASSWORD:-warmpulse}@db:5432/agent
+      WARMUP_JWT_SECRET: ${WARMUP_JWT_SECRET}
+      # server-to-server enroll/warmup calls target the FastAPI service directly
+      WARMUP_API_URL: http://fastapi:8001
       SEED_DEMO: ${SEED_DEMO:-0}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
@@ -44,31 +148,46 @@ services:
       retries: 5
       start_period: 40s
 
-  worker:
-    build: ./backend
-    restart: unless-stopped
-    env_file: .env
-    environment:
-      ROLE: worker
-      DATABASE_URL: postgres://${POSTGRES_USER:-agentic}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agentic}
-      SEED_DEMO: ${SEED_DEMO:-0}
-      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
-    depends_on:
-      db:
-        condition: service_healthy
-    # No ports — the worker is internal; it stamps heartbeats the api reports.
-
+  # --- Agent frontend SPA (prerendered build served by nginx) -----------------
   frontend:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ./frontend
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      django:
+        condition: service_healthy
+    healthcheck:
+      # busybox wget ships with nginx:*-alpine; SPA shell is static, no upstreams
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # --- Single entry point: / → SPA, /api → django, /wp-api → fastapi ----------
+  gateway:
+    image: nginx:1.27-alpine
     restart: unless-stopped
     ports:
-      - "80:80"        # dashboard at http://VPS_IP
+      - "80:80"
+    volumes:
+      - ./ops/gateway/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
-      - api
+      frontend:
+        condition: service_healthy
+      django:
+        condition: service_healthy
+      fastapi:
+        condition: service_healthy
+    healthcheck:
+      # busybox wget ships with nginx:*-alpine; also gates caddy in the HTTPS overlay
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
 volumes:
-  pgdata:
+  warmpulse_pg_data:
+  warmpulse_redis_data:

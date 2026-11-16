@@ -1,0 +1,157 @@
+/* WarmPulse splash — orbital-collapse particle entrance. Hardcoded dark for brand consistency. */
+
+.wp-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: #050507;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.wp-splash__bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% 100%, rgba(242, 101, 34, 0.24), transparent 65%),
+    radial-gradient(ellipse 60% 60% at 80% 20%, rgba(255, 138, 75, 0.16), transparent 60%);
+}
+
+.wp-splash::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 28px 28px;
+  -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 70%);
+  mask-image: radial-gradient(ellipse at center, black 30%, transparent 70%);
+  opacity: 0.6;
+}
+
+.wp-splash__stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.wp-splash__particle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  margin-top: -4px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #F26522, #FF9670);
+  box-shadow: 0 0 12px rgba(242, 101, 34, 0.7);
+  opacity: 0;
+  animation: wp-splash-orbit 1.8s cubic-bezier(0.55, 0, 0.45, 1) both;
+}
+
+@keyframes wp-splash-orbit {
+  0% {
+    opacity: 0;
+    transform: rotate(var(--start)) translate(var(--r)) scale(1);
+  }
+  15% {
+    opacity: 1;
+  }
+  60% {
+    opacity: 1;
+    transform: rotate(calc(var(--start) + 240deg)) translate(calc(var(--r) * 0.4)) scale(0.85);
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(calc(var(--start) + 360deg)) translate(0) scale(0);
+  }
+}
+
+.wp-splash__lockup {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  position: relative;
+  z-index: 3;
+}
+
+.wp-splash__logo {
+  width: 104px;
+  height: 104px;
+  opacity: 0;
+  transform: scale(0.5);
+  filter: blur(8px) drop-shadow(0 0 24px rgba(242, 101, 34, 0));
+  animation: wp-splash-logo 0.7s 1.5s both cubic-bezier(0.5, 1.6, 0.5, 1);
+}
+
+@keyframes wp-splash-logo {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+    filter: blur(8px) drop-shadow(0 0 0 rgba(242, 101, 34, 0));
+  }
+  60% {
+    transform: scale(1.1);
+    filter: blur(0) drop-shadow(0 0 32px rgba(242, 101, 34, 0.6));
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0) drop-shadow(0 0 18px rgba(242, 101, 34, 0.4));
+  }
+}
+
+.wp-splash__wordmark {
+  font-family: 'Inter', 'Outfit', system-ui, sans-serif;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  background: linear-gradient(90deg, #ffffff 0%, #FFB890 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  opacity: 0;
+  animation: wp-splash-rise 0.5s 1.75s both ease-out;
+}
+
+.wp-splash__tagline {
+  font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.42);
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  opacity: 0;
+  animation: wp-splash-rise 0.5s 2s both ease-out;
+}
+
+@keyframes wp-splash-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wp-splash__particle,
+  .wp-splash__logo,
+  .wp-splash__wordmark,
+  .wp-splash__tagline {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+  }
+}

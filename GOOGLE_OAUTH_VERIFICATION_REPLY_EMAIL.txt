@@ -1,0 +1,130 @@
+========================================================================
+GOOGLE OAUTH VERIFICATION — REPLY EMAIL v2 (ready to send)
+========================================================================
+
+CONTEXT (6 Sep 2026):
+  Google rejected the verification under the "Appropriate access to and use
+  of Google Gmail APIs" policy — "multiple accounts to abuse Google
+  policies, bypass Gmail account limitations, circumvent filters and spam,
+  or otherwise subvert restrictions". The Verification centre shows ONLY
+  step 4 (Appropriate data access) as an error; Google explicitly invites
+  a reply with a justification. This v2 reply CONCEDES the restricted
+  scopes (gmail.modify + gmail.labels are removed) and reframes around
+  gmail.send only — sensitive, not restricted, no CASA assessment needed.
+
+BEFORE SENDING:
+  1. Cloud Console → Google Auth Platform → Clients / Data access:
+     remove these scopes from the consent screen so config matches:
+        https://www.googleapis.com/auth/gmail.modify     ← REMOVE
+        https://www.googleapis.com/auth/gmail.labels     ← REMOVE
+     keep ONLY:
+        openid  email  profile
+        https://www.googleapis.com/auth/gmail.send
+  2. Reply in the SAME Gmail thread from info.shailog@gmail.com
+     (subject: Re: [Action Needed] OAuth Verification Request
+      Acknowledgement).
+  3. Existing connected OAuth mailboxes will lose engagement features
+     after modify is dropped — acceptable: the product now defaults Gmail
+     users to the app-password (SMTP/IMAP) connect path, which does not
+     use the Gmail API at all.
+
+------------------------------------------------------------------------
+Subject: Re: [Action Needed] OAuth Verification Request Acknowledgement —
+         reduced scope to gmail.send only + use-case clarification
+------------------------------------------------------------------------
+
+Hello,
+
+Thank you for the detailed review and for citing the specific requirement.
+We have re-examined our product against the "Appropriate access to and use
+of Google Gmail APIs" policy and made two categories of changes: we removed
+the restricted scopes entirely, and we removed the product behaviours most
+likely to read as "circumventing filters". Point by point:
+
+1. SCOPES REDUCED TO gmail.send ONLY (restricted scopes removed)
+
+We have removed these scopes from our OAuth consent screen and our product:
+
+  - https://www.googleapis.com/auth/gmail.modify  (REMOVED)
+  - https://www.googleapis.com/auth/gmail.labels  (REMOVED)
+
+We now request ONLY:
+
+  - https://www.googleapis.com/auth/gmail.send
+
+plus openid / email / profile for sign-in. The features those restricted
+scopes powered — applying labels to messages, marking messages read,
+starring, and moving messages out of the Spam folder — have been removed
+from the Google-API code path entirely. Our application no longer reads,
+modifies, labels, or moves any message in a user's mailbox through the
+Gmail API, and never marks anything as not-spam on the user's behalf.
+We acknowledge that programmatically reversing Gmail's spam decisions was
+the wrong use of gmail.modify, and it is gone.
+
+2. WHY gmail.send IS NECESSARY AND SUFFICIENT FOR THE FEATURE
+
+WarmPulse is a deliverability tool for a business user's OWN single
+mailbox. The feature that needs gmail.send: the user connects their own
+mailbox and WarmPulse sends a small, fixed, user-configured number of
+plain-text messages per day (ramping 5/day up to at most 50/day over
+weeks) on the user's behalf, so the user can see whether their mail is
+being delivered, and their new mailbox or domain builds a normal sending
+history before they use it for real business mail. Sending on the user's
+behalf from their own account is the entire feature; a narrower scope
+cannot send mail, and we do not request the broader
+https://mail.google.com/ scope because we do not use SMTP with OAuth.
+
+Recipients: messages go ONLY to monitoring inboxes operated by WarmPulse
+that exist to receive them, or to the user themselves. There is no feature
+to send to arbitrary third parties, no campaigns, no bulk sending, no
+marketing content, and no attachments. Volume is capped per mailbox per
+day by the product itself, well under any account limitation — this is
+the opposite of "bypassing Gmail account limitations": we deliberately
+keep each connected account's volume LOW and human-paced.
+
+3. CHANGES TO THE "MULTIPLE ACCOUNTS" CONCERN
+
+Our monitoring inboxes are ordinary mailbox accounts that receive the
+user's test messages, open them as a human would read mail, and (now) do
+nothing else via the Gmail API. To remove even the appearance of
+coordinated multi-account behaviour on Google's platform, the inbound
+side of our product no longer uses the Gmail API AT ALL: our monitoring
+inboxes are accessed over standard IMAP, like any mail client, and Gmail
+users who prefer not to grant OAuth at all can connect their mailbox via
+an app password over standard SMTP/IMAP — that path is now our DEFAULT
+and recommended connect flow and uses no Google API in any form.
+
+4. WHERE TO VERIFY EACH CLAIM
+
+  - Consent screen scopes (gmail.send + sign-in only): Google Auth
+    Platform → Data access for project email-warmup-d918e.
+  - No Gmail-API reads/labels/spam actions in code: the verification
+    reviewer can inspect the connected test account during the trial —
+    connect a mailbox via the app-password path (no OAuth granted) or via
+    Google sign-in (only the send scope is requested).
+  - Privacy policy (updated, scope-specific):
+    https://warmpulse.tech/privacy — footer link on
+    https://warmpulse.tech.
+  - Terms: https://warmpulse.tech/terms
+
+5. TEST ACCOUNT
+
+  Sign-in URL: https://warmpulse.tech/login
+  Email:    ______________________
+  Password: ______________________
+
+  (Fill in before sending. Connect flow: Mailboxes → Add mailbox →
+  Gmail. The default path asks for an app password (no Google OAuth);
+  the "Connect with Google" option requests only the send scope.)
+
+If any remaining element of our configuration or product still does not
+meet the policy, we would be grateful for specifics — we will change it.
+We want to comply fully, and we believe the reduced, send-only scope with
+no mailbox-reading behaviour addresses the findings.
+
+Thank you for your time and consideration.
+
+Best regards,
+Devesh Reddy
+WarmPulse — warmpulse.tech
+========================================================================

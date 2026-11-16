@@ -1,8 +1,10 @@
-.venv/
-__pycache__/
+.venv
+__pycache__
 *.pyc
-db.sqlite3
-staticfiles/
-salem_discovery.py
-Dockerfile
-.dockerignore
+*.pyo
+.pytest_cache
+.mypy_cache
+.celerybeat-schedule
+.env
+.env.local
+*.sqlite3

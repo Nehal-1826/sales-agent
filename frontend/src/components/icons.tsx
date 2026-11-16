@@ -1,0 +1,224 @@
+/** Minimal inline stroke icons — no icon-library dependency. */
+
+export type IconProps = { size?: number; className?: string };
+
+function base(size = 18, className?: string) {
+  return {
+    width: size,
+    height: size,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.7,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    className,
+    'aria-hidden': true,
+  };
+}
+
+export const IconDashboard = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <rect x="3" y="3" width="7.5" height="7.5" rx="1.5" />
+    <rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5" />
+    <rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5" />
+    <rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5" />
+  </svg>
+);
+
+export const IconAgents = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <circle cx="12" cy="5" r="2.5" />
+    <circle cx="5" cy="19" r="2.5" />
+    <circle cx="19" cy="19" r="2.5" />
+    <path d="M12 7.5v4M12 11.5 6.4 16.8M12 11.5l5.6 5.3" />
+  </svg>
+);
+
+export const IconCrm = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <rect x="3" y="4" width="5" height="16" rx="1.5" />
+    <rect x="9.5" y="4" width="5" height="11" rx="1.5" />
+    <rect x="16" y="4" width="5" height="7" rx="1.5" />
+  </svg>
+);
+
+export const IconChat = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M21 12a8 8 0 0 1-8 8H4l2.2-2.6A8 8 0 1 1 21 12Z" />
+    <path d="M8.5 11h7M8.5 14.5h4" />
+  </svg>
+);
+
+export const IconSettings = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M4 7h9M17 7h3M4 17h3M11 17h9" />
+    <circle cx="15" cy="7" r="2.2" />
+    <circle cx="9" cy="17" r="2.2" />
+  </svg>
+);
+
+export const IconSearch = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <circle cx="11" cy="11" r="6.5" />
+    <path d="m20 20-4.4-4.4" />
+  </svg>
+);
+
+export const IconProfile = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <rect x="3.5" y="3.5" width="17" height="17" rx="2.5" />
+    <circle cx="10" cy="10" r="2.4" />
+    <path d="M6.5 16.5c.6-1.8 1.9-2.6 3.5-2.6s2.9.8 3.5 2.6M15 9.5h3M15 13h2" />
+  </svg>
+);
+
+export const IconPen = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M14.5 5.5 18.5 9.5 8 20H4v-4L14.5 5.5Z" />
+    <path d="m12.5 7.5 4 4" />
+  </svg>
+);
+
+export const IconBot = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <rect x="4.5" y="7.5" width="15" height="11" rx="2.5" />
+    <path d="M12 4.5v3M9 12.5h.01M15 12.5h.01M9.5 15.8c1.6.9 3.4.9 5 0" />
+  </svg>
+);
+
+export const IconFlame = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5Z" />
+  </svg>
+);
+
+export const IconUser = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <circle cx="12" cy="8.5" r="3.5" />
+    <path d="M5 20c.8-3.6 3.4-5.3 7-5.3s6.2 1.7 7 5.3" />
+  </svg>
+);
+
+export const IconList = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M8.5 6h12M8.5 12h12M8.5 18h12" />
+    <circle cx="4.3" cy="6" r="1" />
+    <circle cx="4.3" cy="12" r="1" />
+    <circle cx="4.3" cy="18" r="1" />
+  </svg>
+);
+
+export const IconOrchestrator = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <circle cx="12" cy="5.5" r="2.5" />
+    <rect x="3.5" y="16" width="5" height="5" rx="1.2" />
+    <rect x="15.5" y="16" width="5" height="5" rx="1.2" />
+    <path d="M12 8v4M12 12l-6 4M12 12l6 4" />
+  </svg>
+);
+
+export const IconDatabase = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <ellipse cx="12" cy="5.5" rx="7.5" ry="2.8" />
+    <path d="M4.5 5.5v13c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-13M4.5 12c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8" />
+  </svg>
+);
+
+export const IconPlug = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M9 3v5M15 3v5M7 8h10v3a5 5 0 0 1-10 0V8ZM12 16v5" />
+  </svg>
+);
+
+export const IconSend = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M4 11.5 20 4l-7.5 16-2-6.5L4 11.5Z" />
+  </svg>
+);
+
+export const IconHome = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M4 10.5 12 4l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5H15v-6h-6v6H5.5A1.5 1.5 0 0 1 4 19v-8.5Z" />
+  </svg>
+);
+
+export const IconInbox = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M4 13.5 6.2 5.6A1.5 1.5 0 0 1 7.6 4.5h8.8a1.5 1.5 0 0 1 1.4 1.1L20 13.5V18a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18v-4.5Z" />
+    <path d="M4 13.5h4.5l1.2 2h4.6l1.2-2H20" />
+  </svg>
+);
+
+export const IconBuilding = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <rect x="4" y="3.5" width="10" height="17" rx="1.5" />
+    <path d="M14 9.5h4.5A1.5 1.5 0 0 1 20 11v9.5H14M7.5 7.5h3M7.5 11h3M7.5 14.5h3M10 20.5v-3" />
+  </svg>
+);
+
+export const IconPulse = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M3 12h4l2.5-6 4.5 12 2.5-6H21" />
+  </svg>
+);
+
+export const IconCheck = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="m5 12.5 4.5 4.5L19 7.5" />
+  </svg>
+);
+
+export const IconMail = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <rect x="3.5" y="5.5" width="17" height="13" rx="2" />
+    <path d="m4 7 8 6 8-6" />
+  </svg>
+);
+
+export const IconSpark = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M12 3.5v4M12 16.5v4M3.5 12h4M16.5 12h4M6 6l2.6 2.6M15.4 15.4 18 18M6 18l2.6-2.6M15.4 8.6 18 6" />
+  </svg>
+);
+
+export const IconLogout = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M14 4.5h3.5A1.5 1.5 0 0 1 19 6v12a1.5 1.5 0 0 1-1.5 1.5H14M10 16l-4-4 4-4M6 12h9" />
+  </svg>
+);
+
+export const IconCreditCard = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <rect x="3" y="5" width="18" height="14" rx="2.5" />
+    <path d="M3 10h18M7 15h4" />
+  </svg>
+);
+
+export const IconReceipt = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M5 3.5h14v17l-2.5-1.5-2.5 1.5-2-1.5-2 1.5-2.5-1.5L5 20.5v-17Z" />
+    <path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4" />
+  </svg>
+);
+
+export const IconLayers = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="m12 3.5 8.5 4.5L12 12.5 3.5 8 12 3.5Z" />
+    <path d="m3.5 12 8.5 4.5 8.5-4.5M3.5 16l8.5 4.5 8.5-4.5" />
+  </svg>
+);
+
+export const IconShield = ({ size, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M12 3.5 19 6.5v5.8c0 4.2-3 7.4-7 8.7-4-1.3-7-4.5-7-8.7V6.5l7-3Z" />
+    <path d="m9.2 12.2 2 2 3.8-4" />
+  </svg>
+);
+
+export const iconForAgent: Record<string, (p: IconProps) => JSX.Element> = {
+  search: IconSearch,
+  profile: IconProfile,
+  copywright: IconPen,
+  responder: IconBot,
+};

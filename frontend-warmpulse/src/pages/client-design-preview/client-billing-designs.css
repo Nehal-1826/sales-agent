@@ -1,0 +1,515 @@
+/* =============================================================================
+   Client STARTER Billing design preview.
+   Starter has one simple plan (₹1,500/mo). Billing UI needs to show: current
+   plan + usage + payment method + invoices. Four directions:
+     B1 — Statement View         Bank-statement aesthetic, line-item ledger
+     B2 — Subscription Card      Spotify/Apple-style big subscription card + invoices
+     B3 — Usage Meters           Phone-bill style: meters for data used vs allowance
+     B4 — Dashboard Grid         Multi-card tile grid
+============================================================================= */
+
+.cdp { min-height: 100vh; background: var(--wp-bg); color: var(--wp-text); position: relative; overflow-x: hidden; }
+.cdp__atmosphere { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
+.cdp__aurora-1, .cdp__aurora-2 { position: absolute; border-radius: 50%; filter: blur(140px); opacity: 0.4; }
+.cdp__aurora-1 { width: 700px; height: 700px; top: -250px; left: -150px; background: var(--wp-accent); }
+.cdp__aurora-2 { width: 600px; height: 600px; bottom: -200px; right: -150px; background: var(--wp-accent-2, var(--wp-accent)); opacity: 0.28; }
+
+.cdp__topbar {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center; gap: 16px;
+  padding: 14px 28px;
+  background: color-mix(in srgb, var(--wp-bg) 80%, transparent);
+  backdrop-filter: blur(16px) saturate(160%); -webkit-backdrop-filter: blur(16px) saturate(160%);
+  border-bottom: 1px solid color-mix(in srgb, var(--wp-accent) 12%, var(--wp-border));
+}
+.cdp__back {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--wp-text-dim); text-decoration: none;
+  padding: 6px 11px; border-radius: 999px; border: 1px solid var(--wp-border);
+  transition: color 150ms, border-color 150ms;
+}
+.cdp__back:hover { color: var(--wp-text); border-color: color-mix(in srgb, var(--wp-accent) 40%, var(--wp-border)); }
+.cdp__brand { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.06em; color: var(--wp-text-faint); }
+
+.cdp__main { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 56px 28px 96px; }
+.cdp__hero { margin-bottom: 36px; max-width: 760px; }
+.cdp__eyebrow {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 999px;
+  font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--wp-accent);
+  background: color-mix(in srgb, var(--wp-accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 30%, transparent);
+}
+.cdp__title { margin: 14px 0 10px; font-size: 38px; line-height: 1.1; font-weight: 700; letter-spacing: -0.02em; }
+.cdp__title em {
+  font-style: normal;
+  background: linear-gradient(90deg, var(--wp-accent), var(--wp-accent-2, var(--wp-accent)));
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+.cdp__sub { font-size: 14.5px; line-height: 1.6; color: var(--wp-text-dim); }
+
+.cdp__plan-strip { display: flex; gap: 8px; margin: 18px 0 0; }
+.cdp__plan-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: 999px;
+  font-size: 11px; font-weight: 500;
+  border: 1px solid var(--wp-border);
+  background: color-mix(in srgb, var(--wp-surface) 60%, transparent);
+  color: var(--wp-text-dim);
+}
+.cdp__plan-chip--active {
+  background: color-mix(in srgb, #f472b6 18%, var(--wp-surface));
+  border-color: color-mix(in srgb, #f472b6 50%, transparent);
+  color: #fff;
+}
+.cdp__plan-chip-dot { width: 6px; height: 6px; border-radius: 999px; }
+
+.cdp__grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 22px; }
+@media (max-width: 1080px) { .cdp__grid { grid-template-columns: 1fr; } }
+
+.cdp-tile {
+  position: relative; display: flex; flex-direction: column;
+  border-radius: 18px; border: 1px solid var(--wp-border);
+  background: color-mix(in srgb, var(--wp-surface) 75%, transparent);
+  overflow: hidden; cursor: pointer; text-align: left; font: inherit;
+  transition: border-color 200ms, transform 200ms, box-shadow 200ms;
+}
+.cdp-tile:hover {
+  border-color: color-mix(in srgb, var(--wp-accent) 40%, var(--wp-border));
+  transform: translateY(-3px);
+  box-shadow: 0 18px 40px -16px color-mix(in srgb, var(--wp-accent) 28%, transparent);
+}
+.cdp-tile--selected {
+  border-color: var(--wp-accent);
+  box-shadow: 0 0 0 1px var(--wp-accent), 0 22px 50px -16px color-mix(in srgb, var(--wp-accent) 38%, transparent);
+}
+.cdp-tile__check {
+  position: absolute; top: 14px; right: 14px;
+  width: 28px; height: 28px; border-radius: 999px;
+  background: var(--wp-accent); color: #fff;
+  display: grid; place-items: center; z-index: 3;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--wp-accent) 30%, transparent);
+}
+.cdp-tile__preview {
+  position: relative; aspect-ratio: 16 / 11; padding: 14px;
+  background:
+    radial-gradient(ellipse at top right, color-mix(in srgb, var(--wp-accent) 8%, transparent), transparent 70%),
+    color-mix(in srgb, var(--wp-surface-2) 60%, var(--wp-bg));
+  border-bottom: 1px solid var(--wp-border); overflow: hidden;
+}
+.cdp-tile__body { padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 8px; }
+.cdp-tile__head { display: flex; align-items: baseline; gap: 10px; }
+.cdp-tile__code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; letter-spacing: 0.06em;
+  padding: 2px 8px; border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-accent) 14%, transparent);
+  color: var(--wp-accent);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 30%, transparent);
+}
+.cdp-tile__name { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+.cdp-tile__tag { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--wp-text-dim); }
+.cdp-tile__bullets { margin: 4px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.cdp-tile__bullets li { font-size: 11.5px; color: var(--wp-text-faint); position: relative; padding-left: 14px; }
+.cdp-tile__bullets li::before {
+  content: ''; position: absolute; left: 0; top: 7px;
+  width: 5px; height: 5px; border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-accent) 60%, transparent);
+}
+
+/* ---------- mockup primitives ---------- */
+.mk { position: absolute; inset: 14px; display: flex; flex-direction: column; gap: 6px; }
+.mk-pill { height: 6px; border-radius: 4px; background: color-mix(in srgb, var(--wp-text) 12%, transparent); }
+.mk-pill--accent { background: color-mix(in srgb, var(--wp-accent) 55%, transparent); }
+.mk-pill--success { background: color-mix(in srgb, var(--wp-success, #3ddc97) 60%, transparent); }
+
+.mk-card-art {
+  width: 32px; height: 22px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, #FF8A4B 0%, #F26522 100%);
+  position: relative;
+  flex: none;
+}
+.mk-card-art::after {
+  content: '';
+  position: absolute;
+  left: 3px; bottom: 3px;
+  width: 14px; height: 5px;
+  border-radius: 1.5px;
+  background: rgba(255, 255, 255, 0.35);
+}
+.mk-amount {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 800;
+  color: var(--wp-text);
+  line-height: 1;
+}
+
+/* =============================================================================
+   B1 — Statement View.
+   Bank/Stripe-portal style. Top: month + total. Below: line-item ledger of
+   charges with date / description / amount columns. Side: payment method.
+============================================================================= */
+.mk--statement {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  grid-template-rows: auto 1fr;
+  grid-template-areas:
+    'head head'
+    'ledger side';
+  gap: 6px;
+}
+.mk--statement .mk-st__head {
+  grid-area: head;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--wp-accent) 10%, var(--wp-surface));
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 28%, transparent);
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.mk--statement .mk-st__total {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.mk--statement .mk-st__ledger {
+  grid-area: ledger;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--wp-surface) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-text) 8%, transparent);
+  padding: 0 8px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.mk--statement .mk-st__col-head {
+  display: grid;
+  grid-template-columns: 50px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0 4px;
+  border-bottom: 1px solid color-mix(in srgb, var(--wp-text) 12%, transparent);
+  font-size: 7.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--wp-text-faint);
+}
+.mk--statement .mk-st__row {
+  display: grid;
+  grid-template-columns: 50px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px dashed color-mix(in srgb, var(--wp-text) 8%, transparent);
+}
+.mk--statement .mk-st__row:last-child { border-bottom: none; }
+.mk--statement .mk-st__date {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 7.5px;
+  color: var(--wp-text-dim);
+}
+.mk--statement .mk-st__amt {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--wp-text);
+  font-weight: 700;
+}
+.mk--statement .mk-st__side {
+  grid-area: side;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mk--statement .mk-st__pm {
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--wp-surface) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-text) 8%, transparent);
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* =============================================================================
+   B2 — Subscription Card.
+   Spotify/Apple-style big subscription card. Plan name, price, next renewal,
+   manage button, then invoices list below.
+============================================================================= */
+.mk--sub {
+  display: grid;
+  grid-template-rows: 1.1fr 1fr;
+  gap: 6px;
+}
+.mk--sub .mk-sb__card {
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 80% 30%, color-mix(in srgb, var(--wp-accent-2, var(--wp-accent)) 35%, transparent), transparent 60%),
+    radial-gradient(circle at 20% 80%, color-mix(in srgb, var(--wp-accent) 40%, transparent), transparent 60%),
+    linear-gradient(135deg, color-mix(in srgb, var(--wp-accent) 20%, var(--wp-surface)) 0%, color-mix(in srgb, var(--wp-accent-2, var(--wp-accent)) 12%, var(--wp-surface)) 100%);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 40%, transparent);
+  padding: 12px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto 1fr auto;
+  gap: 4px;
+  position: relative;
+}
+.mk--sub .mk-sb__plan-name {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.85);
+  grid-column: 1 / 2;
+}
+.mk--sub .mk-sb__chip {
+  grid-column: 2 / 3;
+  grid-row: 1 / 2;
+  align-self: start;
+  justify-self: end;
+  font-size: 7.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  color: white;
+}
+.mk--sub .mk-sb__price-row {
+  grid-column: 1 / 3;
+  display: flex;
+  align-items: end;
+  gap: 6px;
+  margin-top: 4px;
+}
+.mk--sub .mk-sb__price-big {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1;
+  color: #fff;
+}
+.mk--sub .mk-sb__price-period {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 4px;
+}
+.mk--sub .mk-sb__foot {
+  grid-column: 1 / 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+}
+.mk--sub .mk-sb__next {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  color: rgba(255, 255, 255, 0.7);
+}
+.mk--sub .mk-sb__manage-btn {
+  width: 80px; height: 18px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+}
+.mk--sub .mk-sb__invoices {
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--wp-surface) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-text) 8%, transparent);
+  padding: 4px 10px;
+  display: flex;
+  flex-direction: column;
+}
+.mk--sub .mk-sb__inv-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--wp-text) 6%, transparent);
+}
+.mk--sub .mk-sb__inv-row:last-child { border-bottom: none; }
+.mk--sub .mk-sb__inv-date {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  color: var(--wp-text-dim);
+}
+.mk--sub .mk-sb__inv-amt {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--wp-text);
+}
+.mk--sub .mk-sb__inv-dl {
+  width: 22px; height: 14px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-accent) 22%, var(--wp-surface));
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 45%, transparent);
+}
+
+/* =============================================================================
+   B3 — Usage Meters.
+   Phone-bill style. Plan card on top. Below: meters showing usage vs allowance
+   (Mailboxes 1/1 · Emails 32/50 today · Tokens 12k/30k this month).
+============================================================================= */
+.mk--meters {
+  display: grid;
+  grid-template-rows: 0.7fr 1.3fr 0.5fr;
+  gap: 5px;
+}
+.mk--meters .mk-mt__plan {
+  border-radius: 8px;
+  background:
+    radial-gradient(ellipse at top right, color-mix(in srgb, var(--wp-accent) 18%, transparent), transparent 65%),
+    color-mix(in srgb, var(--wp-accent) 10%, var(--wp-surface));
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 30%, transparent);
+  padding: 8px 10px;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+}
+.mk--meters .mk-mt__meters {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.mk--meters .mk-mt__meter {
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--wp-surface) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-text) 8%, transparent);
+  padding: 6px 10px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 4px 8px;
+}
+.mk--meters .mk-mt__meter-label {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--wp-text-dim);
+}
+.mk--meters .mk-mt__meter-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--wp-text);
+}
+.mk--meters .mk-mt__bar {
+  grid-column: 1 / 3;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-text) 8%, transparent);
+  overflow: hidden;
+  position: relative;
+}
+.mk--meters .mk-mt__bar-fill {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--wp-accent), color-mix(in srgb, var(--wp-success, #3ddc97) 70%, var(--wp-accent)));
+}
+.mk--meters .mk-mt__pm {
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--wp-surface) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-text) 8%, transparent);
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* =============================================================================
+   B4 — Dashboard Grid.
+   Multi-card tile grid. Plan card + usage card + payment-method card +
+   recent invoices card. Like a dashboard, glance-friendly.
+============================================================================= */
+.mk--dashboard {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 6px;
+}
+.mk--dashboard .mk-db__card {
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--wp-surface) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-text) 8%, transparent);
+  padding: 7px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: hidden;
+}
+.mk--dashboard .mk-db__card--plan {
+  background:
+    radial-gradient(ellipse at top right, color-mix(in srgb, var(--wp-accent) 18%, transparent), transparent 65%),
+    color-mix(in srgb, var(--wp-accent) 10%, var(--wp-surface));
+  border-color: color-mix(in srgb, var(--wp-accent) 30%, transparent);
+}
+.mk--dashboard .mk-db__head {
+  display: flex; align-items: center; justify-content: space-between;
+}
+.mk--dashboard .mk-db__label {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--wp-text-faint);
+}
+.mk--dashboard .mk-db__usage-bar {
+  height: 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-text) 8%, transparent);
+  overflow: hidden;
+  position: relative;
+}
+.mk--dashboard .mk-db__usage-bar::after {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 64%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--wp-accent), color-mix(in srgb, var(--wp-success, #3ddc97) 70%, var(--wp-accent)));
+}
+.mk--dashboard .mk-db__inv-list {
+  display: flex; flex-direction: column;
+}
+.mk--dashboard .mk-db__inv-row {
+  display: flex; align-items: center; gap: 5px;
+  padding: 3px 0;
+  border-bottom: 1px dashed color-mix(in srgb, var(--wp-text) 8%, transparent);
+}
+.mk--dashboard .mk-db__inv-row:last-child { border-bottom: none; }
+.mk--dashboard .mk-db__inv-date {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 7.5px;
+  color: var(--wp-text-dim);
+  flex: none;
+  width: 36px;
+}
+
+.cdp__verdict {
+  margin-top: 36px;
+  padding: 22px 26px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--wp-accent) 8%, var(--wp-surface));
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 25%, var(--wp-border));
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 18px; flex-wrap: wrap;
+}
+.cdp__verdict-text strong { color: var(--wp-accent); }
+.cdp__verdict-text p {
+  margin: 4px 0 0;
+  font-size: 13px; color: var(--wp-text-dim);
+  max-width: 580px; line-height: 1.55;
+}

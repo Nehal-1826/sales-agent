@@ -1,0 +1,629 @@
+/* WarmPulse auth shell — split-screen login / signup layout. */
+
+.auth-card-shell {
+  position: relative;
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  background: var(--wp-bg, #0a0a0a);
+  color: var(--wp-text, #f4f4f5);
+  overflow: hidden;
+}
+
+@media (max-width: 960px) {
+  .auth-card-shell { grid-template-columns: 1fr; }
+}
+
+/* ---------- Atmosphere ---------- */
+
+.auth-card-shell__atmosphere {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.auth-card-shell__aurora-1 {
+  position: absolute;
+  top: -200px;
+  left: -200px;
+  width: 900px;
+  height: 900px;
+  border-radius: 999px;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--wp-accent) 38%, transparent) 0%,
+    transparent 60%
+  );
+  filter: blur(120px);
+  animation: auth-aurora-drift-1 22s ease-in-out infinite;
+}
+
+.auth-card-shell__aurora-2 {
+  position: absolute;
+  bottom: -240px;
+  right: -240px;
+  width: 820px;
+  height: 820px;
+  border-radius: 999px;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--wp-accent-2) 28%, transparent) 0%,
+    transparent 60%
+  );
+  filter: blur(120px);
+  animation: auth-aurora-drift-2 18s ease-in-out infinite;
+}
+
+.auth-card-shell__grid {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, var(--wp-border) 1px, transparent 1px);
+  background-size: 32px 32px;
+  opacity: 0.4;
+  -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+  mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+}
+
+@keyframes auth-aurora-drift-1 {
+  0%, 100% { transform: translate(0, 0); }
+  50%      { transform: translate(40px, 30px); }
+}
+@keyframes auth-aurora-drift-2 {
+  0%, 100% { transform: translate(0, 0); }
+  50%      { transform: translate(-30px, -20px); }
+}
+
+/* ---------- Brand panel (left) ---------- */
+
+.auth-card-shell__brand {
+  position: relative;
+  z-index: 1;
+  padding: 64px 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 960px) {
+  .auth-card-shell__brand { display: none; }
+}
+
+.auth-card-shell__brand-glass {
+  position: relative;
+  width: 100%;
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding: 40px 36px;
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--wp-surface) 50%, transparent);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 18%, var(--wp-glass-border));
+  box-shadow:
+    0 32px 64px color-mix(in srgb, var(--wp-accent) 14%, transparent),
+    0 8px 24px color-mix(in srgb, var(--wp-accent) 8%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--wp-accent) 14%, transparent);
+}
+
+.auth-card-shell__brand-glass::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--wp-accent), transparent);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.auth-card-shell__brand-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: inherit;
+  width: fit-content;
+}
+
+.auth-card-shell__brand-logo {
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+}
+.auth-card-shell__brand-logo--sm { width: 28px; height: 28px; }
+.auth-card-shell__brand-logo svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  filter: drop-shadow(0 0 12px color-mix(in srgb, var(--wp-accent) 40%, transparent));
+}
+
+.auth-card-shell__brand-word {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+.auth-card-shell__brand-headline {
+  margin: 0;
+  font-size: clamp(36px, 4.4vw, 54px);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.04;
+}
+
+.auth-card-shell__brand-body {
+  margin: 0;
+  max-width: 480px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--wp-text-dim);
+}
+
+.auth-card-shell__brand-body strong {
+  color: var(--wp-text);
+  font-weight: 600;
+}
+
+/* ---------- Live activity feed ---------- */
+
+.auth-card__feed {
+  background: color-mix(in srgb, var(--wp-surface) 60%, transparent);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 14%, var(--wp-glass-border));
+  border-radius: 14px;
+  padding: 14px 16px;
+  max-width: 440px;
+  box-shadow: 0 16px 40px color-mix(in srgb, var(--wp-accent) 10%, transparent);
+}
+
+.auth-card__feed-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--wp-border);
+  margin-bottom: 10px;
+}
+
+.auth-card__feed-dot {
+  position: relative;
+  width: 6px;
+  height: 6px;
+  background: var(--wp-success);
+  border-radius: 999px;
+}
+
+.auth-card__feed-dot-ping {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--wp-success);
+  opacity: 0.7;
+  animation: auth-ping 1.4s ease-out infinite;
+}
+
+@keyframes auth-ping {
+  0%   { transform: scale(1); opacity: 0.7; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+
+.auth-card__feed-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--wp-success);
+}
+
+.auth-card__feed-count {
+  margin-left: auto;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--wp-text-faint);
+}
+
+.auth-card__feed-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.auth-card__feed-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  border-radius: 6px;
+}
+
+.auth-card__feed-time {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--wp-text-faint);
+  width: 36px;
+  flex-shrink: 0;
+}
+
+.auth-card__feed-text {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--wp-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* ---------- Stats strip ---------- */
+
+.auth-card-shell__stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  max-width: 440px;
+  margin-top: 8px;
+}
+
+.auth-card-shell__stat {
+  background: color-mix(in srgb, var(--wp-surface) 50%, transparent);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--wp-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.auth-card-shell__stat-v {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--wp-text);
+}
+
+.auth-card-shell__stat-l {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--wp-text-faint);
+  margin-top: 2px;
+}
+
+/* ---------- Login-variant left panel: stacked testimonials ---------- */
+
+.auth-card-shell__brand--login {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 64px 56px;
+  justify-content: center;
+}
+
+@media (max-width: 960px) {
+  .auth-card-shell__brand--login { display: none; }
+}
+
+.auth-card-shell__login-eyebrow {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: var(--wp-accent);
+  margin-top: 8px;
+}
+
+.auth-card-shell__testimonials {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 440px;
+}
+
+.auth-card-shell__testimonial {
+  display: flex;
+  gap: 14px;
+  padding: 16px 18px;
+  background: color-mix(in srgb, var(--wp-surface) 55%, transparent);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 16%, var(--wp-glass-border));
+  border-radius: 14px;
+  box-shadow:
+    0 20px 40px color-mix(in srgb, var(--wp-accent) 10%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--wp-accent) 12%, transparent);
+  position: relative;
+}
+
+.auth-card-shell__testimonial::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--wp-accent), transparent);
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.auth-card-shell__testimonial-avatar {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--wp-accent), var(--wp-accent-2));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--wp-accent) 35%, transparent);
+}
+
+.auth-card-shell__testimonial-body { flex: 1; min-width: 0; }
+
+.auth-card-shell__testimonial-body blockquote {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--wp-text-dim);
+}
+
+.auth-card-shell__testimonial-body blockquote em {
+  color: var(--wp-text);
+  font-style: normal;
+  font-weight: 600;
+}
+
+.auth-card-shell__testimonial-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.auth-card-shell__testimonial-who {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--wp-text);
+}
+
+.auth-card-shell__testimonial-org {
+  font-size: 11px;
+  color: var(--wp-text-faint);
+}
+
+.auth-card-shell__login-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, #ffb454 10%, transparent),
+    color-mix(in srgb, var(--wp-accent) 8%, transparent)
+  );
+  border: 1px solid color-mix(in srgb, #ffb454 25%, transparent);
+  border-radius: 999px;
+  width: fit-content;
+}
+
+.auth-card-shell__login-rating-stars {
+  font-size: 13px;
+  letter-spacing: 1px;
+  color: #ffb454;
+}
+
+.auth-card-shell__login-rating-text {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--wp-text-dim);
+}
+
+.auth-card-shell__login-rating-text strong {
+  color: var(--wp-text);
+  font-weight: 700;
+}
+
+/* ---------- Form panel (right) ---------- */
+
+.auth-card-shell__form-panel {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  padding: 56px 48px;
+}
+
+@media (max-width: 600px) {
+  .auth-card-shell__form-panel { padding: 32px 20px; }
+}
+
+.auth-card-shell__back {
+  position: fixed;
+  top: 24px;
+  left: 24px;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--wp-text-dim);
+  background: color-mix(in srgb, var(--wp-surface) 70%, transparent);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid var(--wp-border);
+  padding: 7px 14px;
+  border-radius: 999px;
+  text-decoration: none;
+  transition: color 150ms, background 150ms, transform 150ms;
+}
+.auth-card-shell__back:hover {
+  color: var(--wp-text);
+  background: var(--wp-surface-2);
+  transform: translateX(-2px);
+}
+
+.auth-card-shell__form-wrap {
+  width: 100%;
+  max-width: 420px;
+  margin: auto;
+}
+
+.auth-card-shell__mobile-mark {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 24px;
+  text-decoration: none;
+  color: inherit;
+  justify-content: center;
+}
+
+@media (max-width: 960px) {
+  .auth-card-shell__mobile-mark { display: inline-flex; }
+}
+
+.auth-card-shell__card {
+  position: relative;
+  background: color-mix(in srgb, var(--wp-surface) 70%, transparent);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 20%, var(--wp-glass-border));
+  border-radius: 18px;
+  padding: 32px 30px;
+  box-shadow:
+    0 32px 64px color-mix(in srgb, var(--wp-accent) 16%, transparent),
+    0 8px 24px color-mix(in srgb, var(--wp-accent) 8%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--wp-accent) 18%, transparent);
+}
+
+.auth-card-shell__card::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--wp-accent), transparent);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.auth-card-shell__sparkle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: color-mix(in srgb, var(--wp-accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-accent) 26%, transparent);
+  color: var(--wp-accent);
+  border-radius: 999px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-bottom: 14px;
+}
+
+.auth-card-shell__heading {
+  margin: 0 0 8px;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  color: var(--wp-text);
+}
+
+.auth-card-shell__subheading {
+  margin: 0 0 22px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--wp-text-dim);
+}
+
+.auth-card-shell__form {
+  margin-bottom: 8px;
+}
+
+.auth-card-shell__divider {
+  position: relative;
+  margin: 18px 0 14px;
+  text-align: center;
+}
+.auth-card-shell__divider::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  border-top: 1px solid var(--wp-border);
+}
+.auth-card-shell__divider span {
+  position: relative;
+  background: color-mix(in srgb, var(--wp-surface) 95%, transparent);
+  padding: 0 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--wp-text-faint);
+}
+
+.auth-card-shell__footer {
+  margin: 20px 0 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--wp-text-dim);
+}
+
+/* ----- Override legacy green accent inside the auth shell -----
+   The shared Button + Input components still use the original brand
+   tokens (--accent green/teal). Re-map them inside the shell so the
+   primary CTA, focus rings, and accent links pick up the violet brand. */
+
+.auth-card-shell .bg-accent,
+.auth-card-shell .hover\:bg-accent\/90:hover {
+  background-color: var(--wp-accent) !important;
+  background-image: linear-gradient(180deg, var(--wp-accent), var(--wp-accent-hover)) !important;
+  color: #fff !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 8px 24px color-mix(in srgb, var(--wp-accent) 35%, transparent) !important;
+}
+
+.auth-card-shell .text-accent {
+  color: var(--wp-accent) !important;
+}
+
+.auth-card-shell .text-bg {
+  color: #fff !important;
+}
+
+.auth-card-shell input:focus,
+.auth-card-shell textarea:focus,
+.auth-card-shell select:focus {
+  border-color: var(--wp-accent) !important;
+  outline: none !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--wp-accent) 22%, transparent) !important;
+}
+
+.auth-card-shell .focus-ring:focus,
+.auth-card-shell .focus-ring:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--wp-accent) 70%, transparent) !important;
+  outline-offset: 2px;
+}
+
+/* Hover for primary CTA inside the shell */
+.auth-card-shell .bg-accent:hover {
+  filter: brightness(1.08);
+}

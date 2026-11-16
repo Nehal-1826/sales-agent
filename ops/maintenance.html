@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WarmPulse — Maintenance</title>
+<meta name="robots" content="noindex">
+<style>
+  :root { color-scheme: dark; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #0a0b0d;
+    color: #e8e9ec;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: 24px;
+  }
+  .card {
+    max-width: 460px;
+    width: 100%;
+    background: #111317;
+    border: 1px solid #23262e;
+    border-radius: 14px;
+    padding: 40px 32px;
+    text-align: center;
+  }
+  .mark {
+    width: 44px; height: 44px;
+    margin: 0 auto 20px;
+    border-radius: 10px;
+    background: #7c5cff1a;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .mark svg { width: 24px; height: 24px; }
+  h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 8px; }
+  p  { font-size: 14px; line-height: 22px; color: #9aa0aa; }
+  .mono {
+    margin-top: 20px;
+    font-family: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #7c5cff;
+  }
+  .pulse {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: #7c5cff; margin-right: 8px;
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: .35 } 50% { opacity: 1 } }
+  .back {
+    display: none;
+    margin-top: 24px;
+    padding: 10px 20px;
+    border: 0; border-radius: 10px;
+    background: #7c5cff; color: #fff;
+    font-size: 14px; font-weight: 600;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+  <main class="card">
+    <div class="mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#7c5cff" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2.5" y="5" width="19" height="14" rx="2.5"/>
+        <path d="m3.5 7 8.5 6 8.5-6"/>
+      </svg>
+    </div>
+    <h1>We&rsquo;ll be right back</h1>
+    <p>WarmPulse is under scheduled maintenance while we ship an update.
+       Your mailboxes and warmup data are safe &mdash; nothing is being sent
+       or changed while we work.</p>
+    <div class="mono"><span class="pulse"></span>Under maintenance</div>
+    <button class="back" id="back">Back online &mdash; reload</button>
+  </main>
+  <script>
+    // Poll an always-on endpoint; when it answers, offer the reload button.
+    // Uses a path-relative URL so it works at any mount point
+    // (/maintenance.html → /api/plans, /warmpulse/maintenance.html → /warmpulse/api/plans).
+    (function () {
+      var btn = document.getElementById('back');
+      var timer = setInterval(function () {
+        fetch('api/plans', { cache: 'no-store' })
+          .then(function (r) {
+            if (r.ok) { clearInterval(timer); btn.style.display = 'inline-block'; }
+          })
+          .catch(function () { /* still down */ });
+      }, 15000);
+      btn.addEventListener('click', function () { window.location.href = './'; });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,244 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0a0a0f;
+  --surface: #12121a;
+  --surface-2: #1a1a26;
+  --border-muted: #2a2a3a;
+  /* Shailog brand palette — warm coral-orange primary, lighter orange secondary,
+     warm-orange tertiary, golden-yellow signal. Tokens line up with --wp-accent
+     in hero-theme.css so legacy `var(--accent)` consumers and modern `bg-accent`
+     Tailwind tokens render identically. */
+  --accent: #F26522;
+  --accent-2: #FF8A4B;
+  --accent-3: #FF9670;
+  --accent-4: #ffd54f;
+  --text: #e8e8f0;
+  --text-dim: #8888a0;
+  /* Dimmest text tier (stepper labels, eyebrows). Mirrors the Tailwind
+     `text-text-faint` token, which now resolves to this var. */
+  --text-faint: #5a5a72;
+
+  color-scheme: dark;
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+   Light theme. The Tailwind surface/text/border/accent tokens all resolve to
+   the vars above, so overriding them here re-skins the ENTIRE app (cards,
+   tables, text, borders) — not just the shell. The dark palette above is left
+   byte-for-byte untouched. Palette is warm to match the Shailog orange brand:
+   an orange-tinted off-white canvas, pure-white cards, warm near-black text,
+   and accents darkened for AA contrast on a light background.
+─────────────────────────────────────────────────────────────────────────── */
+:root[data-theme='light'] {
+  --bg: #ebe1d4;            /* warm tan canvas — darker than cards so they pop */
+  --surface: #ffffff;       /* cards / panels sit bright above the canvas */
+  --surface-2: #faf3ea;     /* nested surfaces, table stripes, inputs */
+  --border-muted: #d4bda0;  /* visible warm hairline so card edges read */
+  /* Accents darkened so they stay legible (and white-on-accent stays AA) on
+     light surfaces. Track hero-theme.css's light --wp-accent. */
+  --accent: #E5571A;
+  --accent-2: #EA6A23;
+  --accent-3: #D2581C;      /* warning / danger-button bg — white text reads */
+  --accent-4: #B5810A;      /* golden signal, darkened from #ffd54f */
+  --text: #1c0f06;          /* warm near-black, ~16:1 on white */
+  --text-dim: #4a3324;      /* secondary text, dark — ~9:1 on white */
+  --text-faint: #6a4f3a;    /* labels / eyebrows, still clearly dark — ~6:1
+                               (was #9a8270 then #7e6149; user wants DARK text
+                               on light bg, so this tier reads as dark too) */
+
+  color-scheme: light;
+}
+
+/* Light-theme chart text. Recharts/ApexCharts components hardcode light fills
+   (e.g. fill: '#8888a0', color: '#e8e8f0') inline for axis ticks, legends and
+   labels — invisible on a white plot. These overrides force chart text to the
+   dark secondary token in light mode regardless of the inline value. Dark
+   theme is untouched (rules only apply under [data-theme='light']). */
+:root[data-theme='light'] .recharts-text,
+:root[data-theme='light'] .recharts-cartesian-axis-tick-value,
+:root[data-theme='light'] .recharts-cartesian-axis-tick-value tspan,
+:root[data-theme='light'] .recharts-label,
+:root[data-theme='light'] .recharts-legend-item-text,
+:root[data-theme='light'] .apexcharts-text,
+:root[data-theme='light'] .apexcharts-xaxis-label,
+:root[data-theme='light'] .apexcharts-yaxis-label,
+:root[data-theme='light'] .apexcharts-legend-text {
+  fill: var(--text-dim) !important;
+  color: var(--text-dim) !important;
+}
+
+/* Light-theme card definition. Card surfaces are near-white and many are
+   translucent, so on the warm canvas they need a soft shadow (plus the
+   stronger --border-muted) to read as distinct cards rather than blending in.
+   Targets rounded surface containers only, so inline chips/text aren't hit. */
+:root[data-theme='light']
+  :is(.admin-shell, [role='dialog'], [role='menu'])
+  :is([class*='bg-surface'][class*='rounded'], .wp-glass, .ah__card, .ah__system, .ah__quick) {
+  box-shadow:
+    0 1px 2px rgba(90, 60, 25, 0.05),
+    0 8px 24px rgba(90, 60, 25, 0.07);
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+   Force-dark text in light mode (explicit user request). Blunt but guarantees
+   every word on a light surface is legible no matter what inline/hardcoded
+   light color a component set. Scoped to the in-app shells + portaled
+   dialogs/menus/dropdowns so the landing page keeps its bespoke styling.
+   Text inside SOLID accent fills (orange buttons/pills, active nav item) is
+   re-lightened in the rule just below so CTAs stay readable.
+─────────────────────────────────────────────────────────────────────────── */
+:root[data-theme='light']
+  :is(.admin-shell, [role='dialog'], [role='menu'], [data-radix-popper-content-wrapper])
+  :is(h1, h2, h3, h4, h5, h6, p, span, a, li, ul, ol, td, th, label, strong,
+    em, b, i, small, dt, dd, div, button, input, textarea, select, figcaption,
+    blockquote, code, pre, time, summary) {
+  color: var(--text) !important;
+}
+
+/* Keep white text on solid accent fills (opaque bg-accent buttons/badges,
+   active sidebar item). Low-opacity accent tints (bg-accent/10 etc.) are NOT
+   matched by [class~='bg-accent'], so their text correctly stays dark. */
+:root[data-theme='light']
+  :is(.admin-shell, [role='dialog'], [role='menu'], [data-radix-popper-content-wrapper])
+  :is([class~='bg-accent'], [class~='bg-accent2'], [class~='bg-accent3'], [class~='bg-accent4']),
+:root[data-theme='light']
+  :is(.admin-shell, [role='dialog'], [role='menu'], [data-radix-popper-content-wrapper])
+  :is([class~='bg-accent'], [class~='bg-accent2'], [class~='bg-accent3'], [class~='bg-accent4']) *,
+:root[data-theme='light'] .admin-pill__item--active,
+:root[data-theme='light'] .admin-pill__item--active * {
+  color: #fff !important;
+}
+
+@layer base {
+  * {
+    border-color: var(--border-muted);
+    scrollbar-width: none;
+  }
+
+  *::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  /* Dialog body keeps the global scrollbar-hide (per user pref —
+     scrollbar should be invisible) but `overscroll-behavior: contain` so
+     wheel/trackpad scroll inside the body doesn't bubble up and try to
+     scroll the locked page behind the dialog. */
+  .app-dialog-body {
+    overscroll-behavior: contain;
+  }
+
+  html,
+  body {
+    overscroll-behavior: none;
+    background-color: var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    min-height: 100vh;
+  }
+
+  ::selection {
+    background: rgba(242, 101, 34, 0.25);
+    color: var(--text);
+  }
+}
+
+@layer components {
+  .scroll-progress-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    z-index: 100;
+    pointer-events: none;
+    background: linear-gradient(
+      90deg,
+      var(--accent) 0%,
+      var(--accent-2) 100%
+    );
+    transform-origin: left center;
+    transform: scaleX(0);
+    transition: transform 120ms linear;
+    box-shadow: 0 0 10px rgba(242, 101, 34, 0.4);
+  }
+
+  .surface {
+    background-color: var(--surface);
+    border: 1px solid var(--border-muted);
+  }
+
+  .surface-2 {
+    background-color: var(--surface-2);
+    border: 1px solid var(--border-muted);
+  }
+
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg;
+  }
+
+  .gradient-text {
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+@layer utilities {
+  .hide-scrollbar {
+    scrollbar-width: none;
+  }
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ===========================================================================
+   Mobile enhancements. Every rule is gated behind a small-screen or
+   coarse-pointer media query, so the desktop UI (>=641px / fine pointer) is
+   never affected. Intentionally UNLAYERED so they win over Tailwind utilities
+   (e.g. an input's `text-sm`).
+=========================================================================== */
+
+/* Form controls render at >=16px on phones so mobile Safari/Chrome don't
+   auto-zoom the page when a field is focused. Control heights are fixed
+   (h-10 etc.), so only the text size changes — never the layout. */
+@media (max-width: 640px) {
+  input,
+  textarea,
+  select,
+  [contenteditable='true'] {
+    font-size: 16px;
+  }
+}
+
+/* Touch polish — only manifests on touch input, so desktop stays as-is. */
+@media (pointer: coarse) {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Comfortable tap rows for menu / select / dropdown items on touch
+   phones & tablets (vertical lists — safe to grow). Capped at 768px so
+   touch-screen laptops keep their compact rows. */
+@media (pointer: coarse) and (max-width: 768px) {
+  [role='menuitem'],
+  [role='option'],
+  [data-radix-collection-item] {
+    min-height: 40px;
+  }
+}

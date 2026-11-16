@@ -1,97 +1,86 @@
-# AGENTS.md
+# AGENTS.md — WarmPulse monorepo (Email-Warmup)
 
-Autonomous marketing & sales agent system. React + TypeScript + Vite frontend,
-Django + DRF backend, Docker deployment to a Linux VPS. The core concept is the
-pipeline: `USER → ORCHESTRATOR → SEARCH (scrape) → PROFILE → COPYWRIGHT →
-RESPONDER (chatbot)` running in a continuous loop.
+WarmPulse = one product: mailbox warmup network + AI outbound lead agent.
+Merged 2026-11-12 from WarmPulse (email warmup SaaS) + Shailog sales-agent
+(pipeline: USER → ORCHESTRATOR → SEARCH → PROFILE → COPYWRIGHT → RESPONDER).
+Brand: **WarmPulse**, accent theme **orange** (`#f97316` family — restored
+2026-11-13; violet was the brief 11-12 experiment). Logos: `frontend/public/warmpulse-*`.
 
 ## Layout
 
-- `src/` — frontend: `pages/` (Dashboard · Agents · CRM · Chat · Settings, routed
-  from `App.tsx`), `components/`, `lib/` (`api.ts` · `types.ts` · `mockData.ts` · `store.ts`)
-- `backend/` — Django project: `agentic/` (settings), `core/` app (models,
-  serializers, views, scraper, pipeline, ai, mailer, chat, reports, scheduler,
-  management commands), `core/tests/`
-- Root: `Dockerfile` + `nginx.conf` (frontend image), `backend/Dockerfile` +
-  `entrypoint.sh` (api + worker image), `docker-compose.yml` (db/api/worker/frontend),
-  `docker-compose.https.yml` + `Caddyfile` (optional HTTPS)
-- Read before touching deployment or API surface: `DEPLOY.md`, `backend/README.md`
+- `frontend/` — THE app (React + Vite + TS strict, custom CSS tokens, NO Tailwind).
+  Landing/login/signup + workspace shell (Home · Approvals · Replies · Tasks ·
+  Leads · Activity · Assistant · Warmup · Settings). Sidebar at all widths
+  (bottom tab bar removed). Prerendered marketing build (SSR + `scripts/prerender.mjs`).
+- `backend-agent/` — Django + DRF: pipeline, scraper, AI, mailer/outbox, billing,
+  workspaces, OTP, WhatsApp approvals, mailbox probe, company scrape. Own AGENTS.md
+  (pre-merge doc; paths there are historical).
+- `backend/` — FastAPI + SQLAlchemy + Celery: warmup peer network, mailboxes,
+  analytics, alerts. Internal API prefix `/api/…`; alembic migrations are
+  **Postgres-only** (dev bootstrap: `WARMUP_DEV_BOOTSTRAP=1` on sqlite — Stream B).
+- `frontend-warmpulse/` — old WarmPulse frontend: PORTING SOURCE ONLY (client
+  dashboards for the Warmup section). Never served.
+- `whatsapp-sidecar/` — WhatsApp runtime service (node). `warmpulse-mobile/` — RN app.
+- `ops/` — gateway nginx (`/api/`→django:8000, `/wp-api/`→fastapi:8001 rewritten
+  to its internal `/api/`), db init. Root `docker-compose.yml` = full stack.
+- `scripts/e2e/flow.py` — the Playwright gate (58+ checks; run before every push).
+- `docs/superpowers/` — specs + plans (foundation, shell-ux batch, warmup dashboards).
 
-## Commands
-
-Frontend (root):
-
-```bash
-npm run dev        # Vite on :5173, proxies /api → http://127.0.0.1:8000
-npm run build      # tsc --noEmit + vite build — this IS the typecheck
-```
-
-No ESLint/Prettier is configured. TypeScript is `strict`; keep it that way.
-
-Backend (`backend/`, Windows venv → use `.venv/Scripts/python`, not `bin/`):
+## Commands (local dev, Windows Git Bash — quote paths, space in "Devesh B")
 
 ```bash
-.venv/Scripts/python -m pip install -r requirements.txt
-export DATABASE_URL=sqlite:///db.sqlite3   # local dev DB (Postgres only in docker)
-.venv/Scripts/python manage.py migrate
-.venv/Scripts/python manage.py seed_demo   # demo owner + agent configs; idempotent
-.venv/Scripts/python manage.py runserver 127.0.0.1:8000
-.venv/Scripts/python manage.py test        # Django test runner, tests in core/tests/
+# 1) Django  (.venv inside backend-agent)
+cd backend-agent && export DATABASE_URL=sqlite:///db-agent-e2e.sqlite3 \
+  && export WARMUP_JWT_SECRET=$(cat ../.superpowers/sdd/dev-secret.txt) \
+  && .venv/Scripts/python manage.py migrate && .venv/Scripts/python manage.py seed_demo \
+  && .venv/Scripts/python manage.py runserver 127.0.0.1:8000
+#    login: operator / operator-demo-2026
+
+# 2) FastAPI (.venv inside backend)
+cd backend && export DATABASE_URL=sqlite+aiosqlite:///db-warmup-e2e.sqlite3 \
+  && export JWT_SECRET=$(cat ../.superpowers/sdd/dev-secret.txt) \
+  && .venv/Scripts/python -m uvicorn app.main:app --port 8001
+
+# 3) Vite (IPv6 localhost only — probe http://localhost:5173, NOT 127.0.0.1)
+cd frontend && npm run dev
+
+# Gates
+cd backend-agent && DATABASE_URL=sqlite:///db-agent-test.sqlite3 .venv/Scripts/python manage.py test
+cd backend && .venv/Scripts/python -m pytest tests/test_bridge_auth.py tests/test_auth.py tests/test_api_key_auth.py -q
+cd frontend && npm run build            # tsc + vite + SSR + prerender
+python scripts/e2e/flow.py              # full-stack gate (servers must be up)
 ```
 
-Other management commands: `pipeline_loop` (auto-cadence loop), `run_worker`
-(always-on agent: pipeline cycles + daily 20:00 IST report + heartbeats),
-`daily_report` (one-off report email).
-
-Docker (VPS): `docker compose up -d --build`; HTTPS variant adds
-`-f docker-compose.https.yml`. Migrations + seed run automatically via
-`entrypoint.sh`.
+The shared bridge secret must be **32+ chars** and identical on both backends
+(Django mints, FastAPI verifies — both fail loud on weak/placeholder secrets).
 
 ## Architecture rules
 
-- **All** frontend↔backend traffic goes through `src/lib/api.ts`. It probes
-  `GET /api/health/` on startup; if the backend is down, every call falls back
-  to `src/lib/mockData.ts` so the UI never breaks. Keep that contract when
-  adding endpoints: implement API method + mock fallback + types together.
-- `backend/core/serializers.py` must match `src/lib/types.ts` 1:1 — change both
-  sides together.
-- Pipeline internals: `core/pipeline.py` (orchestrator) → `core/scraper.py`
-  (DuckDuckGo discovery via `ddgs`, site audit, potential score) → `core/ai.py`
-  (OpenAI-compatible LLM; provider + key come from `AppSettings`, never env) →
-  `core/mailer.py` (SMTP with console fallback). Responder replies: `core/chat.py`.
-  Profile stores a Gemini-written `Lead.description` from the scraped site text
-  (`analysis['text_excerpt']`); Copywright drafts merge the user's default
-  `EmailTemplate` (Settings page, `/api/templates/`) with that description —
-  `{{company}}`-style placeholders in `pipeline.TEMPLATE_VARS` are the no-AI
-  fallback. Outbound emails are branded HTML (logo header, inline `cid:` image)
-  via `mailer.branded_email_html()`.
-- Auth: DRF token auth (`Authorization: Token …`). Only `/api/health/` and
-  `/api/auth/*` are open. The frontend has a branded login page — no
-  auto-login. Product installs create the owner at first boot via
-  `manage.py bootstrap_admin` (entrypoint, `ADMIN_*` env vars, password
-  auto-generated + printed in logs when blank); demo installs (`SEED_DEMO=1`)
-  seed `operator` / `operator-demo-2026`. With `DJANGO_DEBUG=0` the app
-  refuses to start without `DJANGO_SECRET_KEY` and a real `ALLOWED_HOSTS`.
-- **DB confusion warning:** `AgentConfig.db_provider` is MongoDB-only by design
-  (locked in migration `0006_mongodb_only`; not editable from the UI). That is a
-  product-level setting shown on the Agents page — the Django app itself runs on
-  PostgreSQL (docker) or SQLite (local) via `DATABASE_URL`. Don't "fix" one into
-  the other.
-- Secrets (AI key, SMTP) live in the `AppSettings` singleton (editable via
-  Settings page/Django admin) and are masked in API responses. VPS-level secrets
-  go in `.env` (git-ignored). Never put keys in frontend code.
+- One login: Django identity (workspaces, OTP, billing). `POST /api/auth/warmup-token/`
+  mints an HS256 `iss=agent-bridge` JWT (12h) — FastAPI auto-provisions passwordless
+  users from it (both auth dependencies guard foreign `iss`; kill-switch
+  `AGENT_BRIDGE_ENABLED`). Platform admins need a satisfied OTP session to mint
+  (`role=super_admin`).
+- Frontend↔backend: Django via `lib/` request helpers; warmup via `lib/warmupApi.ts`
+  (Bearer JWT, `/wp-api` base, health probe, 401 re-acquire once). Bridge JWT dies
+  with the session (all four token-clear sites purge both keys).
+- `backend-agent/core/serializers.py` ↔ `frontend/src` types change together.
+- Anonymous endpoints: `/api/health/`, `/api/auth/*`, `/api/company/scrape`
+  (AllowAny + 10/min scoped throttle, SSRF-guarded, reuses `core/scraper.py`).
+- Mailboxes: provider wizard + `POST /api/mailboxes/test` (IMAP+SMTP probe,
+  per-leg results, never echoes passwords; username = `smtpUser || fromEmail`).
+  Unreachable mailboxes pause 24h with one-click Resume.
+- FastAPI docs (`/docs`) are disabled outside dev environments.
+- Secrets server-side only (env/.env.docker), masked in API responses, never frontend.
 
-## Conventions & gotchas
+## Gotchas
 
-- The workspace path contains a space (`Devesh B`) — always quote paths in
-  shell commands.
-- Windows dev machine (Git Bash); README quick-start commands use
-  `set VAR=...` cmd syntax — in Git Bash use `export VAR=...`.
-- Local dev runs SQLite (READMEs say PostgreSQL — that's the docker/VPS setup).
-- localStorage keys use the `agentic-ai:` prefix (token: `agentic-ai:token`).
-- Daily report and cadence code uses `Asia/Kolkata` (IST); Django otherwise UTC.
-- `backend/salem_discovery.py` is a standalone one-off script (fixed Salem/TN
-  query set), not part of the pipeline — it calls `django.setup()` itself.
-- Cadence changes need no restart: `run_worker`/`pipeline_loop` read the
-  Settings FREQUENT RUNS toggle + frequency live.
-- `.zcode/` is git-ignored.
+- Vite binds IPv6 `[::1]` only; zombie Vite processes survive task kills —
+  `netstat -ano | grep :5173` + `taskkill //F //PID` before restarts; port
+  assignment is ready-order, not start-order.
+- Background servers die with the session — see Commands to bring the stack back.
+- Alembic (backend/) is Postgres-only; sqlite dev needs the bootstrap flag.
+- Branch state: all merged work lives on `merge/agent-foundation`, local-only,
+  **no push/deploy without the owner's command**. `main` holds only specs/plans.
+- E2E selectors worth knowing: `.side-logout`, `aside.sidebar` full-height rail,
+  password-rule `li.pass/.fail` flip on signup.

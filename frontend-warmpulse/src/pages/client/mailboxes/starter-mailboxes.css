@@ -1,0 +1,586 @@
+/* =============================================================================
+   /app/mailboxes — Starter tier (M4 Split Pane).
+   Left rail: identity (provider avatar, email, warmth ring, status, DNS).
+   Right pane: tabbed content (Overview, Schedule, DNS, Activity, Settings).
+   Single-mailbox focus — Starter caps at 1 inbox.
+============================================================================= */
+
+.sm {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  color: var(--wp-text, #f4f4f5);
+}
+
+.sm__heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sm__title {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+.sm__sub {
+  font-size: 13px;
+  color: var(--wp-text-dim, #a1a1aa);
+  margin: 0;
+}
+
+/* ---------- Split pane container ---------- */
+.sm-split {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) 1.6fr;
+  gap: 18px;
+  align-items: start;
+}
+@media (max-width: 980px) {
+  .sm-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============================================================================
+   Left rail — identity
+============================================================================ */
+.sm-rail {
+  position: sticky;
+  top: 16px;
+  border-radius: 18px;
+  background:
+    radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--wp-accent, #F26522) 22%, transparent), transparent 65%),
+    color-mix(in srgb, var(--wp-accent, #F26522) 10%, var(--wp-surface, #12121a));
+  border: 1px solid color-mix(in srgb, var(--wp-accent, #F26522) 28%, var(--wp-border, #2a2a3a));
+  padding: 24px 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.sm-rail__avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 30% 25%, color-mix(in srgb, var(--wp-accent-2, var(--wp-accent, #F26522)) 70%, transparent), transparent 55%),
+    linear-gradient(135deg, color-mix(in srgb, var(--wp-accent, #F26522) 65%, transparent), color-mix(in srgb, var(--wp-accent-2, var(--wp-accent, #F26522)) 65%, transparent));
+  border: 1px solid color-mix(in srgb, var(--wp-accent, #F26522) 45%, transparent);
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: white;
+  font-weight: 700;
+  font-size: 22px;
+  letter-spacing: 0.02em;
+  box-shadow: 0 8px 24px -8px color-mix(in srgb, var(--wp-accent, #F26522) 40%, transparent);
+}
+
+.sm-rail__email {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  word-break: break-all;
+  text-align: center;
+  line-height: 1.3;
+}
+.sm-rail__provider {
+  font-size: 11px;
+  color: var(--wp-text-dim, #a1a1aa);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+
+.sm-rail__divider {
+  width: 100%;
+  height: 1px;
+  background: color-mix(in srgb, var(--wp-text, #f4f4f5) 8%, transparent);
+}
+
+/* Warmth ring */
+.sm-rail__ring {
+  --size: 110px;
+  --thickness: 10px;
+  width: var(--size);
+  height: var(--size);
+  border-radius: 999px;
+  position: relative;
+  background: conic-gradient(
+    var(--wp-accent, #F26522) 0deg,
+    var(--wp-accent, #F26522) calc(var(--pct, 0) * 3.6deg),
+    color-mix(in srgb, var(--wp-text, #f4f4f5) 8%, transparent) calc(var(--pct, 0) * 3.6deg),
+    color-mix(in srgb, var(--wp-text, #f4f4f5) 8%, transparent) 360deg
+  );
+  filter: drop-shadow(0 0 12px color-mix(in srgb, var(--wp-accent, #F26522) 30%, transparent));
+}
+.sm-rail__ring::before {
+  content: '';
+  position: absolute;
+  inset: var(--thickness);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-surface, #12121a) 92%, transparent);
+}
+.sm-rail__ring-inner {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.sm-rail__ring-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--wp-text, #f4f4f5);
+}
+.sm-rail__ring-label {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--wp-text-dim, #a1a1aa);
+}
+
+/* Status / day pills row */
+.sm-rail__pills {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+.sm-rail__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid;
+}
+.sm-rail__pill--ok {
+  background: color-mix(in srgb, var(--wp-success, #3ddc97) 14%, transparent);
+  border-color: color-mix(in srgb, var(--wp-success, #3ddc97) 40%, transparent);
+  color: var(--wp-success, #3ddc97);
+}
+.sm-rail__pill--paused {
+  background: color-mix(in srgb, var(--wp-warning, #ffb454) 14%, transparent);
+  border-color: color-mix(in srgb, var(--wp-warning, #ffb454) 40%, transparent);
+  color: var(--wp-warning, #ffb454);
+}
+.sm-rail__pill--day {
+  background: color-mix(in srgb, var(--wp-accent, #F26522) 14%, transparent);
+  border-color: color-mix(in srgb, var(--wp-accent, #F26522) 38%, transparent);
+  color: var(--wp-accent, #F26522);
+}
+
+/* DNS dots */
+.sm-rail__dns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.sm-rail__dns-rec {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--wp-text-dim, #a1a1aa);
+}
+.sm-rail__dns-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+}
+.sm-rail__dns-dot--ok { background: var(--wp-success, #3ddc97); }
+.sm-rail__dns-dot--warn { background: var(--wp-warning, #ffb454); }
+.sm-rail__dns-dot--err { background: var(--wp-danger, #ff5c7a); }
+
+/* Action buttons */
+.sm-rail__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+.sm-rail__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 14px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid;
+  transition: background 160ms, border-color 160ms, color 160ms;
+}
+.sm-rail__btn--primary {
+  background: var(--wp-accent, #F26522);
+  border-color: var(--wp-accent, #F26522);
+  color: white;
+  box-shadow: 0 8px 18px -8px color-mix(in srgb, var(--wp-accent, #F26522) 60%, transparent);
+}
+.sm-rail__btn--primary:hover {
+  filter: brightness(1.1);
+}
+.sm-rail__btn--ghost {
+  background: transparent;
+  border-color: var(--wp-border, #2a2a3a);
+  color: var(--wp-text-dim, #a1a1aa);
+}
+.sm-rail__btn--ghost:hover {
+  border-color: color-mix(in srgb, var(--wp-accent, #F26522) 50%, var(--wp-border, #2a2a3a));
+  color: var(--wp-text, #f4f4f5);
+}
+.sm-rail__btn--danger {
+  background: transparent;
+  border-color: color-mix(in srgb, var(--wp-danger, #ff5c7a) 40%, transparent);
+  color: var(--wp-danger, #ff5c7a);
+}
+.sm-rail__btn--danger:hover {
+  background: color-mix(in srgb, var(--wp-danger, #ff5c7a) 12%, transparent);
+}
+
+/* ============================================================================
+   Right pane — tab bar + content
+============================================================================ */
+.sm-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.sm-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 14px;
+  border: 1px solid var(--wp-border, #2a2a3a);
+  background: color-mix(in srgb, var(--wp-surface, #12121a) 70%, transparent);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.sm-tabs::-webkit-scrollbar { display: none; }
+.sm-tab {
+  position: relative;
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  background: transparent;
+  border: none;
+  color: var(--wp-text-dim, #a1a1aa);
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  transition: color 150ms, background 150ms;
+}
+.sm-tab:hover {
+  color: var(--wp-text, #f4f4f5);
+  background: color-mix(in srgb, var(--wp-text, #f4f4f5) 4%, transparent);
+}
+.sm-tab--active {
+  color: white;
+  background: linear-gradient(180deg, var(--wp-accent, #F26522), color-mix(in srgb, var(--wp-accent, #F26522) 75%, var(--wp-accent-2, var(--wp-accent, #F26522))));
+  box-shadow: 0 4px 14px -4px color-mix(in srgb, var(--wp-accent, #F26522) 60%, transparent);
+}
+.sm-tab--active:hover {
+  background: linear-gradient(180deg, var(--wp-accent, #F26522), color-mix(in srgb, var(--wp-accent, #F26522) 75%, var(--wp-accent-2, var(--wp-accent, #F26522))));
+  color: white;
+}
+
+/* Tab panel — shared shell */
+.sm-panel {
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--wp-surface, #12121a) 78%, transparent);
+  border: 1px solid var(--wp-border, #2a2a3a);
+  padding: 20px 22px;
+}
+
+/* ---------- Overview tab ---------- */
+.sm-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.sm-overview__stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+@media (max-width: 720px) {
+  .sm-overview__stats { grid-template-columns: repeat(2, 1fr); }
+}
+.sm-overview__stat {
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--wp-surface, #12121a) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-text, #f4f4f5) 6%, transparent);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sm-overview__stat-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--wp-text-dim, #a1a1aa);
+}
+.sm-overview__stat-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  color: var(--wp-text, #f4f4f5);
+}
+.sm-overview__stat-foot {
+  font-size: 11px;
+  color: var(--wp-text-dim, #a1a1aa);
+}
+
+.sm-overview__bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sm-overview__bar-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.sm-overview__bar-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--wp-text-dim, #a1a1aa);
+}
+.sm-overview__bar-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: var(--wp-text, #f4f4f5);
+}
+.sm-overview__bar-track {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wp-text, #f4f4f5) 8%, transparent);
+  overflow: hidden;
+}
+.sm-overview__bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    var(--wp-accent, #F26522),
+    color-mix(in srgb, var(--wp-success, #3ddc97) 70%, var(--wp-accent, #F26522))
+  );
+}
+
+/* ---------- Schedule tab ---------- */
+.sm-schedule {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.sm-schedule__row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sm-schedule__label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--wp-text-dim, #a1a1aa);
+}
+.sm-schedule__hint {
+  font-size: 12px;
+  color: var(--wp-text-dim, #a1a1aa);
+}
+.sm-schedule__slider-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.sm-schedule__slider-wrap input[type='range'] {
+  flex: 1;
+  accent-color: var(--wp-accent, #F26522);
+}
+.sm-schedule__slider-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--wp-accent, #F26522);
+  min-width: 70px;
+  text-align: right;
+}
+
+/* ---------- DNS tab ---------- */
+.sm-dns {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.sm-dns__rec {
+  border-radius: 14px;
+  border: 1px solid var(--wp-border, #2a2a3a);
+  background: color-mix(in srgb, var(--wp-surface, #12121a) 80%, transparent);
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sm-dns__rec--ok { border-color: color-mix(in srgb, var(--wp-success, #3ddc97) 35%, var(--wp-border, #2a2a3a)); }
+.sm-dns__rec--warn { border-color: color-mix(in srgb, var(--wp-warning, #ffb454) 35%, var(--wp-border, #2a2a3a)); }
+.sm-dns__rec--err { border-color: color-mix(in srgb, var(--wp-danger, #ff5c7a) 35%, var(--wp-border, #2a2a3a)); }
+
+.sm-dns__rec-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 22px;
+}
+.sm-dns__rec-name {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1;
+}
+.sm-dns__rec-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 999px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.sm-dns__rec-state--ok {
+  background: color-mix(in srgb, var(--wp-success, #3ddc97) 18%, transparent);
+  color: var(--wp-success, #3ddc97);
+}
+.sm-dns__rec-state--warn {
+  background: color-mix(in srgb, var(--wp-warning, #ffb454) 18%, transparent);
+  color: var(--wp-warning, #ffb454);
+}
+.sm-dns__rec-state--err {
+  background: color-mix(in srgb, var(--wp-danger, #ff5c7a) 18%, transparent);
+  color: var(--wp-danger, #ff5c7a);
+}
+.sm-dns__rec-desc {
+  font-size: 12px;
+  color: var(--wp-text-dim, #a1a1aa);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ---------- Activity tab ---------- */
+.sm-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sm-activity__row {
+  display: grid;
+  grid-template-columns: 60px auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--wp-surface, #12121a) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wp-text, #f4f4f5) 6%, transparent);
+}
+.sm-activity__time {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--wp-text-faint, #71717a);
+}
+.sm-activity__action {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 6px;
+}
+.sm-activity__action--sent {
+  background: color-mix(in srgb, var(--wp-accent, #F26522) 18%, transparent);
+  color: var(--wp-accent, #F26522);
+}
+.sm-activity__action--opened {
+  background: color-mix(in srgb, var(--wp-success, #3ddc97) 18%, transparent);
+  color: var(--wp-success, #3ddc97);
+}
+.sm-activity__action--replied {
+  background: color-mix(in srgb, var(--wp-warning, #ffb454) 18%, transparent);
+  color: var(--wp-warning, #ffb454);
+}
+.sm-activity__action--starred {
+  background: color-mix(in srgb, #facc15 18%, transparent);
+  color: #facc15;
+}
+.sm-activity__action--spam_rescued {
+  background: color-mix(in srgb, var(--wp-danger, #ff5c7a) 18%, transparent);
+  color: var(--wp-danger, #ff5c7a);
+}
+.sm-activity__action--marked_important {
+  background: color-mix(in srgb, rgb(255, 150, 112) 18%, transparent);
+  color: rgb(255, 150, 112);
+}
+.sm-activity__peer {
+  font-size: 13px;
+  color: var(--wp-text, #f4f4f5);
+  word-break: break-all;
+}
+.sm-activity__direction {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--wp-text-faint, #71717a);
+  letter-spacing: 0.06em;
+}
+
+.sm-empty {
+  padding: 26px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--wp-text-dim, #a1a1aa);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--wp-surface, #12121a) 70%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--wp-text, #f4f4f5) 12%, transparent);
+}

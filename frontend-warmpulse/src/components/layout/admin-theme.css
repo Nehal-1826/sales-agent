@@ -1,0 +1,183 @@
+/* =============================================================================
+   Aurora Glass — admin design system tokens. Builds on the shared Shailog
+   orange brand tokens (var(--wp-*)). No purple/violet/blue/teal: the aurora
+   stays warm (orange family) + neutral dark, per the brand palette rule.
+============================================================================= */
+.admin-shell {
+  /* glass surfaces */
+  --ag-glass: rgba(255, 255, 255, 0.05);
+  --ag-glass-strong: rgba(255, 255, 255, 0.08);
+  --ag-border: rgba(255, 255, 255, 0.10);
+  --ag-border-strong: rgba(255, 255, 255, 0.16);
+  --ag-blur: blur(10px) saturate(160%);
+  /* text on glass */
+  --ag-text: #ffffff;
+  --ag-text-dim: rgba(255, 255, 255, 0.62);
+  --ag-text-faint: rgba(255, 255, 255, 0.42);
+  /* radii + elevation */
+  --ag-radius: 14px;
+  --ag-radius-lg: 18px;
+  --ag-shadow: 0 12px 32px rgba(0, 0, 0, 0.34);
+  /* rail widths */
+  --ag-rail-w: 212px;
+  --ag-rail-w-collapsed: 64px;
+}
+
+/* Light theme — these glass/text tokens were white-on-white otherwise. Flip
+   the glass to dark-on-light tints and the text to the dark theme tokens so
+   any .ag-* surface (panels, rail, stat cards) is readable in light mode. */
+:root[data-theme='light'] .admin-shell {
+  --ag-glass: rgba(26, 13, 5, 0.04);
+  --ag-glass-strong: rgba(26, 13, 5, 0.07);
+  --ag-border: rgba(26, 13, 5, 0.12);
+  --ag-border-strong: rgba(26, 13, 5, 0.20);
+  --ag-text: #1c0f06;
+  --ag-text-dim: rgba(28, 15, 6, 0.70);
+  --ag-text-faint: rgba(28, 15, 6, 0.48);
+  --ag-shadow: 0 12px 32px rgba(120, 60, 20, 0.14);
+}
+
+/* Reusable glass panel */
+.ag-panel {
+  background: var(--ag-glass);
+  border: 1px solid var(--ag-border);
+  backdrop-filter: var(--ag-blur);
+  -webkit-backdrop-filter: var(--ag-blur);
+  border-radius: var(--ag-radius);
+}
+
+/* Primary + ghost + danger buttons (class-driven so primitives stay self-contained) */
+.ag-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600; line-height: 1;
+  padding: 8px 14px; border-radius: 10px; cursor: pointer;
+  border: 1px solid transparent; text-decoration: none; white-space: nowrap;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+.ag-btn--primary {
+  color: #fff;
+  background: linear-gradient(135deg, var(--wp-accent), var(--wp-accent-2, #FF8A4B));
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--wp-accent) 35%, transparent);
+}
+.ag-btn--primary:hover { transform: translateY(-1px); }
+.ag-btn--ghost {
+  color: var(--ag-text-dim);
+  background: var(--ag-glass);
+  border-color: var(--ag-border);
+}
+.ag-btn--ghost:hover { color: var(--ag-text); border-color: var(--ag-border-strong); }
+.ag-btn--danger {
+  color: var(--wp-danger, #ff5c7a);
+  background: color-mix(in srgb, var(--wp-danger, #ff5c7a) 12%, transparent);
+  border-color: color-mix(in srgb, var(--wp-danger, #ff5c7a) 35%, transparent);
+}
+
+/* Glass search input */
+.ag-search {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: var(--ag-glass); border: 1px solid var(--ag-border);
+  border-radius: 10px; padding: 7px 11px; color: var(--ag-text-faint);
+}
+.ag-search input {
+  background: transparent; border: 0; outline: 0; color: var(--ag-text);
+  font-size: 12px; width: 160px;
+}
+.ag-search input::placeholder { color: var(--ag-text-faint); }
+
+/* ---------- AdminRail ---------- */
+.ag-rail {
+  position: fixed; top: 14px; bottom: 14px; left: 14px; z-index: 20;
+  width: var(--ag-rail-w);
+  display: flex; flex-direction: column; padding: 14px 10px;
+  background: var(--ag-glass); border: 1px solid var(--ag-border);
+  backdrop-filter: var(--ag-blur); -webkit-backdrop-filter: var(--ag-blur);
+  border-radius: var(--ag-radius-lg); box-shadow: var(--ag-shadow);
+  transition: width 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.ag-rail--collapsed { width: var(--ag-rail-w-collapsed); }
+.ag-rail__top { display: flex; align-items: center; justify-content: space-between; padding: 0 4px 10px; }
+.ag-rail__brand { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; color: var(--ag-text); }
+.ag-rail__brand-mark { width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(135deg, var(--wp-accent), var(--wp-accent-2, #FF8A4B)); flex-shrink: 0; }
+.ag-rail__brand-name { font-weight: 700; font-size: 13px; }
+.ag-rail--collapsed .ag-rail__brand-name { display: none; }
+.ag-rail__toggle { appearance: none; background: transparent; border: 0; color: var(--ag-text-faint); cursor: pointer; padding: 4px; border-radius: 7px; }
+.ag-rail__toggle:hover { color: var(--ag-text); background: var(--ag-glass-strong); }
+.ag-rail__nav { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; display: flex; flex-direction: column; gap: 2px; }
+.ag-rail__nav::-webkit-scrollbar { display: none; }
+.ag-rail__group { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: var(--ag-text-faint); padding: 12px 8px 4px; }
+.ag-rail--collapsed .ag-rail__group { text-align: center; padding: 10px 0 4px; opacity: 0.5; }
+.ag-rail__item {
+  position: relative; display: flex; align-items: center; gap: 10px;
+  padding: 8px; border-radius: 9px; color: var(--ag-text-dim);
+  text-decoration: none; font-size: 12.5px; transition: background 160ms ease, color 160ms ease;
+}
+.ag-rail__item:hover { color: var(--ag-text); background: var(--ag-glass-strong); }
+.ag-rail__item--active {
+  color: #fff; font-weight: 600;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--wp-accent) 28%, transparent), transparent);
+  box-shadow: inset 2px 0 0 var(--wp-accent);
+}
+.ag-rail__item svg { flex-shrink: 0; }
+.ag-rail--collapsed .ag-rail__label { display: none; }
+.ag-rail--collapsed .ag-rail__item { justify-content: center; }
+.ag-rail__badge { margin-left: auto; font-size: 8px; background: color-mix(in srgb, var(--wp-accent) 25%, transparent); color: var(--wp-accent-2, #FF8A4B); padding: 1px 6px; border-radius: 6px; }
+.ag-rail--collapsed .ag-rail__badge { display: none; }
+.ag-rail__tip { position: absolute; left: calc(100% + 10px); top: 50%; transform: translateY(-50%); white-space: nowrap; padding: 5px 9px; border-radius: 8px; background: rgba(20,18,28,0.95); border: 1px solid var(--ag-border); font-size: 11px; opacity: 0; pointer-events: none; transition: opacity 140ms ease; z-index: 30; }
+.ag-rail:not(.ag-rail--collapsed) .ag-rail__tip { display: none; }
+.ag-rail--collapsed .ag-rail__item:hover .ag-rail__tip { opacity: 1; }
+.ag-rail__footer { display: flex; align-items: center; gap: 8px; padding-top: 10px; border-top: 1px solid var(--ag-border); }
+.ag-rail__avatar { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; background: color-mix(in srgb, var(--wp-accent) 22%, transparent); border: 1px solid color-mix(in srgb, var(--wp-accent) 40%, transparent); color: var(--wp-accent); display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; }
+.ag-rail__identity { min-width: 0; font-size: 11px; color: var(--ag-text-dim); line-height: 1.2; overflow: hidden; }
+.ag-rail--collapsed .ag-rail__identity, .ag-rail--collapsed .ag-rail__logout-label { display: none; }
+.ag-rail__logout { margin-left: auto; appearance: none; background: transparent; border: 0; color: var(--ag-text-faint); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; }
+.ag-rail__logout:hover { color: var(--wp-danger, #ff5c7a); }
+
+/* ---------- AdminPageHeader ---------- */
+.ag-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
+.ag-header__title { font-size: 22px; font-weight: 700; letter-spacing: -0.2px; margin: 0; }
+.ag-header__sub { font-size: 12.5px; color: var(--ag-text-dim); margin: 3px 0 0; }
+.ag-header__actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* ---------- AdminStatCard ---------- */
+.ag-stat { background: var(--ag-glass); border: 1px solid var(--ag-border); border-radius: var(--ag-radius); padding: 13px 15px; }
+.ag-stat__label { font-size: 9px; letter-spacing: 0.8px; text-transform: uppercase; color: var(--ag-text-faint); }
+.ag-stat__value { font-size: 24px; font-weight: 700; margin-top: 4px; }
+.ag-stat__delta { font-size: 10px; margin-top: 3px; display: inline-flex; align-items: center; gap: 4px; }
+.ag-stat__delta--up { color: var(--wp-success, #3ddc97); }
+.ag-stat__delta--down { color: var(--wp-accent-2, #FF8A4B); }
+.ag-stat__spark { margin-top: 5px; width: 100%; height: 22px; display: block; }
+
+/* ---------- StatusPill / Chip / MeterBar ---------- */
+.ag-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; }
+.ag-pill__dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.ag-pill--ok { color: var(--wp-success, #3ddc97); }
+.ag-pill--warn { color: var(--wp-accent-2, #FF8A4B); }
+.ag-pill--danger { color: var(--wp-danger, #ff5c7a); }
+.ag-pill--neutral { color: var(--ag-text-faint); }
+.ag-chip { font-size: 9px; padding: 2px 8px; border-radius: 6px; background: var(--ag-glass-strong); color: var(--ag-text-dim); }
+.ag-chip--accent { background: color-mix(in srgb, var(--wp-accent) 18%, transparent); color: var(--wp-accent-2, #FF8A4B); }
+.ag-meter { display: flex; align-items: center; gap: 6px; }
+.ag-meter__track { flex: 1; height: 5px; background: rgba(255,255,255,0.12); border-radius: 3px; overflow: hidden; }
+.ag-meter__fill { height: 100%; border-radius: 3px; }
+.ag-meter__val { font-size: 9px; color: var(--ag-text-dim); min-width: 18px; text-align: right; }
+
+/* ---------- AdminDataTable ---------- */
+.ag-table { background: var(--ag-glass); border: 1px solid var(--ag-border); border-radius: var(--ag-radius); overflow: hidden; }
+.ag-table__row { display: grid; gap: 8px; padding: 11px 16px; align-items: center; font-size: 11.5px; }
+.ag-table__row + .ag-table__row { border-top: 1px solid rgba(255,255,255,0.05); }
+.ag-table__row--head { font-size: 9px; letter-spacing: 0.7px; text-transform: uppercase; color: var(--ag-text-faint); border-bottom: 1px solid var(--ag-border); }
+.ag-table__row--click { cursor: pointer; }
+.ag-table__row--click:hover { background: var(--ag-glass-strong); }
+.ag-table__row--active { background: color-mix(in srgb, var(--wp-accent) 7%, transparent); }
+.ag-table__state { padding: 32px 16px; text-align: center; color: var(--ag-text-faint); font-size: 12px; }
+
+/* ---------- AdminDetailDrawer ---------- */
+.ag-drawer__scrim { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 40; }
+.ag-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 360px; max-width: 92vw; z-index: 41;
+  background: rgba(14,12,22,0.92); border-left: 1px solid var(--ag-border-strong);
+  backdrop-filter: blur(16px); box-shadow: -20px 0 50px rgba(0,0,0,0.45);
+  padding: 18px; display: flex; flex-direction: column; overflow-y: auto; }
+.ag-drawer__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.ag-drawer__eyebrow { font-size: 9px; letter-spacing: 0.8px; text-transform: uppercase; color: var(--ag-text-faint); }
+.ag-drawer__close { appearance: none; border: 0; width: 24px; height: 24px; border-radius: 7px; background: var(--ag-glass-strong); color: var(--ag-text-dim); cursor: pointer; }
+.ag-drawer__footer { display: flex; gap: 8px; margin-top: 16px; }

@@ -637,11 +637,24 @@ def chat(request):
     })
 
 
-@api_view(['GET'])
+@api_view(['GET', 'PATCH'])
 def onboarding(request):
-    """Setup-wizard state for THIS user (banner, redirect, progress)."""
+    """Setup-wizard state for THIS user (banner, redirect, progress).
+
+    PATCH {'tourDone': bool} marks the first-login UI product tour done
+    (finished or skipped) so it never re-opens for this user. It rides in
+    User.onboarding['tour_done'] — a separate key the chat wizard never
+    touches (its writes load the whole dict and only update their own keys).
+    """
+    if request.method == 'PATCH' and 'tourDone' in request.data:
+        state = dict(getattr(request.user, 'onboarding', None) or {})
+        state['tour_done'] = bool(request.data.get('tourDone'))
+        request.user.onboarding = state
+        request.user.save(update_fields=['onboarding'])
     from .onboarding import onboarding_status
-    return Response(onboarding_status(request.user, AppSettings.load()))
+    data = onboarding_status(request.user, AppSettings.load())
+    data['tourDone'] = bool((getattr(request.user, 'onboarding', None) or {}).get('tour_done'))
+    return Response(data)
 
 
 # ------------------------------------------------------------------

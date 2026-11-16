@@ -247,6 +247,47 @@ class OnboardingChatApiTests(TenantTestCase):
         self.assertTrue(resp.json()['needed'])
 
 
+class TourFlagApiTests(TenantTestCase):
+    """First-login UI tour flag — PATCH /api/onboarding/ {'tourDone': bool}."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='tourist', password='testpass1234', role=User.Roles.OWNER)
+        self.token = Token.objects.create(user=self.user)
+        self.client = APIClient()
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token.key}')
+
+    def test_fresh_user_tour_not_done(self):
+        resp = self.client.get('/api/onboarding/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(resp.json()['tourDone'])
+
+    def test_patch_marks_tour_done_once(self):
+        resp = self.client.patch('/api/onboarding/', {'tourDone': True}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()['tourDone'])
+        # persists for THIS user across requests — the tour never re-opens
+        self.assertTrue(self.client.get('/api/onboarding/').json()['tourDone'])
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.onboarding['tour_done'])
+
+    def test_patch_survives_wizard_writes(self):
+        """The chat wizard rewrites User.onboarding with its own keys — the
+        separate tour_done key must survive those saves."""
+        from core.onboarding import _save_state
+        self.client.patch('/api/onboarding/', {'tourDone': True}, format='json')
+        self.user.refresh_from_db()   # the API wrote via its own user instance
+        _save_state(self.user, done=True)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.onboarding.get('tour_done'))
+        self.assertTrue(self.client.get('/api/onboarding/').json()['tourDone'])
+
+    def test_patch_can_reset_tour(self):
+        self.client.patch('/api/onboarding/', {'tourDone': True}, format='json')
+        resp = self.client.patch('/api/onboarding/', {'tourDone': False}, format='json')
+        self.assertFalse(resp.json()['tourDone'])
+
+
 class SwitchProfileActionTests(TenantTestCase):
     workspace_slug = 'shailog'  # relies on rows the data migrations seeded
     def test_regex_detects_switch(self):

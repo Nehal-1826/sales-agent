@@ -2682,6 +2682,136 @@ input[type='radio'] {
 }
 
 /* ================================================================
+   FIRST-LOGIN TUTOR — spotlight card, bottom-right, above the help
+   fab. No overlay/dimming: the card is the only hit target, clicks
+   outside pass through to the page underneath.
+   ================================================================ */
+
+.guide-resume {
+  white-space: nowrap;
+}
+
+.tutor-card {
+  position: fixed;
+  right: 22px;
+  bottom: 84px; /* clears the 48px help fab + its margins */
+  z-index: 61;
+  width: min(360px, calc(100vw - 28px));
+  padding: 0;
+  box-shadow: var(--shadow-lg);
+  animation: tutor-rise 0.25s ease-out;
+}
+
+@keyframes tutor-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tutor-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.tutor-kicker {
+  flex: 1;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+}
+
+.tutor-progress {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.tutor-close {
+  width: 28px;
+  height: 28px;
+  font-size: 18px;
+}
+
+.tutor-body {
+  padding: 12px 14px 6px;
+}
+
+.tutor-title {
+  display: block;
+  font-size: 15px;
+  margin-bottom: 6px;
+}
+
+.tutor-body p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.tutor-showme {
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+.tutor-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px 12px;
+}
+
+.tutor-dots {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+
+.tutor-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--border);
+  transition: background 0.15s ease;
+}
+
+.tutor-dot.seen {
+  background: var(--accent-border);
+}
+
+.tutor-dot.active {
+  background: var(--accent);
+}
+
+.tutor-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tutor-skip {
+  margin-right: auto;
+}
+
+@media (max-width: 640px) {
+  .tutor-card {
+    right: 14px;
+    bottom: 76px; /* mobile help fab sits at 14px + safe-area */
+  }
+}
+
+/* ================================================================
    SETTINGS
    ================================================================ */
 

@@ -3,6 +3,7 @@ import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import LatticeLoader from './components/reactbits/LatticeLoader';
 import { GuideWidget } from './components/GuideWidget';
+import { Tutor } from './components/Tutor';
 import { Banner, Toaster, toast } from './components/feedback';
 import { HomePage } from './pages/HomePage';
 import { ApprovalsPage } from './pages/ApprovalsPage';
@@ -292,6 +293,7 @@ function Shell({ demo, onSignOut }: { demo: boolean; onSignOut: () => void }) {
         </main>
       </div>
       {page !== 'assistant' && <GuideWidget />}
+      <Tutor />
       <Toaster />
     </div>
   );

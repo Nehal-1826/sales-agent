@@ -637,11 +637,24 @@ def chat(request):
     })
 
 
-@api_view(['GET'])
+@api_view(['GET', 'PATCH'])
 def onboarding(request):
-    """Setup-wizard state for THIS user (banner, redirect, progress)."""
+    """Setup-wizard state for THIS user (banner, redirect, progress).
+
+    PATCH {'tourDone': bool} marks the first-login UI product tour done
+    (finished or skipped) so it never re-opens for this user. It rides in
+    User.onboarding['tour_done'] — a separate key the chat wizard never
+    touches (its writes load the whole dict and only update their own keys).
+    """
+    if request.method == 'PATCH' and 'tourDone' in request.data:
+        state = dict(getattr(request.user, 'onboarding', None) or {})
+        state['tour_done'] = bool(request.data.get('tourDone'))
+        request.user.onboarding = state
+        request.user.save(update_fields=['onboarding'])
     from .onboarding import onboarding_status
-    return Response(onboarding_status(request.user, AppSettings.load()))
+    data = onboarding_status(request.user, AppSettings.load())
+    data['tourDone'] = bool((getattr(request.user, 'onboarding', None) or {}).get('tour_done'))
+    return Response(data)
 
 
 # ------------------------------------------------------------------
@@ -1024,6 +1037,116 @@ def warmpulse_sync(request):
         return Response({'ok': False, 'message': 'Could not reach WarmPulse with that key.'
                          if warmpulse.enabled() else 'Add a WarmPulse API key first.'})
     return Response({'ok': True, 'matched': matched})
+
+
+# ------------------------------------------------------------------
+# WEBMAIL — read/send the connected mailboxes (core.webmail)
+# ------------------------------------------------------------------
+
+@api_view(['GET'])
+@permission_classes([IsWorkspaceAdmin])
+def webmail_accounts(request):
+    """One row per configured() Mailbox with its INBOX unread count.
+    An unreachable account degrades to unread=null — the list never 500s."""
+    from . import webmail
+    return Response(webmail.list_accounts())
+
+
+@api_view(['GET'])
+@permission_classes([IsWorkspaceAdmin])
+def webmail_folders(request, mailbox_id):
+    from . import webmail
+    mb = _get_mailbox(mailbox_id)
+    if mb is None:
+        return Response({'detail': 'mailbox not found'}, status=404)
+    try:
+        return Response(webmail.folder_overview(mb))
+    except webmail.WebmailError as exc:
+        return Response({'detail': str(exc)}, status=502)
+
+
+@api_view(['GET'])
+@permission_classes([IsWorkspaceAdmin])
+def webmail_messages(request, mailbox_id):
+    """Envelope page (?folder=INBOX&page=1&query=) — BODY.PEEK, read-only."""
+    from . import webmail
+    mb = _get_mailbox(mailbox_id)
+    if mb is None:
+        return Response({'detail': 'mailbox not found'}, status=404)
+    try:
+        result = webmail.list_messages(mb, folder=request.query_params.get('folder') or 'INBOX',
+                                       page=request.query_params.get('page') or 1,
+                                       query=request.query_params.get('query') or '')
+    except webmail.WebmailError as exc:
+        return Response({'detail': str(exc)}, status=502)
+    return Response(result)
+
+
+@api_view(['GET'])
+@permission_classes([IsWorkspaceAdmin])
+def webmail_message(request, mailbox_id):
+    """Full message (?folder=&uid=) — the BODY[] fetch sets \\Seen."""
+    from . import webmail
+    mb = _get_mailbox(mailbox_id)
+    if mb is None:
+        return Response({'detail': 'mailbox not found'}, status=404)
+    uid = request.query_params.get('uid')
+    # isdigit() alone accepts unicode digits ("²") that int() then rejects
+    if not uid or not (str(uid).isascii() and str(uid).isdigit()):
+        return Response({'detail': 'A numeric ?uid= is required.'}, status=400)
+    try:
+        return Response(webmail.get_message(
+            mb, folder=request.query_params.get('folder') or 'INBOX', uid=int(uid)))
+    except webmail.WebmailError as exc:
+        return Response({'detail': str(exc)}, status=502)
+
+
+@api_view(['POST'])
+@permission_classes([IsWorkspaceAdmin])
+def webmail_send(request, mailbox_id):
+    """Send from one connected mailbox ({to, subject, body_html, in_reply_to?})
+    over the mailer SMTP helpers; the Sent-folder APPEND is best-effort."""
+    from . import webmail
+    mb = _get_mailbox(mailbox_id)
+    if mb is None:
+        return Response({'detail': 'mailbox not found'}, status=404)
+    to = (request.data.get('to') or '').strip()
+    if not valid_recipient(to):
+        return Response({'detail': NO_RECIPIENT_ERROR}, status=400)
+    try:
+        result = webmail.send_message(mb, to=to, subject=request.data.get('subject') or '',
+                                      body_html=request.data.get('body_html') or '',
+                                      in_reply_to=request.data.get('in_reply_to') or '')
+    except webmail.WebmailError as exc:
+        return Response({'detail': str(exc)}, status=502)
+    except Exception as exc:  # SMTP-level failure — typed detail, never a 500
+        return Response({'detail': f'Send failed ({exc.__class__.__name__}).'}, status=502)
+    return Response(result)
+
+
+@api_view(['POST'])
+@permission_classes([IsWorkspaceAdmin])
+def webmail_mark(request, mailbox_id):
+    """{folder, uids[], action: seen|unread|flagged|trash} → {ok: count}."""
+    from . import webmail
+    mb = _get_mailbox(mailbox_id)
+    if mb is None:
+        return Response({'detail': 'mailbox not found'}, status=404)
+    action = request.data.get('action')
+    uids = request.data.get('uids')
+    if action not in ('seen', 'unread', 'flagged', 'trash'):
+        return Response({'detail': 'action must be one of seen, unread, flagged, trash.'},
+                        status=400)
+    if not isinstance(uids, list) or not uids:
+        return Response({'detail': 'uids must be a non-empty list.'}, status=400)
+    try:
+        result = webmail.mark_messages(mb, folder=request.data.get('folder') or 'INBOX',
+                                       uids=uids, action=action)
+    except webmail.WebmailError as exc:
+        return Response({'detail': str(exc)}, status=502)
+    except ValueError as exc:
+        return Response({'detail': str(exc)}, status=400)
+    return Response(result)
 
 
 # ------------------------------------------------------------------

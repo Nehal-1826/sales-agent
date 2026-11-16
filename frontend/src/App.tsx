@@ -4,6 +4,7 @@ import { TopBar } from './components/TopBar';
 import { GlassBackdrop } from './components/Lightfall';
 import LatticeLoader from './components/reactbits/LatticeLoader';
 import { GuideWidget } from './components/GuideWidget';
+import { Tutor } from './components/Tutor';
 import { Banner, Toaster, toast } from './components/feedback';
 import { HomePage } from './pages/HomePage';
 import { ApprovalsPage } from './pages/ApprovalsPage';
@@ -13,6 +14,7 @@ import { LeadsPage } from './pages/LeadsPage';
 import { ActivityPage } from './pages/ActivityPage';
 import { ChatPage } from './pages/ChatPage';
 import { WarmupPage } from './pages/WarmupPage';
+import { MailPage } from './pages/MailPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { LoginPage } from './pages/LoginPage';
 import { SignupPage } from './pages/SignupPage';
@@ -292,10 +294,12 @@ function Shell({ demo, onSignOut }: { demo: boolean; onSignOut: () => void }) {
           {page === 'activity' && <ActivityPage />}
           {page === 'assistant' && <ChatPage />}
           {page === 'warmup' && <WarmupPage />}
+          {page === 'mail' && <MailPage />}
           {page === 'settings' && <SettingsPage section={sub} />}
         </main>
       </div>
       {page !== 'assistant' && <GuideWidget />}
+      <Tutor />
       <Toaster />
     </div>
   );

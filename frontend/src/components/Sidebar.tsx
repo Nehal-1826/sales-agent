@@ -17,6 +17,7 @@ const NAV: { key: PageKey; label: string; icon: (p: IconProps) => JSX.Element }[
   { key: 'activity', label: 'Activity', icon: IconPulse },
   { key: 'assistant', label: 'Assistant', icon: IconBot },
   { key: 'warmup', label: 'Warmup', icon: IconFlame },
+  { key: 'mail', label: 'Mail', icon: IconMail },
   { key: 'settings', label: 'Settings', icon: IconSettings },
 ];
 

@@ -11,6 +11,7 @@ const TITLES: Record<PageKey, string> = {
   activity: 'Activity',
   assistant: 'Assistant',
   warmup: 'Warmup',
+  mail: 'Mailbox',
   settings: 'Settings',
 };
 

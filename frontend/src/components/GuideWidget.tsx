@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { askGuide } from '../lib/api';
+import { resumeTour } from '../lib/tutor';
 import { AnimatedList } from './AnimatedList';
 import { IconBot, IconSend, IconSpark } from './icons';
 import { Strands } from './Strands';
@@ -116,6 +117,9 @@ export function GuideWidget() {
               <strong>Help</strong>
               <small>Ask how to do anything in the app</small>
             </div>
+            <button type="button" className="link-btn guide-resume" onClick={() => { resumeTour(); setOpen(false); }}>
+              Resume tour
+            </button>
             <button className="icon-btn guide-close" onClick={() => setOpen(false)} aria-label="Close help">
               ×
             </button>

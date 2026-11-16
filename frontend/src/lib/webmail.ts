@@ -36,7 +36,12 @@ export interface WebmailAccount {
   email: string;
   provider: string;
   is_primary: boolean;
-  unread: number;
+  /** null when the account can't be reached (unread count unknown). */
+  unread: number | null;
+  /** G1's purpose-built degrade signal — chip this account in the switcher. */
+  unreachable?: boolean;
+  /** why the account is unreachable, when the server says so. */
+  error?: string;
 }
 
 export interface WebmailFolder {
@@ -64,20 +69,23 @@ export interface WebmailMessageList {
 export interface WebmailMessageDetail {
   uid: number;
   from: string;
-  to: string;
+  /** server sends an array of recipient addresses */
+  to: string[];
   subject: string;
   date: string;
   html: string | null;
   text: string;
   seen: boolean;
+  /** the real Message-ID header — replies thread on this, NEVER the uid. */
+  message_id: string | null;
 }
 
 export interface WebmailSendInput {
   to: string;
   subject: string;
   body_html: string;
-  /** uid of the message being answered, when this is a reply */
-  in_reply_to?: number;
+  /** Message-ID of the message being answered (optional string) — omit for new threads. */
+  in_reply_to?: string;
 }
 
 export type WebmailMarkAction = 'seen' | 'unread' | 'flagged' | 'trash';
@@ -85,8 +93,8 @@ export type WebmailMarkAction = 'seen' | 'unread' | 'flagged' | 'trash';
 /** mark/ reply — per-uid counts; `failed > 0` means a partial failure. */
 export interface WebmailMarkResult {
   ok: number;
-  failed: number;
-  expunged: number;
+  failed?: number;
+  expunged?: number;
 }
 
 const DEMO_ONLY = 'This is the offline demo. Connect your workspace to do that.';
@@ -169,8 +177,19 @@ type MockStore = Record<number, Partial<Record<WebmailFolderName, MockMessage[]>
 
 const minsAgo = (m: number): string => new Date(Date.now() - m * 60_000).toISOString();
 
+/** literals are written compactly (single `to`, optional message_id) — wire()
+ *  lifts them onto the real shapes: `to` array + Message-ID header. */
+type RawMockMessage = Omit<MockMessage, 'to' | 'message_id'> & { to: string; message_id?: string | null };
+
+const wire = (list: RawMockMessage[]): MockMessage[] =>
+  list.map((m) => ({
+    ...m,
+    to: [m.to],
+    message_id: m.message_id ?? `<${m.uid}.mock@shailog.tech>`,
+  }));
+
 function buildMockStore(): MockStore {
-  const inbox: MockMessage[] = [
+  const inbox: RawMockMessage[] = [
     {
       uid: 108, from: 'notifications@stripe.com', to: 'admin@shailog.tech',
       subject: 'Your payout of $1,240.00 has been scheduled',
@@ -180,7 +199,7 @@ function buildMockStore(): MockStore {
       text: 'Hello Shailog Tech,\n\nYour payout of $1,240.00 is scheduled and expected in your account on Friday. It covers 14 charges from the last 7 days.\n\n— The Stripe team',
     },
     {
-      uid: 107, from: 'priya@indiefounders.in', to: 'admin@shailog.tech',
+      uid: 107, from: 'priya@indiefounders.in', to: 'admin@shailog.tech', message_id: null,
       subject: 'Invoice for November — design retainer',
       date: minsAgo(95), seen: true, flagged: false,
       snippet: 'Attaching this month\'s invoice for the landing page retainer. Same PO number as…',
@@ -236,7 +255,7 @@ function buildMockStore(): MockStore {
       text: "Not buying today, but the audit-first angle is the best pitch I've gotten this quarter. Ping me in Q1.",
     },
   ];
-  const sent: MockMessage[] = [
+  const sent: RawMockMessage[] = [
     {
       uid: 93, from: 'admin@shailog.tech', to: 'maria@brightlabs.io',
       subject: 'Re: Warmup partnership — intro',
@@ -262,7 +281,7 @@ function buildMockStore(): MockStore {
       text: 'Two landing pages + the warmup onboarding flow, same rate.',
     },
   ];
-  const drafts: MockMessage[] = [
+  const drafts: RawMockMessage[] = [
     {
       uid: 90, from: 'admin@shailog.tech', to: 'kiran@newstartup.io',
       subject: 'Your site audit — 3 quick fixes',
@@ -272,7 +291,7 @@ function buildMockStore(): MockStore {
       text: 'Ran your site through our audit — the mobile menu fails on iOS and the hero takes 6s on 4G. Three fixes attached; want the full report?',
     },
   ];
-  const junk: MockMessage[] = [
+  const junk: RawMockMessage[] = [
     {
       uid: 89, from: 'winner@lottery-intl.biz', to: 'admin@shailog.tech',
       subject: 'CLAIM YOUR PRIZE NOW',
@@ -290,7 +309,7 @@ function buildMockStore(): MockStore {
       text: 'Guaranteed first page or money back.',
     },
   ];
-  const trash: MockMessage[] = [
+  const trash: RawMockMessage[] = [
     {
       uid: 87, from: 'noreply@oldsaas.io', to: 'admin@shailog.tech',
       subject: 'Your trial has ended',
@@ -301,11 +320,11 @@ function buildMockStore(): MockStore {
     },
   ];
   return {
-    1: { INBOX: inbox, Sent: sent, Drafts: drafts, Junk: junk, Trash: trash },
+    1: { INBOX: wire(inbox), Sent: wire(sent), Drafts: wire(drafts), Junk: wire(junk), Trash: wire(trash) },
     2: {
-      INBOX: [inbox[2], inbox[6]].map((m, i) => ({
+      INBOX: wire([inbox[2], inbox[6]].map((m, i) => ({
         ...m, uid: 200 + i, to: 'devesh@shailog.tech', flagged: false, seen: i === 0 ? false : true,
-      })),
+      }))),
       Sent: [], Drafts: [], Junk: [], Trash: [],
     },
     // account 3 stays empty — its folder/message calls fail (degraded chip)
@@ -327,7 +346,11 @@ function mockAccounts(): WebmailAccount[] {
   return [
     { id: 1, email: 'admin@shailog.tech', provider: 'imap', is_primary: true, unread: unread(1) },
     { id: 2, email: 'devesh@shailog.tech', provider: 'gmail', is_primary: false, unread: unread(2) },
-    { id: 3, email: 'hello@warmpulse.app', provider: 'outlook', is_primary: false, unread: 0 },
+    {
+      id: 3, email: 'hello@warmpulse.app', provider: 'outlook', is_primary: false,
+      unread: null, unreachable: true,
+      error: 'IMAP login failed — check the mailbox password in Settings.',
+    },
   ];
 }
 
@@ -350,7 +373,7 @@ function mockMessages(
   const q = query.trim().toLowerCase();
   const hits = q
     ? all.filter((m) =>
-        [m.from, m.to, m.subject, m.snippet].some((f) => f.toLowerCase().includes(q)),
+        [m.from, ...m.to, m.subject, m.snippet].some((f) => f.toLowerCase().includes(q)),
       )
     : all;
   return {
@@ -369,6 +392,7 @@ function mockDetail(accountId: number, folder: WebmailFolderName, uid: number): 
   return {
     uid: msg.uid, from: msg.from, to: msg.to, subject: msg.subject,
     date: msg.date, html: msg.html, text: msg.text, seen: msg.seen,
+    message_id: msg.message_id,
   };
 }
 
@@ -378,8 +402,8 @@ function mockSend(accountId: number, input: WebmailSendInput): Result<unknown> {
   sent.push({
     uid: Date.now() % 100000,
     from: mockAccounts().find((a) => a.id === accountId)?.email ?? 'me',
-    to: input.to, subject: input.subject, date: new Date().toISOString(),
-    seen: true, flagged: false,
+    to: [input.to], subject: input.subject, date: new Date().toISOString(),
+    seen: true, flagged: false, message_id: null,
     snippet: input.body_html.replace(/<[^>]+>/g, ' ').slice(0, 90),
     html: input.body_html,
     text: input.body_html.replace(/<[^>]+>/g, ' '),

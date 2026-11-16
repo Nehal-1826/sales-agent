@@ -124,10 +124,13 @@ export function MailPage() {
     return markWebmail(accountId, folderName, uids, action).then((res) => {
       if (!res.ok) {
         toast.error(res.error);
-      } else if (res.data.failed > 0) {
-        toast.warn(
-          `Only ${res.data.ok} of ${res.data.ok + res.data.failed} message${res.data.ok + res.data.failed === 1 ? '' : 's'} updated — the mailbox may be reconnecting.`,
-        );
+      } else {
+        const failed = res.data.failed ?? 0;
+        if (failed > 0) {
+          toast.warn(
+            `Only ${res.data.ok} of ${res.data.ok + failed} message${res.data.ok + failed === 1 ? '' : 's'} updated — the mailbox may be reconnecting.`,
+          );
+        }
       }
       refreshCounts();
     });
@@ -150,9 +153,10 @@ export function MailPage() {
     setSelected(null);
   };
 
-  const openMessage = (uid: number, unseen: boolean) => {
+  const openMessage = (uid: number) => {
+    // no mark-seen here: the detail fetch (BODY[]) already sets \Seen
+    // server-side — one fewer IMAP round-trip per open
     setSelected({ uid, folder });
-    if (unseen) void runMark(folder, [uid], 'seen');
   };
 
   const toggleFlag = (msg: WebmailMessageSummary) => {
@@ -182,7 +186,9 @@ export function MailPage() {
       to: d.from,
       subject: replySubject(d.subject || ''),
       body: replyQuote(d.from, d.date, d.text || d.subject || ''),
-      inReplyTo: d.uid,
+      // thread on the real Message-ID header — NEVER the uid (an int here
+      // crashes the backend header builder); null → omit, sends a new thread
+      ...(d.message_id !== null ? { inReplyTo: d.message_id } : {}),
     });
   };
 

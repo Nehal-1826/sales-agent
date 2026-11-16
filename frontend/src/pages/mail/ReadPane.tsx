@@ -3,12 +3,15 @@ import type { WebmailMessageDetail } from '../../lib/webmail';
 import { fullDate } from './helpers';
 
 /** The reading pane — rendered HTML goes through a sandboxed iframe (same
- *  approach as ReportPanel: sandbox="" kills scripts, styles and links to
- *  the app origin); plain-text messages render pre-wrapped. */
+ *  approach as ReportPanel: sandbox="" kills scripts and app-origin access).
+ *  A CSP meta also blocks remote images: tracking pixels never auto-load.
+ *  Plain-text messages render pre-wrapped. */
 function MessageBody({ detail }: { detail: WebmailMessageDetail }) {
   if (detail.html) {
     const doc =
-      '<!doctype html><html><head><meta charset="utf-8"><style>' +
+      '<!doctype html><html><head><meta charset="utf-8">' +
+      '<meta http-equiv="Content-Security-Policy" content="img-src \'none\'; style-src \'unsafe-inline\'">' +
+      '<style>' +
       'body{margin:0;padding:18px;background:#fff;color:#1f1b16;' +
       'font:14px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;}' +
       'img{max-width:100%;height:auto}a{color:#c2410c}table{max-width:100%}' +
@@ -70,7 +73,7 @@ export function ReadPane({
             <div className="wm-read-title">
               <h2>{detail.subject || '(no subject)'}</h2>
               <p>
-                <strong>{detail.from}</strong> → {detail.to} · {fullDate(detail.date)}
+                <strong>{detail.from}</strong> → {detail.to.join(', ')} · {fullDate(detail.date)}
               </p>
             </div>
             <div className="wm-read-actions">

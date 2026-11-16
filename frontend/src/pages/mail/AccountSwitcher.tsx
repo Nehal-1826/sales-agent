@@ -3,10 +3,18 @@ import { IconCheck } from '../../components/icons';
 import type { WebmailAccount } from '../../lib/webmail';
 import { initials } from './helpers';
 
+/** Unreachable per the account row itself (G1's purpose-built signal) or a
+ *  folder-list failure this session observed — either earns the chip. */
+function unreachableReason(a: WebmailAccount, degraded: Record<number, string>): string | null {
+  if (a.unreachable || a.error) return a.error ?? 'IMAP connection failed.';
+  return degraded[a.id] ?? null;
+}
+
 /**
  * Account-switcher pill (avatar + active email + chevron) with a popover
- * listing every webmail account: unread badges, primary check and an error
- * chip for accounts whose IMAP connection failed (per-account degrade).
+ * listing every webmail account: unread badges, primary check and an
+ * "unreachable" chip on ANY account the server flagged (or whose folder
+ * list failed here) — not just the active one.
  */
 export function AccountSwitcher({
   accounts,
@@ -51,8 +59,8 @@ export function AccountSwitcher({
           {active ? initials(active.email) : '··'}
         </span>
         <span className="wm-switcher-email">{active?.email ?? 'No account'}</span>
-        {active && active.unread > 0 && (
-          <span className="wm-unread-badge">{active.unread > 99 ? '99+' : active.unread}</span>
+        {active && (active.unread ?? 0) > 0 && (
+          <span className="wm-unread-badge">{(active.unread ?? 0) > 99 ? '99+' : active.unread}</span>
         )}
         <svg className={`wm-chevron${open ? ' open' : ''}`} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
           <path d="m6 9 6 6 6-6" />
@@ -61,7 +69,8 @@ export function AccountSwitcher({
       {open && (
         <div className="wm-switcher-pop" role="listbox" aria-label="Mail accounts">
           {accounts.map((a) => {
-            const err = degraded[a.id];
+            const err = unreachableReason(a, degraded);
+            const unread = a.unread ?? 0;
             return (
               <button
                 key={a.id}
@@ -85,7 +94,7 @@ export function AccountSwitcher({
                   </small>
                   {err && <span className="wm-account-error" title={err}>unreachable</span>}
                 </span>
-                {a.unread > 0 && <span className="wm-unread-badge">{a.unread > 99 ? '99+' : a.unread}</span>}
+                {unread > 0 && <span className="wm-unread-badge">{unread > 99 ? '99+' : unread}</span>}
                 {a.id === activeId && <IconCheck size={16} className="wm-check" />}
               </button>
             );

@@ -9,8 +9,8 @@ export interface ComposeSeed {
   to?: string;
   subject?: string;
   body?: string;
-  /** uid of the message being answered — threads it server-side */
-  inReplyTo?: number;
+  /** Message-ID of the message being answered — threads it server-side. */
+  inReplyTo?: string;
 }
 
 /** Compose dialog — plain-text body is sent as simple HTML paragraphs. */

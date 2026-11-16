@@ -74,7 +74,7 @@ export function MessageList({
   pageSize: number;
   selectedUid: number | null;
   query: string;
-  onOpen: (uid: number, unseen: boolean) => void;
+  onOpen: (uid: number) => void;
   onToggleFlag: (msg: WebmailMessageSummary) => void;
   onPage: (next: number) => void;
   onRetry: () => void;
@@ -116,7 +116,7 @@ export function MessageList({
         <>
           <div className="wm-rows" role="list">
             {(data?.items ?? []).map((m) => (
-              <Row key={m.uid} msg={m} active={m.uid === selectedUid} onOpen={(uid) => onOpen(uid, !m.seen)} onToggleFlag={onToggleFlag} />
+              <Row key={m.uid} msg={m} active={m.uid === selectedUid} onOpen={onOpen} onToggleFlag={onToggleFlag} />
             ))}
           </div>
           {(hasNewer || hasOlder) && (

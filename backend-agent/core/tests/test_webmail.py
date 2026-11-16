@@ -85,6 +85,7 @@ def imap_mock(**over):
 
     conn.status.side_effect = status
     conn.append.return_value = ('OK', [b'Append completed'])
+    conn.expunge.return_value = ('OK', [b'3 7'])
     if 'uid' in over:
         conn.uid.side_effect = over['uid']
     else:
@@ -249,16 +250,39 @@ class MessageListTests(TenantTestCase):
                 if any('invoice' in str(a) for a in args):
                     return ('OK', [b''])  # server search finds nothing
                 return ('OK', [b'1 2 3'])
-            return ('OK', [env_item(1, subject='Weekly update'),
-                           env_item(2, subject='Invoice for October'),
-                           env_item(3, subject='Hello')])
+            return ('OK', [env_item(1, subject='Invoice A'),
+                           env_item(2, subject='Weekly update'),
+                           env_item(3, subject='Invoice B')])
 
         conn = imap_mock(uid=uid)
         with mock.patch('core.webmail.imaplib.IMAP4_SSL', return_value=conn):
             result = webmail.list_messages(self.mb, folder='INBOX', query='invoice')
+        self.assertEqual(result['total'], 2)
+        # fallback matches keep the newest-first contract (descending uid)
+        self.assertEqual([item['uid'] for item in result['items']], [3, 1])
+
+    def test_non_ascii_query_skips_server_search(self):
+        """imaplib ASCII-encodes SEARCH args — a non-ASCII query must go
+        straight to the client-side scan, never raise (and never 400)."""
+        def uid(cmd, *args):
+            if cmd == 'SEARCH':
+                for arg in args:  # mimic imaplib's ascii encoding
+                    if isinstance(arg, str) and not arg.isascii():
+                        raise UnicodeEncodeError('ascii', 'x', 0, 1, 'not ascii')
+                if any('invoice' in str(a) for a in args):
+                    return ('OK', [b''])
+                return ('OK', [b'1 2'])
+            return ('OK', [env_item(1, subject='Invoice 发票 attached'),
+                           env_item(2, subject='Hello')])
+
+        conn = imap_mock(uid=uid)
+        with mock.patch('core.webmail.imaplib.IMAP4_SSL', return_value=conn):
+            result = webmail.list_messages(self.mb, folder='INBOX', query='发票')
         self.assertEqual(result['total'], 1)
-        self.assertEqual(result['items'][0]['uid'], 2)
-        self.assertEqual(result['items'][0]['subject'], 'Invoice for October')
+        self.assertEqual(result['items'][0]['uid'], 1)
+        for call in conn.uid.call_args_list:  # the query never reached the server
+            if call.args[0] == 'SEARCH':
+                self.assertTrue(all(a.isascii() for a in call.args if isinstance(a, str)))
 
     def test_unknown_folder_raises(self):
         with mock.patch('core.webmail.imaplib.IMAP4_SSL', return_value=imap_mock()):
@@ -365,7 +389,7 @@ class MarkTests(TenantTestCase):
         conn = imap_mock()
         with mock.patch('core.webmail.imaplib.IMAP4_SSL', return_value=conn):
             result = webmail.mark_messages(self.mb, 'INBOX', [3, 7], 'trash')
-        self.assertEqual(result, {'ok': 2})
+        self.assertEqual(result, {'ok': 2, 'failed': 0, 'expunged': 2})
         # c[0] is the method name — _Call.name is not usable on this Python
         names = [(c[0], c.args) for c in conn.mock_calls]
         copies = [a for n, a in names if n == 'uid' and a[0] == 'COPY']
@@ -377,6 +401,22 @@ class MarkTests(TenantTestCase):
         # COPY must happen before the delete+expunge
         self.assertTrue(names.index(('uid', copies[0])) < names.index(('uid', stores[0])))
         self.assertTrue(names.index(('uid', stores[0])) < names.index(('expunge', ())))
+
+    def test_trash_partial_copy_failure(self):
+        """A COPY that fails is skipped, not fatal: the succeeded ones are
+        still deleted + expunged, and the response reports the failure."""
+        def uid(cmd, *args):
+            if cmd == 'COPY' and args[0] == '7':
+                return ('NO', [b'COPY failed'])
+            return ('OK', [b'done'])
+        conn = imap_mock(uid=uid)
+        with mock.patch('core.webmail.imaplib.IMAP4_SSL', return_value=conn):
+            result = webmail.mark_messages(self.mb, 'INBOX', [3, 7], 'trash')
+        self.assertEqual(result['ok'], 1)
+        self.assertEqual(result['failed'], 1)
+        self.assertEqual(result['expunged'], 2)  # expunge result surfaces
+        stores = [c.args for c in conn.uid.call_args_list if c.args[0] == 'STORE']
+        self.assertEqual(stores, [('STORE', '3', '+FLAGS.SILENT', '(\\Deleted)')])
 
     def test_invalid_action_raises_value_error(self):
         with mock.patch('core.webmail.imaplib.IMAP4_SSL', return_value=imap_mock()):
@@ -473,6 +513,29 @@ class WebmailEndpointTests(TenantTestCase):
         body = r.json()
         self.assertEqual(body['subject'], 'Quote request')
         self.assertTrue(body['seen'])
+
+    def test_unicode_digit_uid_is_a_400_not_500(self):
+        """"²".isdigit() is True but int("²") raises — must be a clean 400."""
+        mb = make_mailbox()
+        r = self.client.get(f'/api/webmail/{mb.pk}/message/?folder=INBOX&uid=²')
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_non_ascii_query_endpoint_returns_fallback_not_400(self):
+        mb = make_mailbox()
+
+        def uid(cmd, *args):
+            if cmd == 'SEARCH':
+                for arg in args:  # mimic imaplib's ascii encoding
+                    if isinstance(arg, str) and not arg.isascii():
+                        raise UnicodeEncodeError('ascii', 'x', 0, 1, 'not ascii')
+                return ('OK', [b'1'])
+            return ('OK', [env_item(1, subject='Invoice 发票 attached')])
+
+        conn = imap_mock(uid=uid)
+        with mock.patch('core.webmail.imaplib.IMAP4_SSL', return_value=conn):
+            r = self.client.get(f'/api/webmail/{mb.pk}/messages/?folder=INBOX&query=发票')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()['total'], 1)
 
     def test_send_endpoint_requires_to(self):
         mb = make_mailbox()

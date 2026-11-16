@@ -416,21 +416,24 @@ def _page(items, page):
 
 def list_messages(mailbox, folder='INBOX', page=1, query=''):
     """Envelope page, newest (highest UID) first.
-    query → IMAP SEARCH (SUBJECT OR TEXT); an empty server result falls
-    back to a client-side filter over the newest CLIENT_QUERY_SCAN
-    envelopes (some servers reject TEXT searches)."""
+    query → IMAP SEARCH (SUBJECT OR TEXT); an empty server result — or a
+    non-ASCII query, which imaplib cannot even send (it ASCII-encodes the
+    arguments) — falls back to a client-side filter over the newest
+    CLIENT_QUERY_SCAN envelopes."""
     try:
         page = max(1, int(page or 1))
     except (TypeError, ValueError):
         page = 1
     path = resolve_folder(mailbox, folder)
-    query = (query or '').strip().replace('\\', ' ').replace('"', ' ').strip()
+    # quotes/backslashes would break the quoted SEARCH string; control
+    # characters (CR/LF/…) never belong in one
+    query = re.sub(r'["\\\x00-\x1f\x7f]', ' ', query or '').strip()
     conn = open_imap(mailbox)
     try:
         typ, _ = conn.select(path, readonly=True)
         if typ != 'OK':
             raise WebmailError(f'Could not open folder "{folder}".')
-        if query:
+        if query and query.isascii():
             quoted = f'"{query}"'
             uids = _search(conn, ['OR', 'SUBJECT', quoted, 'TEXT', quoted])
             if uids:
@@ -439,21 +442,23 @@ def list_messages(mailbox, folder='INBOX', page=1, query=''):
                 fetched = _fetch_envelopes(conn, items)
                 return {'items': fetched, 'total': total, 'page': page,
                         'pages': pages, 'perPage': PAGE_SIZE, 'folder': folder}
-            # server search found nothing → client-side over newest N
-            scan = _search(conn, ['ALL'])[-CLIENT_QUERY_SCAN:]
-            low = query.lower()
-            matches = [item for item in _fetch_envelopes(conn, scan)
-                       if low in item['subject'].lower()
-                       or low in item['from'].lower()
-                       or low in item['snippet'].lower()]
-            items, total, pages = _page(matches, page)
-            return {'items': items, 'total': total, 'page': page,
+        if not query:  # plain page over everything, newest first
+            uids = _search(conn, ['ALL'])
+            uids.sort(reverse=True)
+            items, total, pages = _page(uids, page)
+            fetched = _fetch_envelopes(conn, items)
+            return {'items': fetched, 'total': total, 'page': page,
                     'pages': pages, 'perPage': PAGE_SIZE, 'folder': folder}
-        uids = _search(conn, ['ALL'])
-        uids.sort(reverse=True)
-        items, total, pages = _page(uids, page)
-        fetched = _fetch_envelopes(conn, items)
-        return {'items': fetched, 'total': total, 'page': page,
+        # server search empty / non-ASCII query → client-side over newest N
+        scan = _search(conn, ['ALL'])[-CLIENT_QUERY_SCAN:]
+        low = query.lower()
+        matches = [item for item in _fetch_envelopes(conn, scan)
+                   if low in item['subject'].lower()
+                   or low in item['from'].lower()
+                   or low in item['snippet'].lower()]
+        matches.sort(key=lambda item: item['uid'], reverse=True)  # newest first
+        items, total, pages = _page(matches, page)
+        return {'items': items, 'total': total, 'page': page,
                 'pages': pages, 'perPage': PAGE_SIZE, 'folder': folder}
     finally:
         _logout(conn)
@@ -574,7 +579,9 @@ def _append_sent(mailbox, raw):
 # ------------------------------------------------------------------
 
 def mark_messages(mailbox, folder, uids, action):
-    """STORE flags; trash = COPY to Trash + STORE \\Deleted + EXPUNGE."""
+    """STORE flags; trash = COPY to Trash + STORE \\Deleted + EXPUNGE.
+    A COPY that fails is skipped, not fatal — the succeeded copies are
+    still deleted, and the response reports the failed count."""
     if action not in MARK_ACTIONS and action != 'trash':
         raise ValueError(f'Unknown mark action: {action}')
     try:
@@ -589,22 +596,41 @@ def mark_messages(mailbox, folder, uids, action):
         typ, _ = conn.select(path)
         if typ != 'OK':
             raise WebmailError(f'Could not open folder "{folder}".')
-        uid_set = ' '.join(str(u) for u in uid_list)
         if action == 'trash':
             trash_path = resolve_folder(mailbox, 'Trash')
+            succeeded, failed = [], 0
             for uid in uid_list:
-                typ, _data = conn.uid('COPY', str(uid), trash_path)
-                if typ != 'OK':
-                    raise WebmailError(f'Could not copy message {uid} to Trash.')
+                try:
+                    copy_typ, _data = conn.uid('COPY', str(uid), trash_path)
+                except Exception as exc:
+                    log.info('Webmail COPY to Trash failed for uid %s on %s: %s',
+                             uid, mailbox.from_email, exc.__class__.__name__)
+                    copy_typ = 'NO'
+                if copy_typ != 'OK':
+                    failed += 1
+                    continue
+                succeeded.append(uid)
+            if not succeeded:
+                raise WebmailError('Could not copy any of the messages to Trash.')
+            uid_set = ' '.join(str(u) for u in succeeded)
             typ, _data = conn.uid('STORE', uid_set, '+FLAGS.SILENT', '(\\Deleted)')
             if typ != 'OK':
                 raise WebmailError('Could not delete the messages.')
-            conn.expunge()
-        else:
-            mode, flags = MARK_ACTIONS[action]
-            typ, _data = conn.uid('STORE', uid_set, mode, flags)
-            if typ != 'OK':
-                raise WebmailError('The server refused the flag change.')
+            expunged = 0
+            try:
+                exp_typ, exp_data = conn.expunge()
+                if exp_typ == 'OK' and exp_data and exp_data[0]:
+                    expunged = len(exp_data[0].split())
+            except Exception as exc:
+                log.info('Webmail EXPUNGE failed on %s: %s',
+                         mailbox.from_email, exc.__class__.__name__)
+            _FOLDER_CACHE.pop(mailbox.pk, None)  # counts just changed
+            return {'ok': len(succeeded), 'failed': failed, 'expunged': expunged}
+        uid_set = ' '.join(str(u) for u in uid_list)
+        mode, flags = MARK_ACTIONS[action]
+        typ, _data = conn.uid('STORE', uid_set, mode, flags)
+        if typ != 'OK':
+            raise WebmailError('The server refused the flag change.')
         _FOLDER_CACHE.pop(mailbox.pk, None)  # counts just changed
         return {'ok': len(uid_list)}
     finally:

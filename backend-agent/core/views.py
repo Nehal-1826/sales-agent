@@ -1066,8 +1066,6 @@ def webmail_messages(request, mailbox_id):
                                        query=request.query_params.get('query') or '')
     except webmail.WebmailError as exc:
         return Response({'detail': str(exc)}, status=502)
-    except ValueError:
-        return Response({'detail': 'page must be a number.'}, status=400)
     return Response(result)
 
 
@@ -1080,7 +1078,8 @@ def webmail_message(request, mailbox_id):
     if mb is None:
         return Response({'detail': 'mailbox not found'}, status=404)
     uid = request.query_params.get('uid')
-    if not uid or not str(uid).isdigit():
+    # isdigit() alone accepts unicode digits ("²") that int() then rejects
+    if not uid or not (str(uid).isascii() and str(uid).isdigit()):
         return Response({'detail': 'A numeric ?uid= is required.'}, status=400)
     try:
         return Response(webmail.get_message(

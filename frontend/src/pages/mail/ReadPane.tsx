@@ -12,6 +12,8 @@ function MessageBody({ detail }: { detail: WebmailMessageDetail }) {
       '<!doctype html><html><head><meta charset="utf-8">' +
       '<meta http-equiv="Content-Security-Policy" content="img-src \'none\'; style-src \'unsafe-inline\'">' +
       '<style>' +
+      'html,body,*{scrollbar-width:none;-ms-overflow-style:none}' +
+      '::-webkit-scrollbar,*::-webkit-scrollbar{display:none;width:0;height:0}' +
       'body{margin:0;padding:18px;background:#fff;color:#1f1b16;' +
       'font:14px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;}' +
       'img{max-width:100%;height:auto}a{color:#c2410c}table{max-width:100%}' +

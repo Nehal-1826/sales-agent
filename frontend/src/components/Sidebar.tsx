@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { IconBot, IconBuilding, IconCheck, IconFlame, IconHome, IconInbox, IconMail, IconLogout, IconPulse, IconSettings } from './icons';
 import type { IconProps } from './icons';
-import { AutopilotPill } from './AutopilotPill';
 import { getCurrentUser } from '../lib/api';
 import type { CurrentUser } from '../lib/api';
 import { navigate } from '../lib/router';
@@ -63,12 +62,10 @@ export function Sidebar({
         <img src="/warmpulse-logo.svg" alt="" className="brand-logo" />
         <span className="brand-name">WarmPulse</span>
       </button>
-      {user?.workspace && (
-        <div className="workspace-badge" title="Your company workspace. Everything here is private to it.">
-          <small>Workspace</small>
-          <strong>{user.workspace.name}</strong>
-        </div>
-      )}
+      <div className="workspace-badge" title="Your company workspace. Everything here is private to it.">
+        <small>Workspace</small>
+        <strong>{user?.workspace?.name ?? 'Your workspace'}</strong>
+      </div>
 
       <nav className="side-nav">
         {NAV.filter(({ key }) => key !== 'settings' || user?.role === 'owner' || user?.role === 'admin').map(({ key, label, icon: Icon }) => (
@@ -98,9 +95,6 @@ export function Sidebar({
       </nav>
 
       <div className="sidebar-foot">
-        <div className="sidebar-status">
-          <AutopilotPill demo={demo} compact />
-        </div>
         <div className="sidebar-user">
           <span className="avatar" aria-hidden>
             {(user?.name ?? '··').slice(0, 2).toUpperCase()}

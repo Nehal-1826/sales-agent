@@ -11,7 +11,7 @@ from django.utils import timezone
 log = logging.getLogger(__name__)
 
 LOOKUP_TIMEOUT = 3.0  # seconds per query
-DKIM_SELECTORS = ('google', 'selector1', 'selector2', 'zoho', 'zmail', 'default', 'k1', 'mail')
+DKIM_SELECTORS = ('google', 'selector1', 'selector2', 'zoho', 'zmail', 'default', 'dkim', 'k1', 'mail')
 
 FIX_HINTS = {
     'spf': ('Add a TXT record on your domain starting with "v=spf1" that includes your email '

@@ -6,6 +6,7 @@ aiosmtplib>=3.0.1
 aiosqlite>=0.20.0
 alembic>=1.13.2
 celery>=5.4.0
+packaging>=24.0
 checkdmarc>=5.7.0
 cryptography>=43.0.0
 dnspython>=2.6.1

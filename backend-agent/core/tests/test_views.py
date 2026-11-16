@@ -64,6 +64,20 @@ class AuthTests(TenantTestCase):
         }, content_type='application/json')
         self.assertEqual(resp.status_code, 401)
 
+    def test_login_by_email(self):
+        User.objects.create_user(
+            workspace=self.workspace,
+            username='byemail',
+            email='ByEmail@Example.COM',
+            password='secure-password-123',
+            role='owner',
+        )
+        resp = self.client.post('/api/auth/login/', {
+            'username': 'byemail@example.com', 'password': 'secure-password-123',
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['user']['username'], 'byemail')
+
     def test_me_requires_auth(self):
         resp = self.client.get('/api/auth/me/')
         self.assertEqual(resp.status_code, 401)

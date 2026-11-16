@@ -208,17 +208,20 @@ ul {
   top: 12px;
 }
 
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+html,
+body,
+*,
+*::before,
+*::after {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
-::-webkit-scrollbar-thumb {
-  background: #d8d2c8;
-  border-radius: var(--radius-pill);
-  border: 3px solid transparent;
-  background-clip: padding-box;
-}
-::-webkit-scrollbar-track {
+
+::-webkit-scrollbar,
+*::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
   background: transparent;
 }
 
@@ -300,21 +303,18 @@ ul {
   flex-direction: column;
   gap: 4px;
   padding: 10px 12px 12px;
-  /* Short viewports: the nav list scrolls, the footer (user + Sign out) stays pinned */
+  /* Short viewports: the nav list scrolls silently without visible scrollbars; footer stays pinned */
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--chrome-border) transparent;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .side-nav::-webkit-scrollbar {
-  width: 6px;
-}
-
-.side-nav::-webkit-scrollbar-thumb {
-  background: var(--chrome-border);
-  border-radius: 3px;
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .nav-item {
@@ -322,6 +322,7 @@ ul {
   display: flex;
   align-items: center;
   gap: 10px;
+  width: 100%;
   min-height: 40px;
   padding: 0 12px;
   border: none;
@@ -409,9 +410,6 @@ ul {
   display: flex;
   align-items: center;
   gap: 10px;
-  /* hairline splits the foot into STATUS (pill) and ACCOUNT (user + sign out) */
-  border-top: 1px solid var(--chrome-border);
-  padding-top: 10px;
 }
 
 .sidebar-user strong {
@@ -6285,5 +6283,50 @@ img, video, svg { max-width: 100%; }
 
   .wm-switcher {
     margin-left: 0;
+  }
+}
+
+/* Compact laptop viewport heights (e.g. 1366x768 Chrome) fit all workspace
+   nav items cleanly without clipping or showing a scrollbar. */
+@media (max-height: 760px) {
+  .sidebar-brand {
+    height: 50px;
+  }
+  .workspace-badge {
+    margin: 8px 12px 2px;
+    padding: 7px 12px;
+  }
+  .side-nav {
+    padding: 6px 12px;
+    gap: 2px;
+  }
+  .nav-item {
+    min-height: 34px;
+  }
+  .sidebar-foot {
+    padding: 10px 12px 12px;
+    gap: 8px;
+  }
+}
+
+@media (max-height: 640px) {
+  .sidebar-brand {
+    height: 46px;
+  }
+  .workspace-badge {
+    margin: 6px 12px 2px;
+    padding: 6px 12px;
+  }
+  .side-nav {
+    padding: 4px 12px;
+    gap: 2px;
+  }
+  .nav-item {
+    min-height: 31px;
+    font-size: 13px;
+  }
+  .sidebar-foot {
+    padding: 8px 12px 10px;
+    gap: 6px;
   }
 }

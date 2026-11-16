@@ -24,6 +24,7 @@ dependencies = [
     "aiosqlite>=0.20.0",  # test-only async driver, harmless in prod
     # Celery / queue
     "celery>=5.4.0",
+    "packaging>=24.0",
     "redis>=5.0.7",
     # Mail I/O
     "aiosmtplib>=3.0.1",

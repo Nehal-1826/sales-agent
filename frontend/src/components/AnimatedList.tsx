@@ -175,7 +175,7 @@ export function AnimatedList<T = AnimatedListItem>({
   stagger = 0.05,
   showGradients = true,
   fadeSize = 56,
-  displayScrollbar = true,
+  displayScrollbar = false,
   frame = true,
   theme = 'dark',
   accentColor,

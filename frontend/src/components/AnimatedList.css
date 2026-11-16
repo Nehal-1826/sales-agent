@@ -44,8 +44,8 @@
   overscroll-behavior: contain;
   border-radius: calc(var(--al-radius) + 4px);
   outline: none;
-  scrollbar-width: thin;
-  scrollbar-color: var(--al-thumb) transparent;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .animated-list__viewport--unbounded {
@@ -54,16 +54,9 @@
 }
 
 .animated-list__viewport::-webkit-scrollbar {
-  width: 6px;
-}
-
-.animated-list__viewport::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.animated-list__viewport::-webkit-scrollbar-thumb {
-  border-radius: 3px;
-  background: var(--al-thumb);
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .animated-list__viewport--bare {

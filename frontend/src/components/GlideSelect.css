@@ -126,7 +126,8 @@
   max-height: min(280px, 50vh);
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   padding: 4px;
   border: 1px solid var(--border, #e3dfd7);
   border-radius: var(--gs-radius);
@@ -140,6 +141,12 @@
   transition:
     opacity var(--gs-pop) var(--gs-ease-out),
     transform var(--gs-pop) var(--gs-ease-out);
+}
+
+.glide-select__menu::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .glide-select__menu[data-state='open'] {

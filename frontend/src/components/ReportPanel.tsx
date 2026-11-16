@@ -75,7 +75,7 @@ export function ReportPanel() {
           <iframe
             title="Report preview"
             className="report-preview"
-            srcDoc={`<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#fff">${report.html}</body></html>`}
+            srcDoc={`<!doctype html><html><head><meta charset="utf-8"><style>html,body,*{scrollbar-width:none;-ms-overflow-style:none}::-webkit-scrollbar,*::-webkit-scrollbar{display:none;width:0;height:0}</style></head><body style="margin:0;background:#fff">${report.html}</body></html>`}
             sandbox=""
           />
         </>

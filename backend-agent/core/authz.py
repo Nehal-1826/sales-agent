@@ -26,6 +26,9 @@ def otp_satisfied(request, now=None):
 
 def auth_extras(user, request=None):
     admin = is_platform_admin(user)
+    # Only gate on OTP when the admin actually HAS a TOTP secret enrolled.
+    # Without this, admins with no authenticator set up get stuck on the
+    # 6-digit screen with nothing to enter.
     return {'email_verified': user.email_verified_at is not None,
             'platform_admin': admin,
-            'otp_required': admin and not otp_satisfied(request)}
+            'otp_required': admin and bool(user.totp_secret) and not otp_satisfied(request)}

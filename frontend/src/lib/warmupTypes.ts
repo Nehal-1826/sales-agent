@@ -103,7 +103,7 @@ export interface WarmupMailboxReportRow {
 // GET /api/workspace/analytics/bounce-spam?from&to                            //
 // --------------------------------------------------------------------------- //
 
-/** One day of reputation-risk rates, percent 0-100 (spam rate is the
+/** One day of reputation-risk rates, fractions 0-1 (spam rate is the
  *  spam-rescue proxy: rescues / emails_sent — lower is better). */
 export interface WarmupBounceSpamPoint {
   date: string;

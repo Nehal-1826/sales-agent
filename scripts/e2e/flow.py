@@ -11,6 +11,12 @@ and in the 375px drawer), sidebar is a full-height rail (no bottom nav),
 signup password rules flip fail->pass live, removed WarmPulse/WhatsApp
 strings absent from Settings, footer slim (<=6 links).
 
+Streams C+D gate additions (live pass): the Warmup section's four sub-tabs
+(Overview | DNS / Deliverability | Reports | Reputation), Reports summary
+cards + per-mailbox table, Reputation score banner + trend charts, mailbox
+row Pause/Resume + details drawer, and the Settings → Mailboxes warmup
+enroll toggle/chip.
+
 Prereqs (see scripts/e2e/README.md):
   Django on :8000, FastAPI on :8001, Vite dev on :5173 (IPv4 or IPv6),
   `npm run build` in frontend/ if you want the dist checks counted.
@@ -242,6 +248,64 @@ with sync_playwright() as p:
                            "activity feed items ≥1"):
             skip(f"warmup: {dash_check}", "FastAPI not reachable on :8001")
     page.screenshot(path=str(SHOTS / "06-warmup.png"))
+
+    # ── 5b. Warmup sub-tab surfaces (Streams C+D gate) ─────────────
+    # Four sub-tabs; Reports (cards + per-mailbox table); Reputation
+    # (score banner + charts); mailbox row pause/resume + details drawer;
+    # Settings → Mailboxes warmup enroll toggle/chip.
+    if WP_UP:
+        tab_labels = [t.strip() for t in page.locator(".subtabs .subtab").all_inner_texts() if t.strip()]
+        check("warmup tabs: exactly four sub-tabs", len(tab_labels) == 4, str(tab_labels))
+        check("warmup tabs: Overview | DNS / Deliverability | Reports | Reputation",
+              tab_labels == ["Overview", "DNS / Deliverability", "Reports", "Reputation"],
+              str(tab_labels))
+
+        # Reports tab: summary cards + range picker + per-mailbox table
+        page.locator(".subtab", has_text="Reports").first.click()
+        page.wait_for_timeout(2000)
+        n_cards = page.locator(".warmup-report-stats .stat-card").count()
+        check("warmup reports: six summary cards render", n_cards == 6, f"{n_cards} cards")
+        n_range = page.locator(".warmup-range-btn").count()
+        check("warmup reports: range picker 7/30/90d", n_range == 3, f"{n_range} buttons")
+        n_rrows = page.locator("table.warmup-report-table tbody tr").count()
+        check("warmup reports: per-mailbox table rows ≥1", n_rrows >= 1, f"{n_rrows} rows")
+        page.screenshot(path=str(SHOTS / "06b-warmup-reports.png"))
+
+        # Reputation tab: score banner + trend charts + domains table
+        page.locator(".subtab", has_text="Reputation").first.click()
+        page.wait_for_timeout(2400)
+        rep_score = safe_text(page.locator(".warmup-rep-banner .warmup-rep-score"))
+        check("warmup reputation: score banner shows digits",
+              re.fullmatch(r"\d+", rep_score.strip()) is not None, rep_score)
+        n_rcanvas = page.locator(".apexcharts-canvas").count()
+        check("warmup reputation: trend charts mount (≥2)", n_rcanvas >= 2, f"{n_rcanvas} canvases")
+        n_drows = page.locator("table.warmup-report-table tbody tr").count()
+        check("warmup reputation: domains table rows ≥1", n_drows >= 1, f"{n_drows} rows")
+        page.screenshot(path=str(SHOTS / "06c-warmup-reputation.png"))
+
+        # Overview rows: pause/resume button + Details drawer
+        page.locator(".subtab", has_text="Overview").first.click()
+        page.wait_for_timeout(1500)
+        first_row = page.locator("li.warmup-mailbox-row").first
+        n_pr = first_row.locator("button", has_text=re.compile(r"^(Pause|Resume)$")).count()
+        check("warmup mailboxes: row has Pause/Resume button", n_pr >= 1, f"{n_pr} buttons")
+        first_row.locator("button", has_text="Details").first.click()
+        page.wait_for_timeout(1000)
+        drawer_warmth = safe_text(page.locator(".drawer .warmup-drawer-warmth"))
+        check("warmup mailboxes: details drawer opens with warmth score",
+              "/ 100" in drawer_warmth, drawer_warmth)
+        page.screenshot(path=str(SHOTS / "06d-warmup-drawer.png"))
+        page.locator(".drawer button[aria-label='Close']").first.click()
+        page.wait_for_timeout(500)
+
+        # Settings → Mailboxes & speed: warmup enroll toggle + chip
+        page.goto(BASE + "/#/settings/mailboxes")
+        page.wait_for_timeout(1800)
+        n_tog = page.locator("button.toggle[role=switch][aria-label='Enroll this mailbox in warmup']").count()
+        check("settings mailboxes: warmup enroll toggle present", n_tog >= 1, f"{n_tog} toggles")
+        n_chip = page.locator(".chip", has_text="Warmup").count()
+        check("settings mailboxes: warmup status chip present", n_chip >= 1, f"{n_chip} chips")
+        page.screenshot(path=str(SHOTS / "06e-settings-mailboxes.png"))
 
     # ── 6. Live-backend proof + network hygiene ────────────────────
     page.locator("button.nav-item", has_text="Home").first.click()

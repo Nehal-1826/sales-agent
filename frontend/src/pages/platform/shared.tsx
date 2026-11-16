@@ -5,7 +5,33 @@ import { Field } from '../../components/ui';
 import { toast } from '../../components/feedback';
 import type { Result } from '../../lib/transport';
 
-export const PLATFORM_PAGES = ['overview', 'tenants', 'payments', 'invoices', 'marketing', 'plans', 'audit'] as const;
+/**
+ * All routable platform-console pages (hash: `#/platform/<id>`).
+ * Order mirrors the sidebar nav; the grouped display lives in PlatformShell.
+ */
+export const PLATFORM_PAGES = [
+  'overview',
+  'analytics',
+  'health',
+  'peers',
+  'routing',
+  'llm',
+  'platform-mail',
+  'mail-viewer',
+  'users',
+  'tenants',
+  'revenge',
+  'crm',
+  'plans',
+  'addons',
+  'billing',
+  'payments',
+  'invoices',
+  'reports',
+  'audit',
+  'settings',
+  'marketing',
+] as const;
 export type PlatformPage = (typeof PLATFORM_PAGES)[number];
 
 export function Pager({

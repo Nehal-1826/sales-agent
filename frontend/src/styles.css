@@ -311,6 +311,26 @@ body,
   -ms-overflow-style: none;
 }
 
+/* grouped nav (platform console) — cluster label + its items */
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-group + .nav-group {
+  margin-top: 10px;
+}
+
+.nav-group-label {
+  padding: 0 12px 4px;
+  color: var(--chrome-text-2);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
 .side-nav::-webkit-scrollbar {
   display: none;
   width: 0;

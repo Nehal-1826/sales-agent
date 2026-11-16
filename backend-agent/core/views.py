@@ -124,9 +124,19 @@ def login(request):
         return Response({'error': 'too_many_attempts'}, status=429)
     user = authenticate(
         request,
-        username=request.data.get('username'),
+        username=uname,
         password=request.data.get('password'),
     )
+    if user is None and '@' in uname:
+        matches = list(
+            User.objects.filter(email__iexact=uname.strip()).values_list('username', flat=True)[:2]
+        )
+        if len(matches) == 1:
+            user = authenticate(
+                request,
+                username=matches[0],
+                password=request.data.get('password'),
+            )
     if user is None:
         lockout.record_failure(uname, ip)
         return Response({'detail': 'invalid credentials'}, status=401)

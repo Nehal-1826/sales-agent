@@ -310,6 +310,7 @@ class ReadMessageTests(TenantTestCase):
         self.assertEqual(msg['from'], 'Ann Lee <ann@ex.com>')
         self.assertEqual(msg['to'], ['sales@sender.com'])
         self.assertEqual(msg['subject'], 'Quote request')
+        self.assertEqual(msg['message_id'], '<quote-1@ex.com>')
         self.assertIn('plain body text', msg['text'])
         self.assertIn('<p>html body</p>', msg['html'])
         self.assertTrue(msg['seen'], 'BODY[] fetch marks the message read')
@@ -317,6 +318,21 @@ class ReadMessageTests(TenantTestCase):
         self.assertEqual(fetch_args.args[2], '(BODY[])')
         # read-write SELECT (a readonly select would refuse to set \Seen)
         conn.select.assert_called_with('INBOX', readonly=False)
+
+    def test_read_message_id_null_safe_when_missing(self):
+        raw = RAW_MESSAGE.replace(b'Message-ID: <quote-1@ex.com>\r\n', b'')
+
+        def uid(cmd, *args):
+            if cmd == 'SEARCH':
+                return ('OK', [b'5'])
+            return ('OK', [(b'1 (UID 5 BODY[] {' + str(len(raw)).encode()
+                            + b'}\r\n', raw), b')'])
+
+        conn = imap_mock(uid=uid)
+        with mock.patch('core.webmail.imaplib.IMAP4_SSL', return_value=conn):
+            msg = webmail.get_message(self.mb, folder='INBOX', uid=5)
+        self.assertEqual(msg['subject'], 'Quote request')
+        self.assertEqual(msg['message_id'], '')
 
 
 # ------------------------------------------------------------------
@@ -352,6 +368,34 @@ class SendTests(TenantTestCase):
         self.assertEqual(append_args[0], '[Gmail]/Sent Mail')
         self.assertEqual(append_args[1], '\\Seen')
         self.assertIn(b'Subject: Re: Quote request', append_args[-1])
+
+    def test_send_int_in_reply_to_does_not_crash(self):
+        """The frontend once sent the numeric uid as in_reply_to — that must
+        never 502 the reply: the header is omitted, the send succeeds."""
+        smtp = mock.MagicMock(name='smtp')
+        smtp.__enter__.return_value = smtp
+        smtp.__exit__.return_value = False
+        conn = imap_mock()
+        with mock.patch('core.webmail._open_smtp', return_value=smtp), \
+                mock.patch('core.webmail.imaplib.IMAP4_SSL', return_value=conn):
+            result = webmail.send_message(self.mb, to='ann@ex.com', subject='Re: Quote',
+                                          body_html='<p>x</p>', in_reply_to=5)
+        self.assertTrue(result['ok'])
+        sent_msg = smtp.send_message.call_args.args[0]
+        self.assertNotIn('In-Reply-To', sent_msg)
+        self.assertNotIn('References', sent_msg)
+
+    def test_send_string_in_reply_to_sets_header(self):
+        smtp = mock.MagicMock(name='smtp')
+        smtp.__enter__.return_value = smtp
+        smtp.__exit__.return_value = False
+        with mock.patch('core.webmail._open_smtp', return_value=smtp), \
+                mock.patch('core.webmail.imaplib.IMAP4_SSL', return_value=imap_mock()):
+            webmail.send_message(self.mb, to='ann@ex.com', subject='Re: Quote',
+                                 body_html='<p>x</p>', in_reply_to='<quote-1@ex.com>')
+        sent_msg = smtp.send_message.call_args.args[0]
+        self.assertEqual(sent_msg['In-Reply-To'], '<quote-1@ex.com>')
+        self.assertEqual(sent_msg['References'], '<quote-1@ex.com>')
 
     def test_append_failure_is_best_effort(self):
         conn = imap_mock()

@@ -517,6 +517,9 @@ def get_message(mailbox, folder='INBOX', uid=0):
                 'to': to,
                 'subject': str(msg.get('Subject', '') or ''),
                 'date': _iso_date(date) if date else '',
+                # the Message-ID header — what a threaded reply sends back as
+                # in_reply_to ('' when the message carries none)
+                'message_id': str(msg.get('Message-ID') or ''),
                 'html': html or None,
                 'text': text,
                 'seen': True}
@@ -543,9 +546,13 @@ def send_message(mailbox, to, subject, body_html, in_reply_to=''):
     msg['Date'] = formatdate(localtime=True)
     message_id = new_message_id(mailbox.from_email)
     msg['Message-ID'] = message_id
-    if in_reply_to:
-        msg['In-Reply-To'] = in_reply_to
-        msg['References'] = in_reply_to
+    # in_reply_to is the parent's Message-ID header ('<id@host>'). Clients
+    # have sent numeric uids here — coerce, and only thread when the value
+    # actually looks like a Message-ID; never let it crash the send.
+    reply_id = str(in_reply_to).strip() if in_reply_to is not None else ''
+    if reply_id.startswith('<'):
+        msg['In-Reply-To'] = reply_id
+        msg['References'] = reply_id
     text = html_to_text(body_html) if '<' in body_html else body_html
     msg.set_content(text or '(no content)')
     msg.add_alternative(body_html or '<p></p>', subtype='html')

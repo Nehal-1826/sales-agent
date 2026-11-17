@@ -27,6 +27,7 @@ from billing.entitlements import BillingError, check as quota_check
 from .mailer import NO_RECIPIENT_ERROR, check_send_quota, smtp_configured, valid_recipient
 from .outbox import enqueue_draft, kick_drain
 from .tenancy import current_workspace
+from . import totp
 from .authentication import token_expired
 from .permissions import IsWorkspaceAdmin, IsWorkspaceAdminOrReadOnly
 from .models import AgentConfig, AppSettings, ChatMessage, EmailDraft, EmailTemplate, Lead, Mailbox, PipelineRun, PlatformSession, Potential, Reply, SearchProfile, User
@@ -182,6 +183,56 @@ def change_password(request):
     # a password change must end every existing session, including any copied token
     Token.objects.filter(user=user).delete()
     return Response({'detail': 'password updated — sign in again'})
+
+
+# ── workspace-level 2FA (Settings → Two-factor) ────────────────────────────
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def user_2fa_status(request):
+    return Response({'enabled': bool(request.user.totp_secret)})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def user_2fa_setup(request):
+    u = request.user
+    if u.totp_secret:
+        return Response({'detail': 'Two-factor is already enabled.'}, status=409)
+    u.totp_pending = totp.new_secret()
+    u.save(update_fields=['totp_pending'])
+    return Response({'secret': u.totp_pending,
+                     'otpauth_uri': totp.otpauth_uri(u.totp_pending, u.email or u.username)})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def user_2fa_confirm(request):
+    u = request.user
+    if u.totp_secret:
+        return Response({'detail': 'Two-factor is already enabled.'}, status=409)
+    if not u.totp_pending:
+        return Response({'detail': 'Start setup first.'}, status=400)
+    step = totp.match_step(u.totp_pending, request.data.get('code', ''))
+    if step is None:
+        return Response({'detail': 'Invalid code — try the current one from your app.'}, status=400)
+    u.totp_secret, u.totp_pending = u.totp_pending, ''
+    u.save(update_fields=['totp_secret', 'totp_pending'])
+    return Response({'enabled': True})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def user_2fa_disable(request):
+    u = request.user
+    if not u.totp_secret:
+        return Response({'detail': 'Two-factor is not enabled.'}, status=400)
+    step = totp.match_step(u.totp_secret, request.data.get('code', ''))
+    if step is None:
+        return Response({'detail': 'Invalid code.'}, status=400)
+    u.totp_secret = ''
+    u.save(update_fields=['totp_secret'])
+    return Response({'enabled': False})
 
 
 @api_view(['POST'])

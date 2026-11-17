@@ -37,6 +37,7 @@ export type SettingsSection =
   | 'mailboxes'
   | 'schedule'
   | 'account'
+  | 'twofactor'
   | 'billing'
   | 'advanced';
 

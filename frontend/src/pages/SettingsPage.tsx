@@ -6,6 +6,7 @@ import { useAsync } from '../lib/hooks';
 import { navigate } from '../lib/router';
 import type { SettingsSection, SettingsState } from '../lib/types';
 import { AccountSection } from './settings/AccountSection';
+import { TwoFactorSection } from './settings/TwoFactorSection';
 import { BillingSection } from './settings/BillingSection';
 import { AdvancedSection } from './settings/AdvancedSection';
 import { BusinessSection } from './settings/BusinessSection';
@@ -27,6 +28,7 @@ const SECTIONS: { key: SettingsSection; label: string; hint: string }[] = [
   { key: 'whatsapp', label: 'WhatsApp', hint: 'Optional, off by default' },
   { key: 'schedule', label: 'Schedule & reports', hint: 'Autopilot and daily report' },
   { key: 'account', label: 'Account', hint: 'Password' },
+  { key: 'twofactor', label: 'Two-factor', hint: 'Secure your account with an authenticator' },
   { key: 'billing', label: 'Plan & billing', hint: 'Plan, usage, invoices' },
   { key: 'advanced', label: 'Advanced', hint: 'AI key, mail server, AI instructions' },
 ];
@@ -75,6 +77,8 @@ export function SettingsPage({ section: raw }: { section: string }) {
             <BillingSection />
           ) : section === 'account' ? (
             <AccountSection />
+          ) : section === 'twofactor' ? (
+            <TwoFactorSection />
           ) : loaded.loading ? (
             <section className="panel">
               <Skeleton rows={5} height={38} />

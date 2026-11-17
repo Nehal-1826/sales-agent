@@ -25,6 +25,11 @@ urlpatterns = [
     path('auth/me/', views.me, name='me'),
     path('auth/logout/', views.logout, name='logout'),
     path('auth/password/', views.change_password, name='change-password'),
+    # workspace-level 2FA (Settings → Two-factor)
+    path('auth/2fa/status/', views.user_2fa_status, name='user-2fa-status'),
+    path('auth/2fa/setup/', views.user_2fa_setup, name='user-2fa-setup'),
+    path('auth/2fa/confirm/', views.user_2fa_confirm, name='user-2fa-confirm'),
+    path('auth/2fa/disable/', views.user_2fa_disable, name='user-2fa-disable'),
     # bridge: HS256 JWT for backend-warmup (FastAPI) — same DRF token auth
     path('auth/warmup-token/', views.warmup_token, name='warmup-token'),
     # CRM — custom lead routes BEFORE the router (else 'export' is treated as a pk)

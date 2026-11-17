@@ -145,3 +145,31 @@ class TwoFactorFlowTests(TestCase):
             codes = [c.post('/api/platform/2fa/verify/', {'code': '111111'}, format='json').status_code
                      for _ in range(3)]
         self.assertEqual(codes, [400, 400, 429])
+
+    def test_platform_2fa_status_rotate_and_disable(self):
+        c, u, _ = make_admin(verified=True, enrolled=True)
+        self.assertEqual(c.get('/api/platform/2fa/status/').json()['enabled'], True)
+
+        # Rotate requires OTP-verified session and valid current code
+        c_unverified, _, _ = make_admin('root_unv', verified=False, enrolled=True)
+        self.assertEqual(c_unverified.get('/api/platform/2fa/status/').status_code, 403)
+        self.assertEqual(c_unverified.post('/api/platform/2fa/disable/', {'code': code_now()}, format='json').status_code, 403)
+
+        with mock.patch('core.totp.time.time', return_value=2_000_000):
+            rot = c.post('/api/platform/2fa/rotate/', {'code': totp.totp(SECRET, now=2_000_000)}, format='json')
+            self.assertEqual(rot.status_code, 200)
+            s2 = rot.json()['secret']
+            ok = c.post('/api/platform/2fa/rotate/confirm/', {'code': totp.totp(s2, now=2_000_000)}, format='json')
+            self.assertEqual(ok.status_code, 200)
+            u.refresh_from_db()
+            self.assertEqual((u.totp_secret, u.totp_pending), (s2, ''))
+
+        with mock.patch('core.totp.time.time', return_value=2_000_060):
+            dis = c.post('/api/platform/2fa/disable/', {'code': totp.totp(s2, now=2_000_060)}, format='json')
+            self.assertEqual(dis.status_code, 200)
+            self.assertFalse(dis.json()['enabled'])
+            self.assertEqual(c.get('/api/platform/2fa/status/').json()['enabled'], False)
+            # Current session stays verified for Settings, so admin can immediately re-enroll
+            self.assertEqual(c.get('/api/platform/overview/').status_code, 200)
+            re_setup = c.post('/api/platform/2fa/setup/')
+            self.assertEqual(re_setup.status_code, 200)

@@ -9,14 +9,22 @@
  * tests. Reads soft-fail to safe defaults while backend stubs are 501.
  *
  * Restyled: expandable cards on the pf- grid instead of the animated glass
- * stack; the reference Region/TwoFactor panels belong to the client-side
- * settings area and are not part of this port.
+ * stack; includes animated platform-admin Two-factor security management.
  */
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+import { TwoFactorPanel, type TwoFactorApi } from '../../components/TwoFactorPanel';
 import { Chip, Field, PageHeader, SectionLabel, Toggle } from '../../components/ui';
 import { LoadError, Skeleton, toast } from '../../components/feedback';
 import { useAsync } from '../../lib/hooks';
+import {
+  getPlatform2faStatus,
+  totpConfirm,
+  totpDisable,
+  totpRotateConfirm,
+  totpRotateStart,
+  totpSetup,
+} from '../../lib/platform';
 import {
   downloadCsv,
   getAdminSettings,
@@ -298,6 +306,19 @@ export function AdminSettingsPage({ demo = false }: { demo?: boolean }) {
     ] as [string, string][];
   }, [s]);
 
+  const [twoFaEnabled, setTwoFaEnabled] = useState<boolean | null>(null);
+  const twoFaApi = useMemo<TwoFactorApi>(
+    () => ({
+      getStatus: getPlatform2faStatus,
+      setup: totpSetup,
+      confirm: totpConfirm,
+      disable: totpDisable,
+      rotateStart: totpRotateStart,
+      rotateConfirm: totpRotateConfirm,
+    }),
+    [],
+  );
+
   const anyDirty = defaultsDirty || llmDirty || oauthDirty || smtpDirty;
 
   return (
@@ -311,6 +332,31 @@ export function AdminSettingsPage({ demo = false }: { demo?: boolean }) {
           </button>
         }
       />
+
+      <SettingsCard
+        title="Two-factor authentication"
+        summary={
+          twoFaEnabled === null
+            ? 'Checking authenticator protection…'
+            : twoFaEnabled
+              ? 'Authenticator app active · required on every console sign-in'
+              : 'Not enrolled · set up an authenticator app for console security'
+        }
+        tag={
+          twoFaEnabled === null ? undefined : (
+            <Chip tone={twoFaEnabled ? 'success' : 'warn'}>{twoFaEnabled ? 'Enabled' : 'Not set up'}</Chip>
+          )
+        }
+        defaultOpen
+      >
+        <TwoFactorPanel
+          api={twoFaApi}
+          demo={demo}
+          description="Protect your platform admin account with a TOTP authenticator app (Google Authenticator, Authy, 1Password)."
+          enabledNote="Console sign-ins and privileged platform actions require a 6-digit code from your authenticator."
+          onStatusChange={setTwoFaEnabled}
+        />
+      </SettingsCard>
 
       {error && <LoadError message={error} onRetry={() => void reload()} />}
       {!s && !error && <Skeleton rows={6} />}

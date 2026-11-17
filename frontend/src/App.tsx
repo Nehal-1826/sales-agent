@@ -214,10 +214,15 @@ function RoleGate({ demo, onSignOut }: { demo: boolean; onSignOut: () => void })
       </div>
     );
   }
-  if (me.platform_admin && me.otp_required) {
+  if (me.otp_required) {
     return (
       <>
-        <TotpScreen onVerified={load} onSignOut={onSignOut} />
+        <TotpScreen
+          isAdmin={!!me.platform_admin}
+          enrolled={!!me.totp_enabled}
+          onVerified={load}
+          onSignOut={onSignOut}
+        />
         <Toaster />
       </>
     );

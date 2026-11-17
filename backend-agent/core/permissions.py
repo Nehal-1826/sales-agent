@@ -18,9 +18,22 @@ PRIVILEGED_ROLES = ('owner', 'admin')
 
 def _paywall(request):
     # views that set their own permission_classes replace the global default,
-    # so the paywall is applied here too (billing.permissions)
+    # so OTP + paywall gates are applied here too
+    from .authz import enforce_otp
     from billing.permissions import enforce_paywall
+    enforce_otp(request)
     enforce_paywall(request)
+
+
+class IsOtpSatisfied(BasePermission):
+    """Block OTP-enrolled users whose current token hasn't completed TOTP."""
+
+    message = 'OTP required'
+
+    def has_permission(self, request, view):
+        from .authz import enforce_otp
+        enforce_otp(request)
+        return True
 
 
 def is_privileged(user):

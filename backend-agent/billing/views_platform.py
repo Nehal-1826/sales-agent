@@ -17,8 +17,17 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 
-from core import lockout, totp
-from core.models import PlatformSession, User, Workspace
+from core import lockout
+from core.authz import (
+    handle_2fa_confirm,
+    handle_2fa_disable,
+    handle_2fa_rotate_confirm,
+    handle_2fa_rotate_start,
+    handle_2fa_setup,
+    handle_2fa_status,
+    handle_2fa_verify,
+)
+from core.models import User, Workspace
 from core.permissions import IsPlatformAdmin, IsPlatformAdminWithOTP
 from core.tenancy import workspace_context
 from core.throttles import OtpThrottle
@@ -69,71 +78,49 @@ def _page(request, qs, row):
 
 
 # ------------------------------------------------------------------ 2FA
-def _otp_locked_key(user):
-    return f'otp:{user.pk}'
-
-
-def _check_code(request, secret):
-    """(step, error Response).  Lockout: 10 failures / 15 min per user."""
-    user = request.user
-    if lockout.is_locked(_otp_locked_key(user), ''):
-        return None, Response({'error': 'too_many_attempts'}, status=429)
-    code = request.data.get('code') if hasattr(request.data, 'get') else ''
-    last = 0
-    if secret == user.totp_secret:   # replay guard across all of this admin's sessions
-        last = max([ps.last_otp_step for ps in
-                    PlatformSession.objects.filter(token__user=user)] or [0])
-    step = totp.match_step(secret, code if isinstance(code, str) else '', last_step=last)
-    if step is None:
-        lockout.record_failure(_otp_locked_key(user), '')
-        return None, _bad('invalid_code', 'Invalid or expired code.')
-    lockout.clear(_otp_locked_key(user), '')
-    return step, None
-
-
-def _mark_verified(request, step):
-    PlatformSession.objects.update_or_create(
-        token=request.auth, defaults={'otp_verified_at': timezone.now(), 'last_otp_step': step})
+@platform_api('GET', otp=True)
+def tfa_status(request):
+    return handle_2fa_status(request)
 
 
 @platform_api('POST', otp=False)
 def tfa_setup(request):
-    u = request.user
-    if u.totp_secret:
-        return _bad('already_enrolled', 'Two-factor is already set up.', 409)
-    u.totp_pending = totp.new_secret()
-    u.save(update_fields=['totp_pending'])
-    return Response({'secret': u.totp_pending,
-                     'otpauth_uri': totp.otpauth_uri(u.totp_pending, u.email or u.username)})
+    return handle_2fa_setup(request, already_detail='Two-factor is already set up.')
 
 
 @platform_api('POST', otp=False, extra_throttles=(OtpThrottle,))
 def tfa_confirm(request):
-    u = request.user
-    if u.totp_secret:
-        return _bad('already_enrolled', 'Two-factor is already set up.', 409)
-    if not u.totp_pending:
-        return _bad('not_started', 'Start setup first.')
-    step, err = _check_code(request, u.totp_pending)
-    if err:
-        return err
-    u.totp_secret, u.totp_pending = u.totp_pending, ''
-    u.save(update_fields=['totp_secret', 'totp_pending'])
-    _mark_verified(request, step)
-    _audit(request, 'platform.2fa_enrolled', None)
-    return Response({'enrolled': True, 'verified': True})
+    return handle_2fa_confirm(
+        request,
+        already_detail='Two-factor is already set up.',
+        on_done=lambda: _audit(request, 'platform.2fa_enrolled', None),
+    )
 
 
 @platform_api('POST', otp=False, extra_throttles=(OtpThrottle,))
 def tfa_verify(request):
-    u = request.user
-    if not u.totp_secret:
-        return _bad('not_enrolled', 'Set up two-factor first.', 409)
-    step, err = _check_code(request, u.totp_secret)
-    if err:
-        return err
-    _mark_verified(request, step)
-    return Response({'verified': True})
+    return handle_2fa_verify(request, not_enrolled_detail='Set up two-factor first.')
+
+
+@platform_api('POST', otp=True, extra_throttles=(OtpThrottle,))
+def tfa_disable(request):
+    return handle_2fa_disable(
+        request,
+        on_done=lambda: _audit(request, 'platform.2fa_disabled', None),
+    )
+
+
+@platform_api('POST', otp=True, extra_throttles=(OtpThrottle,))
+def tfa_rotate(request):
+    return handle_2fa_rotate_start(request)
+
+
+@platform_api('POST', otp=True, extra_throttles=(OtpThrottle,))
+def tfa_rotate_confirm(request):
+    return handle_2fa_rotate_confirm(
+        request,
+        on_done=lambda: _audit(request, 'platform.2fa_rotated', None),
+    )
 
 
 # ------------------------------------------------------------------ overview / marketing

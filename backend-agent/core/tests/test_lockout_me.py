@@ -99,3 +99,85 @@ class ChangePasswordPolicyTests(TestCase):
         self.assertEqual(go('short1').status_code, 400)
         self.assertEqual(go('1234567890123').status_code, 400)
         self.assertEqual(go('Zq7-hollow-River-93').status_code, 200)
+
+
+class UserTwoFactorTests(TestCase):
+    def setUp(self):
+        no_template_capture(self)
+        quiet_logs(self)
+        cache.clear()
+        self.ws = make_ws('u2fa')
+        self.u = User.objects.create_user('u2fa', password='user-pass-98765', workspace=self.ws, role='owner')
+
+    def _login(self):
+        r = APIClient().post('/api/auth/login/', {'username': 'u2fa', 'password': 'user-pass-98765'}, format='json')
+        self.assertEqual(r.status_code, 200)
+        c = APIClient()
+        c.credentials(HTTP_AUTHORIZATION=f"Token {r.json()['token']}")
+        return c, r.json()['user']
+
+    def test_workspace_user_2fa_setup_login_verify_rotate_disable(self):
+        from core import totp
+
+        c, uinfo = self._login()
+        self.assertEqual((uinfo['totp_enabled'], uinfo['otp_required']), (False, False))
+        self.assertEqual(c.get('/api/auth/2fa/status/').json()['enabled'], False)
+
+        # Enroll 2FA
+        setup = c.post('/api/auth/2fa/setup/')
+        self.assertEqual(setup.status_code, 200)
+        s1 = setup.json()['secret']
+        self.assertEqual(c.post('/api/auth/2fa/confirm/', {'code': '000000'}, format='json').status_code, 400)
+        ok = c.post('/api/auth/2fa/confirm/', {'code': totp.totp(s1)}, format='json')
+        self.assertEqual(ok.status_code, 200)
+        self.assertEqual(c.get('/api/auth/me/').json()['totp_enabled'], True)
+        self.assertEqual(c.get('/api/auth/me/').json()['otp_required'], False)
+
+        # Fresh login now demands 2FA before tenant APIs work
+        c2, uinfo2 = self._login()
+        self.assertEqual((uinfo2['totp_enabled'], uinfo2['otp_required']), (True, True))
+        self.assertEqual(c2.get('/api/leads/').status_code, 403)
+        self.assertEqual(c2.get('/api/auth/2fa/status/').status_code, 403)
+        self.assertEqual(c2.post('/api/auth/2fa/disable/', {'code': totp.totp(s1)}, format='json').status_code, 403)
+        self.assertEqual(c2.post('/api/auth/2fa/verify/', {'code': '000000'}, format='json').status_code, 400)
+
+        # Verify on next step (avoiding replay of s1 code if same step by advancing now)
+        with mock.patch('core.totp.time.time', return_value=1_000_000):
+            code_v = totp.totp(s1, now=1_000_000)
+            self.assertEqual(c2.post('/api/auth/2fa/verify/', {'code': code_v}, format='json').status_code, 200)
+            self.assertEqual(c2.get('/api/auth/me/').json()['otp_required'], False)
+            self.assertEqual(c2.get('/api/leads/').status_code, 200)
+
+            # Replay of same step rejected even if session OTP timestamp is cleared
+            from core.models import PlatformSession
+            PlatformSession.objects.filter(token__user=self.u).update(otp_verified_at=None)
+            self.assertEqual(c2.post('/api/auth/2fa/verify/', {'code': code_v}, format='json').status_code, 400)
+            self.assertEqual(
+                c2.post('/api/auth/2fa/verify/', {'code': totp.totp(s1, now=1_000_030)}, format='json').status_code,
+                200,
+            )
+
+        # Rotate authenticator (step 1 checks old code, step 2 confirms new secret)
+        with mock.patch('core.totp.time.time', return_value=1_000_060):
+            rot = c2.post('/api/auth/2fa/rotate/', {'code': totp.totp(s1, now=1_000_060)}, format='json')
+            self.assertEqual(rot.status_code, 200)
+            s2 = rot.json()['secret']
+            self.assertNotEqual(s1, s2)
+            # Old secret stays active until new one is confirmed
+            self.u.refresh_from_db()
+            self.assertEqual(self.u.totp_secret, s1)
+            rot_ok = c2.post('/api/auth/2fa/rotate/confirm/', {'code': totp.totp(s2, now=1_000_060)}, format='json')
+            self.assertEqual(rot_ok.status_code, 200)
+            self.u.refresh_from_db()
+            self.assertEqual((self.u.totp_secret, self.u.totp_pending), (s2, ''))
+
+        # Disable with valid code from rotated secret
+        with mock.patch('core.totp.time.time', return_value=1_000_120):
+            dis = c2.post('/api/auth/2fa/disable/', {'code': totp.totp(s2, now=1_000_120)}, format='json')
+            self.assertEqual(dis.status_code, 200)
+            self.assertFalse(dis.json()['enabled'])
+            self.u.refresh_from_db()
+            self.assertEqual(self.u.totp_secret, '')
+
+        _, uinfo3 = self._login()
+        self.assertEqual((uinfo3['totp_enabled'], uinfo3['otp_required']), (False, False))

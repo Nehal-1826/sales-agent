@@ -66,6 +66,40 @@ export async function changePassword(current: string, next: string, confirm: str
   );
 }
 
+export interface UserTotpSetup {
+  secret: string;
+  otpauth_uri?: string;
+  otpauth_url?: string;
+  provisioning_uri?: string;
+}
+
+export async function getUser2faStatus(): Promise<{ enabled: boolean }> {
+  if (await inDemo()) return { enabled: false };
+  return request<{ enabled: boolean }>('/auth/2fa/status/');
+}
+
+export const setupUser2fa = async () =>
+  (await inDemo()) ? demoFail<UserTotpSetup>() : attempt(() => request<UserTotpSetup>('/auth/2fa/setup/', post()));
+
+export const confirmUser2fa = async (code: string) =>
+  (await inDemo()) ? demoFail<unknown>() : attempt(() => request<unknown>('/auth/2fa/confirm/', post({ code })));
+
+export const verifyUser2fa = async (code: string) =>
+  (await inDemo()) ? demoFail<unknown>() : attempt(() => request<unknown>('/auth/2fa/verify/', post({ code })));
+
+export const disableUser2fa = async (code: string) =>
+  (await inDemo()) ? demoFail<unknown>() : attempt(() => request<unknown>('/auth/2fa/disable/', post({ code })));
+
+export const rotateUser2faStart = async (code: string) =>
+  (await inDemo())
+    ? demoFail<UserTotpSetup>()
+    : attempt(() => request<UserTotpSetup>('/auth/2fa/rotate/', post({ code })));
+
+export const rotateUser2faConfirm = async (code: string) =>
+  (await inDemo())
+    ? demoFail<unknown>()
+    : attempt(() => request<unknown>('/auth/2fa/rotate/confirm/', post({ code })));
+
 /* ---------------- workspace status ---------------- */
 
 

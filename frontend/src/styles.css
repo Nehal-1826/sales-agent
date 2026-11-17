@@ -6350,3 +6350,115 @@ img, video, svg { max-width: 100%; }
     gap: 6px;
   }
 }
+
+/* ================================================================
+   TWO-FACTOR AUTHENTICATION PANEL (Settings + Platform Settings)
+   ================================================================ */
+
+.tfa-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.tfa-stage {
+  display: grid;
+  gap: 14px;
+}
+
+.tfa-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.tfa-step-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.tfa-enroll-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+}
+
+.tfa-qr-wrap {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.tfa-qr-box {
+  display: inline-flex;
+  padding: 10px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid var(--border-soft);
+  box-shadow: var(--shadow);
+}
+
+.tfa-qr-box svg {
+  display: block;
+}
+
+.tfa-manual {
+  display: grid;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.tfa-secret-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.tfa-secret-btns {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.tfa-secret-code {
+  flex: 1 1 140px;
+  min-width: 0;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  letter-spacing: 0.06em;
+  overflow-wrap: anywhere;
+}
+
+.tfa-verify-form {
+  display: grid;
+  gap: 12px;
+}
+
+.tfa-slots-field {
+  justify-items: start;
+}
+
+.tfa-slots-field .code-slots {
+  align-self: flex-start;
+}
+
+.tfa-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}

@@ -11,6 +11,7 @@ export type Cur = 'INR' | 'USD';
 export interface Me {
   platform_admin?: boolean;
   otp_required?: boolean;
+  totp_enabled?: boolean;
   email_verified?: boolean;
 }
 
@@ -153,7 +154,9 @@ function qs(o: Record<string, string | number | undefined>): string {
 
 export async function getMe(): Promise<Me> {
   // demo: the sample console is only reachable by opening #/platform/…
-  if (await inDemo()) return { platform_admin: window.location.hash.startsWith('#/platform'), otp_required: false };
+  if (await inDemo()) {
+    return { platform_admin: window.location.hash.startsWith('#/platform'), otp_required: false, totp_enabled: false };
+  }
   return request<Me>('/auth/me/');
 }
 
@@ -162,6 +165,11 @@ export interface TotpSetup {
   otpauth_uri?: string;
   otpauth_url?: string;
   provisioning_uri?: string;
+}
+
+export async function getPlatform2faStatus(): Promise<{ enabled: boolean }> {
+  if (await inDemo()) return { enabled: false };
+  return request<{ enabled: boolean }>('/platform/2fa/status/');
 }
 
 export const totpSetup = async () =>
@@ -173,6 +181,17 @@ export const totpConfirm = async (code: string) =>
 
 export const totpVerify = async (code: string) =>
   (await inDemo()) ? demoFail<unknown>() : attempt(() => request<unknown>('/platform/2fa/verify/', post({ code })));
+
+export const totpDisable = async (code: string) =>
+  (await inDemo()) ? demoFail<unknown>() : attempt(() => request<unknown>('/platform/2fa/disable/', post({ code })));
+
+export const totpRotateStart = async (code: string) =>
+  (await inDemo()) ? demoFail<TotpSetup>() : attempt(() => request<TotpSetup>('/platform/2fa/rotate/', post({ code })));
+
+export const totpRotateConfirm = async (code: string) =>
+  (await inDemo())
+    ? demoFail<unknown>()
+    : attempt(() => request<unknown>('/platform/2fa/rotate/confirm/', post({ code })));
 
 /* ---------------- demo data ---------------- */
 

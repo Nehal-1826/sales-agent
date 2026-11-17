@@ -140,6 +140,7 @@ REST_FRAMEWORK = {
     'EXCEPTION_HANDLER': 'core.exceptions.api_exception_handler',
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
+        'core.permissions.IsOtpSatisfied',
         'billing.permissions.HasPaidAccess',
     ],
     'DEFAULT_THROTTLE_CLASSES': [

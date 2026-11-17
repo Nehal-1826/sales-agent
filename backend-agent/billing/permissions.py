@@ -32,5 +32,7 @@ def enforce_paywall(request):
 
 class HasPaidAccess(BasePermission):
     def has_permission(self, request, view):
+        from core.authz import enforce_otp
+        enforce_otp(request)
         enforce_paywall(request)
         return True

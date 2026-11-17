@@ -10,11 +10,23 @@ from rest_framework.authtoken.models import Token
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework.decorators import action, api_view, permission_classes, throttle_classes
-from rest_framework.throttling import AnonRateThrottle
+from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 
 from . import lockout
-from .authz import auth_extras, is_platform_admin, otp_satisfied
-from .throttles import LoginThrottle
+from .authz import (
+    auth_extras,
+    handle_2fa_confirm,
+    handle_2fa_disable,
+    handle_2fa_rotate_confirm,
+    handle_2fa_rotate_start,
+    handle_2fa_setup,
+    handle_2fa_status,
+    handle_2fa_verify,
+    is_platform_admin,
+    otp_satisfied,
+    token_otp_satisfied,
+)
+from .throttles import LoginThrottle, OtpThrottle
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -27,9 +39,8 @@ from billing.entitlements import BillingError, check as quota_check
 from .mailer import NO_RECIPIENT_ERROR, check_send_quota, smtp_configured, valid_recipient
 from .outbox import enqueue_draft, kick_drain
 from .tenancy import current_workspace
-from . import totp
 from .authentication import token_expired
-from .permissions import IsWorkspaceAdmin, IsWorkspaceAdminOrReadOnly
+from .permissions import IsOtpSatisfied, IsWorkspaceAdmin, IsWorkspaceAdminOrReadOnly
 from .models import AgentConfig, AppSettings, ChatMessage, EmailDraft, EmailTemplate, Lead, Mailbox, PipelineRun, PlatformSession, Potential, Reply, SearchProfile, User
 from .pipeline import PipelineBusy, pipeline_status, run_pipeline, start_pipeline_async
 from .reports import _resolve_recipients, send_daily_report
@@ -148,8 +159,7 @@ def login(request):
     if token_expired(token):   # an expired token is dead — issue a fresh one
         token.delete()
         token = Token.objects.create(user=user)
-    if user.workspace_id is None:   # a fresh login must pass TOTP again
-        PlatformSession.objects.filter(token=token).delete()
+    PlatformSession.objects.filter(token=token).delete()  # a fresh login must pass TOTP again
     return Response({'token': token.key, 'user': {**UserSerializer(user).data, **auth_extras(user, request)}})
 
 
@@ -185,54 +195,53 @@ def change_password(request):
     return Response({'detail': 'password updated — sign in again'})
 
 
-# ── workspace-level 2FA (Settings → Two-factor) ────────────────────────────
+# ── workspace-level 2FA (Settings → Two-factor + sign-in OTP) ──────────────
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsOtpSatisfied])
 def user_2fa_status(request):
-    return Response({'enabled': bool(request.user.totp_secret)})
+    return handle_2fa_status(request)
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsOtpSatisfied])
 def user_2fa_setup(request):
-    u = request.user
-    if u.totp_secret:
-        return Response({'detail': 'Two-factor is already enabled.'}, status=409)
-    u.totp_pending = totp.new_secret()
-    u.save(update_fields=['totp_pending'])
-    return Response({'secret': u.totp_pending,
-                     'otpauth_uri': totp.otpauth_uri(u.totp_pending, u.email or u.username)})
+    return handle_2fa_setup(request, already_detail='Two-factor is already enabled.')
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsOtpSatisfied])
+@throttle_classes([AnonRateThrottle, UserRateThrottle, OtpThrottle])
 def user_2fa_confirm(request):
-    u = request.user
-    if u.totp_secret:
-        return Response({'detail': 'Two-factor is already enabled.'}, status=409)
-    if not u.totp_pending:
-        return Response({'detail': 'Start setup first.'}, status=400)
-    step = totp.match_step(u.totp_pending, request.data.get('code', ''))
-    if step is None:
-        return Response({'detail': 'Invalid code — try the current one from your app.'}, status=400)
-    u.totp_secret, u.totp_pending = u.totp_pending, ''
-    u.save(update_fields=['totp_secret', 'totp_pending'])
-    return Response({'enabled': True})
+    return handle_2fa_confirm(request, already_detail='Two-factor is already enabled.')
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle, OtpThrottle])
+def user_2fa_verify(request):
+    return handle_2fa_verify(request, not_enrolled_detail='Two-factor is not enabled.')
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsOtpSatisfied])
+@throttle_classes([AnonRateThrottle, UserRateThrottle, OtpThrottle])
 def user_2fa_disable(request):
-    u = request.user
-    if not u.totp_secret:
-        return Response({'detail': 'Two-factor is not enabled.'}, status=400)
-    step = totp.match_step(u.totp_secret, request.data.get('code', ''))
-    if step is None:
-        return Response({'detail': 'Invalid code.'}, status=400)
-    u.totp_secret = ''
-    u.save(update_fields=['totp_secret'])
-    return Response({'enabled': False})
+    return handle_2fa_disable(request)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsOtpSatisfied])
+@throttle_classes([AnonRateThrottle, UserRateThrottle, OtpThrottle])
+def user_2fa_rotate(request):
+    return handle_2fa_rotate_start(request)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsOtpSatisfied])
+@throttle_classes([AnonRateThrottle, UserRateThrottle, OtpThrottle])
+def user_2fa_rotate_confirm(request):
+    return handle_2fa_rotate_confirm(request)
 
 
 @api_view(['POST'])
@@ -242,7 +251,10 @@ def warmup_token(request):
     # A platform admin's DRF token alone must not buy a 12 h super_admin
     # FastAPI session — the mint demands the same satisfied TOTP session
     # (12 h) as every other privileged platform surface (billing.views_platform).
+    # Workspace users with 2FA enabled must likewise have satisfied OTP.
     if is_platform_admin(request.user) and not otp_satisfied(request):
+        return Response({'detail': 'OTP required'}, status=403)
+    if bool(request.user.totp_secret) and not token_otp_satisfied(request):
         return Response({'detail': 'OTP required'}, status=403)
     ws = getattr(request.user, 'workspace', None)
     slug = getattr(ws, 'slug', None) or 'default'

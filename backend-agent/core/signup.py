@@ -28,6 +28,7 @@ from billing.models import Plan, Subscription
 
 from .authz import auth_extras
 from .models import AppSettings, User, Workspace
+from .permissions import IsOtpSatisfied
 from .serializers import UserSerializer
 from .tenancy import workspace_context
 from .throttles import ResendThrottle, SignupThrottle
@@ -202,7 +203,7 @@ def verify_email(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])   # not paywalled: unpaid users must be able to verify
+@permission_classes([IsAuthenticated, IsOtpSatisfied])   # not paywalled: unpaid users must be able to verify
 @throttle_classes([ResendThrottle])
 def resend_verification(request):
     if request.user.email_verified_at is not None:

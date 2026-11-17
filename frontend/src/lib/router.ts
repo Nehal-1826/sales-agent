@@ -51,17 +51,27 @@ export function useRoute(): Route {
   return route;
 }
 
-// ── platform console routing (one source of truth) ────────────────────────
+// ── admin console routing — slug-prefixed paths ───────────────────────────
+// Every admin URL carries the 6-digit slug: /<slug>/<page> (e.g. /666453/users).
+// Without the correct slug in the URL the console never renders.
 
-export function navigatePlatform(page: string): void {
-  const next = `/platform/${page}`;
+/** Extract the slug + page from a /<6-digits>/<page> pathname. */
+export function parseAdminRoute(pathname = window.location.pathname): { slug: string; page: string } | null {
+  const m = pathname.match(/^\/(\d{6})(?:\/([a-z-]+))?\/?$/);
+  if (!m) return null;
+  return { slug: m[1], page: m[2] || 'overview' };
+}
+
+/** Navigate within the admin console — keeps the slug prefix. */
+export function navigateAdmin(slug: string, page: string): void {
+  const next = `/${slug}/${page}`;
   if (window.location.pathname !== next) {
     window.history.pushState(null, '', next);
     window.dispatchEvent(new PopStateEvent('popstate'));
   }
 }
 
-export function parsePlatformRoute(pathname = window.location.pathname): string {
-  const m = pathname.match(/^\/platform\/([a-z-]+)/);
-  return m ? m[1] : 'overview';
+/** Legacy /platform/<page> support — redirect to /<slug>/<page> if slug is known. */
+export function isLegacyPlatformPath(pathname = window.location.pathname): boolean {
+  return pathname.startsWith('/platform/');
 }

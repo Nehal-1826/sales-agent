@@ -46,7 +46,7 @@ import { AuditPage } from './AuditPage';
 import { AdminSettingsPage } from './AdminSettingsPage';
 import { MarketingPage } from './MarketingPage';
 import { PLATFORM_PAGES } from './shared';
-import { navigatePlatform, parsePlatformRoute } from '../../lib/router';
+import { navigateAdmin, parseAdminRoute } from '../../lib/router';
 import type { PlatformPage } from './shared';
 
 const LABELS: Record<PlatformPage, string> = {
@@ -131,37 +131,31 @@ class PageErrorBoundary extends Component<{ children: ReactNode }, { failed: boo
   }
 }
 
-export function PlatformShell({ demo, onSignOut }: { demo: boolean; onSignOut: () => void }) {
-  // Gate: the platform console is only reachable via the correct admin slug
-  // (set by App.tsx after a successful slug check). Without the flag, redirect.
-  useEffect(() => {
-    if (!sessionStorage.getItem('admin-slug-ok')) {
-      window.history.pushState(null, '', '/');
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    }
-  }, []);
-
+export function PlatformShell({ demo, onSignOut, slug }: { demo: boolean; onSignOut: () => void; slug: string }) {
   const [page, setPage] = useState<PlatformPage>(() => {
-    const p = parsePlatformRoute();
+    const r = parseAdminRoute();
+    const p = r && r.slug === slug ? r.page : 'overview';
     return (PLATFORM_PAGES as readonly string[]).includes(p) ? (p as PlatformPage) : 'overview';
   });
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     const on = () => {
-      const p = parsePlatformRoute();
+      const r = parseAdminRoute();
+      const p = r && r.slug === slug ? r.page : 'overview';
       setPage((PLATFORM_PAGES as readonly string[]).includes(p) ? (p as PlatformPage) : 'overview');
     };
     window.addEventListener('popstate', on);
     return () => window.removeEventListener('popstate', on);
-  }, []);
+  }, [slug]);
 
-  // normalise a non-platform path left over from a tenant session
+  // normalise the URL to /<slug>/<page> if it drifted
   useEffect(() => {
-    if (!window.location.pathname.startsWith('/platform/')) {
-      navigatePlatform(page);
+    const expected = `/${slug}/${page}`;
+    if (window.location.pathname !== expected) {
+      navigateAdmin(slug, page);
     }
-  }, [page]);
+  }, [page, slug]);
 
   useEffect(() => setMenuOpen(false), [page]);
 
@@ -199,12 +193,12 @@ export function PlatformShell({ demo, onSignOut }: { demo: boolean; onSignOut: (
                 return (
                   <a
                     key={p}
-                    href={`/platform/${p}`}
+                    href={`/${slug}/${p}`}
                     className={`nav-item${page === p ? ' active' : ''}`}
                     aria-current={page === p ? 'page' : undefined}
                     onClick={(e) => {
                       e.preventDefault();
-                      navigatePlatform(p);
+                      navigateAdmin(slug, p);
                       setMenuOpen(false);
                     }}
                   >

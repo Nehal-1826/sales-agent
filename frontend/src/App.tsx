@@ -81,41 +81,6 @@ function AppGate() {
     void probe();
   }, [probe]);
 
-  // Admin secret slug: if the SPA was loaded from /<digits>, check the slug.
-  // Valid → set a session flag + navigate to /platform (no hash).
-  // Wrong → email alert + 404. Only 6-digit paths trigger the check;
-  // other digit paths fall through to the normal SPA (platform is gated
-  // by the sessionStorage flag from PlatformShell).
-  useEffect(() => {
-    const m = window.location.pathname.match(/^\/(\d{6})\/?$/);
-    if (!m) return;
-    const slug = m[1];
-    void (async () => {
-      try {
-        const res = await fetch('/api/admin-slug/check/', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ slug }),
-        });
-        if (res.ok) {
-          sessionStorage.setItem('admin-slug-ok', '1');
-          window.history.replaceState(null, '', '/platform');
-          window.dispatchEvent(new PopStateEvent('popstate'));
-        } else {
-          document.body.innerHTML = `
-            <div style="display:grid;place-items:center;min-height:100vh;background:#0a0b0d;color:#9aa0aa;font-family:system-ui">
-              <div style="text-align:center">
-                <div style="font-size:48px;font-weight:700;color:#e8e9ec">404</div>
-                <div style="margin-top:8px">Page not found</div>
-              </div>
-            </div>`;
-        }
-      } catch {
-        document.title = '404';
-      }
-    })();
-  }, []);
-
   // drop ?signin=1 from the address bar once read
   useEffect(() => {
     if (wantsSignIn()) window.history.replaceState(null, '', window.location.pathname);
@@ -222,6 +187,45 @@ function AppGate() {
 function RoleGate({ demo, onSignOut }: { demo: boolean; onSignOut: () => void }) {
   const [me, setMe] = useState<Me | null>(null);
   const [failed, setFailed] = useState(false);
+
+  // Admin slug: /<6-digits>/<page> — validated on every load, stays in the URL
+  const [adminSlug, setAdminSlug] = useState<string | null>(() => {
+    const m = window.location.pathname.match(/^\/(\d{6})/);
+    return m ? m[1] : null;
+  });
+  const [slugVerified, setSlugVerified] = useState<boolean | null>(adminSlug === null ? null : false);
+
+  useEffect(() => {
+    if (adminSlug === null) return;
+    void (async () => {
+      try {
+        const res = await fetch('/api/admin-slug/check/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slug: adminSlug }),
+        });
+        setSlugVerified(res.ok);
+        if (!res.ok) document.title = '404';
+      } catch {
+        setSlugVerified(false);
+      }
+    })();
+  }, [adminSlug]);
+
+  // Re-detect slug on back/forward navigation
+  useEffect(() => {
+    const on = () => {
+      const m = window.location.pathname.match(/^\/(\d{6})/);
+      const next = m ? m[1] : null;
+      if (next !== adminSlug) {
+        setAdminSlug(next);
+        setSlugVerified(next === null ? null : false);
+      }
+    };
+    window.addEventListener('popstate', on);
+    return () => window.removeEventListener('popstate', on);
+  }, [adminSlug]);
+
   const load = useCallback(() => {
     setFailed(false);
     getMe().then(setMe).catch(() => setFailed(true));
@@ -262,7 +266,24 @@ function RoleGate({ demo, onSignOut }: { demo: boolean; onSignOut: () => void })
       </>
     );
   }
-  if (me.platform_admin) return <PlatformShell demo={demo} onSignOut={onSignOut} />;
+  // Admin console: ONLY renders when the URL carries a verified 6-digit slug
+  if (me.platform_admin) {
+    if (adminSlug !== null && slugVerified === false) {
+      // wrong slug in URL → 404
+      return (
+        <div style={{ display: 'grid', placeItems: 'center', minHeight: '100vh', background: '#0a0b0d', color: '#9aa0aa', fontFamily: 'system-ui' }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 48, fontWeight: 700, color: '#e8e9ec' }}>404</div>
+            <div style={{ marginTop: 8 }}>Page not found</div>
+          </div>
+        </div>
+      );
+    }
+    if (adminSlug !== null && slugVerified === true) {
+      return <PlatformShell demo={demo} onSignOut={onSignOut} slug={adminSlug} />;
+    }
+    // no slug in URL → admin sees the regular workspace, not the console
+  }
   return (
     <WorkspaceStatusProvider>
       <Shell demo={demo} onSignOut={onSignOut} />

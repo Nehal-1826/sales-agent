@@ -6462,3 +6462,11 @@ img, video, svg { max-width: 100%; }
   align-items: center;
   gap: 10px;
 }
+
+/* Mail page: Add mailbox button in toolbar */
+.mail-add-btn {
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 14px;
+}

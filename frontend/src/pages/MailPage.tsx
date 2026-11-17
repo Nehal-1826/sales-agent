@@ -255,7 +255,7 @@ export function MailPage() {
           </svg>
           <input
             ref={searchInput}
-            type="search"
+            type="text"
             value={searchBox}
             placeholder="Search subject, from, to…"
             aria-label="Search messages"
@@ -304,6 +304,14 @@ export function MailPage() {
           degraded={degraded}
           onSelect={selectAccount}
         />
+        <button
+          type="button"
+          className="btn btn-ghost mail-add-btn"
+          onClick={() => navigate('settings', 'mailboxes')}
+          title="Add a mailbox (Settings → Mailboxes)"
+        >
+          + Add mailbox
+        </button>
       </header>
 
       {/* ---- three panes ---- */}

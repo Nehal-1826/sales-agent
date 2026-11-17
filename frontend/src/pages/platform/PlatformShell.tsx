@@ -11,7 +11,7 @@ import {
   IconFlame,
   IconLayers,
   IconLogout,
-  IconMailSearch,
+  IconMail,
   IconNetwork,
   IconPackage,
   IconPulse,
@@ -31,8 +31,7 @@ import { PlatformAnalyticsPage } from './PlatformAnalyticsPage';
 import { PeerInboxesPage } from './PeerInboxesPage';
 import { PoolRoutingPage } from './PoolRoutingPage';
 import { LlmUsagePage } from './LlmUsagePage';
-import { PlatformMailPage } from './PlatformMailPage';
-import { MailViewerPage } from './MailViewerPage';
+import { MailPage } from '../MailPage';
 import { AdminUsersPage } from './AdminUsersPage';
 import { TenantsPage } from './TenantsPage';
 import { RevengePage } from './RevengePage';
@@ -55,8 +54,7 @@ const LABELS: Record<PlatformPage, string> = {
   peers: 'Test accounts',
   routing: 'Account routing',
   llm: 'AI usage',
-  'platform-mail': 'Platform mail',
-  'mail-viewer': 'Mail viewer',
+  mail: 'Mail',
   users: 'Users',
   tenants: 'Tenants',
   revenge: 'Retention',
@@ -78,8 +76,7 @@ const ICONS: Record<PlatformPage, (p: IconProps) => JSX.Element> = {
   peers: IconNetwork,
   routing: IconBranch,
   llm: IconSpark,
-  'platform-mail': IconSend,
-  'mail-viewer': IconMailSearch,
+  mail: IconMail,
   users: IconUsers,
   tenants: IconBuilding,
   revenge: IconFlame,
@@ -99,7 +96,7 @@ const ICONS: Record<PlatformPage, (p: IconProps) => JSX.Element> = {
  *  (nav-config.ts ADMIN_NAV_GROUPS) with the console-only pages folded in. */
 const NAV_GROUPS: { group: string; pages: PlatformPage[] }[] = [
   { group: 'Overview', pages: ['overview', 'analytics'] },
-  { group: 'Email network', pages: ['peers', 'routing', 'llm', 'platform-mail', 'mail-viewer'] },
+  { group: 'Email network', pages: ['mail', 'peers', 'routing', 'llm'] },
   {
     group: 'Customers & money',
     pages: ['users', 'tenants', 'revenge', 'crm', 'plans', 'addons', 'billing', 'payments', 'invoices'],
@@ -241,8 +238,7 @@ export function PlatformShell({ demo, onSignOut }: { demo: boolean; onSignOut: (
           {page === 'peers' && <PeerInboxesPage demo={demo} />}
           {page === 'routing' && <PoolRoutingPage demo={demo} />}
           {page === 'llm' && <LlmUsagePage demo={demo} />}
-          {page === 'platform-mail' && <PlatformMailPage demo={demo} />}
-          {page === 'mail-viewer' && <MailViewerPage />}
+          {page === 'mail' && <MailPage />}
           {page === 'users' && <AdminUsersPage demo={demo} />}
           {page === 'tenants' && <TenantsPage demo={demo} />}
           {page === 'revenge' && <RevengePage demo={demo} />}

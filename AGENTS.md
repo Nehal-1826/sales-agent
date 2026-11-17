@@ -59,8 +59,16 @@ The shared bridge secret must be **32+ chars** and identical on both backends
 - One login: Django identity (workspaces, OTP, billing). `POST /api/auth/warmup-token/`
   mints an HS256 `iss=agent-bridge` JWT (12h) — FastAPI auto-provisions passwordless
   users from it (both auth dependencies guard foreign `iss`; kill-switch
-  `AGENT_BRIDGE_ENABLED`). Platform admins need a satisfied OTP session to mint
-  (`role=super_admin`).
+  `AGENT_BRIDGE_ENABLED`). Platform admins and 2FA-enabled workspace users need a
+  satisfied OTP session (`PlatformSession` within 12h) to mint or access protected APIs.
+- Unified 2FA (Admin & User): `core/authz.py` provides shared TOTP handlers, lockout
+  (10 failures / 15 min), anti-replay (`last_otp_step`), `auth_extras` (`totp_enabled`,
+  `otp_required`), and `enforce_otp` / `IsOtpSatisfied` (`403 OTP required` until verified).
+  Platform admins always gate on `TotpScreen` (auto-enrolling QR setup when
+  `totp_enabled` is false); 2FA-enabled users gate on `TotpScreen` → `/api/auth/2fa/verify/`.
+  Both `#/settings/twofactor` (`TwoFactorSection.tsx`) and `#/platform/settings`
+  (`AdminSettingsPage.tsx`) share `frontend/src/components/TwoFactorPanel.tsx` (`CodeSlots`
+  animations, QR + copyable manual secret, enable, 2-step authenticator rotate, disable).
 - Frontend↔backend: Django via `lib/` request helpers; warmup via `lib/warmupApi.ts`
   (Bearer JWT, `/wp-api` base, health probe, 401 re-acquire once). Bridge JWT dies
   with the session (all four token-clear sites purge both keys).
@@ -80,7 +88,11 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   assignment is ready-order, not start-order.
 - Background servers die with the session — see Commands to bring the stack back.
 - Alembic (backend/) is Postgres-only; sqlite dev needs the bootstrap flag.
-- Branch state: all merged work lives on `merge/agent-foundation`, local-only,
-  **no push/deploy without the owner's command**. `main` holds only specs/plans.
+- Branch state: active merged work lives on `main` (pushed to `origin/main` only on the
+  owner's explicit command — **no push/deploy without command**).
 - E2E selectors worth knowing: `.side-logout`, `aside.sidebar` full-height rail,
-  password-rule `li.pass/.fail` flip on signup.
+  password-rule `li.pass/.fail` flip on signup, `.code-slots__input`, `.tfa-panel`, `.tfa-qr-box`.
+- Python env note on Windows: if `backend-agent/.venv` is absent and `backend/.venv` is used
+  for Django, include Python 3.12 `site-packages` on `PYTHONPATH` for `PyJWT` (`jwt`).
+- Workflow rule: update `AGENTS.md` after completing work whenever architecture, routes,
+  dev commands, or gotchas change.

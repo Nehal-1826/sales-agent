@@ -10,8 +10,12 @@ Brand: **WarmPulse**, accent theme **orange** (`#f97316` family — restored
 
 - `frontend/` — THE app (React + Vite + TS strict, custom CSS tokens, NO Tailwind).
   Landing/login/signup + workspace shell (Home · Approvals · Replies · Tasks ·
-  Leads · Activity · Assistant · Warmup · Settings). Sidebar at all widths
+  Leads · Activity · Assistant · Warmup · Mail · Settings). Sidebar at all widths
   (bottom tab bar removed). Prerendered marketing build (SSR + `scripts/prerender.mjs`).
+  Platform console at `#/platform` (21 admin pages: Overview, Analytics, Users,
+  Tenants, Payments, Billing, Invoices, Plans, Addons, CRM, Reports, MailViewer,
+  PlatformMail, PeerInboxes, PoolRouting, LLM Usage, SystemHealth, Settings,
+  Audit, Marketing, Revenge — ported from `frontend-warmpulse/`).
 - `backend-agent/` — Django + DRF: pipeline, scraper, AI, mailer/outbox, billing,
   workspaces, OTP, WhatsApp approvals, mailbox probe, company scrape. Own AGENTS.md
   (pre-merge doc; paths there are historical).
@@ -77,7 +81,11 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   (AllowAny + 10/min scoped throttle, SSRF-guarded, reuses `core/scraper.py`).
 - Mailboxes: provider wizard + `POST /api/mailboxes/test` (IMAP+SMTP probe,
   per-leg results, never echoes passwords; username = `smtpUser || fromEmail`).
-  Unreachable mailboxes pause 24h with one-click Resume.
+  Unreachable mailboxes pause 24h with one-click Resume. Auto-enroll into
+  warmup on verified save (flag `warmup_enrolled`, 5s-capped, non-blocking).
+- Webmail: `POST/GET /api/webmail/*` — IMAP client over connected mailboxes
+  (accounts/folders/messages/read/send/mark). Read pane = sandboxed iframe +
+  CSP `img-src 'none'` (anti tracking-pixel). Replies thread via `message_id`.
 - FastAPI docs (`/docs`) are disabled outside dev environments.
 - Secrets server-side only (env/.env.docker), masked in API responses, never frontend.
 
@@ -88,8 +96,11 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   assignment is ready-order, not start-order.
 - Background servers die with the session — see Commands to bring the stack back.
 - Alembic (backend/) is Postgres-only; sqlite dev needs the bootstrap flag.
-- Branch state: active merged work lives on `main` (pushed to `origin/main` only on the
-  owner's explicit command — **no push/deploy without command**).
+- Branch state: single branch `main` (= `master`, synced via PR). Only
+  `feat/client-ui-and-outreach-safety` preserved (Agy's work). Push to
+  `origin/main` only on the owner's explicit command — **no push/deploy without command**.
+  Push protection: any `AQ.*`/`AIza*` key in history blocks pushes to sales-agent
+  repo (GEMINI key was scrubbed; check before pushing new work).
 - E2E selectors worth knowing: `.side-logout`, `aside.sidebar` full-height rail,
   password-rule `li.pass/.fail` flip on signup, `.code-slots__input`, `.tfa-panel`, `.tfa-qr-box`.
 - Python env note on Windows: if `backend-agent/.venv` is absent and `backend/.venv` is used

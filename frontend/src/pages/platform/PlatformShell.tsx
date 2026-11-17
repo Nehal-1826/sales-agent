@@ -46,6 +46,7 @@ import { AuditPage } from './AuditPage';
 import { AdminSettingsPage } from './AdminSettingsPage';
 import { MarketingPage } from './MarketingPage';
 import { PLATFORM_PAGES } from './shared';
+import { navigatePlatform, parsePlatformRoute } from '../../lib/router';
 import type { PlatformPage } from './shared';
 
 const LABELS: Record<PlatformPage, string> = {
@@ -130,32 +131,36 @@ class PageErrorBoundary extends Component<{ children: ReactNode }, { failed: boo
   }
 }
 
-function parse(hash = window.location.hash): PlatformPage {
-  const [root = '', page = ''] = hash.replace(/^#\/?/, '').split('/');
-  return root === 'platform' && (PLATFORM_PAGES as readonly string[]).includes(page) ? (page as PlatformPage) : 'overview';
-}
-
 export function PlatformShell({ demo, onSignOut }: { demo: boolean; onSignOut: () => void }) {
   // Gate: the platform console is only reachable via the correct admin slug
   // (set by App.tsx after a successful slug check). Without the flag, redirect.
   useEffect(() => {
     if (!sessionStorage.getItem('admin-slug-ok')) {
-      window.location.hash = '#/';
+      window.history.pushState(null, '', '/');
+      window.dispatchEvent(new PopStateEvent('popstate'));
     }
   }, []);
 
-  const [page, setPage] = useState<PlatformPage>(() => parse());
+  const [page, setPage] = useState<PlatformPage>(() => {
+    const p = parsePlatformRoute();
+    return (PLATFORM_PAGES as readonly string[]).includes(p) ? (p as PlatformPage) : 'overview';
+  });
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
-    const on = () => setPage(parse());
-    window.addEventListener('hashchange', on);
-    return () => window.removeEventListener('hashchange', on);
+    const on = () => {
+      const p = parsePlatformRoute();
+      setPage((PLATFORM_PAGES as readonly string[]).includes(p) ? (p as PlatformPage) : 'overview');
+    };
+    window.addEventListener('popstate', on);
+    return () => window.removeEventListener('popstate', on);
   }, []);
 
-  // normalise a non-platform hash left over from a tenant session
+  // normalise a non-platform path left over from a tenant session
   useEffect(() => {
-    if (!window.location.hash.startsWith('#/platform/')) window.location.hash = `#/platform/${page}`;
+    if (!window.location.pathname.startsWith('/platform/')) {
+      navigatePlatform(page);
+    }
   }, [page]);
 
   useEffect(() => setMenuOpen(false), [page]);
@@ -194,10 +199,14 @@ export function PlatformShell({ demo, onSignOut }: { demo: boolean; onSignOut: (
                 return (
                   <a
                     key={p}
-                    href={`#/platform/${p}`}
+                    href={`/platform/${p}`}
                     className={`nav-item${page === p ? ' active' : ''}`}
                     aria-current={page === p ? 'page' : undefined}
-                    onClick={() => setMenuOpen(false)}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      navigatePlatform(p);
+                      setMenuOpen(false);
+                    }}
                   >
                     <Icon size={18} />
                     <span>{LABELS[p]}</span>

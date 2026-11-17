@@ -82,8 +82,8 @@ function AppGate() {
   }, [probe]);
 
   // Admin secret slug: if the SPA was loaded from /<digits>, check the slug.
-  // Valid → set a session flag + auto-navigate to #/platform.
-  // Wrong → email alert + 404. Non-6-digit paths also 404 (no bypass).
+  // Valid → set a session flag + navigate to /platform (no hash).
+  // Wrong → email alert + 404. Any digit path triggers the check.
   useEffect(() => {
     const m = window.location.pathname.match(/^\/(\d+)\/?$/);
     if (!m) return;
@@ -97,11 +97,9 @@ function AppGate() {
         });
         if (res.ok) {
           sessionStorage.setItem('admin-slug-ok', '1');
-          window.history.replaceState(null, '', '/');
-          window.location.hash = '#/platform';
-          window.location.reload();
+          window.history.replaceState(null, '', '/platform');
+          window.dispatchEvent(new PopStateEvent('popstate'));
         } else {
-          // wrong slug → replace with a clean 404
           document.body.innerHTML = `
             <div style="display:grid;place-items:center;min-height:100vh;background:#0a0b0d;color:#9aa0aa;font-family:system-ui">
               <div style="text-align:center">
@@ -118,7 +116,7 @@ function AppGate() {
 
   // drop ?signin=1 from the address bar once read
   useEffect(() => {
-    if (wantsSignIn()) window.history.replaceState(null, '', window.location.pathname + window.location.hash);
+    if (wantsSignIn()) window.history.replaceState(null, '', window.location.pathname);
   }, []);
 
   // any 401 mid-session (token revoked/expired) → back to the sign-in screen

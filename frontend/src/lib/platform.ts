@@ -155,7 +155,7 @@ function qs(o: Record<string, string | number | undefined>): string {
 export async function getMe(): Promise<Me> {
   // demo: the sample console is only reachable by opening #/platform/…
   if (await inDemo()) {
-    return { platform_admin: window.location.hash.startsWith('#/platform'), otp_required: false, totp_enabled: false };
+    return { platform_admin: window.location.pathname.startsWith('/platform'), otp_required: false, totp_enabled: false };
   }
   return request<Me>('/auth/me/');
 }

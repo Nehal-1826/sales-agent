@@ -81,10 +81,11 @@ function AppGate() {
     void probe();
   }, [probe]);
 
-  // Admin secret slug: if the SPA was loaded from /<6-digits>, check the slug
-  // and auto-navigate to #/platform on success (or show 404 on failure).
+  // Admin secret slug: if the SPA was loaded from /<digits>, check the slug.
+  // Valid → set a session flag + auto-navigate to #/platform.
+  // Wrong → email alert + 404. Non-6-digit paths also 404 (no bypass).
   useEffect(() => {
-    const m = window.location.pathname.match(/^\/(\d{6})\/?$/);
+    const m = window.location.pathname.match(/^\/(\d+)\/?$/);
     if (!m) return;
     const slug = m[1];
     void (async () => {
@@ -95,7 +96,7 @@ function AppGate() {
           body: JSON.stringify({ slug }),
         });
         if (res.ok) {
-          // valid slug → clean the URL and enter the platform console
+          sessionStorage.setItem('admin-slug-ok', '1');
           window.history.replaceState(null, '', '/');
           window.location.hash = '#/platform';
           window.location.reload();
@@ -110,7 +111,7 @@ function AppGate() {
             </div>`;
         }
       } catch {
-        // network error → just show 404
+        document.title = '404';
       }
     })();
   }, []);

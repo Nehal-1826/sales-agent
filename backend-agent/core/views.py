@@ -1299,10 +1299,10 @@ def _alert_admin_wrong_slug(tried_slug, ip):
 def admin_slug_check(request):
     """Check a 6-digit slug. Valid → {valid:true}; wrong → alert email + {valid:false}."""
     slug = str(request.data.get('slug', '')).strip()
-    if not re.fullmatch(r'\d{6}', slug):
-        return Response({'valid': False, 'detail': 'Not a 6-digit slug.'}, status=400)
+    if not re.fullmatch(r'\d+', slug):
+        return Response({'valid': False, 'detail': 'Not a numeric slug.'}, status=400)
     s = AppSettings.all_tenants.first()
-    if s.admin_slug and slug == s.admin_slug:
+    if s and s.admin_slug and slug == s.admin_slug:
         return Response({'valid': True})
     # wrong slug → alert + 404 response
     ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip() or \

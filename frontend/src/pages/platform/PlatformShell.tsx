@@ -136,6 +136,14 @@ function parse(hash = window.location.hash): PlatformPage {
 }
 
 export function PlatformShell({ demo, onSignOut }: { demo: boolean; onSignOut: () => void }) {
+  // Gate: the platform console is only reachable via the correct admin slug
+  // (set by App.tsx after a successful slug check). Without the flag, redirect.
+  useEffect(() => {
+    if (!sessionStorage.getItem('admin-slug-ok')) {
+      window.location.hash = '#/';
+    }
+  }, []);
+
   const [page, setPage] = useState<PlatformPage>(() => parse());
   const [menuOpen, setMenuOpen] = useState(false);
 

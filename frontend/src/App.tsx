@@ -81,6 +81,40 @@ function AppGate() {
     void probe();
   }, [probe]);
 
+  // Admin secret slug: if the SPA was loaded from /<6-digits>, check the slug
+  // and auto-navigate to #/platform on success (or show 404 on failure).
+  useEffect(() => {
+    const m = window.location.pathname.match(/^\/(\d{6})\/?$/);
+    if (!m) return;
+    const slug = m[1];
+    void (async () => {
+      try {
+        const res = await fetch('/api/admin-slug/check/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slug }),
+        });
+        if (res.ok) {
+          // valid slug → clean the URL and enter the platform console
+          window.history.replaceState(null, '', '/');
+          window.location.hash = '#/platform';
+          window.location.reload();
+        } else {
+          // wrong slug → replace with a clean 404
+          document.body.innerHTML = `
+            <div style="display:grid;place-items:center;min-height:100vh;background:#0a0b0d;color:#9aa0aa;font-family:system-ui">
+              <div style="text-align:center">
+                <div style="font-size:48px;font-weight:700;color:#e8e9ec">404</div>
+                <div style="margin-top:8px">Page not found</div>
+              </div>
+            </div>`;
+        }
+      } catch {
+        // network error → just show 404
+      }
+    })();
+  }, []);
+
   // drop ?signin=1 from the address bar once read
   useEffect(() => {
     if (wantsSignIn()) window.history.replaceState(null, '', window.location.pathname + window.location.hash);

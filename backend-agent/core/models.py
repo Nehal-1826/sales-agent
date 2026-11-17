@@ -530,6 +530,11 @@ class AppSettings(TenantOwned, Timestamped):
     # falls back to superuser/staff emails when blank)
     report_email = models.CharField(max_length=300, blank=True)
 
+    # Admin console secret slug — a random 6-digit number; visiting
+    # warmpulse.tech/<slug> auto-navigates to #/platform. A wrong 6-digit
+    # hit triggers an email alert to the report_email (throttled 1/5min).
+    admin_slug = models.CharField(max_length=6, blank=True, db_index=True)
+
     # Frequent Runs
     runs_enabled = models.BooleanField(default=True)
     run_frequency = models.CharField(max_length=10, choices=Frequencies.choices, default=Frequencies.EVERY_1H)

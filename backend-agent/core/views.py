@@ -40,6 +40,7 @@ from .mailer import NO_RECIPIENT_ERROR, check_send_quota, smtp_configured, valid
 from .outbox import enqueue_draft, kick_drain
 from .tenancy import current_workspace
 from .authentication import token_expired
+from .throttles import AdminSlugThrottle
 from .permissions import IsOtpSatisfied, IsWorkspaceAdmin, IsWorkspaceAdminOrReadOnly
 from .models import AgentConfig, AppSettings, ChatMessage, EmailDraft, EmailTemplate, Lead, Mailbox, PipelineRun, PlatformSession, Potential, Reply, SearchProfile, User
 from .pipeline import PipelineBusy, pipeline_status, run_pipeline, start_pipeline_async
@@ -676,7 +677,7 @@ def chat(request):
     # Q&A that configures the whole system, then hands over to the Responder.
     # State is PER USER (User.onboarding): every new client login gets the
     # wizard; existing users were marked done in migration 0017.
-    settings = AppSettings.load()
+    settings = AppSettings.all_tenants.first()
     from .onboarding import onboarding_reply, onboarding_status, redact_for_history
     if request.method == 'POST':
         text = (request.data.get('text') or '').strip()
@@ -918,7 +919,7 @@ def outreach_status(request):
     today = outbox.local(now).date()
     queued = EmailDraft.objects.filter(status=EmailDraft.Statuses.QUEUED)
     next_due = queued.order_by('scheduled_for').values_list('scheduled_for', flat=True).first()
-    s = AppSettings.load()
+    s = AppSettings.all_tenants.first()
     mailboxes = [{
         'id': mb.id, 'fromEmail': mb.from_email, 'label': mb.label,
         'sentToday': outbox.sent_on(mb, today), 'cap': outbox.effective_cap(mb, today),
@@ -1254,3 +1255,60 @@ def pipeline_run(request):
 def pipeline_runs(request):
     runs = PipelineRun.objects.all()[:20]
     return Response(PipelineRunSerializer(runs, many=True).data)
+
+
+# ── admin secret slug ─────────────────────────────────────────────────────
+
+import re
+import time as _time
+from django.core.cache import cache as _cache
+
+_SLUG_ALERT_KEY = 'admin-slug-alert:last'
+_SLUG_ALERT_COOLDOWN = 300  # seconds between alert emails
+
+
+def _alert_admin_wrong_slug(tried_slug, ip):
+    """Send an email alert when someone hits a wrong 6-digit admin slug."""
+    if _cache.get(_SLUG_ALERT_KEY):
+        return  # throttled — one alert per 5 minutes
+    _cache.set(_SLUG_ALERT_KEY, True, _SLUG_ALERT_COOLDOWN)
+    s = AppSettings.all_tenants.first()
+    recipients = [e.strip() for e in (s.report_email or '').split(',') if e.strip()]
+    if not recipients:
+        recipients = [u.email for u in User.objects.filter(is_staff=True, email__ne='')[:3]]
+    if not recipients:
+        return
+    from .mailer import send_mail
+    from django.utils import timezone
+    now = timezone.localtime().strftime('%Y-%m-%d %H:%M:%S %Z')
+    send_mail(
+        recipients,
+        f'⚠ Wrong admin URL hit: /{tried_slug}',
+        f'Someone tried to access the admin console with a wrong slug.\n'
+        f'\n Tried: /{tried_slug}'
+        f'\n IP: {ip}'
+        f'\n Time: {now}'
+        f'\n\n If this was you, ignore this email.'
+        f' If not, consider rotating the slug:',
+    )
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@throttle_classes([AdminSlugThrottle])
+def admin_slug_check(request):
+    """Check a 6-digit slug. Valid → {valid:true}; wrong → alert email + {valid:false}."""
+    slug = str(request.data.get('slug', '')).strip()
+    if not re.fullmatch(r'\d{6}', slug):
+        return Response({'valid': False, 'detail': 'Not a 6-digit slug.'}, status=400)
+    s = AppSettings.all_tenants.first()
+    if s.admin_slug and slug == s.admin_slug:
+        return Response({'valid': True})
+    # wrong slug → alert + 404 response
+    ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip() or \
+         request.META.get('REMOTE_ADDR', 'unknown')
+    try:
+        _alert_admin_wrong_slug(slug, ip)
+    except Exception:
+        pass  # email failure must never block the response
+    return Response({'valid': False}, status=404)

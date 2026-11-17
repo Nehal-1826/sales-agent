@@ -45,6 +45,8 @@ urlpatterns = [
     path('agents/<str:agent_key>/config/', views.agent_config, name='agent-config'),
     # settings
     path('settings/', views.settings_view, name='settings'),
+    # admin secret slug check (public, throttled)
+    path('admin-slug/check/', views.admin_slug_check, name='admin-slug-check'),
     # signup helper — fetch the user's own site, return brand name + blurb
     path('company/scrape/', company_scrape.company_scrape, name='company-scrape'),
     # one-click mailbox connect (Zoho/Gmail/custom) — verifies + saves SMTP

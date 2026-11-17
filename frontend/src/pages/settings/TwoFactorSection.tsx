@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Field } from '../../components/ui';
 import { post, request, attempt } from '../../lib/transport';
@@ -15,15 +15,17 @@ export function TwoFactorSection() {
   const [error, setError] = useState('');
   const [checking, setChecking] = useState(true);
 
-  async function check() {
-    setChecking(true);
-    try {
-      const r = await request<{ enabled: boolean }>('/auth/2fa/status/');
-      setEnabled(r.enabled);
-    } catch { setEnabled(false); }
-    setChecking(false);
-  }
-  if (checking && enabled === null) { void check(); }
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const r = await request<{ enabled: boolean }>('/auth/2fa/status/');
+        if (alive) setEnabled(r.enabled);
+      } catch { if (alive) setEnabled(false); }
+      finally { if (alive) setChecking(false); }
+    })();
+    return () => { alive = false; };
+  }, []);
 
   async function start() {
     setBusy(true); setError('');

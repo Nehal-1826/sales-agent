@@ -83,9 +83,11 @@ function AppGate() {
 
   // Admin secret slug: if the SPA was loaded from /<digits>, check the slug.
   // Valid → set a session flag + navigate to /platform (no hash).
-  // Wrong → email alert + 404. Any digit path triggers the check.
+  // Wrong → email alert + 404. Only 6-digit paths trigger the check;
+  // other digit paths fall through to the normal SPA (platform is gated
+  // by the sessionStorage flag from PlatformShell).
   useEffect(() => {
-    const m = window.location.pathname.match(/^\/(\d+)\/?$/);
+    const m = window.location.pathname.match(/^\/(\d{6})\/?$/);
     if (!m) return;
     const slug = m[1];
     void (async () => {

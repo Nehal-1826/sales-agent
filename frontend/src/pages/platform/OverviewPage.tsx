@@ -5,6 +5,12 @@ import { useAsync } from '../../lib/hooks';
 import { getOverview, money, pct } from '../../lib/platform';
 import { Bars } from './Bars';
 
+/** Read the 6-digit admin slug from the current URL for internal links. */
+function slugPrefix(): string {
+  const m = window.location.pathname.match(/^\/(\d{6})/);
+  return m ? `/${m[1]}` : '';
+}
+
 function KpiBody({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="pf-kpi-body">
@@ -27,7 +33,7 @@ export function OverviewPage() {
           colSpan: 1,
           rowSpan: 1,
           className: 'pf-kpi bento-stat',
-          href: '/platform/payments',
+          href: `${slugPrefix()}/payments`,
           title: 'MRR',
           content: <KpiBody label="MRR" value={inr(o.mrr.inr_equivalent)} sub={`${money(o.mrr.INR, 'INR')} + ${money(o.mrr.USD, 'USD')}`} />,
         },
@@ -36,7 +42,7 @@ export function OverviewPage() {
           colSpan: 1,
           rowSpan: 1,
           className: 'pf-kpi bento-stat',
-          href: '/platform/payments',
+          href: `${slugPrefix()}/payments`,
           title: 'ARR',
           content: <KpiBody label="ARR" value={inr(o.arr_inr_equivalent)} sub="Annualized run rate" />,
         },
@@ -45,7 +51,7 @@ export function OverviewPage() {
           colSpan: 1,
           rowSpan: 1,
           className: 'pf-kpi bento-stat',
-          href: '/platform/tenants',
+          href: `${slugPrefix()}/tenants`,
           title: 'Active subscribers',
           content: <KpiBody label="Active" value={String(o.counts.active)} sub="Paid workspaces" />,
         },
@@ -54,7 +60,7 @@ export function OverviewPage() {
           colSpan: 1,
           rowSpan: 1,
           className: 'pf-kpi bento-stat',
-          href: '/platform/tenants',
+          href: `${slugPrefix()}/tenants`,
           title: 'Pending',
           content: <KpiBody label="Pending" value={String(o.counts.pending)} sub="Awaiting checkout" />,
         },
@@ -63,7 +69,7 @@ export function OverviewPage() {
           colSpan: 1,
           rowSpan: 1,
           className: `pf-kpi bento-stat${o.counts.past_due > 0 ? ' highlight' : ''}`,
-          href: '/platform/tenants',
+          href: `${slugPrefix()}/tenants`,
           title: 'Past due',
           content: <KpiBody label="Past due" value={String(o.counts.past_due)} sub="Retry window" />,
         },
@@ -72,7 +78,7 @@ export function OverviewPage() {
           colSpan: 1,
           rowSpan: 1,
           className: 'pf-kpi bento-stat',
-          href: '/platform/tenants',
+          href: `${slugPrefix()}/tenants`,
           title: 'Churn (30d)',
           content: <KpiBody label="Churn (30d)" value={pct(o.churn_30d)} sub={`${o.counts.canceled} canceled`} />,
         },
@@ -81,7 +87,7 @@ export function OverviewPage() {
           colSpan: 1,
           rowSpan: 1,
           className: 'pf-kpi bento-stat',
-          href: '/platform/marketing',
+          href: `${slugPrefix()}/marketing`,
           title: 'Conversion (30d)',
           content: <KpiBody label="Conversion (30d)" value={pct(o.conversion_30d)} sub={`${o.signups_7d} signups 7d / ${o.signups_30d} 30d`} />,
         },
@@ -90,7 +96,7 @@ export function OverviewPage() {
           colSpan: 1,
           rowSpan: 1,
           className: 'pf-kpi bento-stat',
-          href: '/platform/payments',
+          href: `${slugPrefix()}/payments`,
           title: 'Refunds (30d)',
           content: <KpiBody label="Refunds (30d)" value={inr(o.refunds_30d.amount_inr_equivalent)} sub={`${o.refunds_30d.count} refunds`} />,
         },

@@ -3,37 +3,126 @@
  * admin console (Users · Settings · Reports · Billing). Wire contract mirrors
  * the reference frontend 1:1 (snake_case, /admin/* routes).
  *
+ * ALL admin-* endpoints are served by the WarmPulse FastAPI backend and go
+ * through the /wp-api bridge JWT (warmupGet/warmupSend) — never the Django
+ * token request(), which would 404 on /api/admin/*.
+ *
  * Parallel-stream policy: ADD ONLY — never rename or remove existing exports.
  *
  * Conventions (same as platform.ts): reads return data or throw (useAsync
  * renders the error), mutations return a Result; demo mode serves read-only
  * sample data and refuses writes; stub endpoints (404/501/503) soft-fail to
- * safe defaults instead of blanking the page.
+ * safe defaults instead of blanking the page. Auth/transport failures on the
+ * bridge surface as ADMIN_UNAVAILABLE_MSG so every page degrades gracefully.
  */
-import { API_BASE_URL, attempt, downloadFile, inDemo, post, request } from './transport';
+import { attempt, inDemo } from './transport';
 import type { Result } from './transport';
-import { WarmupApiError, warmupGet, warmupSend } from './warmupApi';
+import { clearWarmupToken, getWarmupToken, WarmupApiError, warmupGet, warmupSend } from './warmupApi';
 
 /* ---------------- shared helpers ---------------- */
 
 const DEMO_ONLY = 'Demo data is read-only. Connect to the live server to do that.';
 const demoFail = <T,>(): Result<T> => ({ ok: false, error: DEMO_ONLY });
 
-const patch = (body: unknown): RequestInit => ({ method: 'PATCH', body: JSON.stringify(body) });
-const del = (): RequestInit => ({ method: 'DELETE' });
+/**
+ * EVERY admin-* endpoint in this module lives on the WarmPulse FastAPI
+ * backend and is reached through the /wp-api bridge JWT from warmupApi.ts —
+ * the Django gateway only fronts /api/* (calling it with /admin/* paths is a
+ * guaranteed 404). The bridge mints a super_admin role for platform admins,
+ * so require_super_admin passes.
+ */
 
-/** A stub endpoint the backend has not landed yet — show the fallback, not an error. */
-function isSoftMissing(e: unknown): boolean {
-  const status = (e as { status?: number })?.status;
-  return status === 404 || status === 501 || status === 503;
+/** Friendly copy for bridge auth/transport failures (graceful degrade). */
+export const ADMIN_UNAVAILABLE_MSG =
+  'Admin data unavailable — connect to the warmup backend or verify your admin session.';
+
+const isBridgeSoftMissing = (e: unknown): boolean =>
+  e instanceof WarmupApiError && (e.status === 404 || e.status === 501 || e.status === 503);
+
+/** Auth/transport failure on the bridge (JWT rejected, bridge or token-mint gateway down). */
+function isBridgeUnavailable(e: unknown): boolean {
+  if (e instanceof WarmupApiError) return e.status === 0 || e.status === 401 || e.status === 403;
+  if (e instanceof TypeError) return true; // fetch failed — bridge unreachable
+  const status = (e as { status?: number })?.status; // ApiError from the bridge-token mint
+  return status === 0 || status === 401 || status === 403;
 }
 
-async function getOrFallback<T>(path: string, fallback: T): Promise<T> {
+/** Swap raw auth/transport errors for the one friendly admin message. */
+function friendlyBridgeError(e: unknown): unknown {
+  return isBridgeUnavailable(e) ? new Error(ADMIN_UNAVAILABLE_MSG) : e;
+}
+
+async function bridgeGet<T>(path: string): Promise<T> {
   try {
-    return await request<T>(path);
+    return await warmupGet<T>(path);
   } catch (e) {
-    if (isSoftMissing(e)) return fallback;
+    throw friendlyBridgeError(e);
+  }
+}
+
+async function bridgeSend<T>(path: string, method: 'POST' | 'PATCH' | 'DELETE', body?: unknown): Promise<T> {
+  try {
+    return await warmupSend<T>(path, method, body);
+  } catch (e) {
+    throw friendlyBridgeError(e);
+  }
+}
+
+/** A stub endpoint the backend has not landed yet — show the fallback, not an error. */
+async function bridgeGetOrFallback<T>(path: string, fallback: T): Promise<T> {
+  if (await inDemo()) return fallback;
+  try {
+    return await bridgeGet<T>(path);
+  } catch (e) {
+    if (isBridgeSoftMissing(e)) return fallback;
     throw e;
+  }
+}
+
+/** Raw bridge fetch for payloads the JSON helpers can't carry (blobs, multipart). One 401 retry. */
+async function bridgeFetch(path: string, init: RequestInit = {}, retry = true): Promise<Response> {
+  const token = await getWarmupToken();
+  const res = await fetch(`/wp-api/${path.replace(/^\//, '')}`, {
+    signal: AbortSignal.timeout(60_000),
+    ...init,
+    headers: { ...init.headers, Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 401 && retry) {
+    clearWarmupToken();
+    return bridgeFetch(path, init, false);
+  }
+  return res;
+}
+
+/** POST that answers a file, not JSON (report exports) — through the bridge JWT. */
+async function postBlob(path: string, body: unknown): Promise<Blob> {
+  try {
+    const res = await bridgeFetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`Export failed (${res.status}).`);
+    return res.blob();
+  } catch (e) {
+    throw friendlyBridgeError(e);
+  }
+}
+
+/** Bridge download (blob → browser file) — Bearer JWT via bridgeFetch. */
+async function bridgeDownload(path: string, filename: string): Promise<true> {
+  try {
+    const res = await bridgeFetch(path);
+    if (!res.ok) throw new Error(`Download failed (${res.status}).`);
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    return true as const;
+  } catch (e) {
+    throw friendlyBridgeError(e);
   }
 }
 
@@ -42,24 +131,6 @@ function qs(o: Record<string, string | number | undefined>): string {
   for (const [k, v] of Object.entries(o)) if (v !== undefined && v !== '') p.set(k, String(v));
   const s = p.toString();
   return s ? `?${s}` : '';
-}
-
-/** POST that answers a file, not JSON (report exports). Token from the documented localStorage key. */
-async function postBlob(path: string, body: unknown): Promise<Blob> {
-  let token: string | null = null;
-  try {
-    token = localStorage.getItem('agentic-ai:token');
-  } catch {
-    /* storage unavailable */
-  }
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Token ${token}` } : {}) },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!res.ok) throw new Error(`Export failed (${res.status}).`);
-  return res.blob();
 }
 
 /** Client-side CSV download for tables assembled in the browser. */
@@ -480,7 +551,7 @@ export async function listAdminUsers(filters?: {
   status?: string;
 }): Promise<AdminUsersPageData> {
   if (await inDemo()) return demoUsersPage();
-  return getOrFallback<AdminUsersPageData>(`/admin/users${qs({ ...filters })}`, {
+  return bridgeGetOrFallback<AdminUsersPageData>(`api/admin/users${qs({ ...filters })}`, {
     items: [],
     total: 0,
     page: filters?.page ?? 1,
@@ -490,17 +561,28 @@ export async function listAdminUsers(filters?: {
 
 export async function getAdminUser(id: string): Promise<AdminUserRow> {
   if (await inDemo()) return DEMO_USERS.find((u) => u.id === id) ?? DEMO_USERS[0]!;
-  return request<AdminUserRow>(`/admin/users/${id}`);
+  return bridgeGet<AdminUserRow>(`api/admin/users/${id}`);
 }
 
 export async function getAdminSignupRate(days = 30): Promise<SignupRatePoint[]> {
   if (await inDemo()) return DEMO_SIGNUP_RATE;
-  return getOrFallback<SignupRatePoint[]>(`/admin/platform-analytics/signup-rate${qs({ days })}`, []);
+  // same FastAPI range route as the analytics page — from/to, not ?days
+  return getSignupSeries(days);
 }
 
 export async function getAdminPlanDistribution(): Promise<PlanDistributionRow[]> {
   if (await inDemo()) return DEMO_PLAN_DIST;
-  return getOrFallback<PlanDistributionRow[]>('/admin/platform-analytics/plan-distribution', []);
+  // same FastAPI route as the analytics page ({by_plan: […]} normalized there)
+  return getPlanMix();
+}
+
+/** Wire rows carry plan_name + amount_cents; normalize to the display fields the pages read. */
+function normalizeAdminPayment(p: AdminPayment): AdminPayment {
+  return {
+    ...p,
+    plan: p.plan || p.plan_name || '',
+    amount_usd: typeof p.amount_usd === 'number' ? p.amount_usd : (p.amount_cents ?? 0) / 100,
+  };
 }
 
 export async function listAdminPayments(filters?: PaymentsQuery): Promise<PaymentsListData> {
@@ -508,17 +590,41 @@ export async function listAdminPayments(filters?: PaymentsQuery): Promise<Paymen
     const items = DEMO_PAYMENTS.filter((p) => (!filters?.status || p.status === filters.status) && (!filters?.plan || p.plan === filters.plan) && (!filters?.user_email || p.user_email.includes(filters.user_email)));
     return { items, total: items.length, page: filters?.page ?? 1, page_size: filters?.page_size ?? 200 };
   }
-  return getOrFallback<PaymentsListData>(`/admin/payments${qs({ ...filters })}`, { items: [], total: 0, page: 1, page_size: 200 });
+  const data = await bridgeGetOrFallback<PaymentsListData>(`api/admin/payments${qs({ ...filters })}`, { items: [], total: 0, page: 1, page_size: 200 });
+  return { ...data, items: (Array.isArray(data.items) ? data.items : []).map(normalizeAdminPayment) };
 }
 
+/**
+ * GET /api/plans (PlanOut: price_cents/max_mailboxes/capabilities/…) — the
+ * plans catalogue lives under /api/plans on the FastAPI backend, NOT under
+ * /api/admin. Normalized to the AdminPlanRow shape the console pages expect.
+ */
 export async function listAdminPlans(): Promise<AdminPlanRow[]> {
   if (await inDemo()) return DEMO_ADMIN_PLANS;
-  return getOrFallback<AdminPlanRow[]>('/admin/plans', []);
+  const rows = await bridgeGetOrFallback<Array<Record<string, unknown>>>('api/plans', []);
+  const num = (v: unknown): number | undefined => (typeof v === 'number' ? v : undefined);
+  return (Array.isArray(rows) ? rows : []).map((r) => ({
+    id: String(r.id ?? ''),
+    slug: typeof r.slug === 'string' ? r.slug : String(r.id ?? ''),
+    name: typeof r.name === 'string' ? r.name : '—',
+    price_monthly_usd: typeof r.price_cents === 'number' ? r.price_cents / 100 : 0,
+    mailboxes_included: num(r.max_mailboxes) ?? 0,
+    max_mailboxes: num(r.max_mailboxes) ?? 0,
+    daily_email_cap: num(r.daily_email_cap),
+    features:
+      r.capabilities && typeof r.capabilities === 'object'
+        ? Object.keys(r.capabilities as Record<string, unknown>)
+        : [],
+    is_active: r.is_active !== false,
+    is_public: r.is_public !== false,
+    llm_token_cap: num(r.token_cap_per_month),
+    sort_order: num(r.sort_order) ?? 0,
+  }));
 }
 
 export async function getAdminSettings(): Promise<AdminSettings> {
   if (await inDemo()) return DEMO_SETTINGS;
-  return getOrFallback<AdminSettings>('/admin/settings', {
+  return bridgeGetOrFallback<AdminSettings>('api/admin/settings', {
     ...DEMO_SETTINGS,
     google_oauth: { client_id_masked: '', configured: false },
     llm: { ...DEMO_SETTINGS.llm, api_key_masked: '', configured: false, default_cap_tokens: 0, spend_mtd_usd: 0, spend_series: [] },
@@ -528,12 +634,12 @@ export async function getAdminSettings(): Promise<AdminSettings> {
 
 export async function listAdminReportTypes(): Promise<ReportTypeItem[]> {
   if (await inDemo()) return DEMO_REPORT_TYPES;
-  return getOrFallback<ReportTypeItem[]>('/admin/reports/types', []);
+  return bridgeGetOrFallback<ReportTypeItem[]>('api/admin/reports/types', []);
 }
 
 export async function listReportSchedules(): Promise<ReportScheduleOut[]> {
   if (await inDemo()) return DEMO_SCHEDULES;
-  return getOrFallback<ReportScheduleOut[]>('/admin/reports/schedules', []);
+  return bridgeGetOrFallback<ReportScheduleOut[]>('api/admin/reports/schedules', []);
 }
 
 /* ═══════════════ users writes ═══════════════ */
@@ -542,64 +648,64 @@ export async function listReportSchedules(): Promise<ReportScheduleOut[]> {
 export const suspendAdminUser = async (id: string, suspended: boolean, reason: string) =>
   (await inDemo())
     ? demoFail<unknown>()
-    : attempt(() => request<unknown>(`/admin/users/${id}/${suspended ? 'suspend' : 'unsuspend'}`, post({ reason })));
+    : attempt(() => bridgeSend<unknown>(`api/admin/users/${id}/${suspended ? 'suspend' : 'unsuspend'}`, 'POST', { reason }));
 
 export const updateAdminUserPlan = async (userId: string, planId: string) =>
-  (await inDemo()) ? demoFail<unknown>() : attempt(() => request<unknown>(`/admin/users/${userId}/plan${qs({ plan_id: planId })}`, post()));
+  (await inDemo()) ? demoFail<unknown>() : attempt(() => bridgeSend<unknown>(`api/admin/users/${userId}/plan${qs({ plan_id: planId })}`, 'POST', {}));
 
 export const deleteAdminUser = async (id: string, reason: string) =>
   (await inDemo())
     ? demoFail<unknown>()
-    : attempt(() => request<unknown>(`/admin/users/${id}`, { ...del(), body: JSON.stringify({ reason }) }));
+    : attempt(() => bridgeSend<unknown>(`api/admin/users/${id}`, 'DELETE', { reason }));
 
 /** Issue a short-lived impersonation token for a client user (30 min TTL server-side). */
 export const impersonateAdminUser = async (id: string): Promise<Result<{ access_token: string }>> =>
-  (await inDemo()) ? demoFail<{ access_token: string }>() : attempt(() => request<{ access_token: string }>(`/admin/users/${id}/impersonate`, post()));
+  (await inDemo()) ? demoFail<{ access_token: string }>() : attempt(() => bridgeSend<{ access_token: string }>(`api/admin/users/${id}/impersonate`, 'POST', {}));
 
 export const bulkPauseMailboxes = async (payload: BulkPauseMailboxesRequest) =>
-  (await inDemo()) ? demoFail<BulkPauseMailboxesResponse>() : attempt(() => request<BulkPauseMailboxesResponse>('/admin/users/bulk-pause-mailboxes', post(payload)));
+  (await inDemo()) ? demoFail<BulkPauseMailboxesResponse>() : attempt(() => bridgeSend<BulkPauseMailboxesResponse>('api/admin/users/bulk-pause-mailboxes', 'POST', payload));
 
 /* ═══════════════ settings writes ═══════════════ */
 
 export const updateAdminDefaults = async (payload: UpdateDefaultsPayload) =>
-  (await inDemo()) ? demoFail<unknown>() : attempt(() => request<unknown>('/admin/settings/defaults', patch(payload)));
+  (await inDemo()) ? demoFail<unknown>() : attempt(() => bridgeSend<unknown>('api/admin/settings/defaults', 'PATCH', payload));
 
 export const updateAdminLlm = async (payload: UpdateLlmPayload) =>
-  (await inDemo()) ? demoFail<unknown>() : attempt(() => request<unknown>('/admin/settings/llm', patch(payload)));
+  (await inDemo()) ? demoFail<unknown>() : attempt(() => bridgeSend<unknown>('api/admin/settings/llm', 'PATCH', payload));
 
 export const updateAdminOauth = async (payload: UpdateOauthPayload) =>
-  (await inDemo()) ? demoFail<unknown>() : attempt(() => request<unknown>('/admin/settings/google-oauth', patch(payload)));
+  (await inDemo()) ? demoFail<unknown>() : attempt(() => bridgeSend<unknown>('api/admin/settings/google-oauth', 'PATCH', payload));
 
 export const updateAdminSmtp = async (payload: UpdateSmtpPayload) =>
-  (await inDemo()) ? demoFail<unknown>() : attempt(() => request<unknown>('/admin/settings/transactional-smtp', patch(payload)));
+  (await inDemo()) ? demoFail<unknown>() : attempt(() => bridgeSend<unknown>('api/admin/settings/transactional-smtp', 'PATCH', payload));
 
 export const toggleMaintenanceMode = async (enabled: boolean) =>
-  (await inDemo()) ? demoFail<unknown>() : attempt(() => request<unknown>('/admin/settings/maintenance', post({ enabled })));
+  (await inDemo()) ? demoFail<unknown>() : attempt(() => bridgeSend<unknown>('api/admin/settings/maintenance', 'POST', { enabled }));
 
 export const rotateAdminLlmKey = async () =>
-  (await inDemo()) ? demoFail<unknown>() : attempt(() => request<unknown>('/admin/settings/llm/rotate-key', post()));
+  (await inDemo()) ? demoFail<unknown>() : attempt(() => bridgeSend<unknown>('api/admin/settings/llm/rotate-key', 'POST', {}));
 
 export const resetPeerPoolHealth = async () =>
-  (await inDemo()) ? demoFail<unknown>() : attempt(() => request<unknown>('/admin/settings/peer-pool/reset-health', post()));
+  (await inDemo()) ? demoFail<unknown>() : attempt(() => bridgeSend<unknown>('api/admin/settings/peer-pool/reset-health', 'POST', {}));
 
 const notAvailable = (): TestConnectionResult => ({ ok: false, error: 'not_available' });
 
 export const testAdminLlm = async (): Promise<TestConnectionResult> => {
   if (await inDemo()) return { ok: true, detail: 'Demo: key is valid.' };
   try {
-    return await request<TestConnectionResult>('/admin/settings/llm/test', post());
+    return await bridgeSend<TestConnectionResult>('api/admin/settings/llm/test', 'POST', {});
   } catch (e) {
-    if (isSoftMissing(e)) return notAvailable();
+    if (isBridgeSoftMissing(e)) return notAvailable();
     throw e;
   }
 };
 
 export const testAdminOauth = async (): Promise<TestConnectionResult> => {
-  if (await inDemo()) return { ok: true, detail: 'Demo: OAuth reachable.' };
+  if (await inDemo()) return { ok: true, detail: 'OAuth reachable.' };
   try {
-    return await request<TestConnectionResult>('/admin/settings/google-oauth/test', post());
+    return await bridgeSend<TestConnectionResult>('api/admin/settings/google-oauth/test', 'POST', {});
   } catch (e) {
-    if (isSoftMissing(e)) return notAvailable();
+    if (isBridgeSoftMissing(e)) return notAvailable();
     throw e;
   }
 };
@@ -607,9 +713,9 @@ export const testAdminOauth = async (): Promise<TestConnectionResult> => {
 export const testAdminSmtp = async (): Promise<TestConnectionResult> => {
   if (await inDemo()) return { ok: true, detail: 'Demo: test email would be sent.' };
   try {
-    return await request<TestConnectionResult>('/admin/settings/transactional-smtp/test', post());
+    return await bridgeSend<TestConnectionResult>('api/admin/settings/transactional-smtp/test', 'POST', {});
   } catch (e) {
-    if (isSoftMissing(e)) return notAvailable();
+    if (isBridgeSoftMissing(e)) return notAvailable();
     throw e;
   }
 };
@@ -630,14 +736,14 @@ export async function generateReport(body: GenerateRequest): Promise<GenerateRes
       estimated_rows: 173,
     };
   }
-  return request<GenerateResult>('/admin/reports/generate', post(body));
+  return bridgeSend<GenerateResult>('api/admin/reports/generate', 'POST', body);
 }
 
 /** POST the export and hand the returned file to the browser. */
 export async function exportReport(body: ExportRequest, filename: string): Promise<Result<true>> {
   if (await inDemo()) return demoFail();
   return attempt(async () => {
-    const blob = await postBlob('/admin/reports/export', body);
+    const blob = await postBlob('api/admin/reports/export', body);
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -649,18 +755,18 @@ export async function exportReport(body: ExportRequest, filename: string): Promi
 }
 
 export const createReportSchedule = async (body: ReportScheduleCreate) =>
-  (await inDemo()) ? demoFail<ReportScheduleOut>() : attempt(() => request<ReportScheduleOut>('/admin/reports/schedules', post(body)));
+  (await inDemo()) ? demoFail<ReportScheduleOut>() : attempt(() => bridgeSend<ReportScheduleOut>('api/admin/reports/schedules', 'POST', body));
 
 export const updateReportSchedule = async (id: string, payload: ReportScheduleUpdate) =>
-  (await inDemo()) ? demoFail<ReportScheduleOut>() : attempt(() => request<ReportScheduleOut>(`/admin/reports/schedules/${id}`, patch(payload)));
+  (await inDemo()) ? demoFail<ReportScheduleOut>() : attempt(() => bridgeSend<ReportScheduleOut>(`api/admin/reports/schedules/${id}`, 'PATCH', payload));
 
 export const deleteReportSchedule = async (id: string) =>
-  (await inDemo()) ? demoFail<unknown>() : attempt(() => request<unknown>(`/admin/reports/schedules/${id}`, del()));
+  (await inDemo()) ? demoFail<unknown>() : attempt(() => bridgeSend<unknown>(`api/admin/reports/schedules/${id}`, 'DELETE'));
 
-/** Server-rendered payments CSV (token header included by downloadFile). */
+/** Server-rendered payments CSV (bridge JWT header included by bridgeDownload). */
 export async function exportPaymentsCsv(filters?: PaymentsQuery): Promise<Result<true>> {
   if (await inDemo()) return demoFail();
-  return attempt(() => downloadFile(`/admin/payments/export.csv${qs({ ...filters })}`, 'payments.csv').then(() => true as const));
+  return attempt(() => bridgeDownload(`api/admin/payments/export.csv${qs({ ...filters })}`, 'payments.csv'));
 }
 
 /* ═══════════════ H1: system health / addons / mail viewer / revenge ═══════════════
@@ -672,20 +778,8 @@ export async function exportPaymentsCsv(filters?: PaymentsQuery): Promise<Result
  * super_admin role for platform admins, so require_super_admin passes.
  * Same read/write contract as above: reads throw (or soft-fail on stubbed
  * 404/501/503), writes fold into a Result, demo mode is read-only.
+ * (bridgeGet/bridgeSend/bridgeGetOrFallback live with the shared helpers.)
  */
-
-const isBridgeSoftMissing = (e: unknown): boolean =>
-  e instanceof WarmupApiError && (e.status === 404 || e.status === 501 || e.status === 503);
-
-async function bridgeGetOrFallback<T>(path: string, fallback: T): Promise<T> {
-  if (await inDemo()) return fallback;
-  try {
-    return await warmupGet<T>(path);
-  } catch (e) {
-    if (isBridgeSoftMissing(e)) return fallback;
-    throw e;
-  }
-}
 
 /* ---------------- H1: system health ---------------- */
 
@@ -806,12 +900,12 @@ export async function listAdminAddons(): Promise<AddonRow[]> {
 
 export async function createAdminAddon(payload: AddonCreatePayload): Promise<Result<AddonRow>> {
   if (await inDemo()) return demoFail<AddonRow>();
-  return attempt(() => warmupSend<AddonRow>('api/admin/addons', 'POST', payload));
+  return attempt(() => bridgeSend<AddonRow>('api/admin/addons', 'POST', payload));
 }
 
 export async function updateAdminAddon(id: string, payload: AddonUpdatePayload): Promise<Result<AddonRow>> {
   if (await inDemo()) return demoFail<AddonRow>();
-  return attempt(() => warmupSend<AddonRow>(`api/admin/addons/${id}`, 'PATCH', payload));
+  return attempt(() => bridgeSend<AddonRow>(`api/admin/addons/${id}`, 'PATCH', payload));
 }
 
 /* ---------------- H1: mail viewer (read-only IMAP proxy) ---------------- */
@@ -885,7 +979,7 @@ export async function listMailViewerMessages(
 ): Promise<MailViewerMessagesPage> {
   if (await inDemo()) return { folder, folders: ['INBOX'], messages: [] };
   try {
-    const data = await warmupGet<MailViewerMessagesPage | MailViewerMessageSummary[]>(
+    const data = await bridgeGet<MailViewerMessagesPage | MailViewerMessageSummary[]>(
       `api/admin/mail-viewer/${source}/${accountId}/messages${qs({ folder, limit })}`,
     );
     if (Array.isArray(data)) return { folder, folders: ['INBOX'], messages: data };
@@ -906,7 +1000,7 @@ export function getMailViewerMessage(
   folder: string,
   uid: number | string,
 ): Promise<MailViewerMessageDetail> {
-  return warmupGet<MailViewerMessageDetail>(
+  return bridgeGet<MailViewerMessageDetail>(
     `api/admin/mail-viewer/${source}/${accountId}/message/${uid}${qs({ folder })}`,
   );
 }
@@ -995,18 +1089,18 @@ export function listSabotagedUsers(): Promise<SabotagedUser[]> {
 }
 
 export function getRevengeRecipients(eventId: string): Promise<RevengeRecipientsResponse> {
-  return warmupGet<RevengeRecipientsResponse>(`api/admin/revenge/events/${eventId}/recipients`);
+  return bridgeGet<RevengeRecipientsResponse>(`api/admin/revenge/events/${eventId}/recipients`);
 }
 
 export async function rerunRevenge(eventId: string): Promise<Result<unknown>> {
   if (await inDemo()) return demoFail<unknown>();
-  return attempt(() => warmupSend<unknown>(`api/admin/revenge/events/${eventId}/rerun`, 'POST'));
+  return attempt(() => bridgeSend<unknown>(`api/admin/revenge/events/${eventId}/rerun`, 'POST'));
 }
 
 /** Undo sabotage — reuses the admin users route (204 on success). */
 export async function unsabotageUser(userId: string): Promise<Result<unknown>> {
   if (await inDemo()) return demoFail<unknown>();
-  return attempt(() => warmupSend<unknown>(`api/admin/users/${userId}/unsabotage`, 'POST'));
+  return attempt(() => bridgeSend<unknown>(`api/admin/users/${userId}/unsabotage`, 'POST'));
 }
 
 /* ═══════════════ H3: peer inboxes (admin_peer_inboxes.py + admin_peer_pools.py) ═══════════════ */
@@ -1109,30 +1203,23 @@ export interface PeerPoolCreateInput {
   daily_send_limit?: number | null;
 }
 
-/** Multipart upload the JSON transport can't do — FormData sets its own boundary. */
+/** Multipart upload the JSON transport can't do — FormData sets its own boundary (bridge JWT via bridgeFetch). */
 async function postForm(path: string, form: FormData): Promise<PeerBulkImportResult> {
-  let token: string | null = null;
   try {
-    token = localStorage.getItem('agentic-ai:token');
-  } catch {
-    /* storage unavailable */
-  }
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    method: 'POST',
-    headers: token ? { Authorization: `Token ${token}` } : undefined,
-    body: form,
-    signal: AbortSignal.timeout(60_000),
-  });
-  if (!res.ok) {
-    let detail = '';
-    try {
-      detail = ((await res.json()) as { detail?: string }).detail ?? '';
-    } catch {
-      /* non-JSON error body */
+    const res = await bridgeFetch(path, { method: 'POST', body: form });
+    if (!res.ok) {
+      let detail = '';
+      try {
+        detail = ((await res.json()) as { detail?: string }).detail ?? '';
+      } catch {
+        /* non-JSON error body */
+      }
+      throw new Error(detail || `Import failed (${res.status}).`);
     }
-    throw new Error(detail || `Import failed (${res.status}).`);
+    return (await res.json()) as PeerBulkImportResult;
+  } catch (e) {
+    throw friendlyBridgeError(e);
   }
-  return (await res.json()) as PeerBulkImportResult;
 }
 
 const DEMO_PEER_POOLS: PeerPool[] = [
@@ -1164,16 +1251,16 @@ const DEMO_PEER_STATS: PeerInboxStats = {
 export async function listPeerInboxes(filters?: { page?: number; page_size?: number; provider?: string; is_active?: boolean }): Promise<PeerInboxListData> {
   if (await inDemo()) return { items: DEMO_PEERS, page: 1, page_size: 100, total: DEMO_PEERS.length };
   const boolStr = filters?.is_active === undefined ? undefined : String(filters.is_active);
-  return getOrFallback<PeerInboxListData>(`/admin/peer-inboxes${qs({ page: filters?.page, page_size: filters?.page_size, provider: filters?.provider, is_active: boolStr })}`, { items: [], page: 1, page_size: 100, total: 0 });
+  return bridgeGetOrFallback<PeerInboxListData>(`api/admin/peer-inboxes${qs({ page: filters?.page, page_size: filters?.page_size, provider: filters?.provider, is_active: boolStr })}`, { items: [], page: 1, page_size: 100, total: 0 });
 }
 
 export async function getPeerInboxStats(): Promise<PeerInboxStats> {
   if (await inDemo()) return DEMO_PEER_STATS;
-  return getOrFallback<PeerInboxStats>('/admin/peer-inboxes/stats', { total: 0, active: 0, inactive: 0, by_provider: [], avg_reputation: 0, total_capacity: 0, used_capacity_today: 0, capacity_used_pct: 0 });
+  return bridgeGetOrFallback<PeerInboxStats>('api/admin/peer-inboxes/stats', { total: 0, active: 0, inactive: 0, by_provider: [], avg_reputation: 0, total_capacity: 0, used_capacity_today: 0, capacity_used_pct: 0 });
 }
 
 export const createPeerInbox = async (input: PeerInboxCreateInput) =>
-  (await inDemo()) ? demoFail<PeerInboxRow>() : attempt(() => request<PeerInboxRow>('/admin/peer-inboxes', post(input)));
+  (await inDemo()) ? demoFail<PeerInboxRow>() : attempt(() => bridgeSend<PeerInboxRow>('api/admin/peer-inboxes', 'POST', input));
 
 /** CSV columns: email, provider, daily_capacity, smtp_host, smtp_port, smtp_username, smtp_password, imap_host, imap_port, imap_username, imap_password. */
 export async function bulkImportPeerInboxes(file: File): Promise<Result<PeerBulkImportResult>> {
@@ -1181,48 +1268,48 @@ export async function bulkImportPeerInboxes(file: File): Promise<Result<PeerBulk
   return attempt(async () => {
     const form = new FormData();
     form.append('file', file);
-    return postForm('/admin/peer-inboxes/bulk', form);
+    return postForm('api/admin/peer-inboxes/bulk', form);
   });
 }
 
 export const updatePeerInbox = async (id: string, payload: PeerInboxUpdateInput) =>
-  (await inDemo()) ? demoFail<PeerInboxRow>() : attempt(() => request<PeerInboxRow>(`/admin/peer-inboxes/${id}`, patch(payload)));
+  (await inDemo()) ? demoFail<PeerInboxRow>() : attempt(() => bridgeSend<PeerInboxRow>(`api/admin/peer-inboxes/${id}`, 'PATCH', payload));
 
 export const deletePeerInbox = async (id: string) =>
-  (await inDemo()) ? demoFail<unknown>() : attempt(() => request<unknown>(`/admin/peer-inboxes/${id}`, del()));
+  (await inDemo()) ? demoFail<unknown>() : attempt(() => bridgeSend<unknown>(`api/admin/peer-inboxes/${id}`, 'DELETE'));
 
 /** Zero this helper's used_today counter without waiting for the daily 00:01 UTC reset. */
 export const resetPeerCapacity = async (id: string) =>
-  (await inDemo()) ? demoFail<PeerInboxRow>() : attempt(() => request<PeerInboxRow>(`/admin/peer-inboxes/${id}/reset-capacity`, post()));
+  (await inDemo()) ? demoFail<PeerInboxRow>() : attempt(() => bridgeSend<PeerInboxRow>(`api/admin/peer-inboxes/${id}/reset-capacity`, 'POST', {}));
 
 /** Zero used_today across the whole network — answers { peers_reset }. */
 export const resetAllPeerCapacity = async () =>
-  (await inDemo()) ? demoFail<{ peers_reset: number }>() : attempt(() => request<{ peers_reset: number }>('/admin/peer-inboxes/reset-capacity', post()));
+  (await inDemo()) ? demoFail<{ peers_reset: number }>() : attempt(() => bridgeSend<{ peers_reset: number }>('api/admin/peer-inboxes/reset-capacity', 'POST', {}));
 
 export async function testPeerConnection(id: string): Promise<PeerTestResult> {
   if (await inDemo()) return { smtp_ok: true, imap_ok: true };
   try {
-    return await request<PeerTestResult>(`/admin/peer-inboxes/${id}/test-connection`, post());
+    return await bridgeSend<PeerTestResult>(`api/admin/peer-inboxes/${id}/test-connection`, 'POST', {});
   } catch (e) {
-    if (isSoftMissing(e)) return { smtp_ok: false, imap_ok: false, smtp_error: 'not_available', imap_error: 'not_available' };
+    if (isBridgeSoftMissing(e)) return { smtp_ok: false, imap_ok: false, smtp_error: 'not_available', imap_error: 'not_available' };
     throw e;
   }
 }
 
 export async function listPeerPools(): Promise<PeerPool[]> {
   if (await inDemo()) return DEMO_PEER_POOLS;
-  const data = await getOrFallback<PeerPool[] | { items: PeerPool[] }>('/admin/peer-pools', []);
+  const data = await bridgeGetOrFallback<PeerPool[] | { items: PeerPool[] }>('api/admin/peer-pools', []);
   return Array.isArray(data) ? data : data.items ?? [];
 }
 
 export const createPeerPool = async (input: PeerPoolCreateInput) =>
-  (await inDemo()) ? demoFail<PeerPool>() : attempt(() => request<PeerPool>('/admin/peer-pools', post(input)));
+  (await inDemo()) ? demoFail<PeerPool>() : attempt(() => bridgeSend<PeerPool>('api/admin/peer-pools', 'POST', input));
 
 export const addPeerPoolMembers = async (poolId: string, peerInboxIds: string[]) =>
-  (await inDemo()) ? demoFail<{ added: number; already_member: number }>() : attempt(() => request<{ added: number; already_member: number }>(`/admin/peer-pools/${poolId}/members`, post({ peer_inbox_ids: peerInboxIds })));
+  (await inDemo()) ? demoFail<{ added: number; already_member: number }>() : attempt(() => bridgeSend<{ added: number; already_member: number }>(`api/admin/peer-pools/${poolId}/members`, 'POST', { peer_inbox_ids: peerInboxIds }));
 
 export const removePeerPoolMember = async (poolId: string, peerInboxId: string) =>
-  (await inDemo()) ? demoFail<unknown>() : attempt(() => request<unknown>(`/admin/peer-pools/${poolId}/members/${peerInboxId}`, del()));
+  (await inDemo()) ? demoFail<unknown>() : attempt(() => bridgeSend<unknown>(`api/admin/peer-pools/${poolId}/members/${peerInboxId}`, 'DELETE'));
 
 /* ═══════════════ H3: pool routing (admin_pool_routing.py) ═══════════════ */
 
@@ -1291,12 +1378,12 @@ export async function listPoolAssignments(filters?: { page?: number; page_size?:
     ];
     return { items, page: 1, page_size: 100, total: items.length };
   }
-  return getOrFallback<PoolAssignmentListData>(`/admin/pool-routing${qs({ page: filters?.page, page_size: filters?.page_size, search: filters?.search })}`, { items: [], page: 1, page_size: 100, total: 0 });
+  return bridgeGetOrFallback<PoolAssignmentListData>(`api/admin/pool-routing${qs({ page: filters?.page, page_size: filters?.page_size, search: filters?.search })}`, { items: [], page: 1, page_size: 100, total: 0 });
 }
 
 export async function listUnassignedClients(): Promise<UnassignedClient[]> {
   if (await inDemo()) return [{ workspace_id: 'ws3', user_id: 'u3', email: 'ops@lumen.example', plan: null, sends_last_30d: 40 }];
-  const data = await getOrFallback<UnassignedClient[] | { items: UnassignedClient[] }>('/admin/pool-routing/clients/unassigned', []);
+  const data = await bridgeGetOrFallback<UnassignedClient[] | { items: UnassignedClient[] }>('api/admin/pool-routing/clients/unassigned', []);
   return Array.isArray(data) ? data : data.items ?? [];
 }
 
@@ -1307,21 +1394,21 @@ export async function listRoutingMailboxes(): Promise<RoutingMailboxRow[]> {
       { id: 'mb2', email: 'team@northwind.example', provider: 'smtp', workspace_id: 'ws2', plan_name: 'starter', pool_id: null, effective_pool_id: 'pool-a', sends_last_30d: 2100, can_send: false, is_oauth: false },
     ];
   }
-  const data = await getOrFallback<RoutingMailboxRow[] | { items: RoutingMailboxRow[] }>('/admin/pool-routing/mailboxes', []);
+  const data = await bridgeGetOrFallback<RoutingMailboxRow[] | { items: RoutingMailboxRow[] }>('api/admin/pool-routing/mailboxes', []);
   return Array.isArray(data) ? data : data.items ?? [];
 }
 
 /** Pin (pool_id) or unpin (null → inherit workspace routing) a single mailbox. */
 export const pinRoutingMailbox = async (mailboxId: string, poolId: string | null) =>
-  (await inDemo()) ? demoFail<RoutingMailboxRow>() : attempt(() => request<RoutingMailboxRow>(`/admin/pool-routing/mailboxes/${mailboxId}`, post({ pool_id: poolId })));
+  (await inDemo()) ? demoFail<RoutingMailboxRow>() : attempt(() => bridgeSend<RoutingMailboxRow>(`api/admin/pool-routing/mailboxes/${mailboxId}`, 'POST', { pool_id: poolId }));
 
 /** Pin a workspace to a pool (upsert). */
 export const upsertPoolAssignment = async (workspaceId: string, poolId: string) =>
-  (await inDemo()) ? demoFail<PoolAssignment>() : attempt(() => request<PoolAssignment>('/admin/pool-routing', post({ workspace_id: workspaceId, pool_id: poolId })));
+  (await inDemo()) ? demoFail<PoolAssignment>() : attempt(() => bridgeSend<PoolAssignment>('api/admin/pool-routing', 'POST', { workspace_id: workspaceId, pool_id: poolId }));
 
 /** Remove the pin — the workspace falls back to the default pool. */
 export const revertPoolAssignment = async (workspaceId: string) =>
-  (await inDemo()) ? demoFail<unknown>() : attempt(() => request<unknown>(`/admin/pool-routing${qs({ workspace_id: workspaceId })}`, del()));
+  (await inDemo()) ? demoFail<unknown>() : attempt(() => bridgeSend<unknown>(`api/admin/pool-routing${qs({ workspace_id: workspaceId })}`, 'DELETE'));
 
 export async function getRoutingSankey(): Promise<SankeyData> {
   if (await inDemo()) {
@@ -1338,7 +1425,7 @@ export async function getRoutingSankey(): Promise<SankeyData> {
       ],
     };
   }
-  return getOrFallback<SankeyData>('/admin/pool-routing/sankey-data', { nodes: [], links: [] });
+  return bridgeGetOrFallback<SankeyData>('api/admin/pool-routing/sankey-data', { nodes: [], links: [] });
 }
 
 /* ═══════════════ H3: platform mail (platform_mail.py — IMAP client for the platform account) ═══════════════ */
@@ -1427,7 +1514,7 @@ export function describePlatformMailError(e: unknown, fallback: string): string 
 
 export async function getPlatformMailFolders(): Promise<PlatformMailFolders> {
   if (await inDemo()) return { folders: ['INBOX', 'Sent', 'Trash'], unread: { INBOX: 2 } };
-  const data = await getOrFallback<PlatformMailFolders>('/admin/platform-mail/folders', { folders: [], unread: {} });
+  const data = await bridgeGetOrFallback<PlatformMailFolders>('api/admin/platform-mail/folders', { folders: [], unread: {} });
   return {
     folders: Array.isArray(data.folders) ? data.folders : [],
     unread: data.unread && typeof data.unread === 'object' && !Array.isArray(data.unread) ? data.unread : {},
@@ -1444,7 +1531,7 @@ export async function getPlatformMailMessages(folder: string, search = ''): Prom
     const hits = q ? all.filter((m) => `${m.subject} ${m.from} ${m.snippet}`.toLowerCase().includes(q)) : all;
     return { folder, folders: ['INBOX', 'Sent', 'Trash'], messages: hits };
   }
-  const data = await getOrFallback<PlatformMailListData>(`/admin/platform-mail/messages${qs({ folder, limit: 50, search: search || undefined })}`, { folder, folders: ['INBOX'], messages: [] });
+  const data = await bridgeGetOrFallback<PlatformMailListData>(`api/admin/platform-mail/messages${qs({ folder, limit: 50, search: search || undefined })}`, { folder, folders: ['INBOX'], messages: [] });
   return {
     folder: typeof data.folder === 'string' ? data.folder : folder,
     folders: Array.isArray(data.folders) && data.folders.length > 0 ? data.folders : ['INBOX'],
@@ -1470,25 +1557,25 @@ export async function getPlatformMailMessage(folder: string, uid: number): Promi
       starred: false,
     };
   }
-  return request<PlatformMailDetail>(`/admin/platform-mail/message/${uid}${qs({ folder })}`, undefined, 30_000);
+  return bridgeGet<PlatformMailDetail>(`api/admin/platform-mail/message/${uid}${qs({ folder })}`);
 }
 
 export const sendPlatformMail = async (input: PlatformMailSendInput) =>
-  (await inDemo()) ? demoFail<PlatformMailSendResult>() : attempt(() => request<PlatformMailSendResult>('/admin/platform-mail/send', post(input), 30_000));
+  (await inDemo()) ? demoFail<PlatformMailSendResult>() : attempt(() => bridgeSend<PlatformMailSendResult>('api/admin/platform-mail/send', 'POST', input));
 
 export const setPlatformMailSeen = async (folder: string, uid: number, seen: boolean) =>
-  (await inDemo()) ? demoFail<unknown>() : attempt(() => request<unknown>(`/admin/platform-mail/${uid}/seen${qs({ folder, seen: String(seen) })}`, post()));
+  (await inDemo()) ? demoFail<unknown>() : attempt(() => bridgeSend<unknown>(`api/admin/platform-mail/${uid}/seen${qs({ folder, seen: String(seen) })}`, 'POST', {}));
 
 export const setPlatformMailStar = async (folder: string, uid: number, starred: boolean) =>
-  (await inDemo()) ? demoFail<unknown>() : attempt(() => request<unknown>(`/admin/platform-mail/${uid}/star${qs({ folder, starred: String(starred) })}`, post()));
+  (await inDemo()) ? demoFail<unknown>() : attempt(() => bridgeSend<unknown>(`api/admin/platform-mail/${uid}/star${qs({ folder, starred: String(starred) })}`, 'POST', {}));
 
 export const deletePlatformMail = async (folder: string, uid: number) =>
-  (await inDemo()) ? demoFail<unknown>() : attempt(() => request<unknown>(`/admin/platform-mail/${uid}${qs({ folder })}`, del()));
+  (await inDemo()) ? demoFail<unknown>() : attempt(() => bridgeSend<unknown>(`api/admin/platform-mail/${uid}${qs({ folder })}`, 'DELETE'));
 
-/** Download one attachment part (token header via downloadFile; server sets Content-Disposition). */
+/** Download one attachment part (bridge JWT via bridgeDownload; server sets Content-Disposition). */
 export async function downloadPlatformMailAttachment(folder: string, uid: number, part: string, filename: string): Promise<Result<true>> {
   if (await inDemo()) return demoFail();
-  return attempt(() => downloadFile(`/admin/platform-mail/${uid}/attachment/${encodeURIComponent(part)}${qs({ folder })}`, filename).then(() => true as const));
+  return attempt(() => bridgeDownload(`api/admin/platform-mail/${uid}/attachment/${encodeURIComponent(part)}${qs({ folder })}`, filename));
 }
 
 /* ═══════════════ H2: LLM usage · CRM · platform analytics ═══════════════
@@ -1607,7 +1694,7 @@ export async function getLlmUsageEvents(q: {
 
 /** GET /api/admin/llm-usage/by-user/{id} — daily token/cost series for the drill-in drawer. */
 export function getLlmUsageByUser(userId: string): Promise<LlmPerUserDetail> {
-  return warmupGet<LlmPerUserDetail>(`api/admin/llm-usage/by-user/${userId}`);
+  return bridgeGet<LlmPerUserDetail>(`api/admin/llm-usage/by-user/${userId}`);
 }
 
 /** GET /api/plans/all — plan ids + token caps so cap edits can address the right row. */
@@ -1634,7 +1721,7 @@ export const updateLlmPlanCap = async (
 ): Promise<Result<{ plan_id: string; token_cap_per_month: number }>> => {
   if (await inDemo()) return demoFail<{ plan_id: string; token_cap_per_month: number }>();
   return attempt(() =>
-    warmupSend<{ plan_id: string; token_cap_per_month: number }>(
+    bridgeSend<{ plan_id: string; token_cap_per_month: number }>(
       `api/admin/llm-usage/caps/${planId}`,
       'POST',
       { token_cap_per_month: tokenCap },
@@ -1797,7 +1884,7 @@ export const setCrmSequenceStatus = async (
 ): Promise<Result<SequenceStatusOut>> => {
   if (await inDemo()) return demoFail<SequenceStatusOut>();
   return attempt(() =>
-    warmupSend<SequenceStatusOut>(`api/admin/crm/sequences/${sequenceId}/status`, 'POST', { paused }),
+    bridgeSend<SequenceStatusOut>(`api/admin/crm/sequences/${sequenceId}/status`, 'POST', { paused }),
   );
 };
 

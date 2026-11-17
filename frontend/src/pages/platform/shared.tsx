@@ -12,7 +12,6 @@ import type { Result } from '../../lib/transport';
 export const PLATFORM_PAGES = [
   'overview',
   'analytics',
-  'health',
   'peers',
   'routing',
   'llm',

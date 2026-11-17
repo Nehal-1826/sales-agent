@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { Component, useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { GlassBackdrop } from '../../components/Lightfall';
 import {
   IconBranch,
@@ -8,7 +9,6 @@ import {
   IconCreditCard,
   IconDashboard,
   IconFlame,
-  IconHeart,
   IconLayers,
   IconLogout,
   IconMailSearch,
@@ -28,7 +28,6 @@ import {
 import { Toaster } from '../../components/feedback';
 import { OverviewPage } from './OverviewPage';
 import { PlatformAnalyticsPage } from './PlatformAnalyticsPage';
-import { SystemHealthPage } from './SystemHealthPage';
 import { PeerInboxesPage } from './PeerInboxesPage';
 import { PoolRoutingPage } from './PoolRoutingPage';
 import { LlmUsagePage } from './LlmUsagePage';
@@ -53,7 +52,6 @@ import type { PlatformPage } from './shared';
 const LABELS: Record<PlatformPage, string> = {
   overview: 'Overview',
   analytics: 'Platform stats',
-  health: 'System status',
   peers: 'Test accounts',
   routing: 'Account routing',
   llm: 'AI usage',
@@ -77,7 +75,6 @@ const LABELS: Record<PlatformPage, string> = {
 const ICONS: Record<PlatformPage, (p: IconProps) => JSX.Element> = {
   overview: IconDashboard,
   analytics: IconChart,
-  health: IconHeart,
   peers: IconNetwork,
   routing: IconBranch,
   llm: IconSpark,
@@ -101,7 +98,7 @@ const ICONS: Record<PlatformPage, (p: IconProps) => JSX.Element> = {
 /** Grouped sidebar nav — mirrors the WarmPulse admin nav clusters
  *  (nav-config.ts ADMIN_NAV_GROUPS) with the console-only pages folded in. */
 const NAV_GROUPS: { group: string; pages: PlatformPage[] }[] = [
-  { group: 'Overview', pages: ['overview', 'analytics', 'health'] },
+  { group: 'Overview', pages: ['overview', 'analytics'] },
   { group: 'Email network', pages: ['peers', 'routing', 'llm', 'platform-mail', 'mail-viewer'] },
   {
     group: 'Customers & money',
@@ -109,6 +106,32 @@ const NAV_GROUPS: { group: string; pages: PlatformPage[] }[] = [
   },
   { group: 'Management', pages: ['reports', 'audit', 'settings', 'marketing'] },
 ];
+
+/**
+ * Render-crash guard for one admin page — a broken page shows the friendly
+ * admin-unavailable panel instead of blanking the whole console. `key={page}`
+ * resets it on navigation; "Try again" re-renders the page once more.
+ */
+class PageErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state: { failed: boolean } = { failed: false };
+
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <section className="card" role="alert" style={{ margin: 24, maxWidth: 560 }}>
+        <h2 className="pf-h2">Admin data unavailable</h2>
+        <p className="field-hint">Connect to the warmup backend or verify your admin session, then try again.</p>
+        <button className="btn" onClick={() => this.setState({ failed: false })}>
+          Try again
+        </button>
+      </section>
+    );
+  }
+}
 
 function parse(hash = window.location.hash): PlatformPage {
   const [root = '', page = ''] = hash.replace(/^#\/?/, '').split('/');
@@ -212,9 +235,9 @@ export function PlatformShell({ demo, onSignOut }: { demo: boolean; onSignOut: (
           </div>
         </header>
         <main className="content" id="main" tabIndex={-1}>
+          <PageErrorBoundary key={page}>
           {page === 'overview' && <OverviewPage />}
           {page === 'analytics' && <PlatformAnalyticsPage />}
-          {page === 'health' && <SystemHealthPage />}
           {page === 'peers' && <PeerInboxesPage demo={demo} />}
           {page === 'routing' && <PoolRoutingPage demo={demo} />}
           {page === 'llm' && <LlmUsagePage demo={demo} />}
@@ -233,6 +256,7 @@ export function PlatformShell({ demo, onSignOut }: { demo: boolean; onSignOut: (
           {page === 'audit' && <AuditPage />}
           {page === 'settings' && <AdminSettingsPage demo={demo} />}
           {page === 'marketing' && <MarketingPage />}
+          </PageErrorBoundary>
         </main>
       </div>
       <Toaster />

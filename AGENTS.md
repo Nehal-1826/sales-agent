@@ -12,10 +12,11 @@ Brand: **WarmPulse**, accent theme **orange** (`#f97316` family — restored
   Landing/login/signup + workspace shell (Home · Approvals · Replies · Tasks ·
   Leads · Activity · Assistant · Warmup · Mail · Settings). Sidebar at all widths
   (bottom tab bar removed). Prerendered marketing build (SSR + `scripts/prerender.mjs`).
-  Platform console at `#/platform` (21 admin pages: Overview, Analytics, Users,
-  Tenants, Payments, Billing, Invoices, Plans, Addons, CRM, Reports, MailViewer,
-  PlatformMail, PeerInboxes, PoolRouting, LLM Usage, SystemHealth, Settings,
-  Audit, Marketing, Revenge — ported from `frontend-warmpulse/`).
+  Platform console at `#/platform` (19 pages grouped: Overview · Analytics · Mail
+  [same webmail client as user panel] · PeerInboxes · PoolRouting · AI Usage ·
+  Users · Tenants · Retention · Leads · Plans · Add-ons · Billing · Payments ·
+  Invoices · Reports · Audit · Settings · Marketing). SystemHealth, PlatformMail
+  and MailViewer were removed (broken locally, replaced by the real Mail page).
 - `backend-agent/` — Django + DRF: pipeline, scraper, AI, mailer/outbox, billing,
   workspaces, OTP, WhatsApp approvals, mailbox probe, company scrape. Own AGENTS.md
   (pre-merge doc; paths there are historical).
@@ -86,6 +87,14 @@ The shared bridge secret must be **32+ chars** and identical on both backends
 - Webmail: `POST/GET /api/webmail/*` — IMAP client over connected mailboxes
   (accounts/folders/messages/read/send/mark). Read pane = sandboxed iframe +
   CSP `img-src 'none'` (anti tracking-pixel). Replies thread via `message_id`.
+  Available in both the user panel (sidebar → Mail) and the platform console
+  (Email network group → Mail). "+ Add mailbox" button links to Settings →
+  Mailboxes & speed.
+- Admin API routing: all `platformAdmin.ts` calls go through the warmup bridge
+  (`warmupGet`/`warmupSend` → `/wp-api/api/admin/*`) — never through Django's
+  `/api/admin/*` (404s). `bridgeGetOrFallback` handles auth failures gracefully.
+  Platform admin requires `role='admin'|'owner'` OR `is_superuser=True` AND
+  `is_staff=True` on the Django user, plus a satisfied `PlatformSession` (OTP).
 - FastAPI docs (`/docs`) are disabled outside dev environments.
 - Secrets server-side only (env/.env.docker), masked in API responses, never frontend.
 
@@ -105,5 +114,13 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   password-rule `li.pass/.fail` flip on signup, `.code-slots__input`, `.tfa-panel`, `.tfa-qr-box`.
 - Python env note on Windows: if `backend-agent/.venv` is absent and `backend/.venv` is used
   for Django, include Python 3.12 `site-packages` on `PYTHONPATH` for `PyJWT` (`jwt`).
+- Local admin setup: after `seed_demo`, manually set the admin user's role:
+  `manage.py shell -c "from django.contrib.auth import get_user_model; u=get_user_model().objects.get(username='admin'); u.role='admin'; u.is_superuser=True; u.save()"` —
+  otherwise `IsWorkspaceAdmin` returns 403 ("Only the workspace owner…").
+- Local bridge auth chain: login clears `PlatformSession` → re-satisfy after each
+  login for the warmup bridge to work. FastAPI must share the exact same
+  `JWT_SECRET` as Django's `WARMUP_JWT_SECRET` (both must be 32+ chars).
+  If admin endpoints return 401: check secret match; if 500: run the FastAPI
+  dev bootstrap to create sqlite tables (`WARMUP_DEV_BOOTSTRAP=1`).
 - Workflow rule: update `AGENTS.md` after completing work whenever architecture, routes,
   dev commands, or gotchas change.

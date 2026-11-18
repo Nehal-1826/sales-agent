@@ -13,6 +13,7 @@ export interface Me {
   otp_required?: boolean;
   totp_enabled?: boolean;
   email_verified?: boolean;
+  username?: string;
 }
 
 export interface Page<T> {
@@ -192,6 +193,12 @@ export const totpRotateConfirm = async (code: string) =>
   (await inDemo())
     ? demoFail<unknown>()
     : attempt(() => request<unknown>('/platform/2fa/rotate/confirm/', post({ code })));
+
+/** Settings → Account: change the signed-in account's username. */
+export async function changeUsername(username: string): Promise<Result<{ username: string }>> {
+  if (await inDemo()) return demoFail<{ username: string }>();
+  return attempt(() => request<{ username: string }>('/auth/change-username/', post({ username })));
+}
 
 /* ---------------- demo data ---------------- */
 

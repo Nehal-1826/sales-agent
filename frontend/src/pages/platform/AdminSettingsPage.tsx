@@ -18,6 +18,8 @@ import { Chip, Field, PageHeader, SectionLabel, Toggle } from '../../components/
 import { LoadError, Skeleton, toast } from '../../components/feedback';
 import { useAsync } from '../../lib/hooks';
 import {
+  changeUsername,
+  getMe,
   getPlatform2faStatus,
   totpConfirm,
   totpDisable,
@@ -319,6 +321,37 @@ export function AdminSettingsPage({ demo = false }: { demo?: boolean }) {
     [],
   );
 
+  // ── account: username ────────────────────────────────────────────────
+  const [currentUsername, setCurrentUsername] = useState<string | null>(null);
+  const [newUsername, setNewUsername] = useState('');
+  const [usernameBusy, setUsernameBusy] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    void getMe()
+      .then((me) => {
+        if (alive) setCurrentUsername(me.username ?? null);
+      })
+      .catch(() => {
+        /* the card still works without the current name */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const usernameValid = /^[A-Za-z0-9_]{3,30}$/.test(newUsername);
+  const usernameDirty = usernameValid && newUsername !== currentUsername;
+
+  async function saveUsername() {
+    if (!usernameDirty) return;
+    setUsernameBusy(true);
+    const r = await changeUsername(newUsername);
+    setUsernameBusy(false);
+    if (!r.ok) return toast.error(r.error);
+    setCurrentUsername(newUsername);
+    setNewUsername('');
+    toast.success('Username updated');
+  }
+
   const anyDirty = defaultsDirty || llmDirty || oauthDirty || smtpDirty;
 
   return (
@@ -356,6 +389,35 @@ export function AdminSettingsPage({ demo = false }: { demo?: boolean }) {
           enabledNote="Console sign-ins and privileged platform actions require a 6-digit code from your authenticator."
           onStatusChange={setTwoFaEnabled}
         />
+      </SettingsCard>
+
+      {/* ── account: change username ── */}
+      <SettingsCard
+        title="Change username"
+        summary={
+          currentUsername === null
+            ? 'Account · the name you sign in with'
+            : `Account · current username: ${currentUsername}`
+        }
+        dirty={usernameDirty}
+        savePending={usernameBusy}
+        onSave={() => void saveUsername()}
+        saveLabel="Save username"
+      >
+        <Field label="New username" hint="3–30 characters — letters, numbers and underscores">
+          <input
+            value={newUsername}
+            placeholder={currentUsername ?? 'new_username'}
+            style={{ fontFamily: 'monospace' }}
+            aria-label="New username"
+            onChange={(e) => setNewUsername(e.target.value)}
+          />
+        </Field>
+        {newUsername.length > 0 && !usernameValid && (
+          <p className="pf-error" role="alert">
+            3–30 characters — letters, numbers and underscores only.
+          </p>
+        )}
       </SettingsCard>
 
       {error && <LoadError message={error} onRetry={() => void reload()} />}

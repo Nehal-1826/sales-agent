@@ -177,6 +177,27 @@ def me(request):
     return Response({**UserSerializer(request.user).data, **auth_extras(request.user, request)})
 
 
+USERNAME_RULE = 'Username must be 3-30 characters — letters, numbers and underscores only.'
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsOtpSatisfied])
+def change_username(request):
+    """Settings → Account: change the signed-in user's username.
+    3-30 ASCII letters/digits/underscore, unique (checked case-insensitively
+    so 'Admin' cannot shadow 'admin').  The auth token stays valid — it is
+    keyed by pk, not username."""
+    new = (request.data.get('username') or '').strip()
+    if not re.fullmatch(r'[A-Za-z0-9_]{3,30}', new):
+        return Response({'detail': USERNAME_RULE}, status=400)
+    if (new.lower() != request.user.username.lower()
+            and User.objects.filter(username__iexact=new).exists()):
+        return Response({'detail': 'That username is already taken.'}, status=409)
+    request.user.username = new
+    request.user.save(update_fields=['username'])
+    return Response({'username': new, 'detail': 'username updated'})
+
+
 @api_view(['POST'])
 def change_password(request):
     user = request.user
@@ -944,7 +965,13 @@ def outreach_status(request):
 # MAILBOXES — sending accounts for the outbox (core.outbox)
 # ------------------------------------------------------------------
 
-def _get_mailbox(mailbox_id):
+def _get_mailbox(request, mailbox_id):
+    """Workspace-scoped mailbox lookup.  A platform admin (staff user with no
+    workspace of their own) reads across workspaces — the platform console's
+    Mail page shares these endpoints with the user panel and must serve every
+    tenant's connected mailboxes."""
+    if is_platform_admin(getattr(request, 'user', None)):
+        return Mailbox.all_tenants.filter(pk=mailbox_id).first()
     return Mailbox.objects.filter(pk=mailbox_id).first()
 
 
@@ -1028,7 +1055,7 @@ def mailbox_test(request):
 @api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
 @permission_classes([IsWorkspaceAdminOrReadOnly])
 def mailbox_detail(request, mailbox_id):
-    mb = _get_mailbox(mailbox_id)
+    mb = _get_mailbox(request, mailbox_id)
     if mb is None:
         return Response({'detail': 'mailbox not found'}, status=404)
     if request.method == 'DELETE':
@@ -1047,7 +1074,7 @@ def mailbox_detail(request, mailbox_id):
 @permission_classes([IsWorkspaceAdmin])
 def mailbox_dns_check(request, mailbox_id):
     from .dns_check import refresh_mailbox_dns
-    mb = _get_mailbox(mailbox_id)
+    mb = _get_mailbox(request, mailbox_id)
     if mb is None:
         return Response({'detail': 'mailbox not found'}, status=404)
     refresh_mailbox_dns(mb)
@@ -1058,7 +1085,7 @@ def mailbox_dns_check(request, mailbox_id):
 @permission_classes([IsWorkspaceAdmin])
 def mailbox_resume(request, mailbox_id):
     from .outbox import resume_mailbox
-    mb = _get_mailbox(mailbox_id)
+    mb = _get_mailbox(request, mailbox_id)
     if mb is None:
         return Response({'detail': 'mailbox not found'}, status=404)
     resume_mailbox(mb)
@@ -1076,7 +1103,7 @@ def mailbox_enroll_warmup(request, mailbox_id):
     bridge JWT — see core.warmup_enroll. Idempotent by email address.
     """
     from .warmup_enroll import WarmupEnrollError, enroll_mailbox
-    mb = _get_mailbox(mailbox_id)
+    mb = _get_mailbox(request, mailbox_id)
     if mb is None:
         return Response({'detail': 'mailbox not found'}, status=404)
     if not mb.configured():   # nothing to forward — refuse before any bridge call
@@ -1121,16 +1148,19 @@ def warmpulse_sync(request):
 @permission_classes([IsWorkspaceAdmin])
 def webmail_accounts(request):
     """One row per configured() Mailbox with its INBOX unread count.
-    An unreachable account degrades to unread=null — the list never 500s."""
+    An unreachable account degrades to unread=null — the list never 500s.
+    A platform admin (no workspace) gets every tenant's mailboxes — the
+    console Mail page shares this endpoint with the user panel."""
     from . import webmail
-    return Response(webmail.list_accounts())
+    scoped = Mailbox.all_tenants if is_platform_admin(request.user) else Mailbox.objects
+    return Response(webmail.list_accounts(scoped))
 
 
 @api_view(['GET'])
 @permission_classes([IsWorkspaceAdmin])
 def webmail_folders(request, mailbox_id):
     from . import webmail
-    mb = _get_mailbox(mailbox_id)
+    mb = _get_mailbox(request, mailbox_id)
     if mb is None:
         return Response({'detail': 'mailbox not found'}, status=404)
     try:
@@ -1144,7 +1174,7 @@ def webmail_folders(request, mailbox_id):
 def webmail_messages(request, mailbox_id):
     """Envelope page (?folder=INBOX&page=1&query=) — BODY.PEEK, read-only."""
     from . import webmail
-    mb = _get_mailbox(mailbox_id)
+    mb = _get_mailbox(request, mailbox_id)
     if mb is None:
         return Response({'detail': 'mailbox not found'}, status=404)
     try:
@@ -1161,7 +1191,7 @@ def webmail_messages(request, mailbox_id):
 def webmail_message(request, mailbox_id):
     """Full message (?folder=&uid=) — the BODY[] fetch sets \\Seen."""
     from . import webmail
-    mb = _get_mailbox(mailbox_id)
+    mb = _get_mailbox(request, mailbox_id)
     if mb is None:
         return Response({'detail': 'mailbox not found'}, status=404)
     uid = request.query_params.get('uid')
@@ -1181,7 +1211,7 @@ def webmail_send(request, mailbox_id):
     """Send from one connected mailbox ({to, subject, body_html, in_reply_to?})
     over the mailer SMTP helpers; the Sent-folder APPEND is best-effort."""
     from . import webmail
-    mb = _get_mailbox(mailbox_id)
+    mb = _get_mailbox(request, mailbox_id)
     if mb is None:
         return Response({'detail': 'mailbox not found'}, status=404)
     to = (request.data.get('to') or '').strip()
@@ -1203,7 +1233,7 @@ def webmail_send(request, mailbox_id):
 def webmail_mark(request, mailbox_id):
     """{folder, uids[], action: seen|unread|flagged|trash} → {ok: count}."""
     from . import webmail
-    mb = _get_mailbox(mailbox_id)
+    mb = _get_mailbox(request, mailbox_id)
     if mb is None:
         return Response({'detail': 'mailbox not found'}, status=404)
     action = request.data.get('action')

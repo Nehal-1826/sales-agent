@@ -88,8 +88,13 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   (accounts/folders/messages/read/send/mark). Read pane = sandboxed iframe +
   CSP `img-src 'none'` (anti tracking-pixel). Replies thread via `message_id`.
   Available in both the user panel (sidebar → Mail) and the platform console
-  (Email network group → Mail). "+ Add mailbox" button links to Settings →
-  Mailboxes & speed.
+  (Email network group → Mail); platform admins (no workspace) get a
+  cross-workspace read — `Mailbox.all_tenants` via `is_platform_admin`, so
+  the console Mail page lists every tenant's mailboxes. "+ Add mailbox"
+  button links to Settings → Mailboxes & speed.
+- Account self-service: `POST /api/auth/change-username/` (IsAuthenticated +
+  OTP-satisfied) — 3-30 chars `[A-Za-z0-9_]`, unique case-insensitive;
+  token survives (pk-keyed). Card in platform Settings (AdminSettingsPage).
 - Admin API routing: all `platformAdmin.ts` calls go through the warmup bridge
   (`warmupGet`/`warmupSend` → `/wp-api/api/admin/*`) — never through Django's
   `/api/admin/*` (404s). `bridgeGetOrFallback` handles auth failures gracefully.

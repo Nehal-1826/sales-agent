@@ -25,6 +25,8 @@ urlpatterns = [
     path('auth/me/', views.me, name='me'),
     path('auth/logout/', views.logout, name='logout'),
     path('auth/password/', views.change_password, name='change-password'),
+    # Settings → Account: change the signed-in user's username
+    path('auth/change-username/', views.change_username, name='change-username'),
     # workspace-level 2FA (Settings → Two-factor + sign-in OTP)
     path('auth/2fa/status/', views.user_2fa_status, name='user-2fa-status'),
     path('auth/2fa/setup/', views.user_2fa_setup, name='user-2fa-setup'),

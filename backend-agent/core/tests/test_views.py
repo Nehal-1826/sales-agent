@@ -83,6 +83,51 @@ class AuthTests(TenantTestCase):
         self.assertEqual(resp.status_code, 401)
 
 
+class ChangeUsernameTests(TenantTestCase):
+    """POST /api/auth/change-username/ — admin Settings → Account."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='operator', password='testpass1234', role=User.Roles.OWNER,
+        )
+        self.token = Token.objects.create(user=self.user)
+        self.client = APIClient()
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token.key}')
+
+    def post(self, payload):
+        return self.client.post('/api/auth/change-username/', payload, format='json')
+
+    def test_change_ok(self):
+        resp = self.post({'username': 'new_operator'})
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.json()['username'], 'new_operator')
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.username, 'new_operator')
+        # the token is pk-keyed — it survives the rename
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token.key}')
+        self.assertEqual(self.client.get('/api/auth/me/').status_code, 200)
+
+    def test_length_and_charset_rules(self):
+        for bad in ('ab', 'x' * 31, '', 'has space', 'dash-name', 'ümlaut',
+                    None):
+            resp = self.post({'username': bad})
+            self.assertEqual(resp.status_code, 400, bad)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.username, 'operator')
+
+    def test_taken_case_insensitive(self):
+        User.objects.create_user(username='Taken', password='testpass1234')
+        self.assertEqual(self.post({'username': 'taken'}).status_code, 409)
+        self.assertEqual(self.post({'username': 'TAKEN'}).status_code, 409)
+        # resubmitting one's OWN name (any case) is not a conflict
+        self.assertEqual(self.post({'username': 'Operator'}).status_code, 200)
+
+    def test_requires_auth(self):
+        anon = APIClient()
+        resp = anon.post('/api/auth/change-username/', {'username': 'steve'}, format='json')
+        self.assertEqual(resp.status_code, 401)
+
+
 
 class LeadViewTests(SetupMixin, TenantTestCase):
     """CRUD on /api/leads/."""

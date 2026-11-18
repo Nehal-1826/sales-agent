@@ -16,7 +16,8 @@ from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
 from core import webmail
-from core.models import Mailbox, User
+from core.models import Mailbox, User, Workspace
+from core.tenancy import workspace_context
 
 from .base import TenantTestCase
 
@@ -632,3 +633,70 @@ class WebmailEndpointTests(TenantTestCase):
         self.assertEqual(r.status_code, 200, r.content)
         self.assertTrue(r.json()['ok'])
         self.assertTrue(conn.append.called)
+
+
+class PlatformAdminWebmailTests(TenantTestCase):
+    """The platform console Mail page shares the webmail endpoints with the
+    user panel — a platform admin (staff, no workspace) must see every
+    tenant's connected mailboxes, not 403 on the missing tenant context."""
+
+    def setUp(self):
+        webmail._FOLDER_CACHE.clear()
+        # a SECOND workspace with its own mailbox (created in its context)
+        self.other_ws = Workspace.all_tenants.create(slug='other-co', name='Other Co')
+        with workspace_context(self.other_ws):
+            self.other_mb = make_mailbox(from_email='sales@other.com',
+                                         smtp_user='sales@other.com')
+        # platform admin: superuser → staff, active, workspace None
+        self.admin = User.objects.create_superuser(username='plat', password='pw123456')
+        self.admin_client = APIClient()
+        self.admin_client.credentials(
+            HTTP_AUTHORIZATION=f'Token {Token.objects.create(user=self.admin).key}')
+        # a tenant owner for the scoping contrast
+        self.owner = User.objects.create_user(username='pown', password='pw123456', role='owner')
+        self.owner_client = APIClient()
+        self.owner_client.credentials(
+            HTTP_AUTHORIZATION=f'Token {Token.objects.create(user=self.owner).key}')
+
+    def test_accounts_cross_workspace_for_platform_admin(self):
+        own = make_mailbox()  # the test workspace's mailbox
+        conn = imap_mock(counts={'INBOX': (4, 1)})
+        with mock.patch('core.webmail.imaplib.IMAP4_SSL', return_value=conn):
+            r = self.admin_client.get('/api/webmail/accounts/')
+        self.assertEqual(r.status_code, 200, r.content)
+        emails = [a['email'] for a in r.json()]
+        self.assertIn('sales@sender.com', emails, 'own workspace mailbox listed')
+        self.assertIn('sales@other.com', emails, 'other workspace mailbox listed')
+
+        # the tenant owner still only sees their own workspace
+        with mock.patch('core.webmail.imaplib.IMAP4_SSL', return_value=conn):
+            r = self.owner_client.get('/api/webmail/accounts/')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual([a['email'] for a in r.json()], ['sales@sender.com'])
+
+    def test_folder_endpoint_cross_workspace_for_platform_admin(self):
+        conn = imap_mock(counts={'INBOX': (12, 4)})
+        with mock.patch('core.webmail.imaplib.IMAP4_SSL', return_value=conn):
+            r = self.admin_client.get(f'/api/webmail/{self.other_mb.pk}/folders/')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual([f['name'] for f in r.json()],
+                         ['INBOX', 'Sent', 'Drafts', 'Junk', 'Trash'])
+
+        # the tenant owner cannot reach another workspace's mailbox
+        with mock.patch('core.webmail.imaplib.IMAP4_SSL', return_value=conn):
+            r = self.owner_client.get(f'/api/webmail/{self.other_mb.pk}/folders/')
+        self.assertEqual(r.status_code, 404, r.content)
+
+    def test_staff_role_admin_without_superuser_also_reads(self):
+        """The documented platform-admin shape also includes staff users with
+        role='admin' and no workspace — same cross-workspace read."""
+        staff = User.objects.create_user(username='pstaff', password='pw123456',
+                                         role='admin', is_staff=True)
+        User.objects.filter(pk=staff.pk).update(workspace=None)  # platform operator
+        c = APIClient()
+        c.credentials(HTTP_AUTHORIZATION=f'Token {Token.objects.create(user=staff).key}')
+        conn = imap_mock(counts={'INBOX': (4, 1)})
+        with mock.patch('core.webmail.imaplib.IMAP4_SSL', return_value=conn):
+            r = c.get('/api/webmail/accounts/')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertIn('sales@other.com', [a['email'] for a in r.json()])

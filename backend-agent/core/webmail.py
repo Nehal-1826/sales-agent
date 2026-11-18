@@ -658,12 +658,15 @@ def provider_for(mailbox):
     return 'custom'
 
 
-def list_accounts():
+def list_accounts(queryset=None):
     """One row per CONFIGURED mailbox with its INBOX unread count.
-    An unreachable account degrades to unread=null + unreachable=true —
-    the list itself never 500s."""
+    The caller passes the scoping: the workspace's ``Mailbox.objects`` for a
+    tenant user, or ``Mailbox.all_tenants`` for a platform admin reading
+    across workspaces (the console Mail page).  An unreachable account
+    degrades to unread=null + unreachable=true — the list itself never 500s."""
     accounts = []
-    configured = [mb for mb in Mailbox.objects.order_by('id') if mb.configured()]
+    source = queryset if queryset is not None else Mailbox.objects
+    configured = [mb for mb in source.order_by('id') if mb.configured()]
     for index, mb in enumerate(configured):
         account = {'id': mb.pk, 'email': mb.from_email,
                    'provider': provider_for(mb), 'is_primary': index == 0,

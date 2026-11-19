@@ -126,6 +126,16 @@ def register(request):
     return Response({'token': token.key, 'user': UserSerializer(user).data}, status=201)
 
 
+def _issue_login_token(user, request):
+    """Mint a fresh DRF token + force a new TOTP session (shared by both login doors)."""
+    token, _ = Token.objects.get_or_create(user=user)
+    if token_expired(token):   # an expired token is dead — issue a fresh one
+        token.delete()
+        token = Token.objects.create(user=user)
+    PlatformSession.objects.filter(token=token).delete()  # a fresh login must pass TOTP again
+    return Response({'token': token.key, 'user': {**UserSerializer(user).data, **auth_extras(user, request)}})
+
+
 @api_view(['POST'])
 @permission_classes([AllowAny])
 @throttle_classes([AnonRateThrottle, LoginThrottle])
@@ -156,12 +166,40 @@ def login(request):
     lockout.clear(uname, ip)
     if user.workspace is not None and not user.workspace.is_active:
         return Response({'detail': 'This workspace is suspended.'}, status=403)
-    token, _ = Token.objects.get_or_create(user=user)
-    if token_expired(token):   # an expired token is dead — issue a fresh one
-        token.delete()
-        token = Token.objects.create(user=user)
-    PlatformSession.objects.filter(token=token).delete()  # a fresh login must pass TOTP again
-    return Response({'token': token.key, 'user': {**UserSerializer(user).data, **auth_extras(user, request)}})
+    if is_platform_admin(user):
+        return Response({'detail': 'Platform admins sign in from the admin login page.',
+                         'admin_only': True}, status=403)
+    return _issue_login_token(user, request)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle, LoginThrottle])
+def admin_login(request):
+    """Platform-admin door: staff users with no workspace sign in from the
+    slug-prefixed console login page ONLY — workspace users are refused here
+    exactly as platform admins are refused on /auth/login/."""
+    uname = request.data.get('username')
+    uname = uname if isinstance(uname, str) else ''
+    ip = lockout.client_ip(request)
+    if lockout.is_locked(uname, ip):
+        return Response({'error': 'too_many_attempts'}, status=429)
+    user = authenticate(request, username=uname, password=request.data.get('password'))
+    if user is None and '@' in uname:
+        matches = list(
+            User.objects.filter(email__iexact=uname.strip()).values_list('username', flat=True)[:2]
+        )
+        if len(matches) == 1:
+            user = authenticate(request, username=matches[0],
+                                password=request.data.get('password'))
+    if user is None:
+        lockout.record_failure(uname, ip)
+        return Response({'detail': 'invalid credentials'}, status=401)
+    lockout.clear(uname, ip)
+    if not is_platform_admin(user):
+        return Response({'detail': 'This page is for platform administrators only.'},
+                        status=403)
+    return _issue_login_token(user, request)
 
 
 @api_view(['POST'])

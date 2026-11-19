@@ -22,6 +22,8 @@ urlpatterns = [
     path('auth/verify_email/', signup.verify_email, name='verify-email'),
     path('auth/resend_verification/', signup.resend_verification, name='resend-verification'),
     path('auth/login/', views.login, name='login'),
+    # platform-admin door — staff-only mirror of /auth/login/ (slug console)
+    path('auth/admin-login/', views.admin_login, name='admin-login'),
     path('auth/me/', views.me, name='me'),
     path('auth/logout/', views.logout, name='logout'),
     path('auth/password/', views.change_password, name='change-password'),

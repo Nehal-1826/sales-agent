@@ -125,7 +125,8 @@ class TwoFactorFlowTests(TestCase):
 
     def test_login_requires_otp_again(self):
         c, u, tok = make_admin()
-        r = APIClient().post('/api/auth/login/', {'username': 'root', 'password': 'pass12345-x'}, format='json')
+        # platform admins sign in through the admin door — /auth/login/ refuses them
+        r = APIClient().post('/api/auth/admin-login/', {'username': 'root', 'password': 'pass12345-x'}, format='json')
         self.assertEqual(r.status_code, 200)
         self.assertTrue(r.json()['user']['otp_required'])
         self.assertTrue(r.json()['user']['platform_admin'])

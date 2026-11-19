@@ -106,7 +106,9 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   `SlugAttempt` (no instant email) and emailed as a weekly digest via
   `manage.py send_slug_report` — VPS cron Monday 09:00 IST (03:30 UTC), log
   `/var/log/warmpulse-slug-report.log`. Digest always sends (0 hits = alive ping);
-  sent from the tenant SMTP (`cto@shailog.com`) to `AppSettings.report_email`.
+  sent from the PLATFORM SMTP (`PLATFORM_SMTP_*` → noreply@warmpulse.tech,
+  duck-typed mailbox shim — no connected Mailbox row) to
+  `AppSettings.report_email`; falls back to tenant SMTP when unset.
   Rotate the slug with `manage.py set_admin_slug`.
 
 ## Gotchas

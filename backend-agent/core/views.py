@@ -1290,56 +1290,32 @@ def pipeline_runs(request):
 # ── admin secret slug ─────────────────────────────────────────────────────
 
 import re
-import time as _time
-from django.core.cache import cache as _cache
-
-_SLUG_ALERT_KEY = 'admin-slug-alert:last'
-_SLUG_ALERT_COOLDOWN = 300  # seconds between alert emails
 
 
-def _alert_admin_wrong_slug(tried_slug, ip):
-    """Send an email alert when someone hits a wrong 6-digit admin slug."""
-    if _cache.get(_SLUG_ALERT_KEY):
-        return  # throttled — one alert per 5 minutes
-    _cache.set(_SLUG_ALERT_KEY, True, _SLUG_ALERT_COOLDOWN)
-    s = AppSettings.all_tenants.first()
-    recipients = [e.strip() for e in (s.report_email or '').split(',') if e.strip()]
-    if not recipients:
-        recipients = [u.email for u in User.objects.filter(is_staff=True, email__ne='')[:3]]
-    if not recipients:
-        return
-    from .mailer import send_email_message
-    from django.utils import timezone
-    now = timezone.localtime().strftime('%Y-%m-%d %H:%M:%S %Z')
-    send_email_message(
-        f'⚠ Wrong admin URL hit: /{tried_slug}',
-        f'Someone tried to access the admin console with a wrong slug.\n'
-        f'\n Tried: /{tried_slug}'
-        f'\n IP: {ip}'
-        f'\n Time: {now}'
-        f'\n\n If this was you, ignore this email.'
-        f' If not, consider rotating the slug:',
-        recipients,
-        s=s,
-    )
+def _log_wrong_slug_attempt(tried_slug, ip):
+    """Record a wrong 6-digit admin slug hit — summarized in the weekly digest
+    (management command send_slug_report, run by the VPS cron on Mondays)."""
+    from .models import SlugAttempt
+    SlugAttempt.objects.create(slug=tried_slug[:10], ip=(ip or '')[:45])
 
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
 @throttle_classes([AdminSlugThrottle])
 def admin_slug_check(request):
-    """Check a 6-digit slug. Valid → {valid:true}; wrong → alert email + {valid:false}."""
+    """Check a 6-digit slug. Valid → {valid:true}; wrong → log attempt + {valid:false}.
+    Attempts are emailed as a weekly digest (cron → send_slug_report)."""
     slug = str(request.data.get('slug', '')).strip()
     if not re.fullmatch(r'\d{6}', slug):
         return Response({'valid': False, 'detail': 'Not a 6-digit slug.'}, status=400)
     s = AppSettings.all_tenants.first()
     if s and s.admin_slug and slug == s.admin_slug:
         return Response({'valid': True})
-    # wrong slug → alert + 404 response
+    # wrong slug → log for the weekly digest + 404 response
     ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip() or \
          request.META.get('REMOTE_ADDR', 'unknown')
     try:
-        _alert_admin_wrong_slug(slug, ip)
+        _log_wrong_slug_attempt(slug, ip)
     except Exception:
-        pass  # email failure must never block the response
+        pass  # logging failure must never block the response
     return Response({'valid': False}, status=404)

@@ -839,3 +839,13 @@ class LoginAttempt(models.Model):
     key = models.CharField(max_length=64, unique=True)
     count = models.PositiveIntegerField(default=0)
     window_start = models.DateTimeField()
+
+
+class SlugAttempt(models.Model):
+    """Log of wrong admin-slug hits — summarized in the weekly report email."""
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    slug = models.CharField(max_length=10)
+    ip = models.CharField(max_length=45, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']

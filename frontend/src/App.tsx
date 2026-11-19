@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { GlassBackdrop } from './components/Lightfall';
@@ -197,6 +197,10 @@ function AppGate() {
       demo={gate === 'demo'}
       onSignOut={() => {
         logout();
+        // sign-out lands on the sign-in screen, never back on marketing —
+        // with path-router deep links the shell can mount while `landing`
+        // is still true (no Sign-in click ever flipped it)
+        setLanding(false);
         setGate('unauthenticated');
       }}
     />
@@ -343,12 +347,16 @@ function Shell({ demo, onSignOut }: { demo: boolean; onSignOut: () => void }) {
     return () => window.removeEventListener(PAYMENT_REQUIRED_EVENT, onPay);
   }, []);
 
-  // a user whose setup chat is still open lands in the Assistant once
+  // a user whose setup chat is still open lands in the Assistant once — but
+  // never hijack an explicit destination: a deep link (#/warmup, #/replies…)
+  // or an in-flight click must win over the auto-landing.
+  const pageRef = useRef(page);
+  useEffect(() => { pageRef.current = page; }, [page]);
   useEffect(() => {
     if (demo) return;
     getOnboarding()
       .then((state) => {
-        if (state?.needed) navigate('assistant');
+        if (state?.needed && pageRef.current === 'home') navigate('assistant');
       })
       .catch(() => undefined);
   }, [demo]);

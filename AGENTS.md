@@ -102,6 +102,12 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   `is_staff=True` on the Django user, plus a satisfied `PlatformSession` (OTP).
 - FastAPI docs (`/docs`) are disabled outside dev environments.
 - Secrets server-side only (env/.env.docker), masked in API responses, never frontend.
+- Admin secret slug (`/<6-digits>/…` console prefix): wrong hits are logged to
+  `SlugAttempt` (no instant email) and emailed as a weekly digest via
+  `manage.py send_slug_report` — VPS cron Monday 09:00 IST (03:30 UTC), log
+  `/var/log/warmpulse-slug-report.log`. Digest always sends (0 hits = alive ping);
+  sent from the tenant SMTP (`cto@shailog.com`) to `AppSettings.report_email`.
+  Rotate the slug with `manage.py set_admin_slug`.
 
 ## Gotchas
 

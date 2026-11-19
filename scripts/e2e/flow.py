@@ -29,7 +29,9 @@ each one resolves var(--accent) in the page (computed color of a throwaway
 probe element) and compares against that, never against a literal color.
 """
 import io
+import os
 import re
+import subprocess
 import sys
 import urllib.request
 from pathlib import Path
@@ -44,6 +46,11 @@ SHOTS = ROOT / ".superpowers" / "sdd" / "e2e-shots"
 SHOTS.mkdir(parents=True, exist_ok=True)
 
 USERNAME, PASSWORD = "operator", "operator-demo-2026"
+
+# Admin door (login split): fixed slug for the admin-console walk. seed_demo
+# leaves AppSettings.admin_slug blank, so the gate sets it itself below —
+# same command the operator uses (`manage.py set_admin_slug`).
+ADMIN_SLUG = "847291"
 
 # Resolve var(--accent) to a computed "rgb(r, g, b)" string inside the page —
 # the probe element forces the browser to normalize whatever color format the
@@ -77,6 +84,32 @@ def pick_base() -> str:
 
 BASE = pick_base()
 WP_UP = http_ok("http://127.0.0.1:8001/health")
+
+
+def ensure_admin_slug() -> tuple[bool, str]:
+    """Point the e2e DB's admin slug at ADMIN_SLUG (seed_demo leaves it blank).
+    Uses the same Django management command the operator runs; venv resolution
+    mirrors the bring-up notes (own .venv, else the sibling Email-Warmup one)."""
+    dj = ROOT / "backend-agent"
+    candidates = [
+        dj / ".venv" / "Scripts" / "python.exe",
+        ROOT.parent / "Email-Warmup" / "backend-agent" / ".venv" / "Scripts" / "python.exe",
+        Path(sys.executable),
+    ]
+    py = next((p for p in candidates if p.exists()), None)
+    if py is None:
+        return False, "no usable python found for the Django shell"
+    try:
+        r = subprocess.run(
+            [str(py), "manage.py", "set_admin_slug", ADMIN_SLUG],
+            cwd=str(dj),
+            env={**os.environ, "DATABASE_URL": "sqlite:///db-agent-e2e.sqlite3"},
+            capture_output=True, text=True, timeout=90,
+        )
+        return r.returncode == 0 and "Admin slug set" in r.stdout, (r.stderr or r.stdout)[-200:]
+    except Exception as exc:  # noqa: BLE001
+        return False, f"{type(exc).__name__}: {exc}"
+
 
 results = []
 
@@ -378,6 +411,34 @@ with sync_playwright() as p:
         hygiene_errors = [e for e in console_errors if e not in probe_errs]
     check("hygiene: zero console errors", not hygiene_errors, "; ".join(hygiene_errors[:3]))
     check("hygiene: no 404/5xx network responses", not nonwp_bad, str(nonwp_bad[:3]))
+
+    # ── 8b. Admin door, signed out (login split): /<slug> lands on the admin
+    # login card and WORKSPACE credentials are turned away with the admin-only
+    # 403. Deliberately AFTER the hygiene snapshot — the expected 403 (and its
+    # console line) must not count as session noise. A full platform-admin
+    # login is NOT automated (TOTP enrollment is beyond a shallow walk).
+    slug_ready, slug_detail = ensure_admin_slug()
+    check(f"admin door: e2e slug set to {ADMIN_SLUG} (manage.py set_admin_slug)",
+          slug_ready, slug_detail)
+    page.goto(f"{BASE}/{ADMIN_SLUG}")
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(500)
+    check("admin door: signed-out /<slug> redirects to /<slug>/login",
+          page.url.endswith(f"/{ADMIN_SLUG}/login"), page.url)
+    check('admin door: admin login card says "Platform Console"',
+          "Platform Console" in page.locator("body").inner_text())
+    page.locator("input[autocomplete=username]").fill(USERNAME)
+    page.locator("input[type=password]").fill(PASSWORD)
+    page.locator("button.login-submit").click()
+    try:
+        page.wait_for_selector("p.login-error", timeout=8000)
+        door_err = page.locator("p.login-error").inner_text()
+    except Exception:
+        door_err = safe_text(page.locator("p.login-error"))
+    check("admin door: workspace creds refused (admin-only 403 text)",
+          "This page is for platform administrators only." in door_err, door_err)
+    page.screenshot(path=str(SHOTS / "09-admin-door.png"))
+    # (operator's happy path through the DEFAULT door is section 2 above)
 
     browser.close()
 

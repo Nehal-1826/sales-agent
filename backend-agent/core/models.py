@@ -227,6 +227,10 @@ class Mailbox(TenantOwned, Timestamped):
     # attempt, blank once an enrollment succeeds — it never blocks a save
     warmup_enrolled = models.BooleanField(default=True)
     warmup_enroll_error = models.TextField(blank=True, default='')
+    # platform-owned mailbox (WarmPulse's own @warmpulse.tech mail): visible
+    # ONLY in the superadmin console — workspace webmail/settings/outbox
+    # queries all exclude it, so it never leaks into a tenant account
+    is_platform = models.BooleanField(default=False)
 
     class Meta(TenantOwned.Meta):
         ordering = ['id']

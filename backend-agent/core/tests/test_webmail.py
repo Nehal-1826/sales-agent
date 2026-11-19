@@ -636,17 +636,19 @@ class WebmailEndpointTests(TenantTestCase):
 
 
 class PlatformAdminWebmailTests(TenantTestCase):
-    """The platform console Mail page shares the webmail endpoints with the
-    user panel — a platform admin (staff, no workspace) must see every
-    tenant's connected mailboxes, not 403 on the missing tenant context."""
+    """Webmail isolation: the platform console Mail page serves ONLY platform
+    mailboxes (is_platform=True — WarmPulse's own @warmpulse.tech mail);
+    workspace users see only their own workspace's mailboxes.  Tenant mail
+    never leaks into the console, platform mail never leaks into a tenant."""
 
     def setUp(self):
         webmail._FOLDER_CACHE.clear()
-        # a SECOND workspace with its own mailbox (created in its context)
-        self.other_ws = Workspace.all_tenants.create(slug='other-co', name='Other Co')
-        with workspace_context(self.other_ws):
-            self.other_mb = make_mailbox(from_email='sales@other.com',
-                                         smtp_user='sales@other.com')
+        # a separate workspace holding the PLATFORM mailbox (created in its context)
+        self.plat_ws = Workspace.all_tenants.create(slug='warmpulse', name='WarmPulse Platform')
+        with workspace_context(self.plat_ws):
+            self.plat_mb = make_mailbox(from_email='noreply@warmpulse.tech',
+                                        smtp_user='noreply@warmpulse.tech',
+                                        is_platform=True)
         # platform admin: superuser → staff, active, workspace None
         self.admin = User.objects.create_superuser(username='plat', password='pw123456')
         self.admin_client = APIClient()
@@ -658,38 +660,45 @@ class PlatformAdminWebmailTests(TenantTestCase):
         self.owner_client.credentials(
             HTTP_AUTHORIZATION=f'Token {Token.objects.create(user=self.owner).key}')
 
-    def test_accounts_cross_workspace_for_platform_admin(self):
-        own = make_mailbox()  # the test workspace's mailbox
+    def test_accounts_isolated_platform_vs_workspace(self):
+        own = make_mailbox()  # the test workspace's mailbox (tenant mail)
         conn = imap_mock(counts={'INBOX': (4, 1)})
         with mock.patch('core.webmail.imaplib.IMAP4_SSL', return_value=conn):
             r = self.admin_client.get('/api/webmail/accounts/')
         self.assertEqual(r.status_code, 200, r.content)
-        emails = [a['email'] for a in r.json()]
-        self.assertIn('sales@sender.com', emails, 'own workspace mailbox listed')
-        self.assertIn('sales@other.com', emails, 'other workspace mailbox listed')
+        self.assertEqual([a['email'] for a in r.json()], ['noreply@warmpulse.tech'],
+                         'platform admin sees ONLY platform mailboxes')
 
-        # the tenant owner still only sees their own workspace
+        # the tenant owner sees ONLY their own workspace's mailbox — the
+        # platform mailbox is invisible to them
         with mock.patch('core.webmail.imaplib.IMAP4_SSL', return_value=conn):
             r = self.owner_client.get('/api/webmail/accounts/')
         self.assertEqual(r.status_code, 200, r.content)
         self.assertEqual([a['email'] for a in r.json()], ['sales@sender.com'])
 
-    def test_folder_endpoint_cross_workspace_for_platform_admin(self):
+    def test_platform_admin_cannot_open_tenant_mailbox(self):
+        own = make_mailbox()
         conn = imap_mock(counts={'INBOX': (12, 4)})
+        # the console cannot open a TENANT mailbox (e.g. cto@shailog.com)
         with mock.patch('core.webmail.imaplib.IMAP4_SSL', return_value=conn):
-            r = self.admin_client.get(f'/api/webmail/{self.other_mb.pk}/folders/')
+            r = self.admin_client.get(f'/api/webmail/{own.pk}/folders/')
+        self.assertEqual(r.status_code, 404, r.content)
+
+        # …but the platform mailbox opens fine
+        with mock.patch('core.webmail.imaplib.IMAP4_SSL', return_value=conn):
+            r = self.admin_client.get(f'/api/webmail/{self.plat_mb.pk}/folders/')
         self.assertEqual(r.status_code, 200, r.content)
         self.assertEqual([f['name'] for f in r.json()],
                          ['INBOX', 'Sent', 'Drafts', 'Junk', 'Trash'])
 
-        # the tenant owner cannot reach another workspace's mailbox
+        # the tenant owner cannot reach the platform mailbox
         with mock.patch('core.webmail.imaplib.IMAP4_SSL', return_value=conn):
-            r = self.owner_client.get(f'/api/webmail/{self.other_mb.pk}/folders/')
+            r = self.owner_client.get(f'/api/webmail/{self.plat_mb.pk}/folders/')
         self.assertEqual(r.status_code, 404, r.content)
 
     def test_staff_role_admin_without_superuser_also_reads(self):
         """The documented platform-admin shape also includes staff users with
-        role='admin' and no workspace — same cross-workspace read."""
+        role='admin' and no workspace — same platform-mailbox read."""
         staff = User.objects.create_user(username='pstaff', password='pw123456',
                                          role='admin', is_staff=True)
         User.objects.filter(pk=staff.pk).update(workspace=None)  # platform operator
@@ -699,4 +708,4 @@ class PlatformAdminWebmailTests(TenantTestCase):
         with mock.patch('core.webmail.imaplib.IMAP4_SSL', return_value=conn):
             r = c.get('/api/webmail/accounts/')
         self.assertEqual(r.status_code, 200, r.content)
-        self.assertIn('sales@other.com', [a['email'] for a in r.json()])
+        self.assertIn('noreply@warmpulse.tech', [a['email'] for a in r.json()])

@@ -967,12 +967,13 @@ def outreach_status(request):
 
 def _get_mailbox(request, mailbox_id):
     """Workspace-scoped mailbox lookup.  A platform admin (staff user with no
-    workspace of their own) reads across workspaces — the platform console's
-    Mail page shares these endpoints with the user panel and must serve every
-    tenant's connected mailboxes."""
+    workspace of their own) only reaches PLATFORM mailboxes (is_platform=True
+    — WarmPulse's own @warmpulse.tech mail shown in the superadmin console);
+    workspace users only reach their own workspace's mailboxes — tenant mail
+    never leaks into the console and platform mail never leaks into a tenant."""
     if is_platform_admin(getattr(request, 'user', None)):
-        return Mailbox.all_tenants.filter(pk=mailbox_id).first()
-    return Mailbox.objects.filter(pk=mailbox_id).first()
+        return Mailbox.all_tenants.filter(is_platform=True, pk=mailbox_id).first()
+    return Mailbox.objects.filter(is_platform=False, pk=mailbox_id).first()
 
 
 WARMUP_NOT_CONFIGURED = ('Mailbox is not fully configured — add the SMTP host, username and '
@@ -1022,7 +1023,9 @@ def mailboxes(request):
         mb = serializer.save()
         _auto_enroll_warmup(request, mb)
         return Response(MailboxSerializer(mb).data, status=status.HTTP_201_CREATED)
-    return Response(MailboxSerializer(Mailbox.objects.all(), many=True).data)
+    # platform mailboxes (is_platform=True) never appear in a workspace's
+    # Settings → Mailboxes list — they live in the superadmin console only
+    return Response(MailboxSerializer(Mailbox.objects.filter(is_platform=False), many=True).data)
 
 
 @api_view(['POST'])
@@ -1149,10 +1152,14 @@ def warmpulse_sync(request):
 def webmail_accounts(request):
     """One row per configured() Mailbox with its INBOX unread count.
     An unreachable account degrades to unread=null — the list never 500s.
-    A platform admin (no workspace) gets every tenant's mailboxes — the
-    console Mail page shares this endpoint with the user panel."""
+    A platform admin (no workspace) gets the PLATFORM mailboxes only
+    (is_platform=True — the console Mail page); workspace users get their
+    own workspace's mailboxes only — the two never mix."""
     from . import webmail
-    scoped = Mailbox.all_tenants if is_platform_admin(request.user) else Mailbox.objects
+    if is_platform_admin(request.user):
+        scoped = Mailbox.all_tenants.filter(is_platform=True)
+    else:
+        scoped = Mailbox.objects.filter(is_platform=False)
     return Response(webmail.list_accounts(scoped))
 
 

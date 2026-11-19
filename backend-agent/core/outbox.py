@@ -160,7 +160,9 @@ def is_paused(mailbox, now=None):
 
 def usable_mailboxes(now=None):
     now = now or timezone.now()
-    return [mb for mb in Mailbox.objects.filter(is_active=True)
+    # is_platform mailboxes (WarmPulse's own @warmpulse.tech mail) are console
+    # read/send accounts — never cold-outreach senders
+    return [mb for mb in Mailbox.objects.filter(is_active=True, is_platform=False)
             if mb.configured() and not is_paused(mb, now)]
 
 
@@ -182,7 +184,7 @@ def ensure_legacy_mailbox(s=None):
     """A workspace with SMTP in AppSettings but no Mailbox yet (settings saved
     by hand) gets one, so the outbox always has a mailbox to cap and pace."""
     s = s or AppSettings.load()
-    if not smtp_configured(s) or Mailbox.objects.exists():
+    if not smtp_configured(s) or Mailbox.objects.filter(is_platform=False).exists():
         return None
     return upsert_mailbox(s.smtp_host, s.smtp_port or 587, s.smtp_user, s.smtp_password,
                           from_email=s.from_email or s.smtp_user, ramp=False)
@@ -190,7 +192,8 @@ def ensure_legacy_mailbox(s=None):
 
 def console_mode():
     """No mailbox and no SMTP: approvals are only console-logged."""
-    return not Mailbox.objects.filter(is_active=True).exists() and not smtp_configured()
+    return (not Mailbox.objects.filter(is_active=True, is_platform=False).exists()
+            and not smtp_configured())
 
 
 # ------------------------------------------------------------------

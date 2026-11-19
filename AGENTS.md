@@ -45,6 +45,9 @@ cd backend-agent && export DATABASE_URL=sqlite:///db-agent-e2e.sqlite3 \
 cd backend && export DATABASE_URL=sqlite+aiosqlite:///db-warmup-e2e.sqlite3 \
   && export JWT_SECRET=$(cat ../.superpowers/sdd/dev-secret.txt) \
   && .venv/Scripts/python -m uvicorn app.main:app --port 8001
+#    fresh sqlite DB needs the ONE-OFF seed first (an up-but-EMPTY backend
+#    FAILS the warmup dashboard checks; only a down backend skips them):
+#    WARMUP_DEV_BOOTSTRAP=1 .venv/Scripts/python -m scripts.dev_bootstrap
 
 # 3) Vite (IPv6 localhost only — probe http://localhost:5173, NOT 127.0.0.1)
 cd frontend && npm run dev
@@ -128,8 +131,11 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   repo (GEMINI key was scrubbed; check before pushing new work).
 - E2E selectors worth knowing: `.side-logout`, `aside.sidebar` full-height rail,
   password-rule `li.pass/.fail` flip on signup, `.code-slots__input`, `.tfa-panel`, `.tfa-qr-box`.
-- Python env note on Windows: if `backend-agent/.venv` is absent and `backend/.venv` is used
-  for Django, include Python 3.12 `site-packages` on `PYTHONPATH` for `PyJWT` (`jwt`).
+- Python env note on Windows: `backend-agent/.venv` and `backend/.venv` are currently
+  absent/incomplete — the working venvs live in the sibling checkout
+  `../Email-Warmup/` (`backend-agent/.venv` for Django incl. PyJWT;
+  `backend/.venv` for FastAPI/uvicorn). `../.superpowers/sdd/dev-secret.txt`
+  (gitignored) may need regenerating (32+ chars) before bring-up.
 - Local admin setup: after `seed_demo`, manually set the admin user's role:
   `manage.py shell -c "from django.contrib.auth import get_user_model; u=get_user_model().objects.get(username='admin'); u.role='admin'; u.is_superuser=True; u.save()"` —
   otherwise `IsWorkspaceAdmin` returns 403 ("Only the workspace owner…").

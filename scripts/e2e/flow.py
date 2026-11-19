@@ -132,7 +132,10 @@ with sync_playwright() as p:
     for asset in ("/warmpulse-mark.svg", "/warmpulse-logo.svg", "/warmpulse-logo.png"):
         check(f"asset 200: {asset}", http_ok(BASE + asset))
     accent = page.evaluate(RESOLVE_ACCENT)
-    cta_gradient = page.locator("a.lp-cta-solid").first.evaluate("el => getComputedStyle(el).backgroundImage")
+    # teammate rework (99a78b4) turned the hero <a> into a SpecularButton; the
+    # solid accent-gradient CTA on / is now the header Sign-in <button>, so
+    # match the class on any tag — the gradient-starts-at-accent assertion is unchanged.
+    cta_gradient = page.locator(".lp-cta-solid").first.evaluate("el => getComputedStyle(el).backgroundImage")
     check("rebrand: primary CTA gradient starts at var(--accent)", accent in cta_gradient,
           f"accent={accent} gradient={cta_gradient}")
     # Task A4: slim footer — wordmark, contact, legal only
@@ -206,7 +209,8 @@ with sync_playwright() as p:
     except ValueError:
         check("nav order: Assistant -> Warmup -> Settings", False, str(order))
 
-    page.goto(BASE + "/#/warmup")
+    # path-router deep link (7fcf7bc: hash #/warmup became /warmup)
+    page.goto(BASE + "/warmup")
     page.wait_for_timeout(1800)
     top_title = safe_text(page.locator(".topbar-title"))
     check("warmup: deep link stays on Warmup (TopBar title)", top_title.strip() == "Warmup", top_title)
@@ -299,7 +303,7 @@ with sync_playwright() as p:
         page.wait_for_timeout(500)
 
         # Settings → Mailboxes & speed: warmup enroll toggle + chip
-        page.goto(BASE + "/#/settings/mailboxes")
+        page.goto(BASE + "/settings/mailboxes")
         page.wait_for_timeout(1800)
         n_tog = page.locator("button.toggle[role=switch][aria-label='Enroll this mailbox in warmup']").count()
         check("settings mailboxes: warmup enroll toggle present", n_tog >= 1, f"{n_tog} toggles")

@@ -4,16 +4,36 @@
     python manage.py send_slug_report --days 30  # custom window
 
 Runs from the VPS cron every Monday 09:00 IST (see root crontab). Always
-sends — a "0 hits" email confirms the monitor is alive.
+sends — a "0 hits" email confirms the monitor is alive. Sent from the
+PLATFORM SMTP (noreply@warmpulse.tech — product mail, not a tenant mailbox);
+falls back to the tenant AppSettings SMTP when that isn't configured.
 """
 
+import os
 from datetime import timedelta
+from email.utils import parseaddr
 
 from django.core.management.base import BaseCommand
 from django.db.models import Count
 from django.utils import timezone
 
 from core.models import AppSettings, SlugAttempt, User
+
+
+class _PlatformSmtp:
+    """Duck-typed Mailbox for send_email_message(mailbox=…) — sends through
+    the PLATFORM_SMTP_* env vars without creating a connected Mailbox row
+    (which would show up in webmail / cold-outreach sending)."""
+
+    def __init__(self):
+        self.smtp_host = os.environ.get('PLATFORM_SMTP_HOST', '').strip()
+        self.smtp_port = int(os.environ.get('PLATFORM_SMTP_PORT', '587') or 587)
+        self.smtp_user = os.environ.get('PLATFORM_SMTP_USER', '').strip()
+        self.smtp_password = os.environ.get('PLATFORM_SMTP_PASSWORD', '')
+        raw_from = os.environ.get('PLATFORM_SMTP_FROM', '').strip()
+        name, addr = parseaddr(raw_from) if raw_from else ('', '')
+        self.from_email = addr or self.smtp_user
+        self.from_name = name or 'WarmPulse'
 
 
 class Command(BaseCommand):
@@ -73,6 +93,14 @@ class Command(BaseCommand):
         from core.mailer import send_email_message
         subject = (f'WarmPulse weekly slug report — {total} hit(s)'
                    if total else 'WarmPulse weekly slug report — all quiet')
-        send_email_message(subject, '\n'.join(lines), recipients, s=s)
+        platform = _PlatformSmtp()
+        if platform.smtp_host and platform.from_email:
+            send_email_message(subject, '\n'.join(lines), recipients,
+                               s=s, mailbox=platform)
+            sender = platform.from_email
+        else:  # local dev without PLATFORM_SMTP_* — tenant SMTP
+            send_email_message(subject, '\n'.join(lines), recipients, s=s)
+            sender = (s.from_email or s.smtp_user) if s else 'tenant SMTP'
         self.stdout.write(self.style.SUCCESS(
-            f'Slug report sent to {", ".join(recipients)} — {total} hit(s) in {days} day(s).'))
+            f'Slug report sent from {sender} to {", ".join(recipients)} '
+            f'— {total} hit(s) in {days} day(s).'))

@@ -1308,10 +1308,10 @@ def _alert_admin_wrong_slug(tried_slug, ip):
         recipients = [u.email for u in User.objects.filter(is_staff=True, email__ne='')[:3]]
     if not recipients:
         return
-    from .mailer import send_mail
+    from .mailer import send_email_message
     from django.utils import timezone
     now = timezone.localtime().strftime('%Y-%m-%d %H:%M:%S %Z')
-    send_mail(
+    send_email_message(
         recipients,
         f'⚠ Wrong admin URL hit: /{tried_slug}',
         f'Someone tried to access the admin console with a wrong slug.\n'

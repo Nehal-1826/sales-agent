@@ -1312,7 +1312,6 @@ def _alert_admin_wrong_slug(tried_slug, ip):
     from django.utils import timezone
     now = timezone.localtime().strftime('%Y-%m-%d %H:%M:%S %Z')
     send_email_message(
-        recipients,
         f'⚠ Wrong admin URL hit: /{tried_slug}',
         f'Someone tried to access the admin console with a wrong slug.\n'
         f'\n Tried: /{tried_slug}'
@@ -1320,6 +1319,8 @@ def _alert_admin_wrong_slug(tried_slug, ip):
         f'\n Time: {now}'
         f'\n\n If this was you, ignore this email.'
         f' If not, consider rotating the slug:',
+        recipients,
+        s=s,
     )
 
 

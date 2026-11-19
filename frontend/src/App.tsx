@@ -17,6 +17,7 @@ import { WarmupPage } from './pages/WarmupPage';
 import { MailPage } from './pages/MailPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { LoginPage } from './pages/LoginPage';
+import { AdminLoginPage } from './pages/AdminLoginPage';
 import { SignupPage } from './pages/SignupPage';
 import { VerifyEmailPage } from './pages/VerifyEmailPage';
 import { LandingPage } from './pages/LandingPage';
@@ -103,9 +104,28 @@ function AppGate() {
     </>
   );
 
+  // /<6-digits>… URLs are the admin console door: the marketing page never
+  // renders there, and a signed-out visitor gets the admin login screen
+  const slugMatch = window.location.pathname.match(/^\/(\d{6})/);
+  if (gate === 'unauthenticated' && slugMatch) {
+    // slug URL while signed out → the admin's own login door
+    if (window.location.pathname !== `/${slugMatch[1]}/login`)
+      window.history.replaceState(null, '', `/${slugMatch[1]}/login`);
+    return (
+      <>
+        <AdminLoginPage
+          slug={slugMatch[1]}
+          onLoggedIn={() => void probe(true)}
+          onHome={() => { window.location.href = '/'; }}
+        />
+        <Toaster />
+      </>
+    );
+  }
+
   // signed-out visitors see the (prerendered) landing page at once, not a spinner;
   // same element as the 'unauthenticated' branch below, so React keeps it mounted
-  if (gate === 'checking' && landing && !hasStoredToken()) {
+  if (gate === 'checking' && landing && !hasStoredToken() && !slugMatch) {
     return <LandingPage onEnterDashboard={() => setLanding(false)} />;
   }
 
@@ -124,7 +144,7 @@ function AppGate() {
 
   // the public landing page never depends on the API: a signed-out visitor keeps
   // seeing it while the backend is down; only "Sign in" reaches the offline screen
-  if (gate === 'offline' && landing && !hasStoredToken()) {
+  if (gate === 'offline' && landing && !hasStoredToken() && !slugMatch) {
     return <LandingPage onEnterDashboard={() => setLanding(false)} />;
   }
 
@@ -193,7 +213,8 @@ function RoleGate({ demo, onSignOut }: { demo: boolean; onSignOut: () => void })
     const m = window.location.pathname.match(/^\/(\d{6})/);
     return m ? m[1] : null;
   });
-  const [slugVerified, setSlugVerified] = useState<boolean | null>(adminSlug === null ? null : false);
+  // null = slug check still in flight (loading) — never show 404 before it settles
+  const [slugVerified, setSlugVerified] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (adminSlug === null) return;
@@ -219,7 +240,8 @@ function RoleGate({ demo, onSignOut }: { demo: boolean; onSignOut: () => void })
       const next = m ? m[1] : null;
       if (next !== adminSlug) {
         setAdminSlug(next);
-        setSlugVerified(next === null ? null : false);
+        // back to "checking" until the new slug is validated — not the 404 flash
+        setSlugVerified(null);
       }
     };
     window.addEventListener('popstate', on);
@@ -268,6 +290,17 @@ function RoleGate({ demo, onSignOut }: { demo: boolean; onSignOut: () => void })
   }
   // Admin console: ONLY renders when the URL carries a verified 6-digit slug
   if (me.platform_admin) {
+    if (adminSlug !== null && slugVerified === null) {
+      // slug check in flight — neither the console nor the 404 is decided yet
+      return (
+        <div className="login-wrap">
+          <GlassBackdrop />
+          <div className="panel login-card login-card-center">
+            <LatticeLoader label="Opening the platform console…" cellSize={7} color="var(--accent)" showTimer={false} />
+          </div>
+        </div>
+      );
+    }
     if (adminSlug !== null && slugVerified === false) {
       // wrong slug in URL → 404
       return (

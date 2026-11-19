@@ -208,6 +208,41 @@ export async function login(username: string, password: string): Promise<Result<
       signal: AbortSignal.timeout(10_000),
     });
     if (res.status === 401) return { ok: false, error: "That username and password don't match." };
+    if (res.status === 403) {
+      // platform-admin creds on the workspace door → point them at the admin page
+      const data = (await res.json().catch(() => ({}))) as { admin_only?: boolean };
+      if (data.admin_only) return { ok: false, error: 'This account signs in from the platform admin page.' };
+    }
+    if (!res.ok) return { ok: false, error: friendlyStatus(res.status) };
+    const data = (await res.json()) as { token: string };
+    authToken = data.token;
+    try {
+      localStorage.setItem(TOKEN_KEY, data.token);
+    } catch {
+      /* ignore */
+    }
+    // a fresh session must never inherit a previous user's bridge JWT
+    clearWarmupToken();
+    return { ok: true, data: true };
+  } catch {
+    return { ok: false, error: "Couldn't reach your workspace. Check your connection and try again." };
+  }
+}
+
+/** Platform-admin sign-in for /<slug>/login — mirrors login(), its own endpoint. */
+export async function adminLogin(username: string, password: string): Promise<Result<true>> {
+  try {
+    // bare fetch: never send a (possibly stale) token on login
+    // 401 → mismatched credentials; 403 → valid account that is not a platform admin
+    const res = await fetch(`${API_BASE_URL}/auth/admin-login/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (res.status === 401) return { ok: false, error: "That username and password don't match." };
+    if (res.status === 403) return { ok: false, error: 'This page is for platform administrators only.' };
+    if (res.status === 429) return { ok: false, error: 'Too many attempts — try again in a few minutes.' };
     if (!res.ok) return { ok: false, error: friendlyStatus(res.status) };
     const data = (await res.json()) as { token: string };
     authToken = data.token;

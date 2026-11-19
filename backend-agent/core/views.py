@@ -736,7 +736,10 @@ def chat(request):
     # Q&A that configures the whole system, then hands over to the Responder.
     # State is PER USER (User.onboarding): every new client login gets the
     # wizard; existing users were marked done in migration 0017.
-    settings = AppSettings.all_tenants.first()
+    # load() scopes to the caller's workspace (403 for workspace-less
+    # operators via TenantContextMissing) — all_tenants.first() would read
+    # and WRITE another tenant's settings here.
+    settings = AppSettings.load()
     from .onboarding import onboarding_reply, onboarding_status, redact_for_history
     if request.method == 'POST':
         text = (request.data.get('text') or '').strip()
@@ -978,7 +981,7 @@ def outreach_status(request):
     today = outbox.local(now).date()
     queued = EmailDraft.objects.filter(status=EmailDraft.Statuses.QUEUED)
     next_due = queued.order_by('scheduled_for').values_list('scheduled_for', flat=True).first()
-    s = AppSettings.all_tenants.first()
+    s = AppSettings.load()  # caller's workspace — never another tenant's row
     mailboxes = [{
         'id': mb.id, 'fromEmail': mb.from_email, 'label': mb.label,
         'sentToday': outbox.sent_on(mb, today), 'cap': outbox.effective_cap(mb, today),

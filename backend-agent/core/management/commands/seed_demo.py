@@ -7,6 +7,7 @@ Creates:
   • demo operator user (owner) + api token
   • the four agent configs (Search / Profile / Copywright / Responder)
   • app settings (company profile · ai key · frequent runs)
+  • one demo sending mailbox (fake credentials — Settings preview + E2E gate)
   • CRM content: leads, potentials, replies
   • one finished pipeline run so the dashboard has history
 """
@@ -15,7 +16,8 @@ from django.core.management.base import BaseCommand
 from rest_framework.authtoken.models import Token
 
 from core.models import (
-    AppSettings, ChatMessage, EmailDraft, Lead, PipelineRun, Potential, Reply, User, Workspace,
+    AppSettings, ChatMessage, EmailDraft, Lead, Mailbox, PipelineRun, Potential, Reply, User,
+    Workspace,
 )
 from core.tenancy import workspace_context
 from core.workspaces import provision_workspace
@@ -104,6 +106,26 @@ class Command(BaseCommand):
             settings.save(update_fields=[
                 'company_name', 'company_website', 'company_description', 'services',
                 'ai_provider', 'runs_enabled', 'run_frequency'])
+
+        # --- demo mailbox ---------------------------------------------------
+        # one sending mailbox so Settings → Mailboxes & speed (and the E2E gate
+        # that walks it) has a card to render: the warmup-enroll toggle + chip.
+        # Mirrors backend/scripts/dev_bootstrap.py's warmup seed (same address)
+        # so both demo sides tell one coherent story.  Fake credentials only —
+        # never configured(), so the outbox keeps the console backend.
+        Mailbox.objects.get_or_create(
+            from_email='devesh@shailog.tech',
+            defaults={
+                'label': 'Shailog primary (demo)',
+                'from_name': 'Devesh @ Shailog',
+                'smtp_host': 'smtp.shailog.tech',
+                'smtp_port': 587,
+                'smtp_user': 'devesh@shailog.tech',
+                'daily_cap': 30,
+                'is_active': True,
+                'warmup_enrolled': True,
+            },
+        )
 
         # --- CRM ----------------------------------------------------------
         if options.get('demo_crm') and not Lead.objects.exists():

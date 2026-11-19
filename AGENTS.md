@@ -69,6 +69,13 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   users from it (both auth dependencies guard foreign `iss`; kill-switch
   `AGENT_BRIDGE_ENABLED`). Platform admins and 2FA-enabled workspace users need a
   satisfied OTP session (`PlatformSession` within 12h) to mint or access protected APIs.
+- Two login doors (login split): `POST /api/auth/admin-login/` is platform
+  admins ONLY (staff, no workspace) — workspace users get 403 "This page is
+  for platform administrators only.". `POST /api/auth/login/` refuses platform
+  admins: 403 `admin_only:true`, no token minted — superadmins sign in ONLY at
+  `/<slug>/login` (frontend AdminLoginPage; signed-out visitors to any
+  /<6-digits>/… URL are redirected there). Both doors share LoginThrottle +
+  per-username/IP lockout; wrong-door valid credentials never count as failures.
 - Unified 2FA (Admin & User): `core/authz.py` provides shared TOTP handlers, lockout
   (10 failures / 15 min), anti-replay (`last_otp_step`), `auth_extras` (`totp_enabled`,
   `otp_required`), and `enforce_otp` / `IsOtpSatisfied` (`403 OTP required` until verified).

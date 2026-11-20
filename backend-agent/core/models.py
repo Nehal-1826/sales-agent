@@ -55,6 +55,12 @@ class User(AbstractUser):
     totp_secret = models.CharField(max_length=64, blank=True)
     # secret issued by 2fa/setup, promoted to totp_secret by 2fa/confirm
     totp_pending = models.CharField(max_length=64, blank=True)
+    # primary-authenticator security trail: where it was (re-)enrolled from
+    # and the IP its code was last accepted from (devices carry their own)
+    totp_added_at = models.DateTimeField(null=True, blank=True)
+    totp_added_ip = models.CharField(max_length=45, blank=True)
+    totp_added_user_agent = models.CharField(max_length=300, blank=True)
+    totp_last_used_ip = models.CharField(max_length=45, blank=True)
     # per-user chat onboarding state (core.onboarding): {started, done, step,
     # answers{...}} — every NEW login gets the setup wizard; empty = fresh user
     onboarding = models.JSONField(default=dict, blank=True)

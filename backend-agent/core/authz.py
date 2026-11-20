@@ -105,7 +105,7 @@ def check_totp_any(request):
     same lockout gate, one failure per attempt (never per secret), and the
     replay guard applied to all secrets.  Returns (step, None) or (None, error)."""
     from . import lockout, totp
-    from .models import PlatformSession
+    from .models import PlatformSession, User
 
     user = request.user
     lock_key = f'otp:{user.pk}'
@@ -123,6 +123,11 @@ def check_totp_any(request):
                     device.last_used_at = timezone.now()
                     device.last_used_ip = _client_ip(request)
                     device.save(update_fields=['last_used_at', 'last_used_ip'])
+            else:                            # the primary matched → stamp its last-use IP
+                ip = _client_ip(request)
+                if ip and ip != user.totp_last_used_ip:
+                    user.totp_last_used_ip = ip
+                    User.objects.filter(pk=user.pk).update(totp_last_used_ip=ip)
             return step, None
     lockout.record_failure(lock_key, '')
     return None, Response({'error': 'invalid_code', 'detail': 'Invalid or expired code.'}, status=400)
@@ -177,6 +182,13 @@ def _err(code, detail, status=400):
     return Response({'error': code, 'detail': detail}, status=status)
 
 
+def _stamp_primary_enrollment(request, u):
+    """Record WHERE the primary authenticator was (re-)enrolled from."""
+    u.totp_added_at = timezone.now()
+    u.totp_added_ip = _client_ip(request)
+    u.totp_added_user_agent = (request.META.get('HTTP_USER_AGENT', '') or '')[:300]
+
+
 def handle_2fa_status(request):
     return Response({'enabled': bool(request.user.totp_secret)})
 
@@ -202,7 +214,9 @@ def handle_2fa_confirm(request, already_detail='Two-factor is already enabled.',
     if err:
         return err
     u.totp_secret, u.totp_pending = u.totp_pending, ''
-    u.save(update_fields=['totp_secret', 'totp_pending'])
+    _stamp_primary_enrollment(request, u)
+    u.save(update_fields=['totp_secret', 'totp_pending',
+                          'totp_added_at', 'totp_added_ip', 'totp_added_user_agent'])
     mark_otp_verified(request, step)
     if on_done:
         on_done()
@@ -228,7 +242,10 @@ def handle_2fa_disable(request, on_done=None):
     if err:
         return err
     u.totp_secret, u.totp_pending = '', ''
-    u.save(update_fields=['totp_secret', 'totp_pending'])
+    u.totp_added_at, u.totp_added_ip = None, ''
+    u.totp_added_user_agent, u.totp_last_used_ip = '', ''
+    u.save(update_fields=['totp_secret', 'totp_pending', 'totp_added_at',
+                          'totp_added_ip', 'totp_added_user_agent', 'totp_last_used_ip'])
     u.totp_devices.all().delete()
     mark_otp_verified(request, step, keep_verified_at=True)
     if on_done:
@@ -261,7 +278,9 @@ def handle_2fa_rotate_confirm(request, on_done=None):
     if err:
         return err
     u.totp_secret, u.totp_pending = u.totp_pending, ''
-    u.save(update_fields=['totp_secret', 'totp_pending'])
+    _stamp_primary_enrollment(request, u)   # re-enroll → fresh enrollment trail
+    u.save(update_fields=['totp_secret', 'totp_pending',
+                          'totp_added_at', 'totp_added_ip', 'totp_added_user_agent'])
     mark_otp_verified(request, step)
     if on_done:
         on_done()
@@ -275,7 +294,14 @@ def _devices_remaining(u):
 def handle_2fa_devices(request):
     u = request.user
     devices = list(u.totp_devices.all())
+    primary_detail = (u.totp_added_at and {
+        'added_at': u.totp_added_at,
+        'added_ip': u.totp_added_ip,
+        'added_device': _ua_device(u.totp_added_user_agent),
+        'last_used_ip': u.totp_last_used_ip,
+    }) or None   # None = enrolled before the trail existed
     return Response({'primary': bool(u.totp_secret),
+                     'primary_detail': primary_detail,
                      'remaining': _devices_remaining(u),
                      'devices': [{'id': d.id, 'name': d.name, 'confirmed': d.confirmed,
                                   'created_at': d.created_at, 'last_used_at': d.last_used_at,

@@ -713,7 +713,26 @@ export function TwoFactorPanel({
                     <div className="tfa-device-row" title="Rotate or disable via the buttons above">
                       <div>
                         <strong>Primary</strong> <Chip tone="neutral">Built-in</Chip>
-                        <small className="field-hint">Set up when 2FA was enabled</small>
+                        {deviceList.primary_detail ? (
+                          <>
+                            <small className="field-hint">
+                              Enrolled {deviceDate(deviceList.primary_detail.added_at)}
+                              {(deviceList.primary_detail.added_device || deviceList.primary_detail.added_ip) && (
+                                <>
+                                  {' '}· {deviceList.primary_detail.added_device || 'Unknown device'} ·{' '}
+                                  {deviceList.primary_detail.added_ip || 'IP unknown'}
+                                </>
+                              )}
+                            </small>
+                            {deviceList.primary_detail.last_used_ip && (
+                              <small className="field-hint">
+                                Last used from {deviceList.primary_detail.last_used_ip}
+                              </small>
+                            )}
+                          </>
+                        ) : (
+                          <small className="field-hint">Set up when 2FA was enabled</small>
+                        )}
                       </div>
                     </div>
                   )}

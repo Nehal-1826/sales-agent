@@ -103,7 +103,7 @@ export const rotateUser2faConfirm = async (code: string) =>
 
 /** Extra authenticator devices (max 3) — any device's code works at sign-in. */
 export async function listUserTotpDevices(): Promise<TotpDeviceList> {
-  if (await inDemo()) return { primary: false, remaining: 3, devices: [] };
+  if (await inDemo()) return { primary: false, primary_detail: null, remaining: 3, devices: [] };
   return request<TotpDeviceList>('/auth/2fa/devices/');
 }
 

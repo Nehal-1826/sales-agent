@@ -56,7 +56,7 @@ class TotpDeviceTests(TestCase):
     def test_add_returns_uri_only_and_blocks_second_pending(self):
         c, u = make_user('dev1', 'dv1', enrolled=True)
         self.assertEqual(c.get('/api/auth/2fa/devices/').json(),
-                         {'primary': True, 'remaining': 2, 'devices': []})
+                         {'primary': True, 'primary_detail': None, 'remaining': 2, 'devices': []})
         no_name = c.post('/api/auth/2fa/devices/', {'name': '   '}, format='json')
         self.assertEqual((no_name.status_code, no_name.json()['detail']),
                          (400, 'Give the device a name.'))
@@ -114,6 +114,46 @@ class TotpDeviceTests(TestCase):
         self.assertEqual(_ua_device('Mozilla/5.0 (Macintosh) Firefox/133.0'), 'Firefox · macOS')
         self.assertEqual(_ua_device('curl/8.0'), 'Unknown device')
         self.assertEqual(_ua_device(''), '')
+
+    def test_primary_reenroll_stamps_trail(self):
+        """Initial enroll AND Change-authenticator (rotate) both stamp the
+        primary's enrollment trail; verify stamps its last-used IP."""
+        c, u = make_user('dev9', 'dv9')   # NOT pre-enrolled — we enroll now
+        c.credentials(HTTP_AUTHORIZATION=f'Token {Token.objects.get(user=u).key}',
+                      REMOTE_ADDR='198.51.100.9',
+                      HTTP_USER_AGENT='Mozilla/5.0 (Linux; Android 14) Chrome/131.0 Mobile')
+        u.totp_pending = totp.new_secret()
+        u.save(update_fields=['totp_pending'])
+        from core import authz
+        with mock.patch('core.totp.time.time', return_value=2_000_060):
+            r = c.post('/api/auth/2fa/confirm/', {'code': totp.totp(u.totp_pending, now=2_000_060)},
+                       format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        u.refresh_from_db()
+        self.assertEqual((u.totp_added_ip, u.totp_added_user_agent[:6]),
+                         ('198.51.100.9', 'Mozill'))
+        self.assertIsNotNone(u.totp_added_at)
+
+        # verify with the primary's code → last_used_ip stamped
+        with mock.patch('core.totp.time.time', return_value=2_000_120):
+            r = c.post('/api/auth/2fa/verify/', {'code': totp.totp(u.totp_secret, now=2_000_120)},
+                       format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        u.refresh_from_db()
+        self.assertEqual(u.totp_last_used_ip, '198.51.100.9')
+
+        listed = c.get('/api/auth/2fa/devices/').json()
+        pd = listed['primary_detail']
+        self.assertEqual((pd['added_ip'], pd['added_device'], pd['last_used_ip']),
+                         ('198.51.100.9', 'Chrome · Android', '198.51.100.9'))
+
+        # disable clears the whole trail
+        with mock.patch('core.totp.time.time', return_value=2_000_180):
+            r = c.post('/api/auth/2fa/disable/', {'code': totp.totp(u.totp_secret, now=2_000_180)},
+                       format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        u.refresh_from_db()
+        self.assertEqual((u.totp_added_ip, u.totp_last_used_ip, u.totp_added_at), ('', '', None))
 
     def test_limit_with_primary_secret(self):
         c, u = make_user('dev4', 'dv4', enrolled=True)

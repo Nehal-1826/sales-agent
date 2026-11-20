@@ -208,8 +208,17 @@ export interface TotpDevice {
   last_used_ip: string;
 }
 
+/** The primary authenticator's own trail (null = enrolled before trails existed). */
+export interface PrimaryDetail {
+  added_at: string;
+  added_ip: string;
+  added_device: string;
+  last_used_ip: string;
+}
+
 export interface TotpDeviceList {
   primary: boolean;
+  primary_detail: PrimaryDetail | null;
   remaining: number;
   devices: TotpDevice[];
 }
@@ -222,7 +231,7 @@ export interface TotpDeviceSetup {
 }
 
 export async function listTotpDevices(): Promise<TotpDeviceList> {
-  if (await inDemo()) return { primary: false, remaining: 3, devices: [] };
+  if (await inDemo()) return { primary: false, primary_detail: null, remaining: 3, devices: [] };
   return request<TotpDeviceList>('/platform/2fa/devices/');
 }
 

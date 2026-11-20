@@ -44,9 +44,9 @@ class CompanyScrapeThrottle(_IpScope):
 
 
 class AdminSlugThrottle(SimpleRateThrottle):
-    """admin slug check: 10/min per IP (prevents probing + email bombing)."""
+    """admin slug check: 5/min per IP (prevents probing + email bombing)."""
     scope = 'admin-slug'
-    rate = '10/min'
+    rate = '5/min'
 
     def get_cache_key(self, request, view):
         ident = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip() or \

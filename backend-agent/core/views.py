@@ -1,6 +1,7 @@
 """API views — JSON endpoints consumed by the frontend."""
 
 import logging
+from datetime import timedelta
 
 from django.contrib.auth import authenticate
 from django.db import connection
@@ -48,7 +49,7 @@ from .tenancy import current_workspace
 from .authentication import token_expired
 from .throttles import AdminSlugThrottle
 from .permissions import IsOtpSatisfied, IsWorkspaceAdmin, IsWorkspaceAdminOrReadOnly
-from .models import AgentConfig, AppSettings, ChatMessage, EmailDraft, EmailTemplate, Lead, Mailbox, PipelineRun, PlatformSession, Potential, Reply, SearchProfile, User
+from .models import AgentConfig, AppSettings, ChatMessage, EmailDraft, EmailTemplate, Lead, Mailbox, PipelineRun, PlatformSession, Potential, Reply, SearchProfile, SlugAttempt, User
 from .pipeline import PipelineBusy, pipeline_status, run_pipeline, start_pipeline_async
 from .reports import _resolve_recipients, send_daily_report
 from .runlock import running_since
@@ -1382,6 +1383,12 @@ def _log_wrong_slug_attempt(tried_slug, ip):
 def admin_slug_check(request):
     """Check a 6-digit slug. Valid → {valid:true}; wrong → log attempt + {valid:false}.
     Attempts are emailed as a weekly digest (cron → send_slug_report)."""
+    ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip() or \
+         request.META.get('REMOTE_ADDR', 'unknown')
+    # wrong-slug lockout: 10+ hits from one IP in 15 min → 429 for the rest of the window
+    since = timezone.now() - timedelta(minutes=15)
+    if SlugAttempt.objects.filter(ip=ip, created_at__gte=since).count() >= 10:
+        return Response({'error': 'too_many_attempts'}, status=429)
     slug = str(request.data.get('slug', '')).strip()
     if not re.fullmatch(r'\d{6}', slug):
         return Response({'valid': False, 'detail': 'Not a 6-digit slug.'}, status=400)
@@ -1389,8 +1396,6 @@ def admin_slug_check(request):
     if s and s.admin_slug and slug == s.admin_slug:
         return Response({'valid': True})
     # wrong slug → log for the weekly digest + 404 response
-    ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip() or \
-         request.META.get('REMOTE_ADDR', 'unknown')
     try:
         _log_wrong_slug_attempt(slug, ip)
     except Exception:

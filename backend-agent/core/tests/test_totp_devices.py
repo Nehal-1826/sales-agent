@@ -1,4 +1,4 @@
-"""Multi-device TOTP (max 3) — /api/auth/2fa/devices/*.
+"""Multi-device TOTP (max 3) — /api/auth/2fa/devices/* + the slug lockout.
 
 Codes are MINTED with core.totp (never hardcoded); device confirms run at a
 pinned time so later real-time codes are never replays of the confirm step."""
@@ -133,3 +133,23 @@ class TotpDeviceTests(TestCase):
         u.refresh_from_db()
         self.assertEqual(u.totp_secret, '')
         self.assertEqual(TotpDevice.objects.filter(user=u).count(), 0)
+
+
+class AdminSlugLockoutTests(TestCase):
+    def setUp(self):
+        no_template_capture(self)
+        quiet_logs(self)
+        cache.clear()
+
+    def post_slug(self, slug):
+        # AdminSlugThrottle (5/min per IP) must not mask the lockout under test
+        cache.delete('throttle_admin-slug_127.0.0.1')
+        return APIClient().post('/api/admin-slug/check/', {'slug': slug}, format='json')
+
+    def test_ten_wrong_hits_lock_the_ip_for_the_window(self):
+        for i in range(10):
+            r = self.post_slug(f'{100000 + i:06d}')
+            self.assertEqual((r.status_code, r.json()['valid']), (404, False), i)
+        eleventh = self.post_slug('999999')
+        self.assertEqual((eleventh.status_code, eleventh.json()),
+                         (429, {'error': 'too_many_attempts'}))

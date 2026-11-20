@@ -171,6 +171,18 @@ a.lp-cta { display: inline-block; text-decoration: none; text-align: center; }
 }
 .mk-toggle button[aria-pressed='true'] { background: var(--accent); color: #fff; }
 .mk-toggle em { font-style: normal; font-size: 12px; opacity: 0.85; }
+/* plan picker (OptionWheel + DepthCarousel) — replaced the static mk-tiers grid */
+.mk-picker .lp-section-sub { margin-bottom: 0; }
+.mk-picker-grid { display: grid; grid-template-columns: 1fr; gap: 12px; margin: 22px auto 26px; }
+.mk-picker-wheel { height: 260px; }
+.mk-picker-stage { position: relative; height: 500px; }
+.mk-picker-cta { display: flex; justify-content: center; margin-top: 26px; }
+.mk-picker-cta .mk-tier-cta { margin-top: 0; }
+@media (min-width: 960px) {
+  .mk-picker-grid { grid-template-columns: minmax(0, 40%) minmax(0, 60%); align-items: center; gap: 32px; max-width: 1020px; }
+  .mk-picker-wheel { height: 320px; }
+  .mk-picker-stage { height: 520px; }
+}
 .mk-tiers { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; align-items: stretch; }
 .mk-tier {
   position: relative;

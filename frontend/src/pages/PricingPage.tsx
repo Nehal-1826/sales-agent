@@ -1,9 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { DemoBooking } from '../components/DemoBooking';
+import DepthCarousel from '../components/reactbits/DepthCarousel';
+import { OptionWheel } from '../components/reactbits/OptionWheel';
 import { SpecularButton } from '../components/SpecularButton';
 import { fetchPlans } from '../lib/billing';
 import type { ApiPlan } from '../lib/billing';
 import { MarketingLayout } from '../marketing/MarketingLayout';
+import { planCardDataUri } from '../marketing/planCards';
 import { Proof, SafetyPromises } from '../marketing/TrustSections';
 import {
   BONUS_DAYS,
@@ -13,7 +16,6 @@ import {
   STACK_TOTAL_USD,
   TIERS,
   detectCurrency,
-  formatMoney,
   formatUsd,
   signupHref,
 } from '../marketing/pricing';
@@ -37,6 +39,103 @@ function mergeLive(live: ApiPlan[] | null): Tier[] {
   });
 }
 
+/**
+ * Plan picker — an OptionWheel of plan names beside a DepthCarousel of
+ * branded plan cards (the old static three-card grid). Wheel and carousel
+ * are synced both ways; card prices and the CTA re-render with the page's
+ * currency/interval toggles.
+ */
+function PlanPicker({ tiers, currency, interval }: { tiers: Tier[]; currency: Currency; interval: Interval }) {
+  const yearly = interval === 'year';
+  const defaultIdx = Math.max(0, tiers.findIndex((t) => t.popular));
+  const [selected, setSelected] = useState(defaultIdx);
+  const selectedRef = useRef(defaultIdx);
+  // OptionWheel is uncontrolled, so a carousel-driven selection remounts it
+  // (key) at the new position; wheel-driven changes never touch the key and
+  // keep their animation.
+  const [wheelSync, setWheelSync] = useState(0);
+
+  const idx = Math.min(selected, tiers.length - 1);
+  const plan = tiers[idx] ?? tiers[0];
+
+  const cards = useMemo(
+    () => tiers.map((t) => ({ image: planCardDataUri(t, currency, yearly), alt: `${t.name} plan` })),
+    [tiers, currency, yearly]
+  );
+
+  const pickFromWheel = (i: number) => {
+    if (i === selectedRef.current) return;
+    selectedRef.current = i;
+    setSelected(i);
+  };
+  const pickFromCarousel = (i: number) => {
+    if (i === selectedRef.current) return;
+    selectedRef.current = i;
+    setSelected(i);
+    setWheelSync((n) => n + 1);
+  };
+
+  return (
+    <div className="mk-picker">
+      <h2>Spin to a plan</h2>
+      <p className="lp-section-sub">Turn the wheel or scroll the cards — one plan at a time.</p>
+      <div className="mk-picker-grid">
+        <div className="mk-picker-wheel">
+          <OptionWheel
+            key={`wheel-${wheelSync}`}
+            items={tiers.map((t) => t.name)}
+            defaultSelected={idx}
+            onChange={pickFromWheel}
+            textColor="#a8a29e"
+            activeColor="#fb923c"
+            side="left"
+            fontSize={2.4}
+            aria-label="Plan"
+          />
+        </div>
+        <div className="mk-picker-stage">
+          <DepthCarousel
+            items={cards}
+            index={idx}
+            onChange={pickFromCarousel}
+            loop={false}
+            cardWidth={300}
+            cardHeight={400}
+            depth={80}
+            spread={60}
+            tilt={14}
+            tiltDirection="right"
+            perspective={1200}
+            visibleCards={3}
+            falloff={0.14}
+            blur={2.5}
+            duration={550}
+            showControls
+            showIndicators
+          />
+        </div>
+      </div>
+      <div className="mk-picker-cta">
+        <SpecularButton
+          href={signupHref(plan.id, interval)}
+          size="md"
+          radius={999}
+          tint="#f97316"
+          tintOpacity={0.9}
+          blur={14}
+          textColor="#ffffff"
+          lineColor="#ffffff"
+          baseColor="#fb923c"
+          idleIntensity={0.5}
+          className="mk-tier-cta"
+        >
+          Get Started — {plan.name}
+        </SpecularButton>
+      </div>
+    </div>
+  );
+}
+
 /** PRICING — /pricing. Static plans first, live prices when the API answers. */
 export function PricingPage() {
   useDocumentMeta('/pricing');
@@ -51,7 +150,6 @@ export function PricingPage() {
   }, []);
 
   const tiers = mergeLive(live);
-  const yearly = interval === 'year';
 
   return (
     <MarketingLayout>
@@ -64,10 +162,10 @@ export function PricingPage() {
         </p>
 
         <div className="mk-toggle" role="group" aria-label="Billing period">
-          <button type="button" aria-pressed={!yearly} onClick={() => setInterval_('month')}>
+          <button type="button" aria-pressed={interval === 'month'} onClick={() => setInterval_('month')}>
             Monthly
           </button>
-          <button type="button" aria-pressed={yearly} onClick={() => setInterval_('year')}>
+          <button type="button" aria-pressed={interval === 'year'} onClick={() => setInterval_('year')}>
             Yearly <em>2 months free</em>
           </button>
         </div>
@@ -80,44 +178,8 @@ export function PricingPage() {
           </button>
         </div>
 
-        <div className="mk-tiers">
-          {tiers.map((t) => {
-            const amount =
-              currency === 'INR' ? (yearly ? t.inrYear : t.inr) : yearly ? t.usdYear : t.usd;
-            return (
-              <article key={t.id} className={`mk-tier ${t.popular ? 'mk-tier-pop' : ''}`}>
-                {t.popular && <span className="mk-pop-badge">Most popular</span>}
-                <h2>{t.name}</h2>
-                <p className="mk-muted">{t.blurb}</p>
-                <div className="mk-price">
-                  <strong>{formatMoney(amount, currency)}</strong>
-                  <span>/ {yearly ? 'year' : 'month'}</span>
-                </div>
-                <div className="mk-price-usd">+{BONUS_DAYS} bonus days on your first payment</div>
-                <ul className="mk-list">
-                  {t.features.map((f) => (
-                    <li key={f}>{f}</li>
-                  ))}
-                </ul>
-                <SpecularButton
-                  href={signupHref(t.id, interval)}
-                  size="md"
-                  radius={999}
-                  tint={t.popular ? '#f97316' : '#181512'}
-                  tintOpacity={t.popular ? 0.9 : 0.78}
-                  blur={14}
-                  textColor={t.popular ? '#ffffff' : '#fff7ed'}
-                  lineColor={t.popular ? '#ffffff' : '#fb923c'}
-                  baseColor={t.popular ? '#fb923c' : '#57534e'}
-                  idleIntensity={t.popular ? 0.5 : 0.35}
-                  className="mk-tier-cta"
-                >
-                  Get Started
-                </SpecularButton>
-              </article>
-            );
-          })}
-        </div>
+        <PlanPicker tiers={tiers} currency={currency} interval={interval} />
+
         <p className="mk-fine">
           {currency === 'INR' && 'Prices exclude 18% GST. '}
           Cancel within {REFUND_WINDOW_DAYS} days of your first payment for a partial refund of the unused period

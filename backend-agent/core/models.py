@@ -839,13 +839,17 @@ class PlatformSession(models.Model):
 class TotpDevice(models.Model):
     """An extra authenticator device (own TOTP secret) — a code from any
     confirmed device satisfies OTP.  Max 3 per user (see authz.MAX_TOTP_DEVICES);
-    pending devices never satisfy sign-in until confirmed."""
+    pending devices never satisfy sign-in until confirmed.  added_* / last_used_ip
+    record WHERE the device was enrolled and last used from (security trail)."""
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='totp_devices')
     name = models.CharField(max_length=60)
     secret = models.CharField(max_length=64)
     confirmed = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     last_used_at = models.DateTimeField(null=True, blank=True)
+    added_ip = models.CharField(max_length=45, blank=True)
+    added_user_agent = models.CharField(max_length=300, blank=True)
+    last_used_ip = models.CharField(max_length=45, blank=True)
 
     class Meta:
         ordering = ['id']

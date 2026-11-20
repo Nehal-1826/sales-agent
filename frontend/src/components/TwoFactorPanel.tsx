@@ -728,8 +728,14 @@ export function TwoFactorPanel({
                           </>
                         )}
                         <small className="field-hint">
-                          Added {deviceDate(d.created_at)} · Last used{' '}
-                          {d.last_used_at ? deviceDate(d.last_used_at) : 'Never'}
+                          Added {deviceDate(d.created_at)}
+                          {d.confirmed && (d.added_device || d.added_ip) && (
+                            <> · {d.added_device || 'Unknown device'} · {d.added_ip || 'IP unknown'}</>
+                          )}
+                        </small>
+                        <small className="field-hint">
+                          Last used {d.last_used_at ? deviceDate(d.last_used_at) : 'Never'}
+                          {d.last_used_at && d.last_used_ip && <> · from {d.last_used_ip}</>}
                         </small>
                       </div>
                       <button

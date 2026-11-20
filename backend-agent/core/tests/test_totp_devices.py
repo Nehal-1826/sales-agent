@@ -84,16 +84,36 @@ class TotpDeviceTests(TestCase):
 
     def test_confirmed_device_satisfies_verify_and_stamps_last_used(self):
         c, u = make_user('dev3', 'dv3', enrolled=True)
+        c.credentials(HTTP_AUTHORIZATION=f'Token {Token.objects.get(user=u).key}',
+                      REMOTE_ADDR='203.0.113.7', HTTP_USER_AGENT='Mozilla/5.0 (Windows NT 10.0) Chrome/131.0')
         d = add_device(c)
         confirm_device(c, d, now=2_000_000)
+        d.refresh_from_db()
+        # security trail: enrollment stamped the browser + IP that confirmed it
+        self.assertEqual(d.added_ip, '203.0.113.7')
+        self.assertIn('Chrome', d.added_user_agent)
         r = c.post('/api/auth/2fa/verify/', {'code': totp.totp(d.secret)}, format='json')
         self.assertEqual((r.status_code, r.json()), (200, {'verified': True}))
         d.refresh_from_db()
         self.assertIsNotNone(d.last_used_at)
+        self.assertEqual(d.last_used_ip, '203.0.113.7')
         listed = c.get('/api/auth/2fa/devices/').json()
         self.assertEqual(listed['remaining'], 1)
-        self.assertEqual((listed['devices'][0]['confirmed'],
-                          listed['devices'][0]['last_used_at'] is not None), (True, True))
+        row = listed['devices'][0]
+        self.assertEqual((row['confirmed'], row['last_used_at'] is not None), (True, True))
+        self.assertEqual(row['added_ip'], '203.0.113.7')
+        self.assertEqual(row['added_device'], 'Chrome · Windows')
+        self.assertEqual(row['last_used_ip'], '203.0.113.7')
+
+    def test_ua_device_parser_shapes(self):
+        from core.authz import _ua_device
+        self.assertEqual(_ua_device('Mozilla/5.0 (Linux; Android 14) Chrome/131.0 Mobile'),
+                         'Chrome · Android')
+        self.assertEqual(_ua_device('Mozilla/5.0 (iPhone; CPU iPhone OS 17) Safari/605.1'),
+                         'Safari · iOS')
+        self.assertEqual(_ua_device('Mozilla/5.0 (Macintosh) Firefox/133.0'), 'Firefox · macOS')
+        self.assertEqual(_ua_device('curl/8.0'), 'Unknown device')
+        self.assertEqual(_ua_device(''), '')
 
     def test_limit_with_primary_secret(self):
         c, u = make_user('dev4', 'dv4', enrolled=True)

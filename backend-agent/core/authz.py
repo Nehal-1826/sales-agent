@@ -121,10 +121,38 @@ def check_totp_any(request):
                 device = user.totp_devices.filter(confirmed=True, secret=secret).first()
                 if device:
                     device.last_used_at = timezone.now()
-                    device.save(update_fields=['last_used_at'])
+                    device.last_used_ip = _client_ip(request)
+                    device.save(update_fields=['last_used_at', 'last_used_ip'])
             return step, None
     lockout.record_failure(lock_key, '')
     return None, Response({'error': 'invalid_code', 'detail': 'Invalid or expired code.'}, status=400)
+
+
+def _client_ip(request):
+    """Client IP behind the Cloudflare/nginx proxies (XFF first hop)."""
+    from . import lockout
+    try:
+        return (lockout.client_ip(request) or '')[:45]
+    except Exception:
+        return ''
+
+
+def _ua_device(ua):
+    """User-Agent → short 'browser · os' device string for the security trail."""
+    ua = (ua or '')[:300]
+    if not ua:
+        return ''
+    os_ = ('Android' if 'Android' in ua else
+           'iOS' if 'iPhone' in ua or 'iPad' in ua else
+           'Windows' if 'Windows' in ua else
+           'macOS' if 'Mac OS X' in ua or 'Macintosh' in ua else
+           'Linux' if 'Linux' in ua or 'X11' in ua else '')
+    browser = ('Edge' if 'Edg/' in ua or 'Edge/' in ua else
+               'Opera' if 'OPR/' in ua or 'Opera' in ua else
+               'Chrome' if 'Chrome/' in ua else
+               'Firefox' if 'Firefox/' in ua else
+               'Safari' if 'Safari' in ua else '')
+    return ' · '.join(p for p in (browser, os_) if p) or 'Unknown device'
 
 
 def mark_otp_verified(request, step, keep_verified_at=False):
@@ -250,7 +278,9 @@ def handle_2fa_devices(request):
     return Response({'primary': bool(u.totp_secret),
                      'remaining': _devices_remaining(u),
                      'devices': [{'id': d.id, 'name': d.name, 'confirmed': d.confirmed,
-                                  'created_at': d.created_at, 'last_used_at': d.last_used_at}
+                                  'created_at': d.created_at, 'last_used_at': d.last_used_at,
+                                  'added_ip': d.added_ip, 'added_device': _ua_device(d.added_user_agent),
+                                  'last_used_ip': d.last_used_ip}
                                  for d in devices]})
 
 
@@ -281,7 +311,10 @@ def handle_2fa_device_confirm(request, device_id):
     if err:
         return err
     device.confirmed = True
-    device.save(update_fields=['confirmed'])
+    # security trail: WHERE this authenticator was enrolled (browser + IP)
+    device.added_ip = _client_ip(request)
+    device.added_user_agent = (request.META.get('HTTP_USER_AGENT', '') or '')[:300]
+    device.save(update_fields=['confirmed', 'added_ip', 'added_user_agent'])
     mark_otp_verified(request, step)
     return Response({'ok': True})
 

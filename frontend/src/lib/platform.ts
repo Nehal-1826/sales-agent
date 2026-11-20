@@ -194,13 +194,18 @@ export const totpRotateConfirm = async (code: string) =>
     ? demoFail<unknown>()
     : attempt(() => request<unknown>('/platform/2fa/rotate/confirm/', post({ code })));
 
-/** One extra authenticator device (the primary is managed via rotate/disable). */
+/** One extra authenticator device (the primary is managed via rotate/disable).
+ *  added_* / last_used_ip are the security trail — the browser + IP that
+ *  enrolled the device and the IP its code was last accepted from. */
 export interface TotpDevice {
   id: number;
   name: string;
   confirmed: boolean;
   created_at: string;
   last_used_at: string | null;
+  added_ip: string;
+  added_device: string;
+  last_used_ip: string;
 }
 
 export interface TotpDeviceList {

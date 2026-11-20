@@ -15,7 +15,12 @@ from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from . import lockout
 from .authz import (
     auth_extras,
+    enforce_otp,
     handle_2fa_confirm,
+    handle_2fa_device_add,
+    handle_2fa_device_confirm,
+    handle_2fa_device_remove,
+    handle_2fa_devices,
     handle_2fa_disable,
     handle_2fa_rotate_confirm,
     handle_2fa_rotate_start,
@@ -25,6 +30,7 @@ from .authz import (
     is_platform_admin,
     otp_satisfied,
     token_otp_satisfied,
+    user_2fa_active,
 )
 from .throttles import LoginThrottle, OtpThrottle
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -304,6 +310,29 @@ def user_2fa_rotate_confirm(request):
     return handle_2fa_rotate_confirm(request)
 
 
+# extra authenticator devices (max 3; any confirmed device satisfies OTP)
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def user_2fa_devices(request):
+    if request.method == 'POST':   # listing is always visible; adding demands a
+        enforce_otp(request)       # satisfied OTP session (no-op for the un-enrolled)
+        return handle_2fa_device_add(request)
+    return handle_2fa_devices(request)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle, OtpThrottle])
+def user_2fa_device_confirm(request, device_id):
+    return handle_2fa_device_confirm(request, device_id)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated, IsOtpSatisfied])
+def user_2fa_device_remove(request, device_id):
+    return handle_2fa_device_remove(request, device_id)
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def warmup_token(request):
@@ -314,7 +343,7 @@ def warmup_token(request):
     # Workspace users with 2FA enabled must likewise have satisfied OTP.
     if is_platform_admin(request.user) and not otp_satisfied(request):
         return Response({'detail': 'OTP required'}, status=403)
-    if bool(request.user.totp_secret) and not token_otp_satisfied(request):
+    if user_2fa_active(request.user) and not token_otp_satisfied(request):
         return Response({'detail': 'OTP required'}, status=403)
     ws = getattr(request.user, 'workspace', None)
     slug = getattr(ws, 'slug', None) or 'default'

@@ -836,6 +836,21 @@ class PlatformSession(models.Model):
     last_otp_step = models.BigIntegerField(default=0)
 
 
+class TotpDevice(models.Model):
+    """An extra authenticator device (own TOTP secret) — a code from any
+    confirmed device satisfies OTP.  Max 3 per user (see authz.MAX_TOTP_DEVICES);
+    pending devices never satisfy sign-in until confirmed."""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='totp_devices')
+    name = models.CharField(max_length=60)
+    secret = models.CharField(max_length=64)
+    confirmed = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['id']
+
+
 class LoginAttempt(models.Model):
     """Failure counter shared by every web process (replaces the per-process
     cache).  key = sha256(name|ip); the window restarts after lockout.WINDOW."""

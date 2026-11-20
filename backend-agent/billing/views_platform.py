@@ -12,6 +12,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import render
 from django.utils import timezone
+from rest_framework import exceptions
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
@@ -20,12 +21,17 @@ from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from core import lockout
 from core.authz import (
     handle_2fa_confirm,
+    handle_2fa_device_add,
+    handle_2fa_device_confirm,
+    handle_2fa_device_remove,
+    handle_2fa_devices,
     handle_2fa_disable,
     handle_2fa_rotate_confirm,
     handle_2fa_rotate_start,
     handle_2fa_setup,
     handle_2fa_status,
     handle_2fa_verify,
+    otp_satisfied,
 )
 from core.models import User, Workspace
 from core.permissions import IsPlatformAdmin, IsPlatformAdminWithOTP
@@ -121,6 +127,28 @@ def tfa_rotate_confirm(request):
         request,
         on_done=lambda: _audit(request, 'platform.2fa_rotated', None),
     )
+
+
+# extra authenticator devices (max 3; any confirmed device satisfies OTP).
+# Listing stays otp=False so a TotpScreen-blocked admin can still see the panel;
+# adding demands the verified session (otp=True like tfa_disable).
+@platform_api('GET', 'POST', otp=False)
+def tfa_devices(request):
+    if request.method == 'POST':
+        if not otp_satisfied(request):
+            raise exceptions.PermissionDenied('OTP required')
+        return handle_2fa_device_add(request)
+    return handle_2fa_devices(request)
+
+
+@platform_api('POST', otp=False, extra_throttles=(OtpThrottle,))
+def tfa_device_confirm(request, device_id):
+    return handle_2fa_device_confirm(request, device_id)
+
+
+@platform_api('DELETE', otp=True)
+def tfa_device_remove(request, device_id):
+    return handle_2fa_device_remove(request, device_id)
 
 
 # ------------------------------------------------------------------ overview / marketing

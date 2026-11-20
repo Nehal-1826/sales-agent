@@ -35,12 +35,14 @@ export function planCardDataUri(t: Tier, currency: Currency, yearly: boolean): s
       `<text x="454" y="70" text-anchor="middle" font-family="${FONT}" font-size="16" font-weight="800" letter-spacing="1.5" fill="#ffffff">MOST POPULAR</text>`
     : '';
 
+  // ALL features — with the static grid gone this card is the only place the
+  // full plan contents appear, so nothing is sliced off (7 rows × 48px fits
+  // between the divider and the footer with room to spare).
   const features = t.features
-    .slice(0, 4)
     .map(
       (f, i) =>
-        `<text x="48" y="${356 + i * 56}" font-family="${FONT}" font-size="20" fill="${ACCENT}" font-weight="700">\u2713</text>` +
-        `<text x="76" y="${356 + i * 56}" font-family="${FONT}" font-size="20" fill="#d6d3d1">${esc(f)}</text>`
+        `<text x="48" y="${352 + i * 48}" font-family="${FONT}" font-size="19" fill="${ACCENT}" font-weight="700">\u2713</text>` +
+        `<text x="74" y="${352 + i * 48}" font-family="${FONT}" font-size="19" fill="#d6d3d1">${esc(f)}</text>`
     )
     .join('');
 

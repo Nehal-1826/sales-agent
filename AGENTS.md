@@ -84,6 +84,14 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   Both `#/settings/twofactor` (`TwoFactorSection.tsx`) and `#/platform/settings`
   (`AdminSettingsPage.tsx`) share `frontend/src/components/TwoFactorPanel.tsx` (`CodeSlots`
   animations, QR + copyable manual secret, enable, 2-step authenticator rotate, disable).
+- Multi-device TOTP (`TotpDevice`, migration 0038): up to 3 authenticators per user
+  (primary `totp_secret` counts as one). `{GET,POST,DELETE} …/2fa/devices/…` on BOTH
+  doors (`/api/auth/2fa/` workspace, `/api/platform/2fa/` console in billing/urls.py);
+  add → QR-only `otpauth_uri` (never the raw secret), confirm with that device's code;
+  any confirmed device satisfies OTP (`check_totp_any` — pending devices never do);
+  add/remove need an OTP-satisfied session (platform GET is otp=False); can't remove
+  the last method; disable 2FA wipes all devices; `warmup_token` gates on
+  `user_2fa_active` too. Panel: "Authenticator devices" card in TwoFactorPanel.
 - Frontend↔backend: Django via `lib/` request helpers; warmup via `lib/warmupApi.ts`
   (Bearer JWT, `/wp-api` base, health probe, 401 re-acquire once). Bridge JWT dies
   with the session (all four token-clear sites purge both keys).
@@ -122,6 +130,8 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   sent from the PLATFORM SMTP (`PLATFORM_SMTP_*` → noreply@warmpulse.tech,
   duck-typed mailbox shim — no connected Mailbox row) to
   `AppSettings.report_email`; falls back to tenant SMTP when unset.
+  Rate limits: `AdminSlugThrottle` 5/min per IP + ≥10 wrong hits from one IP
+  in 15 min → 429 (DB-backed lockout in `admin_slug_check`).
   Rotate the slug with `manage.py set_admin_slug`.
 
 ## Gotchas

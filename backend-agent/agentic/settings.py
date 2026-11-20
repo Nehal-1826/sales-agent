@@ -170,6 +170,18 @@ CORS_ALLOWED_ORIGINS = [
 ] + [o.strip() for o in os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',') if o.strip()]
 CORS_ALLOW_CREDENTIALS = True
 
+# Cache — Redis when REDIS_URL is set (the VPS shares one across gunicorn
+# workers; per-process locmem silently doubles every DRF throttle and cache
+# cooldown per worker), locmem locally where nothing is shared anyway.
+REDIS_URL = os.environ.get('REDIS_URL', '').strip()
+CACHES = {
+    'default': (
+        {'BACKEND': 'django.core.cache.backends.redis.RedisCache', 'LOCATION': REDIS_URL}
+        if REDIS_URL else
+        {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}
+    ),
+}
+
 def _env_csv(name: str) -> list:
     """Comma-separated env var → stripped, de-emptied list. Missing → []."""
     return [v.strip() for v in os.environ.get(name, '').split(',') if v.strip()]

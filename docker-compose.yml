@@ -134,12 +134,16 @@ services:
       WARMUP_JWT_SECRET: ${WARMUP_JWT_SECRET}
       # server-to-server enroll/warmup calls target the FastAPI service directly
       WARMUP_API_URL: http://fastapi:8001
+      # shared throttle/cooldown cache (db 1 — FastAPI owns db 0)
+      REDIS_URL: redis://redis:6379/1
       SEED_DEMO: ${SEED_DEMO:-0}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/', timeout=5)"]
@@ -157,12 +161,15 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-warmpulse}:${POSTGRES_PASSWORD:-warmpulse}@db:5432/agent
       WARMUP_JWT_SECRET: ${WARMUP_JWT_SECRET}
       WARMUP_API_URL: http://fastapi:8001
+      REDIS_URL: redis://redis:6379/1
       SEED_DEMO: ${SEED_DEMO:-0}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       django:
         condition: service_healthy

@@ -92,6 +92,10 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   add/remove need an OTP-satisfied session (platform GET is otp=False); can't remove
   the last method; disable 2FA wipes all devices; `warmup_token` gates on
   `user_2fa_active` too. Panel: "Authenticator devices" card in TwoFactorPanel.
+  Security trail (0039): `added_ip`/`added_user_agent` stamped at confirm,
+  `last_used_ip` on each verify — the list returns a parsed `added_device`
+  ("Chrome · Windows") so the panel shows where each device was enrolled
+  and last used from.
 - Frontend↔backend: Django via `lib/` request helpers; warmup via `lib/warmupApi.ts`
   (Bearer JWT, `/wp-api` base, health probe, 401 re-acquire once). Bridge JWT dies
   with the session (all four token-clear sites purge both keys).

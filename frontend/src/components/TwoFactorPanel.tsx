@@ -304,7 +304,8 @@ export function TwoFactorPanel({
   }
 
   async function refreshDevices() {
-    setDeviceError('');
+    // does NOT clear deviceError on purpose: add/remove failure handlers set an
+    // API error and refresh in the same tick — a clear here would batch over it
     try {
       setDeviceList(await api.listDevices());
     } catch {
@@ -759,7 +760,7 @@ export function TwoFactorPanel({
                   <button
                     type="button"
                     className="btn btn-primary"
-                    disabled={devicesBusy || (deviceList?.remaining ?? 3) <= 0}
+                    disabled={devicesBusy || !deviceList || deviceList.remaining <= 0}
                     onClick={() => {
                       setConfirmRemoveId(null);
                       setDeviceName('');

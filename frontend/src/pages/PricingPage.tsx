@@ -86,10 +86,12 @@ function PlanPicker({ tiers, currency, interval }: { tiers: Tier[]; currency: Cu
             items={tiers.map((t) => t.name)}
             defaultSelected={idx}
             onChange={pickFromWheel}
-            textColor="#a8a29e"
+            textColor="#8a8580"
             activeColor="#fb923c"
-            side="left"
+            side="right"
             fontSize={2.4}
+            blur={1.5}
+            inset={28}
             aria-label="Plan"
           />
         </div>
@@ -101,14 +103,15 @@ function PlanPicker({ tiers, currency, interval }: { tiers: Tier[]; currency: Cu
             loop={false}
             cardWidth={300}
             cardHeight={400}
-            depth={80}
-            spread={60}
-            tilt={14}
+            depth={110}
+            spread={110}
+            tilt={22}
             tiltDirection="right"
             perspective={1200}
             visibleCards={3}
-            falloff={0.14}
-            blur={2.5}
+            falloff={0.16}
+            blur={3}
+            tint="#14100c"
             duration={550}
             showControls
             showIndicators
@@ -161,21 +164,23 @@ export function PricingPage() {
           sends from your own mailbox.
         </p>
 
-        <div className="mk-toggle" role="group" aria-label="Billing period">
-          <button type="button" aria-pressed={interval === 'month'} onClick={() => setInterval_('month')}>
-            Monthly
-          </button>
-          <button type="button" aria-pressed={interval === 'year'} onClick={() => setInterval_('year')}>
-            Yearly <em>2 months free</em>
-          </button>
-        </div>
-        <div className="mk-toggle" role="group" aria-label="Currency">
-          <button type="button" aria-pressed={currency === 'INR'} onClick={() => setCurrency('INR')}>
-            INR ₹
-          </button>
-          <button type="button" aria-pressed={currency === 'USD'} onClick={() => setCurrency('USD')}>
-            USD $
-          </button>
+        <div className="mk-toggles">
+          <div className="mk-toggle" role="group" aria-label="Billing period">
+            <button type="button" aria-pressed={interval === 'month'} onClick={() => setInterval_('month')}>
+              Monthly
+            </button>
+            <button type="button" aria-pressed={interval === 'year'} onClick={() => setInterval_('year')}>
+              Yearly <em>2 months free</em>
+            </button>
+          </div>
+          <div className="mk-toggle" role="group" aria-label="Currency">
+            <button type="button" aria-pressed={currency === 'INR'} onClick={() => setCurrency('INR')}>
+              INR ₹
+            </button>
+            <button type="button" aria-pressed={currency === 'USD'} onClick={() => setCurrency('USD')}>
+              USD $
+            </button>
+          </div>
         </div>
 
         <PlanPicker tiers={tiers} currency={currency} interval={interval} />

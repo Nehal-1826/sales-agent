@@ -122,6 +122,10 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   Platform admin requires `role='admin'|'owner'` OR `is_superuser=True` AND
   `is_staff=True` on the Django user, plus a satisfied `PlatformSession` (OTP).
 - FastAPI docs (`/docs`) are disabled outside dev environments.
+- Shared cache: `settings.CACHES` = RedisCache when `REDIS_URL` is set (compose
+  wires `redis://redis:6379/1` into django + django-worker; FastAPI owns db 0),
+  locmem locally. DRF throttles + cache cooldowns MUST share this — per-worker
+  locmem silently doubled every limit under gunicorn's 2 workers.
 - Secrets server-side only (env/.env.docker), masked in API responses, never frontend.
 - Admin secret slug (`/<6-digits>/…` console prefix): wrong hits are logged to
   `SlugAttempt` (no instant email) and emailed as a weekly digest via

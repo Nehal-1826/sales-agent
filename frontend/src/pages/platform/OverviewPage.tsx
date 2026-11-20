@@ -21,7 +21,8 @@ function KpiBody({ label, value, sub }: { label: string; value: string; sub?: st
   );
 }
 
-/** Platform admin Overview — full liquid-glass MagicBento metrics & revenue chart. */
+/** Platform admin Overview — full liquid-glass MagicBento metrics & revenue chart.
+ *  Copy rule: everyday words — "money per month", not "MRR". */
 export function OverviewPage() {
   const { data: o, error, reload } = useAsync(getOverview);
   const inr = (n: number) => money(n, 'INR');
@@ -34,8 +35,8 @@ export function OverviewPage() {
           rowSpan: 1,
           className: 'pf-kpi bento-stat',
           href: `${slugPrefix()}/payments`,
-          title: 'MRR',
-          content: <KpiBody label="MRR" value={inr(o.mrr.inr_equivalent)} sub={`${money(o.mrr.INR, 'INR')} + ${money(o.mrr.USD, 'USD')}`} />,
+          title: 'Money per month',
+          content: <KpiBody label="Money per month" value={inr(o.mrr.inr_equivalent)} sub={`${money(o.mrr.INR, 'INR')} from India + ${money(o.mrr.USD, 'USD')} from abroad`} />,
         },
         {
           id: 'arr',
@@ -43,8 +44,8 @@ export function OverviewPage() {
           rowSpan: 1,
           className: 'pf-kpi bento-stat',
           href: `${slugPrefix()}/payments`,
-          title: 'ARR',
-          content: <KpiBody label="ARR" value={inr(o.arr_inr_equivalent)} sub="Annualized run rate" />,
+          title: 'Money per year (if this pace continues)',
+          content: <KpiBody label="Money per year (at this pace)" value={inr(o.arr_inr_equivalent)} sub="This month's pace × 12" />,
         },
         {
           id: 'active',
@@ -52,8 +53,8 @@ export function OverviewPage() {
           rowSpan: 1,
           className: 'pf-kpi bento-stat',
           href: `${slugPrefix()}/tenants`,
-          title: 'Active subscribers',
-          content: <KpiBody label="Active" value={String(o.counts.active)} sub="Paid workspaces" />,
+          title: 'Paying customers',
+          content: <KpiBody label="Paying customers" value={String(o.counts.active)} sub="Workspaces on a paid plan" />,
         },
         {
           id: 'pending',
@@ -61,8 +62,8 @@ export function OverviewPage() {
           rowSpan: 1,
           className: 'pf-kpi bento-stat',
           href: `${slugPrefix()}/tenants`,
-          title: 'Pending',
-          content: <KpiBody label="Pending" value={String(o.counts.pending)} sub="Awaiting checkout" />,
+          title: "Haven't paid yet",
+          content: <KpiBody label="Haven't paid yet" value={String(o.counts.pending)} sub="Signed up, waiting for first payment" />,
         },
         {
           id: 'past_due',
@@ -70,8 +71,8 @@ export function OverviewPage() {
           rowSpan: 1,
           className: `pf-kpi bento-stat${o.counts.past_due > 0 ? ' highlight' : ''}`,
           href: `${slugPrefix()}/tenants`,
-          title: 'Past due',
-          content: <KpiBody label="Past due" value={String(o.counts.past_due)} sub="Retry window" />,
+          title: 'Payment failed',
+          content: <KpiBody label="Payment failed" value={String(o.counts.past_due)} sub="We're retrying their card" />,
         },
         {
           id: 'churn',
@@ -79,8 +80,8 @@ export function OverviewPage() {
           rowSpan: 1,
           className: 'pf-kpi bento-stat',
           href: `${slugPrefix()}/tenants`,
-          title: 'Churn (30d)',
-          content: <KpiBody label="Churn (30d)" value={pct(o.churn_30d)} sub={`${o.counts.canceled} canceled`} />,
+          title: 'Customers who left',
+          content: <KpiBody label="Customers who left (30 days)" value={pct(o.churn_30d)} sub={`${o.counts.canceled} canceled in the last 30 days`} />,
         },
         {
           id: 'conversion',
@@ -88,8 +89,8 @@ export function OverviewPage() {
           rowSpan: 1,
           className: 'pf-kpi bento-stat',
           href: `${slugPrefix()}/marketing`,
-          title: 'Conversion (30d)',
-          content: <KpiBody label="Conversion (30d)" value={pct(o.conversion_30d)} sub={`${o.signups_7d} signups 7d / ${o.signups_30d} 30d`} />,
+          title: 'Visitors who signed up',
+          content: <KpiBody label="Visitors who signed up (30 days)" value={pct(o.conversion_30d)} sub={`${o.signups_7d} joined last week · ${o.signups_30d} last month`} />,
         },
         {
           id: 'refunds',
@@ -97,8 +98,8 @@ export function OverviewPage() {
           rowSpan: 1,
           className: 'pf-kpi bento-stat',
           href: `${slugPrefix()}/payments`,
-          title: 'Refunds (30d)',
-          content: <KpiBody label="Refunds (30d)" value={inr(o.refunds_30d.amount_inr_equivalent)} sub={`${o.refunds_30d.count} refunds`} />,
+          title: 'Money returned',
+          content: <KpiBody label="Money returned (30 days)" value={inr(o.refunds_30d.amount_inr_equivalent)} sub={`${o.refunds_30d.count} refunds in the last 30 days`} />,
         },
         {
           id: 'revenue-12m',
@@ -107,9 +108,9 @@ export function OverviewPage() {
           className: 'bento-panel-card',
           content: (
             <>
-              <h2 className="pf-h2">Revenue, last 12 months</h2>
+              <h2 className="pf-h2">Money earned — last 12 months</h2>
               <Bars
-                label="Revenue per month, last 12 months, INR equivalent"
+                label="Money earned each month, last 12 months, in rupees"
                 data={o.revenue_12m.map((r) => ({ label: r.month, value: r.inr_equivalent }))}
                 fmt={inr}
               />
@@ -121,7 +122,7 @@ export function OverviewPage() {
 
   return (
     <>
-      <PageHeader title="Overview" subtitle="Revenue and subscriber health (INR equivalent at the platform FX rate)." />
+      <PageHeader title="Dashboard" subtitle="How WarmPulse is doing. All money is shown in ₹." />
       {error && <LoadError message={error} onRetry={() => void reload()} />}
       {!o && !error && <Skeleton rows={4} />}
       {o && (

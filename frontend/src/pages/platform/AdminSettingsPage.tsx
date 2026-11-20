@@ -18,9 +18,13 @@ import { Chip, Field, PageHeader, SectionLabel, Toggle } from '../../components/
 import { LoadError, Skeleton, toast } from '../../components/feedback';
 import { useAsync } from '../../lib/hooks';
 import {
+  addTotpDevice,
   changeUsername,
+  confirmTotpDevice,
   getMe,
   getPlatform2faStatus,
+  listTotpDevices,
+  removeTotpDevice,
   totpConfirm,
   totpDisable,
   totpRotateConfirm,
@@ -317,6 +321,10 @@ export function AdminSettingsPage({ demo = false }: { demo?: boolean }) {
       disable: totpDisable,
       rotateStart: totpRotateStart,
       rotateConfirm: totpRotateConfirm,
+      listDevices: listTotpDevices,
+      addDevice: addTotpDevice,
+      confirmDevice: confirmTotpDevice,
+      removeDevice: removeTotpDevice,
     }),
     [],
   );

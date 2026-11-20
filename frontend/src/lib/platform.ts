@@ -194,6 +194,48 @@ export const totpRotateConfirm = async (code: string) =>
     ? demoFail<unknown>()
     : attempt(() => request<unknown>('/platform/2fa/rotate/confirm/', post({ code })));
 
+/** One extra authenticator device (the primary is managed via rotate/disable). */
+export interface TotpDevice {
+  id: number;
+  name: string;
+  confirmed: boolean;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+export interface TotpDeviceList {
+  primary: boolean;
+  remaining: number;
+  devices: TotpDevice[];
+}
+
+/** QR-only setup payload for a new device — the raw secret never leaves the server. */
+export interface TotpDeviceSetup {
+  id: number;
+  name: string;
+  otpauth_uri: string;
+}
+
+export async function listTotpDevices(): Promise<TotpDeviceList> {
+  if (await inDemo()) return { primary: false, remaining: 3, devices: [] };
+  return request<TotpDeviceList>('/platform/2fa/devices/');
+}
+
+export const addTotpDevice = async (name: string) =>
+  (await inDemo())
+    ? demoFail<TotpDeviceSetup>()
+    : attempt(() => request<TotpDeviceSetup>('/platform/2fa/devices/', post({ name })));
+
+export const confirmTotpDevice = async (id: number, code: string) =>
+  (await inDemo())
+    ? demoFail<{ ok: boolean }>()
+    : attempt(() => request<{ ok: boolean }>(`/platform/2fa/devices/${id}/confirm/`, post({ code })));
+
+export const removeTotpDevice = async (id: number) =>
+  (await inDemo())
+    ? demoFail<unknown>()
+    : attempt(() => request<unknown>(`/platform/2fa/devices/${id}/`, { method: 'DELETE' }));
+
 /** Settings → Account: change the signed-in account's username. */
 export async function changeUsername(username: string): Promise<Result<{ username: string }>> {
   if (await inDemo()) return demoFail<{ username: string }>();

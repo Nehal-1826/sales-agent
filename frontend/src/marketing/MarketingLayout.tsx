@@ -29,12 +29,21 @@ export function MarketingLayout({
   onEnterDashboard?: () => void;
 }) {
   const [scrolled, setScrolled] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
+
+  // mobile menu: Escape closes, and a route change (link click) closes it
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setMenuOpen(false);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [menuOpen]);
 
   const signIn = onEnterDashboard ? (
     <button type="button" className="lp-cta lp-cta-solid" onClick={onEnterDashboard}>
@@ -66,7 +75,7 @@ export function MarketingLayout({
 
   return (
     <div className="lp">
-      <header className={`lp-nav ${scrolled ? 'lp-nav-scrolled' : ''}`}>
+      <header className={`lp-nav ${scrolled || menuOpen ? 'lp-nav-scrolled' : ''}`}>
         <div className="lp-nav-inner">
           <a className="lp-brand" href="/">
             <img src="/warmpulse-logo.svg" alt="WarmPulse home" />
@@ -80,8 +89,33 @@ export function MarketingLayout({
           <div className="lp-nav-ctas">
             {startNow}
             {signIn}
+            {/* ≤760px the link row is hidden — this opens the mobile menu */}
+            <button
+              type="button"
+              className="lp-nav-burger"
+              aria-expanded={menuOpen}
+              aria-controls="lp-mobile-links"
+              aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+              onClick={() => setMenuOpen((v) => !v)}
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                {menuOpen ? (
+                  <path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                ) : (
+                  <path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                )}
+              </svg>
+            </button>
           </div>
         </div>
+        {menuOpen && (
+          <nav id="lp-mobile-links" className="lp-mobile-links" aria-label="Mobile">
+            <a href="/" onClick={() => setMenuOpen(false)}>Home</a>
+            <a href="/how-it-works" onClick={() => setMenuOpen(false)}>How it works</a>
+            <a href="/pricing" onClick={() => setMenuOpen(false)}>Pricing</a>
+            <a href="/#contact" onClick={() => setMenuOpen(false)}>Contact</a>
+          </nav>
+        )}
       </header>
 
       <main id="main">{children}</main>

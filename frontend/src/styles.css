@@ -3507,6 +3507,38 @@ input[type='radio'] {
   transition: color 0.15s ease, background 0.15s ease;
 }
 .lp-links button:hover { color: var(--accent-strong); background: var(--accent-soft); }
+/* mobile menu (≤760px only): the burger lives with the CTAs; the dropdown
+   drops under the sticky header with the same links as the desktop row */
+.lp-nav-burger {
+  display: none;
+  background: none;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 9px 10px;
+  color: var(--text);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+}
+.lp-nav-burger[aria-expanded='true'] { color: var(--accent-strong); border-color: var(--accent-border); }
+.lp-mobile-links {
+  display: none;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-soft);
+  box-shadow: 0 14px 30px rgba(249, 115, 22, 0.08);
+}
+.lp-mobile-links a {
+  padding: 14px 20px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  text-decoration: none;
+  border-top: 1px solid var(--border-soft);
+}
+.lp-mobile-links a:first-child { border-top: 0; }
+.lp-mobile-links a:active { color: var(--accent-strong); background: var(--accent-soft); }
 
 /* ---------- buttons ---------- */
 .lp-cta {
@@ -4206,6 +4238,9 @@ img, video, svg { max-width: 100%; }
   .lp-brand img { height: 36px; }
   /* links are hidden, so CTAs move up to column 2 (no implicit 3rd column) */
   .lp-nav-ctas { grid-column: 2; gap: 8px; }
+  /* …and the burger replaces the hidden link row */
+  .lp-nav-burger { display: inline-flex; }
+  .lp-mobile-links { display: flex; }
   .lp-nav-inner .lp-cta { padding: 9px 16px; font-size: 13.5px; white-space: nowrap; }
   .lp-hero {
     grid-template-columns: 1fr;

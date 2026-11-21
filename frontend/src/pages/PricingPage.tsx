@@ -16,6 +16,7 @@ import {
   STACK_TOTAL_USD,
   TIERS,
   detectCurrency,
+  formatMoney,
   formatUsd,
   signupHref,
 } from '../marketing/pricing';
@@ -139,6 +140,51 @@ function PlanPicker({ tiers, currency, interval }: { tiers: Tier[]; currency: Cu
   );
 }
 
+/** MOBILE-ONLY fallback: the plain stacked cards (the wheel + 3D carousel are
+ *  desktop-only by owner order — CSS swaps the two blocks at 760px). */
+function MobilePlanCards({ tiers, currency, interval }: { tiers: Tier[]; currency: Currency; interval: Interval }) {
+  const yearly = interval === 'year';
+  return (
+    <div className="mk-tiers mk-tiers-mobile" aria-label="Plans">
+      {tiers.map((t) => {
+        const amount = currency === 'INR' ? (yearly ? t.inrYear : t.inr) : yearly ? t.usdYear : t.usd;
+        return (
+          <article key={t.id} className={`mk-tier ${t.popular ? 'mk-tier-pop' : ''}`}>
+            {t.popular && <span className="mk-pop-badge">Most popular</span>}
+            <h2>{t.name}</h2>
+            <p className="mk-muted">{t.blurb}</p>
+            <div className="mk-price">
+              <strong>{formatMoney(amount, currency)}</strong>
+              <span>/ {yearly ? 'year' : 'month'}</span>
+            </div>
+            <div className="mk-price-usd">+{BONUS_DAYS} bonus days on your first payment</div>
+            <ul className="mk-list">
+              {t.features.map((f) => (
+                <li key={f}>{f}</li>
+              ))}
+            </ul>
+            <SpecularButton
+              href={signupHref(t.id, interval)}
+              size="md"
+              radius={999}
+              tint={t.popular ? '#f97316' : '#181512'}
+              tintOpacity={t.popular ? 0.9 : 0.78}
+              blur={14}
+              textColor={t.popular ? '#ffffff' : '#fff7ed'}
+              lineColor={t.popular ? '#ffffff' : '#fb923c'}
+              baseColor={t.popular ? '#fb923c' : '#57534e'}
+              idleIntensity={t.popular ? 0.5 : 0.35}
+              className="mk-tier-cta"
+            >
+              Get Started
+            </SpecularButton>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
 /** PRICING — /pricing. Static plans first, live prices when the API answers. */
 export function PricingPage() {
   useDocumentMeta('/pricing');
@@ -183,7 +229,10 @@ export function PricingPage() {
           </div>
         </div>
 
+        {/* wheel + 3D carousel on desktop; plain stacked cards on mobile
+            (owner order) — the 760px media query swaps the two blocks */}
         <PlanPicker tiers={tiers} currency={currency} interval={interval} />
+        <MobilePlanCards tiers={tiers} currency={currency} interval={interval} />
 
         <p className="mk-fine">
           {currency === 'INR' && 'Prices exclude 18% GST. '}

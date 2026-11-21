@@ -171,7 +171,10 @@ a.lp-cta { display: inline-block; text-decoration: none; text-align: center; }
 }
 .mk-toggle button[aria-pressed='true'] { background: var(--accent); color: #fff; }
 .mk-toggle em { font-style: normal; font-size: 12px; opacity: 0.85; }
-/* plan picker (OptionWheel + DepthCarousel) — replaced the static mk-tiers grid */
+/* plan picker (OptionWheel + DepthCarousel) — desktop only. On mobile the
+   picker is hidden and the plain stacked cards (mk-tiers-mobile) show instead
+   (owner order: no wheel/carousel animation on phones). */
+.mk-tiers.mk-tiers-mobile { display: none; }
 .mk-picker .lp-section-sub { margin-bottom: 0; }
 /* the two option toggles sit on ONE row (they stacked awkwardly before) */
 .mk-toggles { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin: 18px 0 6px; }
@@ -189,6 +192,11 @@ a.lp-cta { display: inline-block; text-decoration: none; text-align: center; }
   .mk-picker-stage { height: 540px; }
 }
 .mk-tiers { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; align-items: stretch; }
+/* mobile-only static cards: single column, picker swapped out at ≤760px */
+@media (max-width: 760px) {
+  .mk-picker { display: none; }
+  .mk-tiers.mk-tiers-mobile { display: grid; grid-template-columns: 1fr; gap: 18px; margin: 26px auto 10px; }
+}
 .mk-tier {
   position: relative;
   display: flex;

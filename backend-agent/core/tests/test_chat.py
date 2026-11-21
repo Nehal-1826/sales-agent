@@ -20,6 +20,15 @@ class KeywordReplyTests(TenantTestCase):
         self.assertIn("Pipeline's running", reply)
         self.assertIn('leads', reply)
 
+    def test_identity_questions_answered_never_acked(self):
+        """'who are you' is a QUESTION, not a pipeline instruction — it must
+        get the persona answer, never the 'noted for next run' canned acks."""
+        from core.chat import FALLBACK_REPLIES
+        for q in ('who are you', 'WHAT ARE YOU', 'who r u', 'what can you do'):
+            reply = _keyword_reply(q)
+            self.assertIn('sales assistant', reply, q)
+            self.assertNotIn(reply, FALLBACK_REPLIES, q)
+
     def test_lead_query_no_data(self):
         reply = _keyword_reply('show me the leads')
         self.assertIn('No leads yet', reply)

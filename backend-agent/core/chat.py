@@ -181,6 +181,20 @@ def _keyword_reply(text, turn=0):
     def n(items):
         return len(items)
 
+    # identity / meta questions FIRST — they are never pipeline instructions,
+    # so they must never fall through to the "noted for next run" acks
+    if re.search(r"\b(who are you|what are you|who r u|what r u|who is this|"
+                 r"what is this( app| product| tool|)?|what can you do|what do you do|"
+                 r"your name|about yourself|introduce yourself|help me understand you)\b", q):
+        who = settings.company_name or 'this workspace'
+        return (
+            f"I'm the AI sales assistant for {who} — I live in the Assistant tab. "
+            "I find new leads, read their websites, write the outreach emails (you approve "
+            "every one before it sends), chase replies, and keep the CRM tidy. "
+            "Ask me things like 'find leads in Chennai', 'show pending approvals' or "
+            "'run a cycle' — or just chat with me."
+        )
+
     if re.search(r'\b(hi|hello|hey|vanakkam)\b', q):
         leads, potentials, replies = n(Lead.objects.all()), n(Potential.objects.all()), n(Reply.objects.all())
         if style == 'tanglish':

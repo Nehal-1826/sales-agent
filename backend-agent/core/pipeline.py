@@ -328,7 +328,9 @@ def _fill_template(text, lead, settings, top_findings):
         'findings': bullets,
         'sender_name': settings.company_name or 'our team',
         'sender_website': settings.company_website or '',
-        'services': ', '.join(settings.services or []) or 'custom SaaS platform & mobile app engineering',
+        # vertical-aware fallback — never another tenant's (the operator's)
+        # services list when this workspace hasn't configured its own
+        'services': our_services_text(settings),
     }
     for var in TEMPLATE_VARS:
         text = text.replace('{{' + var + '}}', values[var])
@@ -348,11 +350,19 @@ def _draft_email(lead):
     cfg = _copywright_config()
     our_name = settings.company_name or 'the team'
     our_site = settings.company_website
-    services = ', '.join(settings.services or []) or 'custom SaaS platform & mobile app engineering'
+    services = our_services_text(settings)
+    # prose-safe intro clause: configured services read naturally after a dash;
+    # the 'our services' placeholder (unconfigured workspace) omits the clause
+    services_clause = f' — {services}' if (settings.services or []) else ''
 
     top = lead.findings[:3]
     template = _default_template()
     agency = agency_mode(settings)
+    # The built-in SaaS-build campaign copy below is the pitch this product's
+    # default seller persona (a web/software services seller) was designed
+    # around. Any other vertical must never be pitched with it — a fresh
+    # non-software workspace's drafts may only describe ITS OWN services.
+    saas_persona = vertical(settings) == 'web_services'
 
     subject = ''
     body = ''
@@ -373,7 +383,7 @@ def _draft_email(lead):
                 f'SUBJECT: {_fill_template(template.subject, lead, settings, top)}\n\n'
                 f'{_fill_template(template.body, lead, settings, top)}\n\n'
             )
-        if agency:
+        if agency and saas_persona:
             # partnership pitch — peer agencies are the prospect, never audit them
             goal_and_rules = (
                 f'GOAL: win PROJECT PARTNERSHIP — the prospect is a boutique agency / software '
@@ -385,7 +395,19 @@ def _draft_email(lead):
                 f'Rules: reference what they do; offer partnership + pilot; one clear ask '
                 f'(15-minute call, or invite a "send cases" reply); no pricing.'
             )
-        else:
+        elif agency:
+            # partnership pitch for a non-software seller — same peer-to-peer
+            # shape, but only ever in terms of the workspace's own services
+            goal_and_rules = (
+                f'GOAL: win PROJECT PARTNERSHIP — the prospect is a peer business that could '
+                f'hand us client work (overflow, white-label, outside their focus). This is '
+                f'a peer-to-peer pitch about OUR services ({services}), never theirs.\n'
+                f'{_shipped_work_block(settings)}'
+                f'Rules: reference what they do; offer partnership (a small paid pilot as '
+                f'proof if it fits); one clear ask (15-minute call, or invite a "send '
+                f'cases" reply); no pricing.'
+            )
+        elif saas_persona:
             # high-level buyer pitch — we build their product, never nitpick their site
             goal_and_rules = (
                 f'GOAL: win a CUSTOM SAAS BUILD — the prospect is a business that could own '
@@ -400,6 +422,17 @@ def _draft_email(lead):
                 f'pitch ONE concrete software product we could build for them (be specific '
                 f'to their industry); one clear ask (15-minute call to walk through a build '
                 f'plan); no pricing; no audit language; max 150 words.'
+            )
+        else:
+            # non-software seller — pitch OUR services, never the SaaS-build campaign
+            goal_and_rules = (
+                f'GOAL: start a sales conversation about OUR services ({services}) with a '
+                f'business that could buy them.\n'
+                f'{_shipped_work_block(settings)}'
+                f'Rules: open with something true about THEIR business (from what they do); '
+                f'connect it to ONE concrete way our services help them; one clear ask '
+                f'(15-minute call); no pricing; never describe our business as anything '
+                f'other than "{services}"; max 150 words.'
             )
         prompt = (
             f'Write a short cold outreach email (max 150 words).\n\n'
@@ -434,7 +467,7 @@ def _draft_email(lead):
             subject = _fill_template(template.subject or 'Quick idea for {{company}}',
                                      lead, settings, top)
             body = _fill_template(template.body, lead, settings, top)
-        elif agency:
+        elif agency and saas_persona:
             # agency-mode built-in — partnership pitch, never an audit
             subject = f'Project partnership — {lead.company} × {our_name}'
             body = (
@@ -452,7 +485,23 @@ def _draft_email(lead):
                 f'the details.\n\n'
                 f'Best,\n{our_name}\n{our_site}'
             ).strip()
-        elif lead.has_website:
+        elif agency:
+            # non-software seller, agency mode — partnership pitch in the
+            # workspace's OWN terms (never the SaaS-build campaign copy)
+            subject = f'Project partnership — {lead.company} × {our_name}'
+            body = (
+                f'Hi {lead.company} team,\n\n'
+                f'We\'re {our_name}{services_clause}, and we\'re looking to partner with '
+                f'businesses like yours on project work.\n\n'
+                f'{_shipped_work_lines(settings)}'
+                f'The ask: if you have client work coming up — overflow, a job outside '
+                f'your focus, or a timeline you can\'t staff — we\'d love to take it on. '
+                f'Happy to start small so you can judge us on real work, not a deck.\n\n'
+                f'Worth a 15-minute call next week? Or reply "send cases" and I\'ll share '
+                f'the details.\n\n'
+                f'Best,\n{our_name}\n{our_site}'
+            ).strip()
+        elif saas_persona and lead.has_website:
             # built-in fallback — custom-SaaS pitch, personalized from their business
             subject = f'A platform for {lead.company} — live in 8–14 weeks'
             body = (
@@ -469,7 +518,7 @@ def _draft_email(lead):
                 f'concrete build plan for {lead.company}. Worth a 15-minute call?\n\n'
                 f'Best,\n{our_name}\n{our_site}'
             ).strip()
-        else:
+        elif saas_persona:
             subject = f'The software {lead.company} deserves — built in 8–14 weeks'
             body = (
                 f'Hi {lead.company} team,\n\n'
@@ -483,6 +532,19 @@ def _draft_email(lead):
                 f'If digitizing {"how " + lead.company + " operates" if lead.company else "your operations"} '
                 f'is on your mind this year, I\'ll draft a concrete build plan. Worth a '
                 f'15-minute call?\n\n'
+                f'Best,\n{our_name}\n{our_site}'
+            ).strip()
+        else:
+            # non-software seller — pitch the workspace's own services only
+            subject = f'{our_name} × {lead.company} — a quick idea'
+            body = (
+                f'Hi {lead.company} team,\n\n'
+                f'I\'m {our_name}{services_clause}.\n\n'
+                f'{_shipped_work_lines(settings)}'
+                f'I\'ll keep this short: if there\'s anything in how {lead.company} operates '
+                f'that could work better with the right partner, I\'d gladly share how we\'d '
+                f'approach it.\n\n'
+                f'Worth a 15-minute call next week?\n\n'
                 f'Best,\n{our_name}\n{our_site}'
             ).strip()
     return subject, body, used_llm

@@ -216,6 +216,19 @@ services:
       retries: 3
       start_period: 5s
 
+  # --- WhatsApp sidecar (opt-in open-wa sender; QR-scan from Settings) ------
+  whatsapp-sidecar:
+    build: ./whatsapp-sidecar
+    container_name: warmpulse-whatsapp
+    restart: unless-stopped
+    environment:
+      SIDECAR_SECRET: ${WHATSAPP_SIDECAR_SECRET}
+      PORT: 8002
+      SESSION_DIR: /data/session
+    volumes:
+      - warmpulse_whatsapp_session:/data/session
+
 volumes:
   warmpulse_pg_data:
   warmpulse_redis_data:
+  warmpulse_whatsapp_session:

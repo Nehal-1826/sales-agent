@@ -28,8 +28,9 @@ VOLUME /data/session
 
 # open-wa 5 passes its default chromium args as ONE shell-quoted string, so
 # chromium sees a stray `"` positional next to about:blank ("Multiple targets
-# are not supported in headless mode"). This wrapper strips the quotes per arg
-# and re-splits before exec'ing the real binary.
+# are not supported in headless mode") — the wrapper strips quotes per arg and
+# re-splits. open-wa 5's create() also never forwards browserArgs, so the
+# sandbox flags are injected HERE (root container, chromium refuses otherwise).
 RUN printf '%s\n' \
   '#!/bin/sh' \
   'clean=""' \
@@ -37,7 +38,7 @@ RUN printf '%s\n' \
   '  a=${a#\"}; a=${a%\"}' \
   '  clean="$clean $a"' \
   'done' \
-  'exec /usr/bin/chromium $clean' \
+  'exec /usr/bin/chromium --no-sandbox --disable-setuid-sandbox $clean' \
   > /usr/local/bin/chromium-clean && chmod +x /usr/local/bin/chromium-clean
 
 ENV CHROME_PATH=/usr/local/bin/chromium-clean \

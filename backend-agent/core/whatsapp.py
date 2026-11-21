@@ -120,28 +120,54 @@ def _openwa(method, path, s=None, **kw):
     return data
 
 
-def _ensure_session(s=None):
-    """First contact creates + starts the session so a QR becomes available."""
+def _session_id(s=None, ensure=False):
+    """OpenWA session routes take the session's UUID, not its name — resolve
+    our named session from the list. ensure=True creates it when missing."""
+    def find():
+        rows = _openwa('GET', '/sessions', s)
+        rows = rows if isinstance(rows, list) else rows.get('items', [])
+        for row in rows:
+            if row.get('name') == OPENWA_SESSION:
+                return row.get('id')
+        return None
+    sid = find()
+    if sid is None and ensure:
+        try:
+            _openwa('POST', '/sessions', s, json={'name': OPENWA_SESSION})
+        except SidecarError:
+            pass              # 409 = already exists
+        sid = find()
+        if sid:
+            _start_session(sid, s)
+    return sid
+
+
+def _start_session(sid, s=None):
+    """A 'created' session produces no QR until started — kick it once."""
     try:
-        _openwa('POST', '/sessions', s, json={'name': OPENWA_SESSION})
-    except SidecarError:
-        pass                  # 409/400 = already exists — fine
-    try:
-        _openwa('POST', f'/sessions/{OPENWA_SESSION}/start', s)
+        _openwa('POST', f'/sessions/{sid}/start', s)
     except SidecarError:
         pass                  # already running / starting
+
+
+def _ensure_session(s=None):
+    """First contact creates + starts the session so a QR becomes available."""
+    return _session_id(s, ensure=True)
 
 
 def sidecar_status(s=None):
     """{'reachable', 'state', 'connected', 'error'} — never raises."""
     try:
-        data = _openwa('GET', f'/sessions/{OPENWA_SESSION}', s)
+        sid = _session_id(s, ensure=True)
+        if not sid:
+            return {'reachable': True, 'state': 'initializing', 'connected': False, 'error': ''}
+        data = _openwa('GET', f'/sessions/{sid}', s)
         state = data.get('status', '')
+        if state == 'created':
+            _start_session(sid, s)
+            state = 'initializing'
         return {'reachable': True, 'state': state,
                 'connected': state in _CONNECTED_STATES, 'error': ''}
-    except _SessionMissing:
-        _ensure_session(s)
-        return {'reachable': True, 'state': 'initializing', 'connected': False, 'error': ''}
     except SidecarError as exc:
         return {'reachable': False, 'state': '', 'connected': False, 'error': str(exc)}
 
@@ -149,24 +175,23 @@ def sidecar_status(s=None):
 def sidecar_qr(s=None):
     """{'qr': data-url or '', 'error'} — the login QR to scan with the phone."""
     try:
-        data = _openwa('GET', f'/sessions/{OPENWA_SESSION}/qr', s)
+        sid = _session_id(s, ensure=True)
+        if not sid:
+            return {'qr': '', 'error': 'session not found'}
+        data = _openwa('GET', f'/sessions/{sid}/qr', s)
         return {'qr': data.get('qrCode') or '', 'error': ''}
-    except _SessionMissing:
-        _ensure_session(s)
-        try:
-            data = _openwa('GET', f'/sessions/{OPENWA_SESSION}/qr', s)
-            return {'qr': data.get('qrCode') or '', 'error': ''}
-        except SidecarError as exc:
-            return {'qr': '', 'error': str(exc)}
     except SidecarError as exc:
         return {'qr': '', 'error': str(exc)}
 
 
 def sidecar_send(to, text, s=None):
+    sid = _session_id(s, ensure=True)
+    if not sid:
+        raise SidecarError('WhatsApp session is not ready yet — try again in a minute.')
     chat = re.sub(r'\D', '', to or '')
     if not 8 <= len(chat) <= 15:
         raise SidecarError('Not a valid WhatsApp number.')
-    _openwa('POST', f'/sessions/{OPENWA_SESSION}/messages/send-text', s,
+    _openwa('POST', f'/sessions/{sid}/messages/send-text', s,
             json={'chatId': f'{chat}@c.us', 'text': text})
     return {'ok': True}
 

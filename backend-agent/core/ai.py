@@ -8,6 +8,7 @@ fall back to built-in templates.
 """
 
 import logging
+import os
 import time
 
 import requests
@@ -59,6 +60,9 @@ MODEL_FAMILIES = {
     'groq': (), 'ollama': (),   # host many families — accept whatever is set
 }
 
+# Self-hosted providers need NO API key — the model runs on our own metal.
+LOCAL_PROVIDERS = {'ollama'}
+
 
 def resolve_provider(provider):
     """Free-text provider name (e.g. 'Google AI') → known provider key; None when
@@ -84,14 +88,19 @@ def model_for(provider, requested):
 
 
 def provider_base_url(provider):
-    return PROVIDER_BASE_URLS[resolve_provider(provider) or 'openai']
+    p = resolve_provider(provider) or 'openai'
+    if p == 'ollama':   # local runtime — its address depends on the deployment
+        return os.environ.get('OLLAMA_BASE_URL', 'http://localhost:11434/v1')
+    return PROVIDER_BASE_URLS[p]
 
 
 def llm_available():
-    """Key set AND provider known — an unknown provider is keyless mode, so the
-    strict AI gate in the pipeline doesn't hold every lead forever."""
+    """(Key set OR a self-hosted provider) AND the provider is known — an
+    unknown provider is keyless mode, so the strict AI gate in the pipeline
+    doesn't hold every lead forever."""
     s = AppSettings.load()
-    return bool(s.ai_key) and resolve_provider(s.ai_provider) is not None
+    provider = resolve_provider(s.ai_provider)
+    return (bool(s.ai_key) or provider in LOCAL_PROVIDERS) and provider is not None
 
 
 def llm_complete(prompt, system='', model='', timeout=45, temperature=0.7):
@@ -99,13 +108,13 @@ def llm_complete(prompt, system='', model='', timeout=45, temperature=0.7):
     Vetting/classification callers should pass temperature=0 so verdicts are
     deterministic instead of creative."""
     settings = AppSettings.load()
-    if not settings.ai_key:
-        return None
     provider = resolve_provider(settings.ai_provider)
     if provider is None:
         log.warning('Unsupported AI provider %r — AI disabled', settings.ai_provider)
         return None
-    base = PROVIDER_BASE_URLS[provider]
+    if not settings.ai_key and provider not in LOCAL_PROVIDERS:
+        return None
+    base = provider_base_url(provider)
     body = {
         'model': model_for(provider, model),
         'messages': ([{'role': 'system', 'content': system}] if system else [])
@@ -114,12 +123,14 @@ def llm_complete(prompt, system='', model='', timeout=45, temperature=0.7):
         'max_tokens': 700,
     }
     # Gemini's free tier intermittently answers 429/503 under load — retry once.
+    headers = {'Content-Type': 'application/json'}
+    if settings.ai_key:
+        headers['Authorization'] = f'Bearer {settings.ai_key}'
     for attempt in (1, 2):
         try:
             resp = requests.post(
                 f'{base}/chat/completions',
-                headers={'Authorization': f'Bearer {settings.ai_key}',
-                         'Content-Type': 'application/json'},
+                headers=headers,
                 json=body,
                 timeout=timeout,
             )

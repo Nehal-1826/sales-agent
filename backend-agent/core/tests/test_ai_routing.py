@@ -51,6 +51,25 @@ class RoutingTests(TenantTestCase):
         self._settings('Gemini')
         self.assertTrue(ai.llm_available())
 
+    def test_local_provider_needs_no_key(self):
+        self._settings('Ollama', key='')
+        self.assertTrue(ai.llm_available())
+        self.assertEqual(ai.provider_base_url('Ollama'), 'http://localhost:11434/v1')
+
+    def test_local_base_url_env_override(self):
+        import os
+        with mock.patch.dict(os.environ, {'OLLAMA_BASE_URL': 'http://ollama:11434/v1'}):
+            self.assertEqual(ai.provider_base_url('ollama'), 'http://ollama:11434/v1')
+
+    def test_llm_complete_keyless_local_posts_without_auth(self):
+        self._settings('Ollama', key='')
+        resp = mock.Mock(status_code=200)
+        resp.json.return_value = {'choices': [{'message': {'content': 'ok'}}]}
+        with mock.patch('core.ai.requests.post', return_value=resp) as post:
+            self.assertEqual(ai.llm_complete('hi', model='qwen3:1.7b'), 'ok')
+        self.assertNotIn('Authorization', post.call_args.kwargs['headers'])
+        self.assertEqual(post.call_args.kwargs['json']['model'], 'qwen3:1.7b')
+
     def test_no_key_not_available(self):
         self._settings('Gemini', key='')
         self.assertFalse(ai.llm_available())

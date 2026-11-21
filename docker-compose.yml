@@ -136,6 +136,8 @@ services:
       WARMUP_API_URL: http://fastapi:8001
       # shared throttle/cooldown cache (db 1 — FastAPI owns db 0)
       REDIS_URL: redis://redis:6379/1
+      # local LLM runtime (AI provider 'Ollama')
+      OLLAMA_BASE_URL: http://ollama:11434/v1
       SEED_DEMO: ${SEED_DEMO:-0}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
@@ -162,6 +164,7 @@ services:
       WARMUP_JWT_SECRET: ${WARMUP_JWT_SECRET}
       WARMUP_API_URL: http://fastapi:8001
       REDIS_URL: redis://redis:6379/1
+      OLLAMA_BASE_URL: http://ollama:11434/v1
       SEED_DEMO: ${SEED_DEMO:-0}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
@@ -228,7 +231,16 @@ services:
     volumes:
       - warmpulse_whatsapp_session:/data/session
 
+  # --- Local open-source LLM runtime (no online providers, no API keys) ----
+  ollama:
+    image: ollama/ollama:latest
+    container_name: warmpulse-ollama
+    restart: unless-stopped
+    volumes:
+      - warmpulse_ollama_models:/root/.ollama
+
 volumes:
   warmpulse_pg_data:
   warmpulse_redis_data:
   warmpulse_whatsapp_session:
+  warmpulse_ollama_models:

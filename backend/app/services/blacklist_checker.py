@@ -25,8 +25,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 
 import dns.resolver
 from dns.exception import DNSException
@@ -191,18 +193,50 @@ async def check_domain_blacklists(domain: str) -> DomainBlacklistResult:
 # Best-effort Redis cache (so the overview can render hits without live DNS)   #
 # --------------------------------------------------------------------------- #
 
+# The cache is read from the hot reputation-overview route, which runs on the
+# event loop: a Redis client without socket timeouts blocks the whole loop for
+# the OS connect timeout (~4s on Windows) when Redis is down — once per domain
+# per request. Short timeouts + a down-latch keep the worst case at one fast
+# failure per latch window instead.
+_REDIS_TIMEOUT_S = 0.3
+_REDIS_DOWN_LATCH_S = 60.0
+
+_redis_client: Any = None
+_redis_down_until = 0.0
+
 
 def _redis_or_none():
-    """Best-effort Redis client; ``None`` when Redis is unreachable. The cache
-    is purely an optimisation — every caller degrades to a live check or an
-    empty list when it's absent (mirrors tasks/peer_actions)."""
-    try:
-        import redis  # local import keeps cold-start cheap
-
-        return redis.Redis.from_url(get_settings().redis_url, decode_responses=True)
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("blacklist redis client unavailable: %s", exc)
+    """Best-effort Redis client; ``None`` when Redis is (recently found to be)
+    unreachable. The cache is purely an optimisation — every caller degrades to
+    a live check or an empty list when it's absent (mirrors tasks/peer_actions)."""
+    global _redis_client, _redis_down_until
+    if time.monotonic() < _redis_down_until:
         return None
+    if _redis_client is None:
+        try:
+            import redis  # local import keeps cold-start cheap
+
+            _redis_client = redis.Redis.from_url(
+                get_settings().redis_url,
+                decode_responses=True,
+                socket_connect_timeout=_REDIS_TIMEOUT_S,
+                socket_timeout=_REDIS_TIMEOUT_S,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("blacklist redis client unavailable: %s", exc)
+            _redis_down_until = time.monotonic() + _REDIS_DOWN_LATCH_S
+            return None
+    return _redis_client
+
+
+def _mark_redis_down(exc: BaseException) -> None:
+    """Drop the client and stop retrying for one latch window (connection
+    errors mean the server is gone — retrying on every request just re-pays
+    the connect timeout on the event loop)."""
+    global _redis_client, _redis_down_until
+    logger.debug("blacklist cache redis error: %s", exc)
+    _redis_client = None
+    _redis_down_until = time.monotonic() + _REDIS_DOWN_LATCH_S
 
 
 def _cache_key(domain: str) -> str:
@@ -221,7 +255,7 @@ def cache_hits_get(domain: str) -> list[str] | None:
         parsed = json.loads(raw)
         return [str(x) for x in parsed] if isinstance(parsed, list) else None
     except Exception as exc:  # noqa: BLE001
-        logger.debug("blacklist cache get failed domain=%s err=%s", domain, exc)
+        _mark_redis_down(exc)
         return None
 
 
@@ -232,4 +266,4 @@ def cache_hits_put(domain: str, hits: list[str]) -> None:
     try:
         client.setex(_cache_key(domain), _CACHE_TTL_S, json.dumps(list(hits)))
     except Exception as exc:  # noqa: BLE001
-        logger.debug("blacklist cache put failed domain=%s err=%s", domain, exc)
+        _mark_redis_down(exc)

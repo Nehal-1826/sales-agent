@@ -100,8 +100,8 @@ def send_verification(user):
             use_ssl=port == 465, use_tls=port != 465, timeout=10, fail_silently=False)
         sender = os.environ.get('PLATFORM_SMTP_FROM', '') or os.environ.get('PLATFORM_SMTP_USER', '')
         EmailMessage(
-            'Confirm your email for Shailog',
-            f'Welcome to Shailog.\n\nConfirm your email address (link valid for 48 hours):\n{link}\n\n'
+            'Confirm your email for WarmPulse',
+            f'Welcome to WarmPulse.\n\nConfirm your email address (link valid for 48 hours):\n{link}\n\n'
             'If you did not sign up, ignore this message.',
             sender, [user.email], connection=conn).send()
         return True

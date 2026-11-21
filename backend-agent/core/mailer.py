@@ -263,10 +263,10 @@ def send_email_message(subject, body, recipients, s=None, html=None, headers=Non
     s = s or AppSettings.load()
     if mailbox is not None:
         from_email = mailbox.from_email
-        sender_name = mailbox.from_name or s.company_name or 'Agentic AI'
+        sender_name = mailbox.from_name or s.company_name or 'WarmPulse'
     else:
-        from_email = s.from_email or s.smtp_user or 'outreach@shailog.com'
-        sender_name = s.company_name or 'Agentic AI'
+        from_email = s.from_email or s.smtp_user or 'noreply@warmpulse.tech'
+        sender_name = s.company_name or 'WarmPulse'
     msg = EmailMessage()
     msg['From'] = formataddr((sender_name, from_email))
     msg['To'] = ', '.join(recipients)
@@ -556,7 +556,7 @@ def send_draft(draft, mailbox=None, connection=None):
         if mailbox is not None and not mailbox.configured():
             mailbox = None
         from_email = (mailbox.from_email if mailbox is not None
-                      else s.from_email or s.smtp_user or 'outreach@shailog.com')
+                      else s.from_email or s.smtp_user or 'noreply@warmpulse.tech')
         unsub = unsubscribe_url(draft.to_email, draft.workspace_id)
         if not s.company_address:
             log.warning('No postal address in Settings → Business; cold-email footer omits it')

@@ -121,7 +121,7 @@ def build_daily_report(day=None):
             f'{r.potentials_created} potential(s)')
 
     totals = (Lead.objects.count(), Potential.objects.count())
-    brand = (AppSettings.load().company_name or 'Shailog Technologies').strip()
+    brand = (AppSettings.load().company_name or 'WarmPulse').strip()
     lines += ['', f'TOTALS: {totals[0]} leads · {totals[1]} potentials in CRM',
               '', f'— {brand} · Marketing & Sales AI (Search · Profile · Copywright · Responder)']
 
@@ -139,7 +139,7 @@ def send_daily_report(day=None):
         return 'skipped', subject
 
     s = AppSettings.load()
-    from_email = s.from_email or s.smtp_user or 'reports@shailog.com'
+    from_email = s.from_email or s.smtp_user or 'noreply@warmpulse.tech'
 
     if smtp_configured(s):
         send_email_message(

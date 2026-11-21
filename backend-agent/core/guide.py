@@ -39,7 +39,7 @@ FALLBACK_ANSWER = (
     'email templates, report email and run frequency. (Set an AI key in Settings for full AI answers.)'
 )
 
-PRODUCT_KB = """PRODUCT: Shailog Technologies — Marketing & Sales AI (autonomous lead machine).
+PRODUCT_KB = """PRODUCT: WarmPulse — Marketing & Sales AI (autonomous lead machine).
 
 THE PIPELINE (runs automatically on a schedule or via Pipeline → "Run cycle"):
 Search discovers companies worldwide via DuckDuckGo → Profile visits each site, audits it
@@ -103,7 +103,7 @@ PAGES:
   "send the report now". Confirm what it did in its reply.
 - Settings: Company profile; Search Profiles (saved lead-targeting presets with
   ONE-CLICK switching — Activate rewrites countries/industries/cities and the
-  buyer-vs-agency mode instantly; e.g. "Shailog Tech — Agency Partners" hunts
+  buyer-vs-agency mode instantly; e.g. "Acme Tech — Agency Partners" hunts
   boutique agencies in the US/UK/Germany as project partners, "Backup" restores
   the previous buyer-targeting job); Advanced (AI provider + key, stored
   server-side, masked); Who to find (cities, countries, industries + who counts
@@ -237,7 +237,7 @@ def guide_answer(question, history=None, user=None):
                  for h in history[-8:]]
         convo = 'RECENT CONVERSATION:\n' + '\n'.join(lines) + '\n\n'
     system = (
-        'You are the friendly in-product guide for Shailog Marketing & Sales AI. '
+        'You are the friendly in-product guide for WarmPulse. '
         'You help users learn to use the product: explain features, give exact click-paths '
         '(page → section → button), and suggest the best next step from the workspace state. '
         'You can also PERFORM actions for the user when asked (run cycles, approve/reject '

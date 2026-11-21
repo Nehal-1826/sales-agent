@@ -106,14 +106,17 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   per-leg results, never echoes passwords; username = `smtpUser || fromEmail`).
   Unreachable mailboxes pause 24h with one-click Resume. Auto-enroll into
   warmup on verified save (flag `warmup_enrolled`, 5s-capped, non-blocking).
-- `/pricing` is interactive: OptionWheel (`components/reactbits/OptionWheel.tsx`)
-  spins plan names, DepthCarousel (`DepthCarousel.tsx`, gsap) shows the plan
-  cards (SVG data-URIs from `marketing/planCards.ts`, all features, prices
-  follow the ₹/$ + month/year toggles), bidirectionally synced, ONE Get
-  Started CTA follows the selection. Wheel over the carousel advances EXACTLY
-  one plan per scroll (tween + 250ms dual gate — do not restore fractional
-  scrolling). The old static `.mk-tier` grid is gone (legacy CSS left).
-  FlexCarousel/ogl were tried and removed — don't re-add.
+- `/pricing` is interactive on DESKTOP ONLY: OptionWheel
+  (`components/reactbits/OptionWheel.tsx`) spins plan names, DepthCarousel
+  (`DepthCarousel.tsx`, gsap) shows the plan cards (SVG data-URIs from
+  `marketing/planCards.ts`, all features, prices follow the ₹/$ + month/year
+  toggles), bidirectionally synced, ONE Get Started CTA follows the selection.
+  Wheel over the carousel advances EXACTLY one plan per scroll (tween + 250ms
+  dual gate — do not restore fractional scrolling). MOBILE (≤760px, owner
+  order): the picker is hidden and plain stacked static cards
+  (`.mk-tiers.mk-tiers-mobile` in PricingPage) show instead — no wheel, no
+  carousel animation on phones. FlexCarousel/ogl were tried and removed —
+  don't re-add.
 - Webmail: `POST/GET /api/webmail/*` — IMAP client over connected mailboxes
   (accounts/folders/messages/read/send/mark). Read pane = sandboxed iframe +
   CSP `img-src 'none'` (anti tracking-pixel). Replies thread via `message_id`.

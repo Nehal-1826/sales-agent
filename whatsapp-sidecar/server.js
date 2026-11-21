@@ -41,7 +41,9 @@ create({
   authTimeout: 0,
   useChrome: !!process.env.CHROME_PATH,
   executablePath: process.env.CHROME_PATH || undefined,
-  // the container runs as root — Chromium refuses to launch without these
+  // the container runs as root — Chromium refuses to launch without --no-sandbox,
+  // and open-wa strips "dangerous" args unless explicitly allowed
+  allowDangerousBrowserArgs: true,
   browserArgs: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
   licenseKey: LICENSE_KEY,
   disableSpins: true,

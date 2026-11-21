@@ -137,6 +137,19 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   Platform admin requires `role='admin'|'owner'` OR `is_superuser=True` AND
   `is_staff=True` on the Django user, plus a satisfied `PlatformSession` (OTP).
 - FastAPI docs (`/docs`) are disabled outside dev environments.
+- WhatsApp sidecar IS deployed on the VPS (`warmpulse-whatsapp`, compose service,
+  open-wa ^5.11 on node:22 + system chromium; `.env WHATSAPP_SIDECAR_SECRET`
+  must equal the workspace's `AppSettings.whatsapp_secret`). Two open-wa 5
+  landmines fixed in the image: `transport/assets` must resolve from CWD
+  (symlinked into /app) and chromium runs via the `/usr/local/bin/chromium-clean`
+  wrapper — open-wa 5 passes its default flags as one quoted string (kills
+  chromium with "Multiple targets") and create() drops browserArgs, so the
+  wrapper de-quotes AND injects --no-sandbox. Link a phone: Settings →
+  WhatsApp → scan (Linked Devices → Link a Device).
+- `provision_workspace(slug)` (core/workspaces.py) seeds the 4 AgentConfig
+  rows + AppSettings idempotently — a workspace missing them 404s
+  `/api/agents/<key>/config/` ("agent config missing — run seed_demo").
+  Run it whenever a workspace appears without agent configs.
 - Shared cache: `settings.CACHES` = RedisCache when `REDIS_URL` is set (compose
   wires `redis://redis:6379/1` into django + django-worker; FastAPI owns db 0),
   locmem locally. DRF throttles + cache cooldowns MUST share this — per-worker

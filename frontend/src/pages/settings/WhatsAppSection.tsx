@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { toast } from '../../components/feedback';
 import { Field, Toggle } from '../../components/ui';
+import { QRCodeSVG } from 'qrcode.react';
 import { getWhatsAppQr, getWhatsAppStatus, putSettings, testWhatsApp } from '../../lib/api';
 import type { SettingsState, WhatsAppConfig, WhatsAppStatus } from '../../lib/types';
 import { SaveBar, useSectionForm } from './useSectionForm';
@@ -104,7 +105,15 @@ export function WhatsAppSection({ settings, onSaved }: { settings: SettingsState
       )}
       {qr && (
         <div>
-          <img className="wa-qr" src={qr} alt="WhatsApp login QR code" />
+          {/* open-wa 5 hands us the wa.me deep-link STRING, not a PNG — render
+              it as a real QR; older data-URL payloads still work via <img> */}
+          {qr.startsWith('data:') ? (
+            <img className="wa-qr" src={qr} alt="WhatsApp login QR code" />
+          ) : (
+            <div className="wa-qr tfa-qr-box" style={{ background: '#fff', padding: 12, width: 208 }}>
+              <QRCodeSVG value={qr} size={184} level="M" marginSize={0} />
+            </div>
+          )}
           <small className="muted">
             On the phone: WhatsApp → Settings → Linked devices → Link a device, then scan this code.
           </small>

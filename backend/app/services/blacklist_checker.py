@@ -229,12 +229,29 @@ def _redis_or_none():
     return _redis_client
 
 
+def _is_connection_error(exc: BaseException) -> bool:
+    """Connection/timeout-class failure (server unreachable) vs a data error
+    from a healthy server (e.g. json.JSONDecodeError on a corrupt cached
+    value). Only the former justifies the down-latch."""
+    if isinstance(exc, (ConnectionError, TimeoutError, OSError)):
+        return True
+    try:
+        from redis.exceptions import ConnectionError as RConnErr, TimeoutError as RTimeoutErr
+    except Exception:  # noqa: BLE001 — redis not installed; builtin classes decided above
+        return False
+    return isinstance(exc, (RConnErr, RTimeoutErr))
+
+
 def _mark_redis_down(exc: BaseException) -> None:
     """Drop the client and stop retrying for one latch window (connection
     errors mean the server is gone — retrying on every request just re-pays
-    the connect timeout on the event loop)."""
+    the connect timeout on the event loop). Data errors (corrupt cached
+    value, decode failure) mean Redis is healthy: treat as a cache miss and
+    keep using the client — no latch, no reconnect."""
     global _redis_client, _redis_down_until
     logger.debug("blacklist cache redis error: %s", exc)
+    if not _is_connection_error(exc):
+        return
     _redis_client = None
     _redis_down_until = time.monotonic() + _REDIS_DOWN_LATCH_S
 

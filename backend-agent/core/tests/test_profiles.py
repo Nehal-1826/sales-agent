@@ -13,6 +13,7 @@ Proves the behaviours this change shipped:
 """
 
 from core.tests.base import TenantTestCase
+from django.test import SimpleTestCase
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
@@ -278,3 +279,96 @@ class AgencyDraftTests(TenantTestCase):
         self.assertNotEqual(subject, '')
         self.assertIn('SaaS', body)
         self.assertIn('Fundly', body)
+
+
+class OurServicesTextTests(SimpleTestCase):
+    """icp.our_services_text — the three identity tiers. A workspace that
+    configured its services gets them verbatim; an unconfigured WEB seller
+    falls back to this product's default SaaS persona; an unconfigured
+    NON-web workspace gets the neutral 'our services' placeholder — never
+    the operator's SaaS list (the persona-leak class, third recurrence)."""
+
+    def test_configured_services_verbatim(self):
+        s = Settings(company_name='ToothTool Supply',
+                     services=['Dental equipment supply', 'Chair servicing'])
+        self.assertEqual(icp.our_services_text(s),
+                         'Dental equipment supply, Chair servicing')
+
+    def test_unconfigured_web_seller_gets_default_saas_persona(self):
+        # empty profile → vertical() defaults to web_services (this product's
+        # default seller) → the built-in SaaS descriptor is the fallback
+        s = Settings(company_name='', company_website='',
+                     company_description='', services=[])
+        self.assertEqual(icp.our_services_text(s),
+                         'custom SaaS platform & mobile app engineering')
+        # a self-declared web seller with no services list gets it too
+        s2 = Settings(company_name='Acme Web Studio', services=[])
+        self.assertEqual(icp.our_services_text(s2),
+                         'custom SaaS platform & mobile app engineering')
+
+    def test_unconfigured_non_web_seller_gets_neutral_placeholder(self):
+        s = Settings(company_name='ToothTool Supply',
+                     company_description='dental equipment', services=[])
+        self.assertEqual(icp.our_services_text(s), 'our services')
+
+
+# Pitch markers ONLY the web_services (SaaS campaign) branches of _draft_email
+# emit — a non-web workspace must never be pitched with them.
+_SAAS_PERSONA_MARKERS = ('saas', 'custom saas', 'marketplace', 'mvp',
+                         '8–14 weeks', 'ip handover', 'platform')
+
+
+class NonWebPersonaDraftTests(TenantTestCase):
+    """Regression (third persona-leak recurrence): a workspace whose services
+    are NOT web/software must never be drafted with the operator's SaaS
+    campaign — only its own services/company, and always a full subject+body."""
+
+    workspace_slug = 'dental'  # fresh workspace — no seeded Shailog rows to clash with
+
+    def setUp(self):
+        s = AppSettings.load()
+        s.company_name = 'ToothTool Supply Co'
+        s.company_website = 'https://toothtool.example'
+        s.company_description = 'Dental equipment supply and servicing'
+        s.services = ['Dental equipment supply', 'Clinic chair servicing']
+        s.shipped_work = ''
+        s.icp_mode = 'buyer'
+        s.ai_key = ''  # keyless — the built-in fallback is what we assert on
+        s.save()
+        EmailTemplate.objects.all().delete()  # no user template → built-in path
+        self.settings_obj = s
+        self.lead = Lead.objects.create(
+            company='BrightSmile Dental', industry='dental clinic',
+            website='brightsmile.example', has_website=True,
+            contact_email='hi@brightsmile.example',
+            description='Neighbourhood dental clinic.',
+            findings=[])
+
+    def assertNoSaasPersona(self, subject, body):
+        for marker in _SAAS_PERSONA_MARKERS:
+            self.assertNotIn(marker, subject.lower(),
+                             f'SaaS persona marker {marker!r} leaked into subject')
+            self.assertNotIn(marker, body.lower(),
+                             f'SaaS persona marker {marker!r} leaked into body')
+
+    def test_non_web_services_draft_is_own_services_not_saas_campaign(self):
+        subject, body, used_llm = _draft_email(self.lead)
+        self.assertFalse(used_llm)
+        self.assertNotEqual(subject, '')            # a full draft, never empty
+        self.assertTrue(body.strip())
+        self.assertIn('BrightSmile Dental', body)   # addressed to the lead
+        self.assertIn('Dental equipment supply', body)  # the workspace's OWN services
+        self.assertNoSaasPersona(subject, body)
+
+    def test_empty_services_draft_still_full_and_neutral(self):
+        """Services entirely unconfigured → generic neutral branch: full
+        subject+body, still no SaaS campaign phrasing."""
+        self.settings_obj.services = []
+        self.settings_obj.save()
+        subject, body, used_llm = _draft_email(self.lead)
+        self.assertFalse(used_llm)
+        self.assertNotEqual(subject, '')
+        self.assertTrue(body.strip())
+        self.assertIn('BrightSmile Dental', body)
+        self.assertNotIn('Dental equipment supply', body)  # nothing invented
+        self.assertNoSaasPersona(subject, body)

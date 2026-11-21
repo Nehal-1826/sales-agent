@@ -11,6 +11,6 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@open-wa/wa-automate": "^4.76.0"
+    "@open-wa/wa-automate": "^5.11.0"
   }
 }

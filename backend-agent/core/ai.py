@@ -114,6 +114,10 @@ def llm_complete(prompt, system='', model='', timeout=45, temperature=0.7):
         return None
     if not settings.ai_key and provider not in LOCAL_PROVIDERS:
         return None
+    # local CPU inference: the first call after idle pays a model load (~90s
+    # for a 1.4GB model on 2 cores) — never let a remote-shaped timeout kill it
+    if provider in LOCAL_PROVIDERS:
+        timeout = max(timeout, 180)
     base = provider_base_url(provider)
     body = {
         'model': model_for(provider, model),

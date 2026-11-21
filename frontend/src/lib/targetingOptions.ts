@@ -27,4 +27,4 @@ export const AGENCY_INDUSTRY_SUGGESTIONS = [
 ];
 
 /** Providers our backend can route to (Anthropic needs the official SDK — not offered). */
-export const AI_PROVIDERS = ['Gemini', 'OpenAI', 'Zhipu (GLM)', 'DeepSeek', 'Groq', 'Mistral', 'Ollama'];
+export const AI_PROVIDERS = ['Gemini', 'Qwen (DashScope)', 'OpenAI', 'Zhipu (GLM)', 'DeepSeek', 'Groq', 'Mistral', 'Ollama'];

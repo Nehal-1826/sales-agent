@@ -39,6 +39,13 @@ class RoutingTests(TenantTestCase):
         self.assertEqual(ai.resolve_provider('OpenAI'), 'openai')
         self.assertEqual(ai.resolve_provider('Zhipu (GLM)'), 'glm')
         self.assertEqual(ai.resolve_provider('Google AI'), 'google')
+        self.assertEqual(ai.resolve_provider('Qwen (DashScope)'), 'qwen')
+        self.assertEqual(ai.resolve_provider('dashscope'), 'dashscope')
+        self.assertTrue(
+            ai.provider_base_url('Qwen').startswith('https://dashscope-intl'))
+        self.assertEqual(ai.model_for('qwen', 'qwen3-1.7b'), 'qwen3-1.7b')
+        # a foreign model id falls back to the Qwen default, never leaks to another provider
+        self.assertEqual(ai.model_for('qwen', 'GLM-4.6'), 'qwen3-1.7b')
 
     def test_known_provider_available(self):
         self._settings('Gemini')

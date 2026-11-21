@@ -26,6 +26,9 @@ PROVIDER_BASE_URLS = {
     # Gemini's OpenAI-compatible dialect ('gemini' and 'Google AI' both match)
     'gemini': 'https://generativelanguage.googleapis.com/v1beta/openai',
     'google': 'https://generativelanguage.googleapis.com/v1beta/openai',
+    # Alibaba Qwen via DashScope's OpenAI-compatible endpoint (intl)
+    'qwen': 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+    'dashscope': 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
     'ollama': 'http://localhost:11434/v1',
 }
 
@@ -39,6 +42,8 @@ DEFAULT_MODELS = {
     # free-tier Gemini throttles the bigger flash/pro tiers; the lite alias is the reliable default
     'gemini': 'gemini-flash-lite-latest',
     'google': 'gemini-flash-lite-latest',
+    'qwen': 'qwen3-1.7b',
+    'dashscope': 'qwen3-1.7b',
     'ollama': 'llama3.1',
 }
 
@@ -50,6 +55,7 @@ MODEL_FAMILIES = {
     'deepseek': ('deepseek',),
     'mistral': ('mistral', 'open-mistral', 'codestral', 'ministral', 'pixtral'),
     'gemini': ('gemini',), 'google': ('gemini',),
+    'qwen': ('qwen',), 'dashscope': ('qwen',),
     'groq': (), 'ollama': (),   # host many families — accept whatever is set
 }
 

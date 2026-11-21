@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { TagInput } from '../../components/TagInput';
 import { Field } from '../../components/ui';
-import { putSettings } from '../../lib/api';
+import { putSettings, scrapeCompanyDetails } from '../../lib/api';
 import type { CompanyProfile, SettingsState } from '../../lib/types';
 import { SaveBar, useSectionForm } from './useSectionForm';
 
@@ -13,6 +14,22 @@ export function BusinessSection({ settings, onSaved }: { settings: SettingsState
   });
   const c = form.value;
   const set = (patch: Partial<CompanyProfile>) => form.setValue({ ...c, ...patch });
+  const [fetching, setFetching] = useState(false);
+  const [fetchError, setFetchError] = useState('');
+
+  /** Read the website and auto-fill name + description from its homepage. */
+  const fetchDetails = async () => {
+    if (fetching || !c.website.trim()) return;
+    setFetching(true);
+    setFetchError('');
+    const res = await scrapeCompanyDetails(c.website.trim());
+    setFetching(false);
+    if (!res.ok) {
+      setFetchError(res.error || "Couldn't read that website — check the address and try again.");
+      return;
+    }
+    set({ name: res.data.name || c.name, description: res.data.description || c.description });
+  };
 
   return (
     <section className="panel settings-panel" aria-labelledby="sec-business">
@@ -27,12 +44,31 @@ export function BusinessSection({ settings, onSaved }: { settings: SettingsState
           <input value={c.name} onChange={(e) => set({ name: e.target.value })} autoComplete="organization" />
         </Field>
         <Field label="Website">
-          <input
-            value={c.website}
-            onChange={(e) => set({ website: e.target.value })}
-            placeholder="yourcompany.com"
-            inputMode="url"
-          />
+          <span className="input-with-action">
+            <input
+              value={c.website}
+              onChange={(e) => set({ website: e.target.value })}
+              placeholder="yourcompany.com"
+              inputMode="url"
+            />
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={fetching || !c.website.trim()}
+              onClick={() => void fetchDetails()}
+              aria-label="Fetch company details from the website"
+              title="Read this website and auto-fill the details"
+            >
+              {fetching ? 'Fetching…' : 'Fetch'}
+            </button>
+          </span>
+          {fetchError ? (
+            <small className="field-hint" role="alert" style={{ color: 'var(--accent-strong)' }}>
+              {fetchError}
+            </small>
+          ) : (
+            <small className="field-hint">Fetch reads the site and fills the name + description below.</small>
+          )}
         </Field>
       </div>
       <Field label="What you do" hint="Two or three sentences, the way you'd describe it to a customer.">

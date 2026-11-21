@@ -227,13 +227,21 @@ export function OptionWheel({
     const el = rootRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
       const cfg = cfgRef.current;
       if (!cfg) return;
       const delta = e.deltaMode === 1 ? e.deltaY * 24 : e.deltaY;
       // Cap each event at one step so notchy mouse wheels move exactly one
       // option per click, while touchpads still scroll continuously.
       const step = Math.max(-1, Math.min(1, delta / cfg.rowH));
+      // at the ends (no loop) a scroll past the first/last option is released
+      // to the page instead of trapped
+      if (!cfg.loop) {
+        const dir = Math.sign(step);
+        if ((dir > 0 && targetRef.current >= cfg.count - 1) || (dir < 0 && targetRef.current <= 0)) {
+          return;
+        }
+      }
+      e.preventDefault();
       applyTarget(targetRef.current + step, false);
       if (wheelTimerRef.current) clearTimeout(wheelTimerRef.current);
       wheelTimerRef.current = window.setTimeout(() => applyTarget(targetRef.current, true), 140);

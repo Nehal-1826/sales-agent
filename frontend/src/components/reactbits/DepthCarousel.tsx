@@ -274,13 +274,22 @@ export default function DepthCarousel({
     if (!el) return;
     // Strict one-card-per-scroll (see header): advance only when no tween is
     // running and >=250ms passed since the last advance; everything else is
-    // swallowed so momentum can't machine-gun through the plans.
+    // swallowed so momentum can't machine-gun through the plans. At the ends
+    // (no loop) a scroll that would go PAST the first/last card is released to
+    // the page instead of trapped — otherwise the visitor is stuck on the
+    // carousel with no way to scroll past the section.
     const onWheel = (e: WheelEvent) => {
       const cfg = cfgRef.current;
       if (!cfg || cfg.count < 2) return;
-      e.preventDefault();
       const raw = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
       if (!raw) return;
+      if (!cfg.loop) {
+        const dir = Math.sign(raw);
+        if ((dir > 0 && focusRef.current >= cfg.count - 1) || (dir < 0 && focusRef.current <= 0)) {
+          return; // past the end — let the page scroll (no preventDefault)
+        }
+      }
+      e.preventDefault();
       const now = performance.now();
       if (tweenRef.current && tweenRef.current.isActive()) return;
       if (now - lastWheelAtRef.current < 250) return;

@@ -132,6 +132,9 @@ def _llm_reply(text, turn=0):
     system = (cfg.system_prompt if cfg and cfg.system_prompt else
               'You are the Responder — the friendly chat assistant of the '
               f'{settings.company_name or "the workspace"} marketing & sales team.')
+    # a seeded template placeholder must never leak into a reply — small
+    # models quote it verbatim ("I'm [Your Name]")
+    system = system.replace('[Your Name]', settings.company_name or 'the team')
     negative = cfg.negative_prompt if cfg else ''
 
     style = (

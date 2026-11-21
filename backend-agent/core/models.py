@@ -545,9 +545,15 @@ class AppSettings(TenantOwned, Timestamped):
     # hit triggers an email alert to the report_email (throttled 1/5min).
     admin_slug = models.CharField(max_length=6, blank=True, db_index=True)
 
-    # Frequent Runs
-    runs_enabled = models.BooleanField(default=True)
+    # Frequent Runs — OFF until the first-login setup wizard completes
+    # (onboarding flips it on); a brand-new workspace must never start
+    # scraping leads before its owner has configured anything
+    runs_enabled = models.BooleanField(default=False)
     run_frequency = models.CharField(max_length=10, choices=Frequencies.choices, default=Frequencies.EVERY_1H)
+    # OUR SHIPPED WORK — the credibility block for agency-mode outreach.
+    # PER-WORKSPACE on purpose: one tenant's portfolio must never leak into
+    # another tenant's drafts (blank = the prompt omits the block entirely)
+    shipped_work = models.TextField(blank=True, default='')
     # Single-cycle run lock (core.runlock) — set while a cycle runs anywhere
     # (API, chat or worker); a value older than runlock.STALE_AFTER is a crash
     pipeline_running_since = models.DateTimeField(null=True, blank=True)

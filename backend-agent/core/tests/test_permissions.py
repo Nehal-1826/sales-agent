@@ -26,7 +26,8 @@ class RolePermissionTests(TenantTestCase):
         self.admin = User.objects.create_user(workspace=self.workspace, username='adm', password='pass12345', role='admin')
         s = AppSettings.load()
         s.report_email = 'boss@shailog.com'
-        s.save(update_fields=['report_email'])
+        s.runs_enabled = True   # new workspaces are born paused; tests opt in
+        s.save(update_fields=['report_email', 'runs_enabled'])
         self.profile = SearchProfile.objects.create(name='Owner private profile')
         self.tpl = EmailTemplate.objects.create(name='T', subject='s', body='b')
         AgentConfig.objects.get_or_create(agent='copywright')

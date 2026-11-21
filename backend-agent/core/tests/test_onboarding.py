@@ -539,3 +539,33 @@ class IcpStepTests(TenantTestCase):
         self.assertEqual(STEP_KEYS,
                          ['company', 'services', 'website', 'target', 'countries',
                           'icp', 'ai_key', 'email'])
+
+
+class RunsGateTests(TenantTestCase):
+    """New workspaces are born PAUSED; completing (or skipping) the setup
+    wizard is what turns the autopilot on — nothing scrapes leads before
+    the owner has configured the workspace."""
+
+    def setUp(self):
+        from billing.tests.test_entitlements import make_ws
+        self.u = User.objects.create_user(username='gate-owner', password='pw123456',
+                                          role='owner', workspace=make_ws('gate-co'))
+
+    def test_new_workspace_runs_paused(self):
+        from core.tenancy import workspace_context
+        with workspace_context(self.u.workspace):
+            self.assertFalse(AppSettings.load().runs_enabled)
+
+    def test_onboarding_done_enables_runs(self):
+        from core.onboarding import _save_state
+        from core.tenancy import workspace_context
+        with workspace_context(self.u.workspace):
+            _save_state(self.u, done=True)
+            self.assertTrue(AppSettings.load().runs_enabled)
+
+    def test_partial_setup_keeps_runs_paused(self):
+        from core.onboarding import _save_state
+        from core.tenancy import workspace_context
+        with workspace_context(self.u.workspace):
+            _save_state(self.u, started=True, step='company')   # mid-wizard
+            self.assertFalse(AppSettings.load().runs_enabled)

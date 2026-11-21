@@ -6,7 +6,7 @@ from django.core.management import call_command
 from core.tests.base import TenantTestCase
 
 from core.management.commands import run_worker
-from core.models import Workspace
+from core.models import AppSettings, Workspace
 from core.pipeline import PipelineBusy
 
 MODULE = 'core.management.commands.run_worker'
@@ -33,6 +33,11 @@ class WorkerLoopTests(TenantTestCase):
     def setUp(self):
         # the worker loops over every ACTIVE workspace; keep only this test's
         Workspace.all_tenants.exclude(pk=self.workspace.pk).update(is_active=False)
+        # new workspaces are born PAUSED (setup gate) — these tests drive the
+        # loop, so opt this workspace in
+        s = AppSettings.load()
+        s.runs_enabled = True
+        s.save(update_fields=['runs_enabled'])
 
     def run_ticks(self, ticks, run_pipeline):
         out, err = StringIO(), StringIO()

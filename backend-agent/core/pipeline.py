@@ -291,13 +291,28 @@ def _default_template():
 TEMPLATE_VARS = ('company', 'industry', 'website', 'description',
                  'findings', 'sender_name', 'sender_website', 'services')
 
-# Real shipped products — the credibility block for partnership outreach
-# (agency mode).  Keep verbatim; these are live URLs we stand behind.
-SHIPPED_WORK = (
-    '- julex.shop — full e-commerce build\n'
-    '- ijrnexus.com — academic journal publishing platform\n'
-    '- sashainfinity.com — custom web platform\n'
-    '- TaraLash Academy — beauty & education platform')
+# Shipped-work credibility blocks for outreach — PER-WORKSPACE via
+# AppSettings.shipped_work (Settings): one tenant's portfolio must never
+# appear in another tenant's drafts, so a blank field omits the block
+# entirely (no cross-tenant default).
+
+
+def _shipped_work_block(settings):
+    """The credibility block for the outreach PROMPT — the workspace's own
+    shipped-work list, or nothing when unconfigured."""
+    work = (getattr(settings, 'shipped_work', '') or '').strip()
+    if not work:
+        return ''
+    return f'OUR SHIPPED WORK (use at most two, verbatim):\n{work}\n'
+
+
+def _shipped_work_lines(settings):
+    """'Recent things we've shipped:' body lines — blank when the workspace
+    has no portfolio configured (never another company's list)."""
+    work = (getattr(settings, 'shipped_work', '') or '').strip()
+    if not work:
+        return ''
+    return f'Recent things we\'ve shipped:\n{work}\n\n'
 
 
 def _fill_template(text, lead, settings, top_findings):
@@ -364,7 +379,7 @@ def _draft_email(lead):
                 f'GOAL: win PROJECT PARTNERSHIP — the prospect is a boutique agency / software '
                 f'shop that could hand us builds (overflow work, white-label, outside their stack). '
                 f'This is a peer-to-peer pitch.\n'
-                f'OUR SHIPPED WORK (use at most two, verbatim):\n{SHIPPED_WORK}\n'
+                f'{_shipped_work_block(settings)}'
                 f'OUR TERMS: MVPs in 8–14 weeks, fixed quotes and timelines, full IP handover — '
                 f'their client stays theirs. Offer a small paid pilot as proof.\n'
                 f'Rules: reference what they do; offer partnership + pilot; one clear ask '
@@ -378,7 +393,7 @@ def _draft_email(lead):
                 f'portal or mobile app) instead of renting generic tools. We are senior '
                 f'product engineers, NOT a website/SEO shop: NEVER mention website flaws, '
                 f'SEO, meta tags, performance or design critiques — talk products, not pages.\n'
-                f'OUR SHIPPED WORK (use at most two, verbatim):\n{SHIPPED_WORK}\n'
+                f'{_shipped_work_block(settings)}'
                 f'OUR TERMS: fixed quote and timeline, MVP live in 8–14 weeks, full IP '
                 f'handover — the client owns the code and the repo.\n'
                 f'Rules: open with something true about THEIR business (from what they do); '
@@ -426,7 +441,7 @@ def _draft_email(lead):
                 f'Hi {lead.company} team,\n\n'
                 f'We\'re {our_name} — we build SaaS platforms, web apps, and mobile apps, '
                 f'and we\'re looking to partner with agencies like yours on project work.\n\n'
-                f'Recent things we\'ve shipped:\n{SHIPPED_WORK}\n\n'
+                f'{_shipped_work_lines(settings)}'
                 f'MVPs and full builds go live in 8–14 weeks, with fixed quotes, fixed '
                 f'timelines, and full IP handover — your client stays yours.\n\n'
                 f'The ask: if you have a project coming up — overflow work, a build outside '
@@ -442,11 +457,11 @@ def _draft_email(lead):
             subject = f'A platform for {lead.company} — live in 8–14 weeks'
             body = (
                 f'Hi {lead.company} team,\n\n'
-                f'I\'m {our_name} from Shailog — we build custom SaaS platforms, marketplaces '
+                f'I\'m {our_name} — we build custom SaaS platforms, marketplaces '
                 f'and mobile apps for businesses. You bring the domain expertise'
                 f'{" in " + lead.industry if lead.industry else ""}, we own the engineering '
                 f'end-to-end.\n\n'
-                f'Recent things we\'ve shipped:\n{SHIPPED_WORK}\n\n'
+                f'{_shipped_work_lines(settings)}'
                 f'How we work: fixed quote and timeline, MVP live in 8–14 weeks, full IP '
                 f'handover — you own the code and the repo.\n\n'
                 f'The ask: if there\'s a platform or internal tool you keep wishing existed — '
@@ -458,11 +473,11 @@ def _draft_email(lead):
             subject = f'The software {lead.company} deserves — built in 8–14 weeks'
             body = (
                 f'Hi {lead.company} team,\n\n'
-                f'I\'m {our_name} from Shailog. We build custom SaaS platforms and mobile '
+                f'I\'m {our_name}. We build custom SaaS platforms and mobile '
                 f'apps for {"businesses in " + lead.industry if lead.industry else "businesses"} '
                 f'— the booking system, client portal or ops platform that off-the-shelf tools '
                 f'never quite cover. You run the business, we run the engineering.\n\n'
-                f'Recent things we\'ve shipped:\n{SHIPPED_WORK}\n\n'
+                f'{_shipped_work_lines(settings)}'
                 f'Fixed quote, fixed timeline, MVP live in 8–14 weeks — and you own the code '
                 f'outright.\n\n'
                 f'If digitizing {"how " + lead.company + " operates" if lead.company else "your operations"} '

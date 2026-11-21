@@ -320,7 +320,7 @@ def branded_email_html(content_html, s=None, unsubscribe=None):
     else:  # no logo file — fall back to a text wordmark so the header still brands
         brand = (f'<span style="font-family:Arial,Helvetica,sans-serif;font-size:18px;'
                  f'font-weight:bold;color:#ffffff;letter-spacing:2px">{html_lib.escape(name).upper()}</span>')
-    company = html_lib.escape(s.company_name) if s.company_name else 'Shailog Technologies'
+    company = html_lib.escape(s.company_name) if s.company_name else 'WarmPulse'
     footer = f'A {company} product · autonomous sales pipeline'
     if unsubscribe:
         who = ', '.join(html_lib.escape(p) for p in (s.company_name, s.company_address) if p)

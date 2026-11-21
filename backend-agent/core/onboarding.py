@@ -115,6 +115,12 @@ def _save_state(user, **patch):
     state.update(patch)
     user.onboarding = state
     user.save(update_fields=['onboarding'])
+    # setup finished → the workspace's autopilot may start running (new
+    # workspaces are born PAUSED so nothing scrapes before configuration).
+    # get_or_create first: a fresh workspace may have no settings row yet.
+    if patch.get('done') and getattr(user, 'workspace_id', None):
+        AppSettings.all_tenants.get_or_create(workspace_id=user.workspace_id)
+        AppSettings.all_tenants.filter(workspace_id=user.workspace_id).update(runs_enabled=True)
     return state
 
 

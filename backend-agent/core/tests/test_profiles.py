@@ -195,6 +195,10 @@ class AgencyDraftTests(TenantTestCase):
         s.company_name = 'Shailog Technologies'
         s.company_website = 'https://shailog.com'
         s.services = ['Custom SaaS & web app development', 'React Native mobile apps']
+        s.shipped_work = ('- julex.shop — full e-commerce build\n'
+                          '- ijrnexus.com — academic journal publishing platform\n'
+                          '- sashainfinity.com — custom web platform\n'
+                          '- TaraLash Academy — beauty & education platform')
         s.ai_key = ''  # keyless — the built-in fallback is what we assert on
         EmailTemplate.objects.all().delete()  # no user template → built-in path
         self.settings_obj = s
@@ -218,6 +222,18 @@ class AgencyDraftTests(TenantTestCase):
         self.assertNotIn('caught my eye', body.lower())
         self.assertNotIn('meta description', body.lower())
         self.assertNotIn('finding', body.lower())
+
+    def test_blank_shipped_work_omits_block_no_cross_tenant_leak(self):
+        """A workspace with no portfolio configured must NOT get some other
+        tenant's shipped work in its drafts (cross-tenant brand leak)."""
+        self.settings_obj.shipped_work = ''
+        self.settings_obj.company_name = 'Acme Co'   # neutral brand for the check
+        self.settings_obj.save()
+        subject, body, _ = _draft_email(self.lead)
+        self.assertNotIn('julex.shop', body)         # another tenant's portfolio
+        self.assertNotIn('Shailog', body)            # no fallback branding either
+        self.assertNotIn("we've shipped", body.lower())
+
 
     def test_buyer_mode_draft_is_saas_pitch_not_audit(self):
         """Buyer outreach = custom-SaaS pitch. Website-builder / audit language

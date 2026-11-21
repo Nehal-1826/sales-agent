@@ -321,6 +321,8 @@ class SettingsSerializer(serializers.ModelSerializer):
                 'description': instance.company_description,
                 'services': instance.services or [],
                 'address': instance.company_address,
+                # the outreach credibility block — per-workspace on purpose
+                'shippedWork': instance.shipped_work or '',
             },
             'aiKey': {
                 'provider': instance.ai_provider,
@@ -379,6 +381,8 @@ class SettingsSerializer(serializers.ModelSerializer):
         instance.company_address = str(company.get('address', instance.company_address) or '')[:300]
         if 'services' in company:
             instance.services = company.get('services') or []
+        if 'shippedWork' in company:
+            instance.shipped_work = str(company.get('shippedWork') or '')[:2000]
         instance.ai_provider = ai_key.get('provider', instance.ai_provider)
         incoming_key = ai_key.get('apiKey')
         # ignore masked / empty values so we never overwrite the stored key

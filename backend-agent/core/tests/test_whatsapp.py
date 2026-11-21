@@ -76,13 +76,14 @@ class ApprovalAndSendTests(WhatsAppBase):
         self.assertEqual(m.status, W.DRAFT)
         self.req.assert_not_called()
 
-    def test_approve_then_send_with_secret(self):
+    def test_approve_then_send_with_key(self):
         m = self.approve_and_drain(self.msg())
         self.assertEqual(m.status, W.SENT)
         _method, url = self.req.call_args.args
-        self.assertEqual(url, 'http://sidecar:8002/send')
-        self.assertEqual(self.req.call_args.kwargs['headers'][whatsapp.SECRET_HEADER], 's3cret')
-        self.assertEqual(self.req.call_args.kwargs['json'], {'to': '+919876543210', 'text': 'Hi'})
+        self.assertEqual(url, 'http://sidecar:8002/api/sessions/sales/messages/send-text')
+        self.assertEqual(self.req.call_args.kwargs['headers'][whatsapp.API_KEY_HEADER], 's3cret')
+        self.assertEqual(self.req.call_args.kwargs['json'],
+                         {'chatId': '919876543210@c.us', 'text': 'Hi'})
 
     def test_step_needs_approval_even_with_auto_approve(self):
         AppSettings.objects.update(followups_auto_approve=True)
@@ -185,10 +186,48 @@ class FallbackAndApiTests(WhatsAppBase):
         self.assertEqual(AppSettings.load().whatsapp_daily_cap, 5)
 
     def test_status_and_qr(self):
-        self.req.return_value = ok_response({'state': 'CONNECTED', 'connected': True, 'qr': 'data:x'})
+        # OpenWA session shape: GET /sessions/sales → {status}; GET …/qr → {qrCode}
+        def route(method, url, **kw):
+            assert url.endswith('/api/sessions/sales') or url.endswith('/api/sessions/sales/qr'), url
+            if url.endswith('/qr'):
+                return ok_response({'qrCode': 'data:image/png;base64,xxx', 'status': 'qr_ready'})
+            return ok_response({'name': 'sales', 'status': 'ready'})
+        self.req.side_effect = route
         c = self.api()
         self.assertTrue(c.get('/api/whatsapp/status/').json()['connected'])
-        self.assertEqual(c.get('/api/whatsapp/qr/').json()['qr'], 'data:x')
+        self.assertEqual(c.get('/api/whatsapp/qr/').json()['qr'], 'data:image/png;base64,xxx')
+
+    def test_missing_session_autocreates(self):
+        # first contact 404s → session is created + started, status stays calm
+        calls = []
+        created = {}
+
+        def route(method, url, **kw):
+            calls.append(url)
+            r = mock.MagicMock(status_code=404 if not created else 200)
+            if url.endswith('/sessions') and method == 'POST':
+                created['yes'] = True
+                r.status_code = 201
+            elif url.endswith(f'/sessions/{whatsapp.OPENWA_SESSION}/start') and method == 'POST':
+                r.status_code = 200
+            elif url.endswith(f'/sessions/{whatsapp.OPENWA_SESSION}') and method == 'GET':
+                r.status_code = 200 if created else 404
+                r.json.return_value = {'status': 'initializing'}
+            elif url.endswith('/qr'):
+                r.status_code = 200
+                r.json.return_value = {'qrCode': 'data:q', 'status': 'qr_ready'}
+            else:
+                r.status_code = 404
+            return r
+        self.req.side_effect = route
+        st = whatsapp.sidecar_status()
+        self.assertTrue(st['reachable'])
+        self.assertFalse(st['connected'])
+        self.assertIn('initializing', st['state'])
+        q = whatsapp.sidecar_qr()
+        self.assertEqual(q['qr'], 'data:q')
+        self.assertTrue(any(u.endswith('/sessions') for u in calls))          # created
+        self.assertTrue(any(u.endswith('/start') for u in calls))             # started
 
     def test_tenant_isolation(self):
         self.msg()

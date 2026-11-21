@@ -503,7 +503,7 @@ class AppSettings(TenantOwned, Timestamped):
     # every WhatsApp message needs a human approval, always
     whatsapp_enabled = models.BooleanField(default=False)
     whatsapp_sidecar_url = models.CharField(max_length=300, blank=True,
-                                            default='http://whatsapp-sidecar:8002')
+                                            default='http://openwa:2785')
     whatsapp_secret = models.CharField(max_length=300, blank=True)
     whatsapp_daily_cap = models.PositiveSmallIntegerField(default=20)
 

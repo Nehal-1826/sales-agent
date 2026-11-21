@@ -1,4 +1,4 @@
-"""WhatsApp — opt-in, via the open-wa sidecar (whatsapp-sidecar/).
+"""WhatsApp — opt-in, via the self-hosted OpenWA gateway (rmyndharis/OpenWA).
 
 Unofficial WhatsApp automation can get the number banned, so:
   * off by default (AppSettings.whatsapp_enabled);
@@ -29,7 +29,6 @@ W = WhatsAppMessage.Statuses
 TIMEOUT = 15
 JITTER_MIN, JITTER_MAX = 60, 240
 RETRY_AFTER = timedelta(minutes=10)
-SECRET_HEADER = 'X-Sidecar-Secret'
 DISABLED_ERROR = 'WhatsApp sending is turned off in Settings → WhatsApp.'
 UNREACHABLE_ERROR = 'WhatsApp helper is not reachable — will retry. Check Settings → WhatsApp.'
 
@@ -83,37 +82,66 @@ def wa_me_link(phone, text):
 
 
 # ------------------------------------------------------------------
-# Sidecar client
+# OpenWA gateway client (github.com/rmyndharis/OpenWA)
 # ------------------------------------------------------------------
 
-def _call(method, path, s=None, **kw):
+OPENWA_SESSION = 'sales'          # the one session this product drives
+API_KEY_HEADER = 'X-API-Key'
+# OpenWA session statuses; 'ready' is the only one that can send
+_CONNECTED_STATES = {'ready'}
+
+
+class _SessionMissing(SidecarError):
+    """Gateway is up but our session doesn't exist yet (first run)."""
+
+
+def _openwa(method, path, s=None, **kw):
     s = s or AppSettings.load()
     base = (s.whatsapp_sidecar_url or '').rstrip('/')
     if not base:
         raise SidecarError('No WhatsApp helper address set.')
     try:
-        resp = requests.request(method, base + path, headers={SECRET_HEADER: s.whatsapp_secret or ''},
+        resp = requests.request(method, f'{base}/api{path}',
+                                headers={API_KEY_HEADER: s.whatsapp_secret or ''},
                                 timeout=TIMEOUT, **kw)
     except requests.RequestException as exc:
         raise SidecarError(UNREACHABLE_ERROR) from exc
     if resp.status_code == 401:
-        raise SidecarError('The WhatsApp helper refused our secret — check it in Settings.')
+        raise SidecarError('The WhatsApp helper refused our key — check it in Settings.')
     try:
         data = resp.json()
     except ValueError:
         data = {}
+    if resp.status_code == 404:
+        raise _SessionMissing('session not found')
     if resp.status_code >= 400:
-        raise SidecarError((data.get('error') if isinstance(data, dict) else '') or
+        raise SidecarError((data.get('message') if isinstance(data, dict) else '') or
                            f'WhatsApp helper error ({resp.status_code}).')
     return data
+
+
+def _ensure_session(s=None):
+    """First contact creates + starts the session so a QR becomes available."""
+    try:
+        _openwa('POST', '/sessions', s, json={'name': OPENWA_SESSION})
+    except SidecarError:
+        pass                  # 409/400 = already exists — fine
+    try:
+        _openwa('POST', f'/sessions/{OPENWA_SESSION}/start', s)
+    except SidecarError:
+        pass                  # already running / starting
 
 
 def sidecar_status(s=None):
     """{'reachable', 'state', 'connected', 'error'} — never raises."""
     try:
-        data = _call('GET', '/status', s)
-        return {'reachable': True, 'state': data.get('state', ''),
-                'connected': bool(data.get('connected')), 'error': ''}
+        data = _openwa('GET', f'/sessions/{OPENWA_SESSION}', s)
+        state = data.get('status', '')
+        return {'reachable': True, 'state': state,
+                'connected': state in _CONNECTED_STATES, 'error': ''}
+    except _SessionMissing:
+        _ensure_session(s)
+        return {'reachable': True, 'state': 'initializing', 'connected': False, 'error': ''}
     except SidecarError as exc:
         return {'reachable': False, 'state': '', 'connected': False, 'error': str(exc)}
 
@@ -121,17 +149,26 @@ def sidecar_status(s=None):
 def sidecar_qr(s=None):
     """{'qr': data-url or '', 'error'} — the login QR to scan with the phone."""
     try:
-        data = _call('GET', '/qr', s)
-        return {'qr': data.get('qr') or '', 'error': ''}
+        data = _openwa('GET', f'/sessions/{OPENWA_SESSION}/qr', s)
+        return {'qr': data.get('qrCode') or '', 'error': ''}
+    except _SessionMissing:
+        _ensure_session(s)
+        try:
+            data = _openwa('GET', f'/sessions/{OPENWA_SESSION}/qr', s)
+            return {'qr': data.get('qrCode') or '', 'error': ''}
+        except SidecarError as exc:
+            return {'qr': '', 'error': str(exc)}
     except SidecarError as exc:
         return {'qr': '', 'error': str(exc)}
 
 
 def sidecar_send(to, text, s=None):
-    data = _call('POST', '/send', s, json={'to': to, 'text': text})
-    if not data.get('ok', True):
-        raise SidecarError(data.get('error') or 'WhatsApp did not accept the message.')
-    return data
+    chat = re.sub(r'\D', '', to or '')
+    if not 8 <= len(chat) <= 15:
+        raise SidecarError('Not a valid WhatsApp number.')
+    _openwa('POST', f'/sessions/{OPENWA_SESSION}/messages/send-text', s,
+            json={'chatId': f'{chat}@c.us', 'text': text})
+    return {'ok': True}
 
 
 # ------------------------------------------------------------------

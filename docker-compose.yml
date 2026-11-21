@@ -147,6 +147,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    networks:
+      - default
+      - openwa-network
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/', timeout=5)"]
       interval: 30s
@@ -176,6 +179,9 @@ services:
         condition: service_healthy
       django:
         condition: service_healthy
+    networks:
+      - default
+      - openwa-network
 
   # --- Agent frontend SPA (prerendered build served by nginx) -----------------
   frontend:
@@ -219,18 +225,6 @@ services:
       retries: 3
       start_period: 5s
 
-  # --- WhatsApp sidecar (opt-in open-wa sender; QR-scan from Settings) ------
-  whatsapp-sidecar:
-    build: ./whatsapp-sidecar
-    container_name: warmpulse-whatsapp
-    restart: unless-stopped
-    environment:
-      SIDECAR_SECRET: ${WHATSAPP_SIDECAR_SECRET}
-      PORT: 8002
-      SESSION_DIR: /data/session
-    volumes:
-      - warmpulse_whatsapp_session:/data/session
-
   # --- Local open-source LLM runtime (no online providers, no API keys) ----
   ollama:
     image: ollama/ollama:latest
@@ -244,8 +238,12 @@ services:
     volumes:
       - warmpulse_ollama_models:/root/.ollama
 
+networks:
+  openwa-network:
+    name: openwa-network
+    external: true   # created by the OpenWA gateway stack (/opt/OpenWA)
+
 volumes:
   warmpulse_pg_data:
   warmpulse_redis_data:
-  warmpulse_whatsapp_session:
   warmpulse_ollama_models:

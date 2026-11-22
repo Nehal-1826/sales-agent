@@ -259,6 +259,30 @@ export async function adminLogin(username: string, password: string): Promise<Re
   }
 }
 
+/** One-time code from the Google OAuth callback → session token (single use, 60 s). */
+export async function exchangeGoogleCode(code: string): Promise<Result<true>> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/auth/google/exchange/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return { ok: false, error: 'That Google sign-in expired — try again.' };
+    const data = (await res.json()) as { token: string };
+    authToken = data.token;
+    try {
+      localStorage.setItem(TOKEN_KEY, data.token);
+    } catch {
+      /* ignore */
+    }
+    clearWarmupToken();
+    return { ok: true, data: true };
+  } catch {
+    return { ok: false, error: "Couldn't reach your workspace. Check your connection and try again." };
+  }
+}
+
 /** Sign out: drop the token and every cached agentic-ai:* value. */
 export function logout(): void {
   // revoke on the server first — a token copied from this browser must die too

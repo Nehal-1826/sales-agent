@@ -1723,6 +1723,40 @@ input[type='radio'] {
   font-size: 15px;
 }
 
+/* "or" divider + Google button on the sign-in card */
+.login-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-3, #a8a29e);
+  font-size: 12px;
+}
+.login-or::before,
+.login-or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-soft, #292524);
+}
+.login-google {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 44px;
+  border: 1px solid var(--border-soft, #292524);
+  border-radius: 10px;
+  color: var(--text, #fafaf9);
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.login-google:hover {
+  border-color: var(--accent, #f97316);
+  background: rgba(249, 115, 22, 0.08);
+}
+
 /* website + "Fetch details" row on the signup card */
 .login-fetch {
   display: flex;

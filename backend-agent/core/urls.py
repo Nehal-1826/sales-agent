@@ -3,7 +3,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from . import company_scrape, signup, unsubscribe, views, views_sequences as vs
+from . import company_scrape, google_auth, signup, unsubscribe, views, views_sequences as vs
 
 router = DefaultRouter()
 router.register('leads', views.LeadViewSet, basename='lead')
@@ -44,6 +44,10 @@ urlpatterns = [
     path('auth/2fa/devices/<int:device_id>/', views.user_2fa_device_remove, name='user-2fa-device-remove'),
     # bridge: HS256 JWT for backend-warmup (FastAPI) — same DRF token auth
     path('auth/warmup-token/', views.warmup_token, name='warmup-token'),
+    # Google OAuth sign-in (existing users; dormant until GOOGLE_CLIENT_ID set)
+    path('auth/google/start/', google_auth.google_start, name='google-start'),
+    path('auth/google/callback/', google_auth.google_callback, name='google-callback'),
+    path('auth/google/exchange/', google_auth.google_exchange, name='google-exchange'),
     # CRM — custom lead routes BEFORE the router (else 'export' is treated as a pk)
     path('leads/export/', views.leads_export, name='leads-export'),
     path('leads/<int:lead_id>/draft_email/', views.lead_draft_email, name='lead-draft-email'),

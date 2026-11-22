@@ -326,7 +326,10 @@ def _fill_template(text, lead, settings, top_findings):
         'website': lead.website or '(no website found)',
         'description': lead.description or f'a {" ".join(lead.company.lower().split()[:2])} business',
         'findings': bullets,
-        'sender_name': settings.company_name or 'our team',
+        # user name first, the company after (owner order)
+        'sender_name': f'{_workspace_owner_name(settings)} from {settings.company_name}'.strip()
+                       if settings.company_name and _workspace_owner_name(settings)
+                       else (settings.company_name or 'our team'),
         'sender_website': settings.company_website or '',
         # vertical-aware fallback — never another tenant's (the operator's)
         # services list when this workspace hasn't configured its own
@@ -335,6 +338,21 @@ def _fill_template(text, lead, settings, top_findings):
     for var in TEMPLATE_VARS:
         text = text.replace('{{' + var + '}}', values[var])
     return text
+
+
+def _workspace_owner_name(settings):
+    """The workspace OWNER's display name (first name if set, else username)
+    — the human who signs the outreach. Empty when there is none."""
+    from .models import User
+    ws = getattr(settings, 'workspace', None) or getattr(settings, 'workspace_id', None)
+    qs = User.objects.filter(role__in=('owner', 'admin'), is_active=True)
+    if getattr(settings, 'workspace_id', None):
+        qs = qs.filter(workspace_id=settings.workspace_id)
+    u = qs.order_by('id').first()
+    if u is None:
+        return ''
+    full = (u.first_name or '').strip()
+    return full or (u.username or '').strip().split('@')[0]
 
 
 def _draft_email(lead):
@@ -349,6 +367,10 @@ def _draft_email(lead):
     settings = AppSettings.load()
     cfg = _copywright_config()
     our_name = settings.company_name or 'the team'
+    # owner's order: the USER signs first, the company after — "Devesh from
+    # Shailog Technologies", never a bare company name talking to a human
+    owner_name = _workspace_owner_name(settings)
+    our_intro = f'{owner_name} from {our_name}' if owner_name else our_name
     our_site = settings.company_website
     services = our_services_text(settings)
     # prose-safe intro clause: configured services read naturally after a dash;
@@ -483,7 +505,7 @@ def _draft_email(lead):
                 f'not a deck.\n\n'
                 f'Worth a 15-minute call next week? Or reply "send cases" and I\'ll share '
                 f'the details.\n\n'
-                f'Best,\n{our_name}\n{our_site}'
+                f'Best,\n{owner_name or our_name}\n{our_name}\n{our_site}'
             ).strip()
         elif agency:
             # non-software seller, agency mode — partnership pitch in the
@@ -499,14 +521,14 @@ def _draft_email(lead):
                 f'Happy to start small so you can judge us on real work, not a deck.\n\n'
                 f'Worth a 15-minute call next week? Or reply "send cases" and I\'ll share '
                 f'the details.\n\n'
-                f'Best,\n{our_name}\n{our_site}'
+                f'Best,\n{owner_name or our_name}\n{our_name}\n{our_site}'
             ).strip()
         elif saas_persona and lead.has_website:
             # built-in fallback — custom-SaaS pitch, personalized from their business
             subject = f'A platform for {lead.company} — live in 8–14 weeks'
             body = (
                 f'Hi {lead.company} team,\n\n'
-                f'I\'m {our_name} — we build custom SaaS platforms, marketplaces '
+                f'I\'m {our_intro} — we build custom SaaS platforms, marketplaces '
                 f'and mobile apps for businesses. You bring the domain expertise'
                 f'{" in " + lead.industry if lead.industry else ""}, we own the engineering '
                 f'end-to-end.\n\n'
@@ -516,13 +538,13 @@ def _draft_email(lead):
                 f'The ask: if there\'s a platform or internal tool you keep wishing existed — '
                 f'or an MVP you want in front of users this quarter — I\'ll put together a '
                 f'concrete build plan for {lead.company}. Worth a 15-minute call?\n\n'
-                f'Best,\n{our_name}\n{our_site}'
+                f'Best,\n{owner_name or our_name}\n{our_name}\n{our_site}'
             ).strip()
         elif saas_persona:
             subject = f'The software {lead.company} deserves — built in 8–14 weeks'
             body = (
                 f'Hi {lead.company} team,\n\n'
-                f'I\'m {our_name}. We build custom SaaS platforms and mobile '
+                f'I\'m {our_intro}. We build custom SaaS platforms and mobile '
                 f'apps for {"businesses in " + lead.industry if lead.industry else "businesses"} '
                 f'— the booking system, client portal or ops platform that off-the-shelf tools '
                 f'never quite cover. You run the business, we run the engineering.\n\n'
@@ -532,20 +554,20 @@ def _draft_email(lead):
                 f'If digitizing {"how " + lead.company + " operates" if lead.company else "your operations"} '
                 f'is on your mind this year, I\'ll draft a concrete build plan. Worth a '
                 f'15-minute call?\n\n'
-                f'Best,\n{our_name}\n{our_site}'
+                f'Best,\n{owner_name or our_name}\n{our_name}\n{our_site}'
             ).strip()
         else:
             # non-software seller — pitch the workspace's own services only
             subject = f'{our_name} × {lead.company} — a quick idea'
             body = (
                 f'Hi {lead.company} team,\n\n'
-                f'I\'m {our_name}{services_clause}.\n\n'
+                f'I\'m {our_intro}{services_clause}.\n\n'
                 f'{_shipped_work_lines(settings)}'
                 f'I\'ll keep this short: if there\'s anything in how {lead.company} operates '
                 f'that could work better with the right partner, I\'d gladly share how we\'d '
                 f'approach it.\n\n'
                 f'Worth a 15-minute call next week?\n\n'
-                f'Best,\n{our_name}\n{our_site}'
+                f'Best,\n{owner_name or our_name}\n{our_name}\n{our_site}'
             ).strip()
     return subject, body, used_llm
 

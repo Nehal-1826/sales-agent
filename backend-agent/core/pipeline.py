@@ -462,6 +462,9 @@ def _draft_email(lead):
             f'{lead.website or "NONE FOUND"}\n'
             f'{what_they_do}'
             f'WE (sender): {our_name} — {services}. Website: {our_site or "n/a"}\n'
+            f'SIGN as: {owner_name or our_name} on the first line, {our_name} below it. '
+            f'NEVER write placeholder tokens like "[Your Name]" or "[Company]" — use the '
+            f'real names in this prompt.\n'
             + (f'OUR IDEAL CLIENT (tailor the pitch to exactly this): '
                f'{settings.icp_notes[:600]}\n' if getattr(settings, 'icp_notes', '') else '')
             + f'\n'
@@ -482,6 +485,10 @@ def _draft_email(lead):
             else:
                 subject, body = '', text.strip()
             body = body.replace('```', '').strip()
+            # the local 1.7B sometimes writes template placeholders despite the
+            # prompt guard — never let them reach an approvals card
+            import re as _re
+            body = _re.sub(r'\[(?:Your Name|Name|Company|Sender)[^\]]*\]', owner_name or our_name, body)
 
     if not subject or not body:
         if template:

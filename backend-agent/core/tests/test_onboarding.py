@@ -569,3 +569,54 @@ class RunsGateTests(TenantTestCase):
         with workspace_context(self.u.workspace):
             _save_state(self.u, started=True, step='company')   # mid-wizard
             self.assertFalse(AppSettings.load().runs_enabled)
+
+
+class GenericTemplateTests(TenantTestCase):
+    """Every new workspace gets the GENERIC default email template —
+    placeholders only, filled from the workspace's OWN settings. No tenant
+    (not even the operator) has its copy baked into another's drafts."""
+
+    def test_provision_seeds_generic_default_template(self):
+        from core.workspaces import provision_workspace, GENERIC_EMAIL_TEMPLATE
+        from core.models import EmailTemplate
+        from billing.tests.test_entitlements import make_ws
+        from core.tenancy import workspace_context
+
+        ws = make_ws('generic-co')
+        provision_workspace(ws)
+        with workspace_context(ws):
+            t = EmailTemplate.objects.filter(is_default=True).first()
+            self.assertIsNotNone(t)
+            self.assertEqual(t.subject, GENERIC_EMAIL_TEMPLATE['subject'])
+            # pure placeholders — no tenant name/brand anywhere in it
+            for brand in ('Shailog', 'julex', 'ijrnexus', 'WarmPulse'):
+                self.assertNotIn(brand, t.subject + t.body)
+
+    def test_draft_uses_workspace_own_data_not_other_tenants(self):
+        """A workspace with NO company name set drafts with neutral sender
+        identity — never the operator's Shailog persona."""
+        from core.tenancy import workspace_context
+        from core.models import Lead, AppSettings
+        from core.pipeline import _draft_email
+        from billing.tests.test_entitlements import make_ws
+
+        ws = make_ws('plain-co')
+        with workspace_context(ws):
+            s = AppSettings.load()
+            s.company_name = ''            # nothing configured
+            s.shipped_work = ''
+            s.ai_key = ''                  # keyless → template path
+            s.save()
+            lead = Lead.objects.create(company='DentalCo', website='dentalco.com',
+                                       industry='dental clinics', has_website=True,
+                                       description='Family dental clinic.',
+                                       findings=[{'area': 'Website', 'issue': 'No online booking.',
+                                                  'recommendation': 'Add booking.', 'severity': 'medium'}])
+            subject, body, used_llm = _draft_email(lead)
+            self.assertFalse(used_llm)
+            self.assertIn('DentalCo', subject + body)          # the LEAD is the topic
+            self.assertNotIn('Shailog', body)                 # never another tenant
+            self.assertNotIn('julex', body)
+            # the SaaS-pitch fallback is the OPERATOR's vertical — with nothing
+            # configured the draft must pitch NOTHING specific instead
+            self.assertNotIn('custom SaaS platforms, marketplaces', body)

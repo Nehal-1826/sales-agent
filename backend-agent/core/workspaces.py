@@ -70,12 +70,35 @@ AGENT_DEFAULTS = {
 }
 
 
+GENERIC_EMAIL_TEMPLATE = {
+    'name': 'First touch (generic)',
+    'subject': 'Quick idea for {{company}}',
+    'body': (
+        'Hi {{company}} team,\n\n'
+        'I came across {{website}} while looking at {{industry}} businesses. '
+        "I'm with {{sender_name}} — we work on {{services}}.\n\n"
+        'Reading your site, a couple of things stood out:\n'
+        '{{findings}}\n\n'
+        'If any of that is on your list this quarter, I can share concrete '
+        'next steps in a short call. Worth 15 minutes?\n\n'
+        'Best,\n{{sender_name}}\n{{sender_website}}'
+    ),
+    'is_default': True,
+}
+
+
 def provision_workspace(workspace):
-    """Idempotently create the 4 default AgentConfig rows + the AppSettings
-    row for `workspace`. Never overwrites rows that already exist."""
+    """Idempotently create the 4 default AgentConfig rows, the AppSettings
+    row, and the GENERIC default email template for `workspace`. Never
+    overwrites rows that already exist — the template is placeholders-only
+    ({{company}}, {{sender_name}}, …) filled from EACH workspace's own
+    settings, so no tenant's copy ever appears in another tenant's drafts."""
+    from .models import EmailTemplate
     with workspace_context(workspace):
         for agent, defaults in AGENT_DEFAULTS.items():
             AgentConfig.objects.get_or_create(agent=agent, defaults=defaults)
+        EmailTemplate.objects.get_or_create(
+            is_default=True, defaults=dict(GENERIC_EMAIL_TEMPLATE, is_default=True))
         # load() also absorbs env secrets, but only for the default tenant
         AppSettings.load()
     return workspace

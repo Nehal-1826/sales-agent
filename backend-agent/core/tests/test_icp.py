@@ -96,8 +96,11 @@ class GiftingVerticalTests(SimpleTestCase):
 
 
 class VerticalTests(SimpleTestCase):
-    def test_empty_profile_defaults_to_web_seller(self):
-        self.assertEqual(icp.vertical(Settings()), 'web_services')
+    def test_empty_profile_stays_generic(self):
+        """Unconfigured ≠ the operator's vertical — a tenant product must
+        never assume any company's business when nothing is set."""
+        self.assertEqual(icp.vertical(Settings()), 'generic')
+
 
     def test_web_seller_signals(self):
         for services in (['web design'], ['SEO'], ['digital marketing'],

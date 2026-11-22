@@ -152,7 +152,7 @@ def vertical(settings):
         getattr(settings, 'company_description', '') or '',
     ]))
     if not hay.strip():
-        return 'web_services'
+        return 'generic'   # unconfigured ≠ web-services: never assume the operator's vertical
     if GIFTING_SELLER_SIGNALS.search(hay):
         return 'corporate_gifting'
     return 'web_services' if WEB_SELLER_SIGNALS.search(hay) else 'generic'

@@ -294,17 +294,11 @@ class OurServicesTextTests(SimpleTestCase):
         self.assertEqual(icp.our_services_text(s),
                          'Dental equipment supply, Chair servicing')
 
-    def test_unconfigured_web_seller_gets_default_saas_persona(self):
-        # empty profile → vertical() defaults to web_services (this product's
-        # default seller) → the built-in SaaS descriptor is the fallback
-        s = Settings(company_name='', company_website='',
-                     company_description='', services=[])
-        self.assertEqual(icp.our_services_text(s),
-                         'custom SaaS platform & mobile app engineering')
-        # a self-declared web seller with no services list gets it too
-        s2 = Settings(company_name='Acme Web Studio', services=[])
-        self.assertEqual(icp.our_services_text(s2),
-                         'custom SaaS platform & mobile app engineering')
+    def test_unconfigured_stays_generic_no_operator_persona(self):
+        """No services configured → neutral 'our services' — never the
+        operator's SaaS copy (cross-tenant persona leak)."""
+        s = Settings(company_name='', services=[])
+        self.assertEqual(icp.our_services_text(s), 'our services')
 
     def test_unconfigured_non_web_seller_gets_neutral_placeholder(self):
         s = Settings(company_name='ToothTool Supply',

@@ -198,4 +198,4 @@ export interface CompanyScrapeDetails {
 
 export const scrapeCompanyDetails = async (url: string): Promise<Result<CompanyScrapeDetails>> =>
   (await inDemo()) ? demoFail<CompanyScrapeDetails>() : attempt(() =>
-    request<CompanyScrapeDetails>('/company/scrape/', post({ url })));
+    request<CompanyScrapeDetails>('/company/scrape/', post({ url }), 30_000));

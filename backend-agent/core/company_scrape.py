@@ -266,7 +266,7 @@ def company_details(html, final_url):
                     'Reply with ONLY the comma list, nothing else.\n\n'
                     + visible[:2500],
                     system='You extract service lists. Reply with only a comma-separated list.',
-                    temperature=0, timeout=60)
+                    temperature=0, timeout=8)
                 if out and len(out) < 300 and '\n' not in out:
                     services = [s.strip(' .') for s in out.split(',') if 2 < len(s.strip()) < 60]
             except Exception:

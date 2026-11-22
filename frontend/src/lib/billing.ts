@@ -192,6 +192,7 @@ export const resendVerification = async (): Promise<Result<unknown>> =>
 export interface CompanyScrapeDetails {
   name: string;
   description: string;
+  services?: string[];
 }
 
 export const scrapeCompanyDetails = async (url: string): Promise<Result<CompanyScrapeDetails>> =>

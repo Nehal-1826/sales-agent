@@ -118,11 +118,63 @@ def fetch_public(url):
     raise BadUrl('That website redirected us too many times.')
 
 
+def _jsonld_services(soup):
+    """services from schema.org JSON-LD (Organization, LocalBusiness,
+    ProfessionalService...) — knowsAbout, makesOffer."""
+    services = []
+    import json as _json
+    for tag in soup.find_all('script', attrs={'type': 'application/ld+json'}):
+        try:
+            data = _json.loads(tag.string or '')
+        except Exception:
+            continue
+        for node in (data if isinstance(data, list) else [data]):
+            if not isinstance(node, dict):
+                continue
+            types = ' '.join(str(t).lower() for t in
+                             (node.get('@type') if isinstance(node.get('@type'), list)
+                              else [node.get('@type') or '']))
+            if not any(k in types for k in ('organization', 'business', 'service', 'store')):
+                continue
+            for ka in (node.get('knowsAbout') or []):
+                if isinstance(ka, str) and 2 < len(ka) < 60:
+                    services.append(ka.strip())
+            for offer in (node.get('makesOffer') or []):
+                item = offer.get('itemOffered') if isinstance(offer, dict) else None
+                label = (item or {}).get('name') if isinstance(item, dict) else None
+                if label and 2 < len(label) < 60:
+                    services.append(label.strip())
+    return services
+
+
+SERVICE_WORDS = re.compile(
+    r'\b(consulting|development|design|marketing|accounting|legal|repair|'
+    r'installation|maintenance|training|coaching|outsourcing|hosting|'
+    r'support|staffing|recruitment|manufacturing|logistics|printing|'
+    r'photography|catering|cleaning|plumbing|electrical|landscaping|'
+    r'real estate|insurance|healthcare|dental|clinic|education|'
+    r'e-?commerce|saas|software|web|cloud|seo|crm|erp|automation)\b', re.I)
+
+
+def _heading_services(soup, cap=6):
+    """short h2/h3 phrases that read like service lines."""
+    out = []
+    for h in soup.find_all(['h2', 'h3']):
+        text = re.sub(r'\s+', ' ', h.get_text(' ', strip=True))
+        if 3 < len(text) < 60 and SERVICE_WORDS.search(text):
+            out.append(text)
+        if len(out) >= cap:
+            break
+    return out
+
+
 def company_details(html, final_url):
-    """{name, description} from one homepage: brand from og:site_name/title
-    (pick_site_name cleans 'Home | …' style junk), registrable-domain name
-    as the fallback; description from the meta description when it is
-    meaningful, else the first excerpt of visible text (≤300 chars)."""
+    """{name, description, services} from one homepage: brand from
+    og:site_name/title (pick_site_name cleans junk), registrable-domain
+    name as the fallback; description from meta description when
+    meaningful, else the first visible excerpt; services distilled from
+    JSON-LD, service-y headings, and (when the local AI is up) a qwen
+    summary of the page text."""
     soup = BeautifulSoup(html or '', 'lxml')
 
     og_site = soup.find('meta', attrs={'property': 'og:site_name'})
@@ -136,13 +188,36 @@ def company_details(html, final_url):
 
     meta_desc = soup.find('meta', attrs={'name': 'description'})
     description = (meta_desc.get('content') or '').strip() if meta_desc else ''
-    if len(description) < 40:  # absent or too thin to be meaningful
-        for tag in soup(['script', 'style', 'noscript']):
-            tag.decompose()
-        root = soup.body if soup.body is not None else soup  # title lives in <head>
-        text = re.sub(r'\s+', ' ', root.get_text(' ', strip=True))
-        description = text[:MAX_DESCRIPTION].strip()
-    return {'name': name, 'description': description[:MAX_DESCRIPTION]}
+
+    for tag in soup(['script', 'style', 'noscript']):
+        tag.decompose()
+    root = soup.body if soup.body is not None else soup
+    visible = re.sub(r'\s+', ' ', root.get_text(' ', strip=True))
+    if len(description) < 40:
+        description = visible[:MAX_DESCRIPTION].strip()
+
+    services = _jsonld_services(soup)
+    if not services:
+        services = _heading_services(soup)
+    if len(services) < 2:
+        from .ai import llm_available, llm_complete
+        if llm_available():
+            try:
+                out = llm_complete(
+                    'From this homepage text, list exactly what the company sells/does '
+                    'as 2-5 short service phrases separated by commas (max 5 words each). '
+                    'Reply with ONLY the comma list, nothing else.\n\n'
+                    + visible[:2500],
+                    system='You extract service lists. Reply with only a comma-separated list.',
+                    temperature=0, timeout=60)
+                if out and len(out) < 300 and '\n' not in out:
+                    services = [s.strip(' .') for s in out.split(',') if 2 < len(s.strip()) < 60]
+            except Exception:
+                pass  # AI down or slow — the JSON-LD/heading list stands
+
+    return {'name': name,
+            'description': description[:MAX_DESCRIPTION],
+            'services': services[:6]}
 
 
 @api_view(['POST'])

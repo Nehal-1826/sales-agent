@@ -28,7 +28,9 @@ export function BusinessSection({ settings, onSaved }: { settings: SettingsState
       setFetchError(res.error || "Couldn't read that website — check the address and try again.");
       return;
     }
-    set({ name: res.data.name || c.name, description: res.data.description || c.description });
+    set({ name: res.data.name || c.name,
+         description: res.data.description || c.description,
+         ...(res.data.services?.length ? { services: res.data.services } : {}) });
   };
 
   return (

@@ -91,6 +91,56 @@ STEPS = [
      'hello@yourdomain.com:apppassword or "skip"'),
 ]
 
+DOMAIN_ANSWER = re.compile(
+    r'^(?:https?://)?(?:www\.)?([a-z0-9][a-z0-9-]*\.[a-z]{2,}(?:\.[a-z]{2,})?)/?$',
+    re.I)
+
+
+def _try_domain_autofill(text, settings, user, answers):
+    """The owner pasted their DOMAIN at any early step — scrape the site and
+    auto-fill company name + services + website in one shot. Returns the
+    bot's reply, or None when the answer wasn't a domain."""
+    m = DOMAIN_ANSWER.match(text.strip())
+    if not m:
+        return None
+    domain = m.group(1).lower()
+    try:
+        from .company_scrape import fetch_public, company_details, BadUrl
+        resp = fetch_public('https://' + domain)
+        details = company_details(resp.text[:1000000], resp.url)
+    except Exception:
+        details = {}
+    name = details.get('name') or name_from_domain_fallback(domain)
+    services = [s for s in (details.get('services') or []) if 2 < len(s) < 60][:5]
+    description = (details.get('description') or '')[:300]
+
+    settings.company_name = name
+    settings.company_website = domain
+    settings.company_description = description
+    if services:
+        settings.services = services
+    settings.save(update_fields=['company_name', 'company_website',
+                                 'company_description', 'services', 'updated_at'])
+    answers.update(company=name, website=domain,
+                   services=services or answers.get('services', []),
+                   description=description)
+    filled = [f'company name: {name}', f'website: {domain}']
+    if services:
+        filled.append('services: ' + ', '.join(services))
+    if description:
+        filled.append('what you do: ' + description[:120] + ('…' if len(description) > 120 else ''))
+    _save_state(user, step=3, answers=answers)   # jump past company/services/website
+    return ('I read your website and filled everything in —\n'
+            + '\n'.join(f'  • {f}' for f in filled)
+            + '\n\nYou can correct any of it later in Settings → Your business. '
+              'Now, the next question:\n\n' + _question_message(3))
+
+
+def name_from_domain_fallback(domain):
+    part = domain.split('.')[0]
+    return part.replace('-', ' ').replace('_', ' ').strip().title() or domain
+
+
 STEP_KEYS = [s[0] for s in STEPS]
 
 KEEP_RE = re.compile(r'^(keep|yes|ok|okay|fine|use it|sure)$')
@@ -460,6 +510,9 @@ def onboarding_reply(text, user, settings=None):
     if key == 'company':
         if re.match(r'^\s*(hi|hello|hey|vanakkam)\b', lowered) or text.strip().endswith('?'):
             return 'Hi! Before anything else — what should I call your company? Just the name is perfect.'
+        auto = _try_domain_autofill(text, settings, user, answers)
+        if auto:
+            return auto
         name = _clean_name(text)
         if len(name) < 2:
             return 'Hmm, I didn\'t catch a name — what should I call your company?'
@@ -480,6 +533,9 @@ def onboarding_reply(text, user, settings=None):
         return _question_message(2)
 
     if key == 'website':
+        auto = _try_domain_autofill(text, settings, user, answers)
+        if auto:
+            return auto
         domain = _parse_website(text)
         if not domain:
             return 'That doesn\'t look like a domain — try something like "yourcompany.com".'

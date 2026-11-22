@@ -620,3 +620,44 @@ class GenericTemplateTests(TenantTestCase):
             # the SaaS-pitch fallback is the OPERATOR's vertical — with nothing
             # configured the draft must pitch NOTHING specific instead
             self.assertNotIn('custom SaaS platforms, marketplaces', body)
+
+
+class DomainAutofillTests(TenantTestCase):
+    """The owner pastes their DOMAIN at the company (or website) step — the
+    wizard scrapes it, fills company/services/website/description in one
+    shot and jumps to the target step."""
+
+    def setUp(self):
+        from billing.tests.test_entitlements import make_ws
+        self.ws = make_ws('autofill-co')
+        self.u = User.objects.create_user('af-owner', password='pw123456',
+                                          role='owner', workspace=self.ws)
+        self.s = AppSettings.load()
+
+    def test_domain_at_company_step_autofills(self):
+        from unittest import mock
+        PAGE = ('<html><head><title>Zylker CRM | Sales Software</title>'
+                '<meta name="description" content="CRM software for small teams"></head>'
+                '<body><h2>CRM Consulting</h2><h2>Sales Automation</h2></body></html>')
+        with mock.patch('core.company_scrape.fetch_public',
+                        return_value=mock.Mock(status_code=200, text=PAGE, url='https://zylker.com')), \
+             mock.patch('core.company_scrape.llm_available', return_value=False, create=True):
+            from core.onboarding import onboarding_reply, onboarding_status
+            # start the wizard at step 0
+            onboarding_reply('hi', self.u)   # gets the company re-ask; wizard now started
+            reply = onboarding_reply('zylker.com', self.u)
+        self.s.refresh_from_db()
+        self.assertEqual(self.s.company_website, 'zylker.com')
+        self.assertTrue(self.s.company_name)
+        self.assertTrue(self.s.services)
+        self.assertIn('filled everything in', reply)
+        state = onboarding_status(self.u, self.s)
+        self.assertEqual(state['stepKey'], 'target', 'should jump past services+website')
+
+    def test_non_domain_answer_takes_normal_path(self):
+        from core.onboarding import onboarding_reply, onboarding_status
+        onboarding_reply('hi', self.u)
+        reply = onboarding_reply('Acme Corp', self.u)
+        self.s.refresh_from_db()
+        self.assertEqual(self.s.company_name, 'Acme Corp')
+        self.assertEqual(onboarding_status(self.u, self.s)['stepKey'], 'services')

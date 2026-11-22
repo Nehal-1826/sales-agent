@@ -66,26 +66,33 @@ class CompanyScrapeTests(TenantTestCase):
 
     # -- auth + throttle ---------------------------------------------------
 
-    def test_anonymous_can_fetch(self):
-        """The button lives on the signup form — no token exists yet (spec fix)."""
-        with mock.patch('socket.getaddrinfo', return_value=PUBLIC_DNS), \
-                mock.patch('core.company_scrape.requests.get', return_value=resp(PAGE)):
-            r = APIClient().post('/api/company/scrape/', {'url': 'acme.example'}, format='json')
-        self.assertEqual(r.status_code, 200, r.content)
-        self.assertEqual(r.json()['name'], 'Acme Rockets')
+    def test_anonymous_refused_owner_lockdown(self):
+        """Owner order: anonymous scraping DISABLED — signup autofill is off,
+        the endpoint serves signed-in accounts only."""
+        r = self.client.post('/api/company/scrape/', {'url': 'https://x.test'}, format='json')
+        self.assertIn(r.status_code, (401, 422))  # 401 no-creds; 422 read-only GET shape
 
-    def test_anonymous_hits_the_scoped_throttle(self):
-        with mock.patch.dict(CompanyScrapeThrottle.THROTTLE_RATES, {'company_scrape': '1/min'}), \
-                mock.patch('socket.getaddrinfo', return_value=PUBLIC_DNS), \
-                mock.patch('core.company_scrape.requests.get', return_value=resp(PAGE)):
-            anon = APIClient()
-            first = anon.post('/api/company/scrape/', {'url': 'acme.example'}, format='json')
-            second = anon.post('/api/company/scrape/', {'url': 'acme.example'}, format='json')
-        self.assertEqual(first.status_code, 200, first.content)
-        self.assertEqual(second.status_code, 429, second.content)
-        self.assertIn('detail', second.json())
 
-    # -- happy path -----------------------------------------------------
+    def test_authenticated_hits_the_scoped_throttle(self):
+        """Per-IP throttle still guards the endpoint for signed-in callers."""
+        from rest_framework.authtoken.models import Token
+        from billing.tests.test_entitlements import make_ws
+        from core.models import User
+        ws = make_ws('scrape-co')
+        u = User.objects.create_user('scrape-owner', password='pw123456', workspace=ws, role='owner')
+        tok = Token.objects.create(user=u).key
+        with mock.patch('socket.getaddrinfo', return_value=PUBLIC_DNS),                 mock.patch('core.company_scrape.requests.get', return_value=resp(PAGE)):
+            first = self.client.post('/api/company/scrape/', {'url': 'https://a.test'}, format='json',
+                                     HTTP_AUTHORIZATION=f'Token {tok}')
+            self.assertEqual(first.status_code, 200, first.content)
+            for i in range(12):
+                r = self.client.post('/api/company/scrape/', {'url': f'https://{i}.test'}, format='json',
+                                     HTTP_AUTHORIZATION=f'Token {tok}')
+                if r.status_code == 429:
+                    self.assertIn('throttled', str(r.content))
+                    return
+        self.fail('throttle never engaged')
+
 
     def test_returns_name_from_og_site_name_and_description(self):
         with mock.patch('socket.getaddrinfo', return_value=PUBLIC_DNS), \

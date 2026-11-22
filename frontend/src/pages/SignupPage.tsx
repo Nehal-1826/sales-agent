@@ -67,7 +67,7 @@ export function SignupPage({ onSignedUp, onHome, onSignIn }: { onSignedUp: () =>
     if (res.ok) {
       if (res.data.name) setCompany(res.data.name);
     } else {
-      setFetchError(res.error || 'Could not fetch details from that site.');
+      setFetchError('');  // anonymous autofill is off — manual entry works the same
     }
   };
 

@@ -27,7 +27,7 @@ from urllib.parse import urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
 
 from .scraper import MAX_HTML, USER_AGENT, _registrable, name_from_domain, pick_site_name
@@ -146,7 +146,8 @@ def company_details(html, final_url):
 
 
 @api_view(['POST'])
-@permission_classes([AllowAny])  # anonymous signup visitors; CompanyScrapeThrottle limits abuse
+@permission_classes([IsAuthenticatedOrReadOnly])  # owner lockdown: anonymous scraping disabled
+# (POST needs a login; the SSRF guard + per-IP throttle remain for abuse inside accounts)
 @throttle_classes([CompanyScrapeThrottle])
 def company_scrape(request):
     data = request.data if hasattr(request.data, 'get') else {}

@@ -45,7 +45,7 @@ DEFAULT_MODELS = {
     'google': 'gemini-flash-lite-latest',
     'qwen': 'qwen3-1.7b',
     'dashscope': 'qwen3-1.7b',
-    'ollama': 'llama3.1',
+    'ollama': 'qwen3:1.7b',
 }
 
 # Model-id prefixes each provider serves; an empty tuple = hosts many families,

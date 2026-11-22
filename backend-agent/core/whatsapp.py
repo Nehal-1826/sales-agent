@@ -160,16 +160,22 @@ def sidecar_status(s=None):
     try:
         sid = _session_id(s, ensure=True)
         if not sid:
-            return {'reachable': True, 'state': 'initializing', 'connected': False, 'error': ''}
+            return {'reachable': True, 'state': 'initializing', 'connected': False, 'error': '',
+                    'phone': '', 'pushName': '', 'connectedAt': ''}
         data = _openwa('GET', f'/sessions/{sid}', s)
         state = data.get('status', '')
         if state == 'created':
             _start_session(sid, s)
             state = 'initializing'
         return {'reachable': True, 'state': state,
-                'connected': state in _CONNECTED_STATES, 'error': ''}
+                'connected': state in _CONNECTED_STATES, 'error': '',
+                # identity — the Settings page shows WHO is linked
+                'phone': data.get('phone') or '',
+                'pushName': data.get('pushName') or '',
+                'connectedAt': data.get('connectedAt') or ''}
     except SidecarError as exc:
-        return {'reachable': False, 'state': '', 'connected': False, 'error': str(exc)}
+        return {'reachable': False, 'state': '', 'connected': False, 'error': str(exc),
+                'phone': '', 'pushName': '', 'connectedAt': ''}
 
 
 def sidecar_qr(s=None):

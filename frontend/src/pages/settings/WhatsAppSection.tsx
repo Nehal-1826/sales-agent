@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from '../../components/feedback';
 import { Field, Toggle } from '../../components/ui';
 import { QRCodeSVG } from 'qrcode.react';
@@ -18,6 +18,16 @@ export function WhatsAppSection({ settings, onSaved }: { settings: SettingsState
   const [qr, setQr] = useState('');
   const [checking, setChecking] = useState(false);
   const [testTo, setTestTo] = useState('');
+
+  // live connection state: check on open, then every 30 s (no button needed
+  // to discover a link — the identity panel below is always current)
+  useEffect(() => {
+    let alive = true;
+    const tick = () => { void getWhatsAppStatus().then((st) => { if (alive) setStatus(st); }).catch(() => undefined); };
+    tick();
+    const id = window.setInterval(tick, 30_000);
+    return () => { alive = false; window.clearInterval(id); };
+  }, []);
 
   const check = async () => {
     if (form.dirty && !(await form.save())) return;
@@ -94,14 +104,30 @@ export function WhatsAppSection({ settings, onSaved }: { settings: SettingsState
           {checking ? 'Checking…' : 'Check connection / show QR code'}
         </button>
       </div>
-      {status && (
-        <p>
-          {!status.reachable
-            ? `Helper not reachable. ${status.error}`
-            : status.connected
-              ? `Connected. Sent today: ${status.sentToday} of ${status.dailyCap}.`
-              : 'Not logged in yet — scan the QR code below.'}
-        </p>
+      {status && !status.reachable && (
+        <p role="alert">Helper not reachable. {status.error}</p>
+      )}
+      {status?.connected && (
+        /* the connection identity — WHO is linked, live-refreshed every 30 s */
+        <div className="wa-connected" role="status">
+          <span className="status-dot dot-success dot-pulse" aria-hidden />
+          <div>
+            <strong>WhatsApp connected</strong>
+            {status.pushName && <span> — {status.pushName}</span>}
+            {status.phone && (
+              <small className="muted">
+                {' +'}
+                {status.phone}
+                {status.connectedAt &&
+                  ` · linked ${new Date(status.connectedAt).toLocaleString()}`}
+                {` · sent today: ${status.sentToday} of ${status.dailyCap}`}
+              </small>
+            )}
+          </div>
+        </div>
+      )}
+      {status?.reachable && !status.connected && (
+        <p>Not logged in yet — scan the QR code below.</p>
       )}
       {qr && (
         <div>

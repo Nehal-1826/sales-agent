@@ -418,6 +418,10 @@ export interface WhatsAppStatus {
   error: string;
   sentToday: number;
   dailyCap: number;
+  /** WHO is linked (from the gateway session) — shown as the connection identity */
+  phone?: string;
+  pushName?: string;
+  connectedAt?: string;
 }
 
 /** Who the ICP engine hunts: buyers of our services, or peer agencies as

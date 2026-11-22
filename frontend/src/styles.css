@@ -4152,6 +4152,21 @@ input[type='radio'] {
 .sequence-step { display: grid; gap: 10px; padding: 14px; }
 .sequence-step.muted { opacity: 0.65; }
 .wa-qr { width: 220px; height: 220px; image-rendering: pixelated; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+
+/* connected identity panel — green pulse dot + name/number/since */
+.wa-connected {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(74, 222, 128, 0.35);
+  border-radius: 12px;
+  background: rgba(74, 222, 128, 0.08);
+  margin: 10px 0;
+}
+.wa-connected .status-dot { flex-shrink: 0; }
+.wa-connected strong { font-size: 14px; }
+.wa-connected small { display: block; margin-top: 2px; }
 .task-list { display: grid; gap: 10px; }
 .task-card { display: grid; gap: 8px; padding: 14px; }
 .task-card pre { white-space: pre-wrap; font: inherit; margin: 0; background: var(--panel-2); border: 1px solid var(--border-soft); padding: 10px; border-radius: 6px; }

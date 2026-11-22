@@ -140,7 +140,7 @@ def llm_complete(prompt, system='', model='', timeout=45, temperature=0.7):
             )
             # 404 = Ollama cold-start (model loading); 429/503 = throttled
             if resp.status_code in (404, 429, 503) and attempt == 1:
-                time.sleep(30 if provider in LOCAL_PROVIDERS else 2)
+                time.sleep(60 if provider in LOCAL_PROVIDERS else 2)
                 continue
             resp.raise_for_status()
             data = resp.json()

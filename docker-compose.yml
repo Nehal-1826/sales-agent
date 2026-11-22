@@ -237,10 +237,9 @@ services:
     container_name: warmpulse-ollama
     restart: unless-stopped
     environment:
-      # unload the model 2 min after the last request — frees ~1.9GB between
-      # pipeline runs on a RAM-tight box (the next run pays a ~90s cold load,
-      # covered by the 180s local-LLM timeout floor)
-      OLLAMA_KEEP_ALIVE: 2m
+      # NEVER unload the model (-1) — the 1.4GB stays in RAM so every
+      # AI call is instant (no cold-start 404s on a 2-core box)
+      OLLAMA_KEEP_ALIVE: "-1"
     volumes:
       - warmpulse_ollama_models:/root/.ollama
 

@@ -259,16 +259,20 @@ export async function adminLogin(username: string, password: string): Promise<Re
   }
 }
 
-/** One-time code from the Google OAuth callback → session token (single use, 60 s). */
-export async function exchangeGoogleCode(code: string): Promise<Result<true>> {
+/** Firebase Google ID token → session token (server verifies the JWT). */
+export async function verifyGoogleToken(idToken: string): Promise<Result<true>> {
   try {
-    const res = await fetch(`${API_BASE_URL}/auth/google/exchange/`, {
+    const res = await fetch(`${API_BASE_URL}/auth/google/verify/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code }),
+      body: JSON.stringify({ idToken }),
       signal: AbortSignal.timeout(10_000),
     });
-    if (!res.ok) return { ok: false, error: 'That Google sign-in expired — try again.' };
+    if (res.status === 403) {
+      const d = (await res.json().catch(() => ({}))) as { detail?: string };
+      return { ok: false, error: d.detail || 'That account cannot sign in here.' };
+    }
+    if (res.status === 400) return { ok: false, error: 'Google sign-in failed — please try again.' };
     const data = (await res.json()) as { token: string };
     authToken = data.token;
     try {

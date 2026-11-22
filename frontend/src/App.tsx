@@ -24,7 +24,6 @@ import { LandingPage } from './pages/LandingPage';
 import { MarketingPage, isMarketingSubpage } from './marketing/MarketingSite';
 import { routeMeta } from './marketing/site';
 import { PAYMENT_REQUIRED_EVENT, SESSION_EXPIRED_EVENT, checkAuth, getOnboarding, logout, reprobe } from './lib/api';
-import { exchangeGoogleCode } from './lib/transport';
 import type { AuthState, PaymentRequiredInfo } from './lib/api';
 import { navigate, useRoute } from './lib/router';
 import { WorkspaceStatusProvider } from './lib/status';
@@ -86,35 +85,6 @@ function AppGate() {
   // drop ?signin=1 from the address bar once read
   useEffect(() => {
     if (wantsSignIn()) window.history.replaceState(null, '', window.location.pathname);
-  }, []);
-
-  // Google OAuth return trip: ?gcode=<one-time code> completes the sign-in,
-  // ?google=<error> surfaces why it failed (both stripped from the URL)
-  useEffect(() => {
-    const q = new URLSearchParams(window.location.search);
-    const gcode = q.get('gcode');
-    const gerr = q.get('google');
-    if (!gcode && !gerr) return;
-    window.history.replaceState(null, '', window.location.pathname);
-    if (gerr) {
-      const msgs: Record<string, string> = {
-        not_found: 'No account exists for that Google email — ask the workspace owner to create one.',
-        admin_only: 'That account is a platform admin — sign in from the admin login page.',
-        misconfigured: 'Google sign-in is not configured on this server.',
-        failed: 'Google sign-in failed — please try again.',
-      };
-      toast.warn(msgs[gerr] || msgs.failed);
-      return;
-    }
-    if (gcode) {
-      setGate('checking');
-      void exchangeGoogleCode(gcode).then(async (res) => {
-        if (res.ok) await reprobe();
-        setGate(await checkAuth());
-        if (!res.ok) toast.warn(res.error);
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // any 401 mid-session (token revoked/expired) → back to the sign-in screen

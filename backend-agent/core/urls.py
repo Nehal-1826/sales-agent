@@ -44,10 +44,8 @@ urlpatterns = [
     path('auth/2fa/devices/<int:device_id>/', views.user_2fa_device_remove, name='user-2fa-device-remove'),
     # bridge: HS256 JWT for backend-warmup (FastAPI) — same DRF token auth
     path('auth/warmup-token/', views.warmup_token, name='warmup-token'),
-    # Google OAuth sign-in (existing users; dormant until GOOGLE_CLIENT_ID set)
-    path('auth/google/start/', google_auth.google_start, name='google-start'),
-    path('auth/google/callback/', google_auth.google_callback, name='google-callback'),
-    path('auth/google/exchange/', google_auth.google_exchange, name='google-exchange'),
+    # Google sign-in via Firebase (existing users; dormant until FIREBASE_PROJECT_ID set)
+    path('auth/google/verify/', google_auth.google_verify, name='google-verify'),
     # CRM — custom lead routes BEFORE the router (else 'export' is treated as a pk)
     path('leads/export/', views.leads_export, name='leads-export'),
     path('leads/<int:lead_id>/draft_email/', views.lead_draft_email, name='lead-draft-email'),

@@ -114,17 +114,23 @@ def _try_domain_autofill(text, settings, user, answers):
     services = [s for s in (details.get('services') or []) if 2 < len(s) < 60][:5]
     description = (details.get('description') or '')[:300]
 
+    address = (details.get('address') or '').strip()[:300]
     settings.company_name = name
     settings.company_website = domain
     settings.company_description = description
     if services:
         settings.services = services
+    if address:
+        settings.company_address = address
     settings.save(update_fields=['company_name', 'company_website',
-                                 'company_description', 'services', 'updated_at'])
+                                 'company_description', 'services',
+                                 'company_address', 'updated_at'])
     answers.update(company=name, website=domain,
                    services=services or answers.get('services', []),
                    description=description)
     filled = [f'company name: {name}', f'website: {domain}']
+    if address:
+        filled.append('address: ' + address[:80] + ('…' if len(address) > 80 else ''))
     if services:
         filled.append('services: ' + ', '.join(services))
     if description:

@@ -30,7 +30,8 @@ export function BusinessSection({ settings, onSaved }: { settings: SettingsState
     }
     set({ name: res.data.name || c.name,
          description: res.data.description || c.description,
-         ...(res.data.services?.length ? { services: res.data.services } : {}) });
+         ...(res.data.services?.length ? { services: res.data.services } : {}),
+         ...(res.data.address ? { address: res.data.address } : {}) });
   };
 
   return (

@@ -153,7 +153,60 @@ SERVICE_WORDS = re.compile(
     r'support|staffing|recruitment|manufacturing|logistics|printing|'
     r'photography|catering|cleaning|plumbing|electrical|landscaping|'
     r'real estate|insurance|healthcare|dental|clinic|education|'
-    r'e-?commerce|saas|software|web|cloud|seo|crm|erp|automation)\b', re.I)
+    r'e-?commerce|saas|software|web|cloud|seo|crm|erp|automation|'
+    r'services|solutions|platform|studio|agency|therapy|wellness|'
+    r'gym|fitness|salon|spa|restaurant|cafe|bakery|hotel|travel|'
+    r'tours|rental|dealer|shop|store|boutique|farm|dairy|organic|'
+    r'construction|builder|interior|architecture|engineering|'
+    r'audit|tax|advisory|investment|loans|banking|trading|export|'
+    r'distribution|supply|freight|transport|delivery|courier|'
+    r'publishing|media|advertising|branding|content|video|film|'
+    r'animation|gaming|iot|ai|ml|data|analytics|cyber|security|'
+    r'networking|telecom|mobile|app|game|wordpress|shopify|'
+    r'immigration|visa|advocates|law|chartered|company secretary)\b', re.I)
+
+ADDRESS_WORDS = re.compile(
+    r'\b(street|st\.|road|rd\.|avenue|ave\.|nagar|colony|sector|'
+    r'layout|cross|main road|highway|hwy|lane|ln\.|court|ct\.|drive|'
+    r'plaza|complex|building|tower|block|floor|suite|unit|'
+    r'pin|pincode|zip|postal)\b', re.I)
+
+
+def _jsonld_address(soup):
+    """street address from schema.org JSON-LD (PostalAddress / address)."""
+    import json as _json
+    for tag in soup.find_all('script', attrs={'type': 'application/ld+json'}):
+        try:
+            data = _json.loads(tag.string or '')
+        except Exception:
+            continue
+        for node in (data if isinstance(data, list) else [data]):
+            if not isinstance(node, dict):
+                continue
+            addr = node.get('address')
+            if isinstance(addr, dict):
+                parts = [str(addr.get(k, '')).strip() for k in
+                         ('streetAddress', 'addressLocality', 'addressRegion',
+                          'postalCode', 'addressCountry')]
+                joined = ', '.join(p for p in parts if p)
+                if len(joined) > 5:
+                    return joined[:300]
+            if isinstance(addr, str) and len(addr.strip()) > 5:
+                return addr.strip()[:300]
+    return ''
+
+
+def _footer_address(visible_text):
+    """an address-looking line from the page text — the footer area is the
+    most common place businesses put it."""
+    tail = visible_text[-1500:] if len(visible_text) > 1500 else visible_text
+    for line in re.split(r'[\n\u2022|]', tail):
+        line = line.strip(' ,;-–—')
+        if 10 < len(line) < 200 and ADDRESS_WORDS.search(line):
+            # must also contain a digit (street no. or pincode) to cut noise
+            if re.search(r'\d{4,6}\b', line) or re.search(r'\b\d+[-\s]', line):
+                return line[:300]
+    return ''
 
 
 def _heading_services(soup, cap=6):
@@ -215,9 +268,14 @@ def company_details(html, final_url):
             except Exception:
                 pass  # AI down or slow — the JSON-LD/heading list stands
 
+    address = _jsonld_address(soup)
+    if not address:
+        address = _footer_address(visible)
+
     return {'name': name,
             'description': description[:MAX_DESCRIPTION],
-            'services': services[:6]}
+            'services': services[:6],
+            'address': address}
 
 
 @api_view(['POST'])

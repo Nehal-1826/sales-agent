@@ -193,6 +193,7 @@ export interface CompanyScrapeDetails {
   name: string;
   description: string;
   services?: string[];
+  address?: string;
 }
 
 export const scrapeCompanyDetails = async (url: string): Promise<Result<CompanyScrapeDetails>> =>

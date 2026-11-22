@@ -172,6 +172,35 @@ ADDRESS_WORDS = re.compile(
     r'pin|pincode|zip|postal)\b', re.I)
 
 
+CONTACT_PATHS = ('/contact', '/contact-us', '/contactus', '/about',
+                 '/about-us', '/aboutus', '/contact.html', '/reach-us')
+
+
+def _scrape_address_from_contact_pages(base_url):
+    """Many businesses put their address on /contact or /about instead of the
+    homepage. Try each common path (within the existing DEADLINE) and return
+    the first address found."""
+    from .scraper import MAX_HTML
+    for path in CONTACT_PATHS:
+        try:
+            resp = fetch_public(base_url.rstrip('/') + path)
+            if resp.status_code != 200:
+                continue
+            soup = BeautifulSoup(resp.text[:MAX_HTML], 'lxml')
+            addr = _jsonld_address(soup)
+            if not addr:
+                for tag in soup(['script', 'style', 'noscript']):
+                    tag.decompose()
+                import re as _re
+                visible = _re.sub(r'\s+', ' ', (soup.body or soup).get_text(' ', strip=True))
+                addr = _footer_address(visible)
+            if addr and len(addr) > 5:
+                return addr
+        except (BadUrl, Exception):
+            continue
+    return ''
+
+
 def _jsonld_address(soup):
     """street address from schema.org JSON-LD (PostalAddress / address)."""
     import json as _json
@@ -275,6 +304,12 @@ def company_details(html, final_url):
     address = _jsonld_address(soup)
     if not address:
         address = _footer_address(visible)
+    if not address:
+        # many businesses put their address on /contact not the homepage
+        try:
+            address = _scrape_address_from_contact_pages(final_url)
+        except Exception:
+            pass
 
     return {'name': name,
             'description': description[:MAX_DESCRIPTION],

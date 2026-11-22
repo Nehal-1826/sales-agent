@@ -254,7 +254,11 @@ def company_details(html, final_url):
         services = _heading_services(soup)
     if len(services) < 2:
         from .ai import llm_available, llm_complete
-        if llm_available():
+        try:
+            ai_up = llm_available()
+        except Exception:
+            ai_up = False   # no workspace context (shell/tests) — skip AI
+        if ai_up:
             try:
                 out = llm_complete(
                     'From this homepage text, list exactly what the company sells/does '

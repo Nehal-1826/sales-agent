@@ -261,7 +261,13 @@ with sync_playwright() as p:
     check("settings targeting: typed entry is saved without pressing Enter",
           probe in saved_countries, str(saved_countries))
     page.reload()
-    page.wait_for_timeout(1200)
+    # wait for the page to really come back (the dev server can take a few
+    # seconds; a fixed 1.2 s once read the tags before they were loaded)
+    try:
+        countries_field().locator("input").first.wait_for(state="visible", timeout=30_000)
+        page.wait_for_load_state("networkidle")
+    except Exception:  # noqa: BLE001  — reported as a FAIL below, never aborts the gate
+        pass
     shown_tags = countries_field().locator(".tag").all_inner_texts()
     check("settings targeting: the saved entry survives a reload",
           any(probe in tag for tag in shown_tags), str(shown_tags))

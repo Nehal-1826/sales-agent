@@ -164,7 +164,8 @@ class AssistantMemoryTests(TenantTestCase):
         system, prompt = self.prompts[-1]
         self.assertIn('we publish a peer-reviewed journal', prompt)
         self.assertIn('RECENT MESSAGES:', prompt)
-        self.assertIn('so what do we sell?', prompt)
+        self.assertIn('User: so what do we sell?', prompt)
+        self.assertTrue(prompt.endswith('Assistant:'), prompt[-60:])   # the model continues the transcript
 
     def test_the_model_is_told_its_real_job_and_the_facts(self):
         self.answers = ['You have 1 lead.']
@@ -173,9 +174,12 @@ class AssistantMemoryTests(TenantTestCase):
         self.assertIn('AI sales assistant', system)
         self.assertIn('never with a customer', system)
         self.assertNotIn('book meetings', system.lower())
-        self.assertIn('Company: Acme Journals', prompt)
-        self.assertIn('Leads: 1 in total', prompt)
-        self.assertIn('Smile Dental Clinic', prompt)
+        # the live facts sit in the instructions; the conversation is the last thing read
+        self.assertIn('FACTS (live from this workspace', system)
+        self.assertIn('Company: Acme Journals', system)
+        self.assertIn('Leads: 1 in total', system)
+        self.assertIn('Smile Dental Clinic', system)
+        self.assertNotIn('FACTS (live', prompt)
 
     def test_a_made_up_answer_is_never_shown(self):
         self.answers = ['You have 661 leads.', 'You have 1 lead.']

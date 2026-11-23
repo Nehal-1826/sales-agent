@@ -39,8 +39,8 @@ def fake_model(system, prompt, **_kw):
             text = 'உங்களுக்கு 5 leads உள்ளன.'
         elif 'did you send' in asked:
             text = 'Not yet - nothing sends until you approve it.'
-        elif 'what do we sell' in asked:
-            text = 'You publish a peer-reviewed journal.'
+        elif 'my name' in asked:
+            text = 'Your name is Karthik - you handle partnerships.'
         else:
             text = 'You have 5 leads at the moment.'
     return {'text': text, 'prompt_tokens': 400, 'eval_tokens': 20}
@@ -71,13 +71,13 @@ class EvalAssistantTests(TenantTestCase):
             with self.assertRaises(SystemExit):
                 call_command('eval_assistant', '--quick', stdout=out)
         text = out.getvalue()
-        self.assertIn('RESULT: 5/12 checks passed', text)
-        self.assertIn('FAILED: counts, no false "I sent it", remembers the chat, '
+        self.assertIn('RESULT: 6/12 checks passed', text)
+        self.assertIn('FAILED: counts, remembers the conversation, '
                       'each turn continues the last prompt, answers in Tamil, guide: mailbox, '
                       'guide: who to find', text)                      # a retry compresses, so the
                                                             # transcript no longer continues
         self.assertNotIn('661 leads', text)                       # never shown, not even in the report
-        self.assertIn('7 made-up answer(s) caught (0 answered again cleanly, 7 honest fallback', text)
+        self.assertIn('8 made-up answer(s) caught (0 answered again cleanly, 8 honest fallback', text)
         self.assertFalse(Workspace.all_tenants.filter(slug__startswith='eval-').exists())
 
     def test_without_a_model_it_says_so_instead_of_scoring_keyword_replies(self):

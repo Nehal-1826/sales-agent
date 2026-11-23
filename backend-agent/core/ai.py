@@ -232,7 +232,8 @@ def llm_json(system, prompt, schema, max_tokens=256, timeout=240):
     return out if isinstance(out, dict) else None
 
 
-def llm_chat(system, prompt, model='', max_tokens=320, timeout=240, schema=None, temperature=0.3):
+def llm_chat(system, prompt, model='', max_tokens=320, timeout=240, schema=None, temperature=0.3,
+             repeat_penalty=None):
     """One turn of the CONVERSATION model — Assistant replies, the guide,
     the command check, memory summaries.
 
@@ -246,7 +247,8 @@ def llm_chat(system, prompt, model='', max_tokens=320, timeout=240, schema=None,
     sizes let a conversation be kept inside the model's memory window, and
     `cut` says the answer was stopped by `max_tokens` before it finished —
     or None on any failure (never raises). `schema` locks the answer's
-    shape on the local runtime; other providers are asked for plain text."""
+    shape on the local runtime; other providers are asked for plain text.
+    `repeat_penalty` (above 1) is passed to the local runtime only."""
     try:
         settings = AppSettings.load()
         provider = resolve_provider(settings.ai_provider)
@@ -258,9 +260,11 @@ def llm_chat(system, prompt, model='', max_tokens=320, timeout=240, schema=None,
         if provider in LOCAL_PROVIDERS:
             if base.endswith('/v1'):        # native routes live beside the /v1 shim
                 base = base[:-3]
+            options = {'temperature': temperature, 'num_predict': max_tokens}
+            if repeat_penalty is not None:      # above 1 discourages repeating itself
+                options['repeat_penalty'] = repeat_penalty
             body = {'model': model_for(provider, model), 'messages': messages,
-                    'stream': False, 'think': False,
-                    'options': {'temperature': temperature, 'num_predict': max_tokens}}
+                    'stream': False, 'think': False, 'options': options}
             if schema:
                 body['format'] = schema
             resp = requests.post(f'{base}/api/chat', json=body, timeout=timeout)

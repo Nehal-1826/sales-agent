@@ -45,8 +45,8 @@ ANSWER_RULES = (
     'same closing line as your answer before.\n'
     '- If the person describes what the company sells and Who to find is not set yet, offer to '
     'work out who is likely to buy from them: ask them to say "who should I find?".\n'
-    'Below are the FACTS, a memory note and the recent messages; the last message is what the '
-    'person just wrote. Your reply answers that message.'
+    'Below are the FACTS, a memory note and RECENT MESSAGES, the conversation, which ends with '
+    'the message the person just wrote. Continue it: write the Assistant reply to that message.'
 )
 
 # added for the second try after a made-up answer (see core.convo.guarded)
@@ -161,7 +161,11 @@ _OWN_WORDS = {
 }
 
 
-def _system_prompt(text, settings):
+def _system_prompt(text, settings, facts=''):
+    """The instructions AND what the Assistant knows about the workspace. The
+    live facts live here, not in the message: the conversation is then the
+    last thing the model reads, which is what a small model needs to answer
+    from what the person just said instead of from the stored profile."""
     cfg = AgentConfig.objects.filter(agent='responder').first()
     style = detect_language_style(text)
     company = settings.company_name or 'this workspace'
@@ -186,6 +190,8 @@ def _system_prompt(text, settings):
     negative = ' '.join(((cfg.negative_prompt if cfg else '') or '').split())
     if negative:
         parts.append('AVOID: ' + negative[:300])
+    if facts:
+        parts.append('FACTS (live from this workspace - numbers and names you may use):\n' + facts)
     return '\n\n'.join(parts)
 
 
@@ -200,20 +206,22 @@ def plain_reply(text, turn, style):
     return reply
 
 
-def _answer_prompt(facts, summary, turns, text):
-    """One running transcript. Each turn's prompt is the previous turn's
-    prompt plus the new messages, on purpose: the local runtime keeps a
-    copy of every DIFFERENT prompt it has read (about 110 KB per prompt
-    token, with no setting to cap it — ollama/ollama #18106, #18264), while
-    a prompt that simply continues the last one is reused. So this shape is
-    both what makes replies fast after the first turn and what keeps the
-    runtime's memory from growing with every message."""
-    parts = ['FACTS (live from this workspace):', facts]
+def _answer_prompt(summary, turns, text):
+    """One running transcript, ending on the Assistant's turn. Each turn's
+    prompt is the previous turn's prompt plus the new messages, on purpose:
+    the local runtime keeps a copy of every DIFFERENT prompt it has read
+    (about 110 KB per prompt token, with no setting to cap it —
+    ollama/ollama #18106, #18264), while a prompt that simply continues the
+    last one is reused. So this shape is both what makes replies fast after
+    the first turn and what keeps the runtime's memory from growing with
+    every message. The trailing "Assistant:" is part of that: the next
+    prompt continues it with the reply, so it is still the same text."""
+    parts = []
     if summary:
-        parts += ['', 'CONVERSATION SO FAR (memory note):', summary]
-    parts += ['', 'RECENT MESSAGES:',
+        parts += ['CONVERSATION SO FAR (memory note):', summary, '']
+    parts += ['RECENT MESSAGES:',
               convo.render([*turns, {'role': 'user', 'text': text}])]
-    return '\n'.join(parts)
+    return '\n'.join(parts) + '\nAssistant:'
 
 
 # ------------------------------------------------------------------
@@ -226,15 +234,14 @@ def assistant_answer(text, user=None, history=None, turn=0):
     Never raises."""
     settings = AppSettings.load()
     style = detect_language_style(text)
-    facts = workspace_facts(settings)
-    system = _system_prompt(text, settings)
-    cfg = AgentConfig.objects.filter(agent='responder').first()
-    model = cfg.model if cfg else ''
     memory = convo.load_memory(user)
     live = [t for t in (history or []) if t['id'] > memory['through']]
     everything = list(live)      # every message the model may have drawn on
-    fixed = (convo.estimate_tokens(system) + convo.estimate_tokens(facts)
-             + convo.estimate_tokens(TIGHT_RULES) + 90)
+    facts = workspace_facts(settings)
+    system = _system_prompt(text, settings, facts)      # the facts live in the instructions
+    cfg = AgentConfig.objects.filter(agent='responder').first()
+    model = cfg.model if cfg else ''
+    fixed = convo.estimate_tokens(system) + convo.estimate_tokens(TIGHT_RULES) + 90
 
     def summarise(prompt):
         out = llm_chat(MEMORY_SYSTEM, prompt, max_tokens=240, temperature=0.1)
@@ -263,13 +270,16 @@ def assistant_answer(text, user=None, history=None, turn=0):
     def generate(mode):
         if mode == 'tight':
             compress(2)     # 2. a made-up answer: compress again and answer on much less
-        prompt = _answer_prompt(facts, memory['summary'], live, text)
+        prompt = _answer_prompt(memory['summary'], live, text)
         used = convo.estimate_tokens(prompt) + convo.estimate_tokens(system)
         if used > convo.PROMPT_BUDGET:
             log.warning('assistant prompt is about %d tokens, over the %d budget', used, convo.PROMPT_BUDGET)
-        allowance = ANSWER_TOKENS['tamil' if style == 'tamil' else 'latin']
+        # Tamil script: the small model sometimes loops in it until it is cut off -
+        # a colder sample and a penalty on repeating itself keep it on track
+        tamil = style == 'tamil'
         out = llm_chat(system + (TIGHT_RULES if mode == 'tight' else ''), prompt,
-                       model=model, max_tokens=allowance)
+                       model=model, max_tokens=ANSWER_TOKENS['tamil' if tamil else 'latin'],
+                       temperature=0.1 if tamil else 0.3, repeat_penalty=1.2 if tamil else None)
         if not out:
             return None
         if out.get('cut'):
@@ -278,7 +288,7 @@ def assistant_answer(text, user=None, history=None, turn=0):
             # sentences) and never show the unfinished tail
             kept = _complete_sentences(clean(out['text']))
             log.info('assistant answer ran past %d tokens and was cut; kept its %d complete characters',
-                     allowance, len(kept))
+                     out.get('eval_tokens'), len(kept))
             return kept or None
         return clean(out['text'])
 

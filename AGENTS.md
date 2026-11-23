@@ -214,10 +214,29 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   compress + answer again (`TIGHT_RULES`), else the honest plain reply (in
   the person's own words for Tamil/Tanglish when it has no facts). An answer
   stopped by its length allowance keeps its complete sentences; Tamil script
-  gets a larger allowance (`ANSWER_TOKENS`). The language is the first and
+  gets a larger allowance (`ANSWER_TOKENS`) and a colder sample with a
+  repeat penalty (the small model loops in it). The language is the first and
   last thing the model reads (the small model drifts into English) and
   English examples are withheld for non-English writers. Clearing the chat
   clears the memory.
+- Prompt shape (`assistant._system_prompt` / `_answer_prompt`): the live
+  FACTS sit in the instructions and the user message is ONE RUNNING
+  TRANSCRIPT that ends on `Assistant:` — each turn's message is the previous
+  turn's plus the new messages, so the local runtime reuses what it read
+  (its prompt cache keeps a copy of every different prompt: ~110 KB per
+  prompt token, not configurable — ollama/ollama #18106, #18264) instead of
+  storing another. Do not add a trailing "Answer the person." line or move
+  the facts below the conversation: the first breaks the continuation, the
+  second made the model answer from the stored profile instead of the chat.
+- Known limits of qwen3:1.7b measured with `eval_assistant` (2026-11-23) —
+  not bugs in the code, do not "fix" them by adding prompt lines (three
+  designs were tried for the first): (1) asked "what do we sell?" it answers
+  from the SAVED profile even when the owner described the business
+  differently a moment earlier — memory works (it recalls a name given in
+  chat), the saved profile simply wins for that question; (2) Tamil-script
+  replies are poor — often a few garbled words mixed with English — while
+  English and Tanglish are fine. Both need a stronger local model, which the
+  8 GB / 2-core VPS cannot run.
 - The model's job: `workspaces.RESPONDER_PROMPT` (+ `core/assistant.JOB` /
   `ANSWER_RULES`). The first default described a lead-reply bot and sat in
   the same prompt as "you are the sales assistant" — `fix_responder_prompt`

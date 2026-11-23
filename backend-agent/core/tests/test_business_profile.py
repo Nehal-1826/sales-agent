@@ -110,10 +110,13 @@ class NormalizeInferenceTests(SimpleTestCase):
         out = bp.normalize_inference(ai_reply(buyers=['publishing house', 'university']))
         self.assertEqual(out['buyers'], ['university'])
 
-    def test_buyers_are_deduplicated_and_capped_at_four(self):
+    def test_buyers_are_deduplicated_and_capped_at_three(self):
+        """Three, not four: on real sites the small model's 4th pick was
+        regularly a weak fit ('cooperative society' for a journal), and a weak
+        kind sends a share of every search after the wrong businesses."""
         out = bp.normalize_inference(ai_reply(own_kind='', buyers=[
             'university', 'school', 'college', 'startup', 'hospital', 'gym']))
-        self.assertEqual(len(out['buyers']), 4)
+        self.assertEqual(len(out['buyers']), 3)
         out = bp.normalize_inference(ai_reply(own_kind='', buyers=['university', 'university']))
         self.assertEqual(out['buyers'], ['university'])
 

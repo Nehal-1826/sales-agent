@@ -161,7 +161,8 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   address) + ONE local-model call (`ai.llm_json`: Ollama's native `/api/chat`
   with a JSON-schema `format` — always valid JSON, cloud providers never asked).
   Measured rules for the small model: buyers are CHOSEN from the fixed
-  catalogue (`CATALOGUE`, max 4, minus the seller's own kind), countries come
+  catalogue (`CATALOGUE`, the 3 best, minus the seller's own kind — its 4th pick
+  was regularly a weak fit), countries come
   ONLY from the domain's ccTLD (`CCTLD_COUNTRY`; no `.co/.io/.ai`), individual
   customers → no company leads. Used by the wizard
   (`onboarding._try_domain_autofill`: jumps to the mailbox step, typed answers

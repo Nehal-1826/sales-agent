@@ -33,7 +33,7 @@ from .scraper import MAX_HTML, _registrable, name_from_domain
 
 log = logging.getLogger(__name__)
 
-MAX_BUYERS = 4
+MAX_BUYERS = 3               # 3 solid kinds: on real sites the model's 4th pick was regularly weak
 MAX_SERVICES = 6
 BRIEF_TEXT_CHARS = 2200
 MAX_HEADING_CHARS = 90
@@ -253,7 +253,7 @@ def _build_prompt(brief):
         'guests, readers. "both" = mixed.\n'
         '3. "own_kind": the ONE catalogue entry that best describes THIS company itself. '
         'Use "other" if none fits.\n'
-        '4. "buyers": if other organisations would buy from this company, choose the 3 to 4 '
+        '4. "buyers": if other organisations would buy from this company, choose the 3 '
         'BEST kinds from the catalogue. Copy the names exactly. Choose ONLY '
         'organisations that would benefit from the services. Never the company\'s own kind. '
         'If its customers are individuals and no organisation would buy, use [].\n'

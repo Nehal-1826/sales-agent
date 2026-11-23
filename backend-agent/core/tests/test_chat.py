@@ -184,23 +184,38 @@ class AssistantMemoryTests(TenantTestCase):
         self.assertEqual(len(self.prompts), 2)
         self.assertIn('ANSWER AGAIN, CAREFULLY', self.prompts[1][0])
 
-    def test_an_answer_cut_off_halfway_is_never_shown(self):
-        """The model ran past the length limit; the retry answered properly."""
+    def _say_with(self, model, text, history=()):
+        self._stored(list(history))
+        with mock.patch('core.assistant.llm_chat', side_effect=model):
+            return responder_reply(text, turn=10_000, user=self.user)
+
+    def test_a_cut_off_answer_keeps_its_complete_sentences(self):
+        """A long answer still holds its answer in its first sentences; only
+        the unfinished tail is dropped."""
         seen = []
 
         def model(system, prompt, **_kw):
             seen.append(system)
-            if 'memory notes' in system:
-                return {'text': 'note', 'cut': False}
-            if len(seen) == 1:
-                return {'text': 'You have 1 lead, and the first one is called', 'cut': True}
-            return {'text': 'You have 1 lead.', 'cut': False}
+            return {'text': 'You have 1 lead. The first one is called', 'cut': True}
 
-        self._stored([])
-        with mock.patch('core.assistant.llm_chat', side_effect=model):
-            reply = responder_reply('how many leads do we have?', turn=10_000, user=self.user)
+        reply = self._say_with(model, 'how many leads do we have?')
         self.assertEqual(reply, 'You have 1 lead.')
-        self.assertIn('ANSWER AGAIN, CAREFULLY', seen[1])
+        self.assertEqual(len(seen), 1)                          # shown as trimmed, no retry
+
+    def test_a_cut_off_answer_without_one_complete_sentence_is_not_shown(self):
+        def model(system, prompt, **_kw):
+            if 'ANSWER AGAIN' in system:
+                return {'text': 'You have 1 lead.', 'cut': False}
+            return {'text': 'You have 1 lead and the', 'cut': True}
+
+        self.assertEqual(self._say_with(model, 'how many leads do we have?'), 'You have 1 lead.')
+
+    def test_an_indian_script_full_stop_ends_a_sentence_too(self):
+        def model(system, prompt, **_kw):
+            return {'text': 'உங்களுக்கு 1 lead உள்ளது. அதன் பெயர் ஸ்மைல் டென்டல் கிளினிக் மற்றும் அதன்', 'cut': True}
+
+        reply = self._say_with(model, 'எத்தனை leads?')
+        self.assertEqual(reply, 'உங்களுக்கு 1 lead உள்ளது.')
 
     def test_two_made_up_answers_get_the_honest_plain_reply(self):
         self.answers = ['You have 661 leads.', 'You have 990 leads.']
@@ -238,6 +253,15 @@ class AssistantMemoryTests(TenantTestCase):
         self.assertIn('CONVERSATION SO FAR', prompt)
         self.assertNotIn('We publish a journal.', prompt.split('CONVERSATION SO FAR')[1].split('RECENT MESSAGES')[0])
         self.assertNotIn('RECENT MESSAGES:\nUser: We publish a journal.', prompt)
+
+    def test_an_answer_is_judged_on_honesty_not_on_a_repeated_closing_line(self):
+        self._stored([('user', 'who are you?'),
+                      ('ai', 'I am the sales assistant. Let me know if you would like to run a cycle.')])
+        self.answers = ['You have 1 lead. Let me know if you would like to run a cycle.']
+        with mock.patch('core.assistant.llm_chat', side_effect=self._model):
+            reply = responder_reply('how many leads do we have?', turn=10_000, user=self.user)
+        self.assertEqual(reply, 'You have 1 lead. Let me know if you would like to run a cycle.')
+        self.assertEqual(len(self.prompts), 1)                  # shown as written
 
     def test_the_command_layer_is_shown_the_conversation(self):
         self._stored([('user', 'approve the draft for Smile Dental Clinic'),

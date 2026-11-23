@@ -207,9 +207,17 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   `detect_problems`): made-up totals/names that are in neither the facts nor
   the conversation, "I've sent/updated…" when no command ran, repetition,
   leaked reasoning/other-AI names, placeholders, a cut-off sentence, wrong
-  script for Tamil. A flagged answer is never shown: compress + answer again
-  (`TIGHT_RULES`), else the honest keyword reply. Clearing the chat clears
-  the memory.
+  script for Tamil. The guard judges honesty and SHAPE only, never style —
+  a correct answer that merely ends with the same closing line as the one
+  before is shown (rejecting those replaced good replies with plain "noted"
+  acknowledgements in a real-model run). A flagged answer is never shown:
+  compress + answer again (`TIGHT_RULES`), else the honest plain reply (in
+  the person's own words for Tamil/Tanglish when it has no facts). An answer
+  stopped by its length allowance keeps its complete sentences; Tamil script
+  gets a larger allowance (`ANSWER_TOKENS`). The language is the first and
+  last thing the model reads (the small model drifts into English) and
+  English examples are withheld for non-English writers. Clearing the chat
+  clears the memory.
 - The model's job: `workspaces.RESPONDER_PROMPT` (+ `core/assistant.JOB` /
   `ANSWER_RULES`). The first default described a lead-reply bot and sat in
   the same prompt as "you are the sales assistant" — `fix_responder_prompt`
@@ -279,10 +287,15 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   call timing out — the recurring "server is slow / AI can't process").
   Guard rails: `mem_limit`/`memswap_limit` 4g + `MALLOC_ARENA_MAX=2` in the
   compose `ollama` service, and `ops/ollama-watchdog.sh` from cron every 15
-  minutes (`*/15 * * * *`, log `/var/log/warmpulse-ollama-watchdog.log`)
-  which restarts the runtime when it passes 3600 MB and is idle — the model
-  reloads on the next request (~15 s). If the site is suddenly slow, check
-  `docker stats --no-stream warmpulse-ollama` and `free -m` FIRST.
+  minutes (`*/5 * * * *`, log `/var/log/warmpulse-ollama-watchdog.log`)
+  which restarts the runtime when it passes 3200 MB and is idle — the model
+  reloads on the next request (~15 s). It is the runtime's PROMPT CACHE: a
+  copy of every different prompt it has read, ~110 KB per prompt token, not
+  configurable (ollama/ollama #18106, #18264) — which is also why each
+  Assistant turn's prompt is an exact continuation of the previous one
+  (`assistant._answer_prompt`: one running transcript): the runtime reuses
+  what it read instead of keeping another copy. If the site is suddenly
+  slow, check `docker stats --no-stream warmpulse-ollama` and `free -m` FIRST.
 - The local model is one shared slot: a background pipeline cycle's AI calls
   queue ahead of chat replies. Prompt size is latency — roughly 60 prompt
   tokens and ~5 answer tokens per second on the 2-core box — so conversation

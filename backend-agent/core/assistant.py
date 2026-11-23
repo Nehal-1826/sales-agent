@@ -15,7 +15,7 @@ import re
 
 from . import convo
 from .ai import llm_chat
-from .chat import LANGUAGE_RULES, _humanize, _keyword_reply, detect_language_style
+from .chat import FALLBACK_REPLIES, LANGUAGE_RULES, _humanize, _keyword_reply, detect_language_style
 from .inbox import replies_digest
 from .models import AgentConfig, AppSettings, ChatMessage, EmailDraft, Lead
 
@@ -41,15 +41,21 @@ ANSWER_RULES = (
     '- You are the AI sales assistant of the company in the FACTS. Never call yourself another '
     'AI or another product.\n'
     '- Keep it short: one to four sentences, plain text, no markdown, no lists unless asked.\n'
+    '- Suggest a next step only when it fits what the person asked, and never end with the '
+    'same closing line as your answer before.\n'
     '- If the person describes what the company sells and Who to find is not set yet, offer to '
-    'work out who is likely to buy from them: ask them to say "who should I find?".'
+    'work out who is likely to buy from them: ask them to say "who should I find?".\n'
+    'Below are the FACTS, a memory note and the recent messages; the last message is what the '
+    'person just wrote. Your reply answers that message.'
 )
 
 # added for the second try after a made-up answer (see core.convo.guarded)
 TIGHT_RULES = (
     '\n\nANSWER AGAIN, CAREFULLY: the last answer was not shown because it said something the '
-    'FACTS do not say. Use only numbers and names that appear in the FACTS, the memory note or '
-    'the last message. If you are not sure, say "I\'m not sure" and say where the person can check.'
+    'FACTS do not say, or repeated itself. Use only numbers and names that appear in the FACTS, '
+    'the memory note or the last message. End with a different last sentence than before - '
+    'never the same closing line again. If you are not sure, say "I\'m not sure" and say where '
+    'the person can check.'
 )
 
 MEMORY_SYSTEM = 'You write short, accurate memory notes. Output only the note itself.'
@@ -61,10 +67,12 @@ PHRASE_SYSTEM = (
 
 _THINK_BLOCK = re.compile(r'<think>.*?</think>', re.S | re.I)
 HISTORY_LOAD = 80          # messages read back per turn
-# one to four sentences is about 60-120 tokens; the model writes about five
-# tokens a second on the server, so every extra token allowed is extra
-# waiting for the person
-ANSWER_TOKENS = 220
+# one to four sentences is about 60-120 tokens in Latin letters; Tamil
+# script needs roughly twice as many tokens for the same words. The model
+# writes about five tokens a second on the server, so every extra token
+# allowed is extra waiting for the person - and an answer that runs past
+# its allowance is cut off and never shown.
+ANSWER_TOKENS = {'latin': 220, 'tamil': 380}
 
 
 def clean(text):
@@ -73,6 +81,19 @@ def clean(text):
     if not text:
         return ''
     return _humanize(_THINK_BLOCK.sub('', text).replace('</think>', '')).strip()
+
+
+# the end of a sentence: Latin stops, or the full stop of Indian scripts
+_SENTENCE_END = re.compile(r'[.!?।]')
+
+
+def _complete_sentences(text):
+    """An answer cut off by the length limit, up to its last full stop."""
+    text = (text or '').strip()
+    last = None
+    for last in _SENTENCE_END.finditer(text):
+        pass
+    return text[:last.end()].strip() if last else ''
 
 
 # ------------------------------------------------------------------
@@ -122,19 +143,41 @@ def earlier_turns(user, turn=0):
              'text': row.text} for row in reversed(list(rows))]
 
 
+# The small model drifts back into English with a Tamil or Tanglish writer,
+# so the language is the first thing it reads, and - for those - the last.
+_LANGUAGE_HEAD = {
+    'english': 'LANGUAGE: write your reply in English.',
+    'tamil': ('LANGUAGE: the person writes in Tamil script - write your WHOLE reply in Tamil script, '
+              'at most two short sentences.'),
+    'tanglish': 'LANGUAGE: the person writes in Tanglish - write your WHOLE reply in natural Tanglish.',
+}
+# what a Tamil / Tanglish writer gets when the model's answer cannot be shown
+# and the plain reply would only be a generic acknowledgement
+_OWN_WORDS = {
+    'tamil': ('மன்னிக்கவும், இதற்கு நான் உறுதியாக பதில் சொல்ல முடியாது — தவறான தகவல் சொல்ல விரும்பவில்லை. '
+              'சரியான விவரங்களை Home → Leads மற்றும் Approvals பக்கங்களில் பார்க்கலாம்.'),
+    'tanglish': ('Sari, idhukku nan sure-aa solla mudiyala - wrong info solla venam. '
+                 'Correct details ku Home → Leads and Approvals pages paakalam.'),
+}
+
+
 def _system_prompt(text, settings):
     cfg = AgentConfig.objects.filter(agent='responder').first()
+    style = detect_language_style(text)
     company = settings.company_name or 'this workspace'
-    parts = [
-        JOB, ANSWER_RULES, LANGUAGE_RULES[detect_language_style(text)],
-        'EXAMPLES\n'
-        'Person: did you send my emails?\n'
-        'You: Not yet - nothing sends until you approve it. Say "approve all drafts" and I will '
-        'ask you to confirm first.\n'
-        'Person: who are you?\n'
-        f'You: I am the AI sales assistant for {company}. I find leads, write the outreach emails '
-        'and keep track of replies - nothing sends without your approval.',
-    ]
+    parts = [_LANGUAGE_HEAD[style], JOB, ANSWER_RULES, LANGUAGE_RULES[style]]
+    if style == 'english':
+        parts.append(
+            'EXAMPLES\n'
+            'Person: did you send my emails?\n'
+            'You: Not yet - nothing sends until you approve it. Say "approve all drafts" and I will '
+            'ask you to confirm first.\n'
+            'Person: who are you?\n'
+            f'You: I am the AI sales assistant for {company}. I find leads, write the outreach emails '
+            'and keep track of replies - nothing sends without your approval.')
+    else:
+        # English examples would pull the reply back into English
+        parts.append(_LANGUAGE_HEAD[style])
     own = (cfg.system_prompt if cfg and cfg.system_prompt else '')
     own = own.replace('[Your Name]', settings.company_name or 'the team')
     if own.strip():
@@ -146,13 +189,30 @@ def _system_prompt(text, settings):
     return '\n\n'.join(parts)
 
 
+def plain_reply(text, turn, style):
+    """What the person gets when the model's answer cannot be shown: the
+    keyword reply - which carries the real numbers when it has them - or,
+    for a Tamil / Tanglish writer, an honest line in their own words when
+    the keyword reply would only be a generic acknowledgement."""
+    reply = _keyword_reply(text, turn)
+    if reply in FALLBACK_REPLIES and style in _OWN_WORDS:
+        return _OWN_WORDS[style]
+    return reply
+
+
 def _answer_prompt(facts, summary, turns, text):
+    """One running transcript. Each turn's prompt is the previous turn's
+    prompt plus the new messages, on purpose: the local runtime keeps a
+    copy of every DIFFERENT prompt it has read (about 110 KB per prompt
+    token, with no setting to cap it — ollama/ollama #18106, #18264), while
+    a prompt that simply continues the last one is reused. So this shape is
+    both what makes replies fast after the first turn and what keeps the
+    runtime's memory from growing with every message."""
     parts = ['FACTS (live from this workspace):', facts]
     if summary:
         parts += ['', 'CONVERSATION SO FAR (memory note):', summary]
-    if turns:
-        parts += ['', 'RECENT MESSAGES:', convo.render(turns)]
-    parts += ['', f'PERSON WROTE: {text}', '', 'Answer the person.']
+    parts += ['', 'RECENT MESSAGES:',
+              convo.render([*turns, {'role': 'user', 'text': text}])]
     return '\n'.join(parts)
 
 
@@ -207,22 +267,26 @@ def assistant_answer(text, user=None, history=None, turn=0):
         used = convo.estimate_tokens(prompt) + convo.estimate_tokens(system)
         if used > convo.PROMPT_BUDGET:
             log.warning('assistant prompt is about %d tokens, over the %d budget', used, convo.PROMPT_BUDGET)
+        allowance = ANSWER_TOKENS['tamil' if style == 'tamil' else 'latin']
         out = llm_chat(system + (TIGHT_RULES if mode == 'tight' else ''), prompt,
-                       model=model, max_tokens=ANSWER_TOKENS)
+                       model=model, max_tokens=allowance)
         if not out:
             return None
         if out.get('cut'):
-            # stopped by the length limit before it finished - half a
-            # sentence is never shown; the next try is asked to be careful
-            log.info('assistant answer ran past %d tokens and was cut', ANSWER_TOKENS)
-            return None
+            # stopped by the length limit before it finished: keep what is
+            # complete (a long answer still holds its answer in its first
+            # sentences) and never show the unfinished tail
+            kept = _complete_sentences(clean(out['text']))
+            log.info('assistant answer ran past %d tokens and was cut; kept its %d complete characters',
+                     allowance, len(kept))
+            return kept or None
         return clean(out['text'])
 
+    known = f'{facts}\nPERSON WROTE: {text}'
+    seen = f'{convo.render(everything)}\n{memory["summary"]}'
     reply, problems, regenerated = convo.guarded(
-        generate, fallback=lambda: _keyword_reply(text, turn),
-        data=f'{facts}\nPERSON WROTE: {text}',
-        turns=f'{convo.render(everything)}\n{memory["summary"]}',
-        language=style)
+        generate, fallback=lambda: plain_reply(text, turn, style),
+        data=known, turns=seen, language=style)
     if problems:
         log.info('assistant: a made-up answer was replaced (%s), retried=%s', ','.join(problems), regenerated)
     return reply

@@ -145,6 +145,15 @@ class Command(BaseCommand):
                     reply, secs = say('so what do we sell?')
                     record('remembers the chat', 'journal' in reply.lower(), secs, self._short(reply))
 
+                    # 4b. each turn's prompt continues the one before: the runtime then
+                    #     reuses what it read instead of keeping another copy in RAM
+                    answers = [c for c in calls if c['module'] == 'core.assistant'
+                               and 'AI sales assistant' in c['system'] and 'ANSWER AGAIN' not in c['system']]
+                    chained = sum(1 for a, b in zip(answers, answers[1:])
+                                  if b['prompt'].startswith(a['prompt']))
+                    record('each turn continues the last prompt', len(answers) >= 3 and chained == len(answers) - 1,
+                           0.0, f'{chained} of {len(answers) - 1} turns continued the prompt before')
+
                     # 5. it works out who to find — from what the owner just said, and
                     #    from the company on its own — and sets it only on "yes"
                     reply, secs = say('we run coding bootcamps for working professionals - who should I find?')
@@ -233,7 +242,8 @@ class Command(BaseCommand):
                 out = real_chat(system, prompt, **kw)
                 calls.append({'module': module_name, 'secs': time.monotonic() - started,
                               'prompt_tokens': (out or {}).get('prompt_tokens') or 0,
-                              'eval_tokens': (out or {}).get('eval_tokens') or 0})
+                              'eval_tokens': (out or {}).get('eval_tokens') or 0,
+                              'system': system, 'prompt': prompt})
                 return out
             return llm_chat
 

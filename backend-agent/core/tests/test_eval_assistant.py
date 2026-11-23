@@ -32,7 +32,7 @@ def fake_model(system, prompt, **_kw):
     elif 'ACTION RESULT' in prompt:
         text = 'Done.'
     else:
-        asked = prompt.rsplit('PERSON WROTE:', 1)[-1].lower()
+        asked = prompt.rsplit('User: ', 1)[-1].lower()       # the message just written
         if 'who are you' in asked:
             text = "I'm the AI sales assistant for Eval Journals - I find leads and write the outreach emails."
         elif 'எத்தனை' in asked:
@@ -53,7 +53,7 @@ class EvalAssistantTests(TenantTestCase):
                 mock.patch('core.business_profile.llm_json', return_value=dict(READING)):
             call_command('eval_assistant', '--quick', stdout=out)
         text = out.getvalue()
-        self.assertIn('RESULT: 11/11 checks passed (quick run)', text)
+        self.assertIn('RESULT: 12/12 checks passed (quick run)', text)
         self.assertIn('model calls:', text)
         self.assertIn('honesty guard:', text)
         self.assertFalse(Workspace.all_tenants.filter(slug__startswith='eval-').exists())
@@ -71,9 +71,11 @@ class EvalAssistantTests(TenantTestCase):
             with self.assertRaises(SystemExit):
                 call_command('eval_assistant', '--quick', stdout=out)
         text = out.getvalue()
-        self.assertIn('RESULT: 5/11 checks passed', text)
-        self.assertIn('FAILED: counts, no false "I sent it", remembers the chat, answers in Tamil, '
-                      'guide: mailbox, guide: who to find', text)
+        self.assertIn('RESULT: 5/12 checks passed', text)
+        self.assertIn('FAILED: counts, no false "I sent it", remembers the chat, '
+                      'each turn continues the last prompt, answers in Tamil, guide: mailbox, '
+                      'guide: who to find', text)                      # a retry compresses, so the
+                                                            # transcript no longer continues
         self.assertNotIn('661 leads', text)                       # never shown, not even in the report
         self.assertIn('7 made-up answer(s) caught (0 answered again cleanly, 7 honest fallback', text)
         self.assertFalse(Workspace.all_tenants.filter(slug__startswith='eval-').exists())

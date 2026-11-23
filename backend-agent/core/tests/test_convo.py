@@ -180,6 +180,13 @@ class DetectProblemsTests(TenantTestCase):
         self.assertEqual(self.problems("I'm the AI sales assistant for Acme Journals."), set())
         self.assertEqual(self.problems('Best, [Your Name] from [Company]'), {'placeholder'})
 
+    def test_style_is_never_a_reason_to_hide_a_correct_answer(self):
+        """An answer ending with the same closing line as the one before is
+        still shown: rejecting those replaced good replies with plain
+        acknowledgements (seen in a real-model run)."""
+        same = 'You have 12 leads. Let me know if you would like to run a cycle.'
+        self.assertEqual(convo.detect_problems(same, data=DATA), [])
+
     def test_live_reply_that_refused_for_no_reason(self):
         self.assertIn('false_refusal', self.problems(
             "I'm sorry, but I don't have access to your personal information."))

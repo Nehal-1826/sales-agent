@@ -241,6 +241,10 @@ def _made_up_names(text, known):
 def detect_problems(reply, *, data='', turns='', action_ran=False, language='english'):
     """Why an answer must not be shown, as sorted codes — [] when it is fine.
 
+    Honesty and shape only, never style: an answer that ends with the same
+    closing line as the one before is still shown (asking the model not to
+    is an instruction, core.assistant.ANSWER_RULES). Rejecting correct answers
+    over style replaced good replies with plain acknowledgements.
     `data` is everything the model was given as fact (the workspace
     snapshot, the memory note), `turns` the earlier conversation; a number
     or a name that is in neither was made up. `action_ran` is True only

@@ -270,6 +270,17 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   done when this passes; exit 1 otherwise. To try code on the VPS before a
   deploy: `docker cp` the files into `warmpulse-django-1:/app` and run it —
   the running gunicorn keeps the old code until the real deploy.
+- The regression run's throwaway workspaces: every one is `eval-<stamp>`
+  (local time). A SIGTERM/SIGINT/SIGHUP becomes an exception so the run still
+  deletes its own; and each run first sweeps leftovers of runs that were
+  killed hard (`sweep_leftovers`: only `eval-<stamp>` slugs older than 60
+  min — never anything else). A killed run DID leave one on the live server
+  once (2026-11-23); `User.objects.filter(username__startswith='eval-')`
+  and `Workspace.all_tenants.filter(slug__startswith='eval-')` must be empty.
+  To stop a run on the VPS: the app container has NO `pkill`/`ps` — find the
+  pid under `/proc/*/cmdline` and `kill -TERM` it; a host-side
+  `pkill -f eval_assistant` kills your own ssh session (its command line
+  contains the pattern).
 - Admin secret slug (`/<6-digits>/…` console prefix): wrong hits are logged to
   `SlugAttempt` (no instant email) and emailed as a weekly digest via
   `manage.py send_slug_report` — VPS cron Monday 09:00 IST (03:30 UTC), log

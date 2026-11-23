@@ -3,12 +3,14 @@ against the model, reports, and leaves nothing behind. The model here is a
 stand-in; on the server the same run talks to the real one."""
 
 import os
+import time
 from io import StringIO
 from unittest import mock
 
 from django.core.management import call_command
 
 from core.models import User, Workspace
+from core.tenancy import workspace_context
 from core.tests.base import TenantTestCase
 
 READING = {'services': ['Journal publishing'], 'customer_type': 'organisations',
@@ -87,3 +89,56 @@ class EvalAssistantTests(TenantTestCase):
                 call_command('eval_assistant', '--quick', stdout=out)
         self.assertIn('no model to answer', str(stopped.exception))
         self.assertFalse(Workspace.all_tenants.filter(slug__startswith='eval-').exists())
+
+    def test_what_a_killed_run_left_behind_is_swept_by_the_next_run(self):
+        """A run killed hard cannot clean up: one such workspace stayed on
+        the live server (2026-11-23). The next run removes old leftovers -
+        and never one that may belong to a run still going."""
+        stale = 'eval-20000101-000000'                           # long ago
+        fresh = 'eval-' + time.strftime('%Y%m%d-%H%M%S')        # could be running right now
+        for slug in (stale, fresh):
+            workspace = Workspace.all_tenants.create(slug=slug, name=slug)
+            with workspace_context(workspace):
+                User.objects.create_user(username=slug, password='pw12345678')
+        with LOCAL, mock.patch('core.ai.llm_chat', side_effect=fake_model), \
+                mock.patch('core.business_profile.llm_json', return_value=dict(READING)):
+            call_command('eval_assistant', '--quick', stdout=StringIO())
+        self.assertFalse(Workspace.all_tenants.filter(slug=stale).exists())
+        self.assertFalse(User.objects.filter(username=stale).exists())
+        self.assertTrue(Workspace.all_tenants.filter(slug=fresh).exists())
+        self.assertTrue(User.objects.filter(username=fresh).exists())
+        User.objects.filter(username=fresh).delete()
+        Workspace.all_tenants.filter(slug=fresh).delete()
+
+    def test_only_our_own_throwaway_workspaces_are_ever_swept(self):
+        """Nothing that is not an 'eval-<timestamp>' of this command moves."""
+        from core.management.commands.eval_assistant import sweep_leftovers
+        real = Workspace.all_tenants.create(slug='evaluation-client', name='A real customer')
+        with workspace_context(real):
+            User.objects.create_user(username='their-owner', password='pw12345678')
+        self.assertEqual(sweep_leftovers(), 0)
+        self.assertTrue(Workspace.all_tenants.filter(slug='evaluation-client').exists())
+        self.assertTrue(User.objects.filter(username='their-owner').exists())
+        User.objects.filter(username='their-owner').delete()
+        Workspace.all_tenants.filter(slug='evaluation-client').delete()
+
+    def test_a_malformed_or_dated_stamp_is_never_guessed(self):
+        """Only a slug that is exactly this command's 'eval-<stamp>' can go."""
+        from core.management.commands.eval_assistant import sweep_leftovers
+        Workspace.all_tenants.create(slug='eval-', name='no stamp')
+        Workspace.all_tenants.create(slug='eval-not-a-date', name='not a date')
+        Workspace.all_tenants.create(slug='eval-20990101-000000', name='from the future')
+        self.assertEqual(sweep_leftovers(), 0)
+        self.assertEqual(Workspace.all_tenants.filter(slug__startswith='eval-').count(), 3)
+        Workspace.all_tenants.filter(slug__in=('eval-', 'eval-not-a-date',
+                                               'eval-20990101-000000')).delete()
+
+    def test_the_termination_signal_handler_leaves_through_the_cleanup(self):
+        """pkill sends SIGTERM; as an exception it runs the command's
+        `finally`. (SIGKILL cannot be caught at all - the sweep above is
+        for that. The real wiring is checked on the server with a pkill.)"""
+        from core.management.commands.eval_assistant import _leave
+        for name in ('SIGTERM', 'SIGINT', 'SIGHUP'):
+            with self.subTest(name=name), self.assertRaises(SystemExit) as left:
+                _leave(name)(0, None)
+            self.assertEqual(str(left.exception), f'{name} received')

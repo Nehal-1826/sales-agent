@@ -11,8 +11,10 @@ owner, deleted at the end — no real workspace is touched and nothing is ever
 sent (no mailbox, runs paused). Exit code 1 when a check fails.
 """
 
+import signal
 import statistics
 import time
+from datetime import datetime, timedelta
 from unittest import mock
 
 from django.core.management.base import BaseCommand
@@ -24,6 +26,47 @@ from core.chat import responder_reply
 from core.guide import guide_answer
 from core.models import AppSettings, ChatMessage, EmailDraft, Lead, User, Workspace
 from core.tenancy import workspace_context
+
+EVAL_SLUG = 'eval-'            # every throwaway workspace is 'eval-<stamp>'
+STALE_AFTER_MINUTES = 60       # a run still going is never this old
+
+
+def _stamp_of(slug):
+    """When a throwaway workspace was created, taken from its slug; None
+    when the slug is not exactly this command's 'eval-<stamp>'."""
+    try:
+        return datetime.strptime(slug[len(EVAL_SLUG):], '%Y%m%d-%H%M%S')
+    except (TypeError, ValueError):
+        return None
+
+
+def sweep_leftovers(now=None, older_than_minutes=STALE_AFTER_MINUTES):
+    """Remove what a KILLED run left behind and return how many went.
+    SIGKILL cannot be caught, and one such workspace stayed on the live
+    server (2026-11-23). Only slugs that are exactly this command's
+    'eval-<stamp>' AND older than `older_than_minutes` go: never a
+    workspace that is not ours, never one that may belong to a run still
+    going. Stamps are local time, like `time.strftime` that writes them."""
+    cutoff = (now or datetime.now()) - timedelta(minutes=older_than_minutes)
+    removed = 0
+    slugs = list(Workspace.all_tenants.filter(slug__startswith=EVAL_SLUG).values_list('slug', flat=True))
+    for slug in slugs:
+        stamp = _stamp_of(slug)
+        if stamp is None or not stamp < cutoff:
+            continue
+        User.objects.filter(username=slug).delete()
+        Workspace.all_tenants.filter(slug=slug).delete()
+        removed += 1
+    return removed
+
+
+def _leave(name):
+    """Handler for a termination signal: an exception, so the command's
+    `finally` still removes its throwaway workspace."""
+    def handler(signum, frame):
+        raise SystemExit(f'{name} received')
+    return handler
+
 
 LEADS = ['Smile Dental Clinic', 'Iron Gym', 'Zenith Events', 'Kumar Law Associates',
          'Pixel Web Design Agency']
@@ -85,6 +128,20 @@ class Command(BaseCommand):
             logging.getLogger('core').setLevel(logging.INFO)
         stamp = time.strftime('%Y%m%d-%H%M%S')
         slug = f'eval-{stamp}'
+        # a run that is killed (pkill, Ctrl-C, a dropped session) must still
+        # remove its throwaway workspace: the signal becomes an exception so
+        # the `finally` below runs
+        for name in ('SIGTERM', 'SIGINT', 'SIGHUP'):
+            number = getattr(signal, name, None)          # SIGHUP does not exist on Windows
+            if number is None:
+                continue
+            try:
+                signal.signal(number, _leave(name))
+            except (ValueError, OSError):                 # not the main thread / not allowed
+                pass
+        swept = sweep_leftovers()
+        if swept:
+            self.stdout.write(f'swept {swept} throwaway workspace(s) left by killed runs')
         workspace = Workspace.all_tenants.create(slug=slug, name='Eval Journals')
         rows, calls, guard_events = [], [], []
         try:

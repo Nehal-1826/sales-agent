@@ -2,6 +2,8 @@
 import os
 from unittest import mock
 
+import requests as requests_lib
+
 from core.tests.base import TenantTestCase
 
 from core import ai
@@ -82,8 +84,12 @@ class RoutingTests(TenantTestCase):
 
     def test_model_for_accepts_anything_on_multi_family_hosts(self):
         self.assertEqual(ai.model_for('groq', 'llama-3.1-8b-instant'), 'llama-3.1-8b-instant')
-        self.assertEqual(ai.model_for('ollama', 'qwen2.5'), 'qwen2.5')
         self.assertEqual(ai.model_for('groq', ''), ai.DEFAULT_MODELS['groq'])
+        # the self-hosted runtime is the exception — only a model it HAS
+        # (test_local_runtime_model.py); its address is asked from the
+        # environment, so nothing here reaches the network unexpectedly
+        with mock.patch.dict(os.environ, {'OLLAMA_BASE_URL': 'http://127.0.0.1:9/v1'}):
+            self.assertEqual(ai.model_for('ollama', 'qwen2.5'), ai.DEFAULT_MODELS['ollama'])
 
     def test_request_uses_fitting_model(self):
         self._settings('Gemini')
@@ -237,6 +243,90 @@ class AiReadyTests(TenantTestCase):
     def test_unknown_provider_is_never_ready(self):
         self.assertFalse(self._ready('Anthropic', 'some-key-000000'))
 
+
+class LlmChatTests(TenantTestCase):
+    """The conversation call. On the self-hosted runtime the model's private
+    thinking is OFF — it ran 150-400 hidden tokens per answer (a five-word
+    reply took 155), so every chat turn cost 20-45 s — and it reports how
+    many tokens it was given, so a conversation can be kept inside the
+    model's memory window."""
+
+    def setUp(self):
+        self.s = AppSettings.load()
+        self.s.ai_provider, self.s.ai_key = 'Ollama', ''
+        self.s.save()
+
+    @staticmethod
+    def _ok(payload):
+        resp = mock.Mock(status_code=200)
+        resp.json.return_value = payload
+        return resp
+
+    def test_local_runtime_is_asked_without_thinking(self):
+        payload = {'message': {'content': '  Sure.  ', 'thinking': 'let me see'},
+                   'prompt_eval_count': 412, 'eval_count': 9}
+        with mock.patch('core.ai.requests.post', return_value=self._ok(payload)) as post:
+            out = ai.llm_chat('sys', 'prompt')
+        self.assertEqual(post.call_args.args[0], 'http://localhost:11434/api/chat')
+        body = post.call_args.kwargs['json']
+        self.assertIs(body['think'], False)
+        self.assertIs(body['stream'], False)
+        self.assertNotIn('format', body)
+        self.assertEqual(body['model'], 'qwen3:1.7b')
+        self.assertEqual(body['messages'][0], {'role': 'system', 'content': 'sys'})
+        self.assertEqual(body['messages'][1], {'role': 'user', 'content': 'prompt'})
+        self.assertLessEqual(body['options']['num_predict'], 400)
+        # the reply is the answer only — the hidden thinking never reaches the user
+        self.assertEqual(out, {'text': 'Sure.', 'prompt_tokens': 412, 'eval_tokens': 9, 'cut': False})
+
+    def test_a_schema_locks_the_answer_shape(self):
+        schema = {'type': 'object', 'properties': {'action': {'type': 'string'}}}
+        with mock.patch('core.ai.requests.post', return_value=self._ok({'message': {'content': '{}'}})) as post:
+            ai.llm_chat('sys', 'prompt', schema=schema, max_tokens=120)
+        self.assertEqual(post.call_args.kwargs['json']['format'], schema)
+        self.assertEqual(post.call_args.kwargs['json']['options']['num_predict'], 120)
+
+    def test_cloud_provider_uses_the_standard_endpoint(self):
+        self.s.ai_provider, self.s.ai_key = 'OpenAI', 'sk-test-000000000000'
+        self.s.save()
+        payload = {'choices': [{'message': {'content': 'Hello there'}}],
+                   'usage': {'prompt_tokens': 20, 'completion_tokens': 3}}
+        with mock.patch('core.ai.requests.post', return_value=self._ok(payload)) as post:
+            out = ai.llm_chat('sys', 'prompt')
+        url = post.call_args.args[0]
+        self.assertEqual(url, 'https://api.openai.com/v1/chat/completions')
+        body = post.call_args.kwargs['json']
+        self.assertNotIn('think', body)
+        self.assertEqual(post.call_args.kwargs['headers']['Authorization'], 'Bearer sk-test-000000000000')
+        self.assertEqual(out, {'text': 'Hello there', 'prompt_tokens': 20, 'eval_tokens': 3, 'cut': False})
+
+    def test_an_answer_stopped_by_the_length_limit_says_so(self):
+        """The runtime reports why it stopped: 'length' means the sentence
+        was cut off — callers never show half an answer."""
+        payload = {'message': {'content': 'You have 12 leads and the first one'},
+                   'prompt_eval_count': 300, 'eval_count': 220, 'done_reason': 'length'}
+        with mock.patch('core.ai.requests.post', return_value=self._ok(payload)):
+            self.assertTrue(ai.llm_chat('sys', 'prompt', max_tokens=220)['cut'])
+        self.s.ai_provider, self.s.ai_key = 'OpenAI', 'sk-test-000000000000'
+        self.s.save()
+        payload = {'choices': [{'message': {'content': 'cut short here'}, 'finish_reason': 'length'}],
+                   'usage': {}}
+        with mock.patch('core.ai.requests.post', return_value=self._ok(payload)):
+            self.assertTrue(ai.llm_chat('sys', 'prompt')['cut'])
+
+    def test_failures_answer_none_never_raise(self):
+        cases = [mock.Mock(status_code=500), requests_lib.ConnectionError('down')]
+        for resp in cases:
+            with self.subTest(resp=type(resp).__name__),                     mock.patch('core.ai.requests.post', **{'side_effect': [resp]} if isinstance(resp, Exception) else {'return_value': resp}):
+                self.assertIsNone(ai.llm_chat('sys', 'prompt'))
+        # the runtime answering an error object, an empty reply, a provider with no key
+        with mock.patch('core.ai.requests.post', return_value=self._ok({'error': 'model not found'})):
+            self.assertIsNone(ai.llm_chat('sys', 'prompt'))
+        with mock.patch('core.ai.requests.post', return_value=self._ok({'message': {'content': '   '}})):
+            self.assertIsNone(ai.llm_chat('sys', 'prompt'))
+        self.s.ai_provider, self.s.ai_key = 'OpenAI', ''
+        self.s.save()
+        self.assertIsNone(ai.llm_chat('sys', 'prompt'))
 
 class DefaultProviderTests(TenantTestCase):
     """A NEW workspace starts on the self-hosted runtime when this deployment

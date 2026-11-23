@@ -485,7 +485,7 @@ export async function sendChatMessage(text: string): Promise<Result<ChatTurn>> {
     const r = await request<{ reply: ChatMessage; onboarding?: OnboardingState; pendingAction?: string | null }>(
       '/chat/',
       post({ text }),
-      isBareDomain(text) ? 240_000 : 90_000,
+      isBareDomain(text) ? 240_000 : 120_000,
     );
     return { reply: r.reply, onboarding: r.onboarding ?? null, pendingAction: r.pendingAction ?? null };
   });

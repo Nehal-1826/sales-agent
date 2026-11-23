@@ -635,6 +635,68 @@ class GenericTemplateTests(TenantTestCase):
             self.assertNotIn('custom SaaS platforms, marketplaces', body)
 
 
+class TargetStepAnalysisTests(TenantTestCase):
+    """Answering "who should I find?" with a LIST. Kinds of organisations are
+    used exactly as given. Things the company SELLS are added to What you
+    sell - and the AI then works out who buys them, instead of only saying
+    "those are what you sell, not who to find"."""
+
+    PLAN = {'buyers': ['university', 'research institute', 'nonprofit organization'], 'countries': [],
+            'ideal': 'Research institutes that want to publish.', 'individuals': False,
+            'services': ['Journal publishing']}
+
+    def setUp(self):
+        self.s = fresh_settings()
+        self.u = User.objects.create_user(username='owner2', password='pass12345')
+        onboarding_reply('hi', self.u)
+        onboarding_reply('Acme Journals', self.u)
+        onboarding_reply('journal publishing', self.u)
+        no_website_read(self)
+        onboarding_reply('acmejournals.example', self.u)       # -> the "who should I find?" question
+        self.assertEqual(onboarding_status(self.u, self.s)['stepKey'], 'target')
+
+    def test_kinds_of_organisations_are_taken_as_given(self):
+        with mock.patch('core.onboarding.plan_targeting') as plan:
+            reply = onboarding_reply('universities, research institutes', self.u)
+        plan.assert_not_called()
+        self.s.refresh_from_db()
+        self.assertEqual(self.s.icp_mode, 'buyer')
+        self.assertEqual(self.s.target_industries, 'universities, research institutes')
+        self.assertEqual(onboarding_status(self.u, self.s)['stepKey'], 'countries')
+        self.assertIn('universities, research institutes', reply)
+
+    def test_things_they_sell_are_added_and_the_buyers_worked_out(self):
+        with mock.patch('core.onboarding.plan_targeting', return_value=dict(self.PLAN)) as plan:
+            reply = onboarding_reply('peer reviewed journal publishing, conference proceedings', self.u)
+        plan.assert_called_once()
+        self.assertEqual(plan.call_args.kwargs['about'], 'peer reviewed journal publishing, conference proceedings')
+        self.s.refresh_from_db()
+        self.assertIn('conference proceedings', self.s.services)
+        self.assertIn('peer reviewed journal publishing', self.s.services)
+        self.assertEqual(self.s.icp_mode, 'buyer')
+        self.assertEqual(self.s.target_industries, 'university, research institute, nonprofit organization')
+        self.assertEqual(self.s.icp_notes, 'Research institutes that want to publish.')
+        self.assertEqual(onboarding_status(self.u, self.s)['stepKey'], 'countries')
+        self.assertIn('added them to What you sell', reply)
+        self.assertIn('university, research institute, nonprofit organization', reply)
+
+    def test_when_the_model_cannot_tell_it_says_so_and_nothing_is_guessed(self):
+        with mock.patch('core.onboarding.plan_targeting', return_value=None):
+            reply = onboarding_reply('peer reviewed journal publishing, conference proceedings', self.u)
+        self.s.refresh_from_db()
+        self.assertIn('conference proceedings', self.s.services)
+        self.assertEqual(self.s.target_industries, '')
+        self.assertEqual(onboarding_status(self.u, self.s)['stepKey'], 'target')
+        self.assertIn("couldn't work out who buys", reply)
+
+    def test_an_unclear_single_word_still_gets_the_plain_question(self):
+        reply = onboarding_reply('hmm', self.u)
+        self.s.refresh_from_db()
+        self.assertEqual(self.s.services, ['journal publishing'])
+        self.assertEqual(onboarding_status(self.u, self.s)['stepKey'], 'target')
+        self.assertIn('"buyers" or "agencies"', reply)
+
+
 class DomainAutofillTests(TenantTestCase):
     """The owner pastes their DOMAIN — the AI reads the site and fills BOTH
     setup cards: the business (name, website, what you sell, address) and

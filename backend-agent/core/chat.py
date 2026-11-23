@@ -124,58 +124,11 @@ def _responder_config():
     return AgentConfig.objects.filter(agent='responder').first()
 
 
-def _llm_reply(text, turn=0):
-    """Generate a Responder answer via the configured LLM provider."""
-    cfg = _responder_config()
-    settings = AppSettings.load()
-
-    system = (cfg.system_prompt if cfg and cfg.system_prompt else
-              'You are the Responder — the friendly chat assistant of the '
-              f'{settings.company_name or "the workspace"} marketing & sales team.')
-    # a seeded template placeholder must never leak into a reply — small
-    # models quote it verbatim ("I'm [Your Name]")
-    system = system.replace('[Your Name]', settings.company_name or 'the team')
-    negative = cfg.negative_prompt if cfg else ''
-
-    style = (
-        'Sound like a real friendly human chatting on WhatsApp, not a corporate bot: '
-        'short replies (1-4 sentences unless they ask for detail), contractions, zero '
-        'stiff marketing tone. NEVER use markdown — no **bold**, no headings, no lists '
-        'with * or -; plain text only (a simple "•" line is fine when listing a few items). '
-        'Never start the reply with "REPLY:" or similar labels. '
-        f'You are the AI sales assistant of {settings.company_name or "this workspace"} — when asked '
-        'who you are, say exactly that. NEVER write placeholder text like "[Your Name]", '
-        '"[Company]" or any bracketed template tokens; use the real names given to you. '
-        'CRITICAL HONESTY RULE: this reply is CONVERSATIONAL ONLY — you have NOT executed '
-        'anything. Never say you changed, updated, saved, set or sent anything (settings, '
-        'recipients, keys, emails, profiles). If the user asks you to change a setting or '
-        'perform an operation, either it already happened via the action layer before this '
-        'reply (then confirm from the result you were given) or say exactly HOW to do it '
-        '(the phrasing that triggers the action, or Settings). Never invent success. '
-        f'{LANGUAGE_RULES[detect_language_style(text)]} '
-        'You have live CRM data below — mention specific leads/drafts when it genuinely '
-        'helps, but don\'t dump stats in every answer.'
-    )
-    system = f'{system}\n\nSTYLE RULES: {style}'
-
-    crm_context = _crm_snapshot()
-
-    prompt = (
-        f'{crm_context}\n\n'
-        f'Company: {settings.company_name or "the team"}\n'
-        f'Services: {our_services_text(settings)}\n\n'
-        f'{("RULES TO AVOID: " + negative + chr(10)) if negative else ""}'
-        f'USER MESSAGE: {text}\n\n'
-        f'Respond in the user\'s own language and style (see STYLE RULES).'
-    )
-
-    model = cfg.model if cfg else ''
-    result = llm_complete(prompt, system=system, model=model)
-    if result:
-        return _humanize(result)
-
-    # LLM call failed — fall through to keyword logic
-    return None
+def _llm_reply(text, turn=0, user=None, history=None):
+    """The Assistant's answer from the model - with the conversation in
+    memory and never a made-up one (core.assistant)."""
+    from .assistant import assistant_answer   # late import: assistant needs this module
+    return assistant_answer(text, user=user, history=history, turn=turn)
 
 
 def _keyword_reply(text, turn=0):
@@ -278,13 +231,19 @@ def responder_reply(text, turn=0, user=None):
     """Return the Responder's answer for a user message.
 
     Agentic: first tries to detect + execute an action (run cycle, approve/
-    reject draft, delete lead, set cadence, send report), then phrases the
-    result in the user's language.  Risky actions wait for an explicit "yes". Falls back to conversation, then keywords.
+    reject draft, delete lead, set cadence, send report, work out who to
+    find), then says what happened in the user's language. Risky actions
+    wait for an explicit "yes". Otherwise the model answers with the whole
+    conversation in memory (core.assistant); keywords are the last resort.
     """
     from .actions import handle_command  # late import — pipeline is heavy
+    from .assistant import earlier_turns
 
+    history = earlier_turns(user, turn)
+    shown = [{'from': 'user' if t['role'] == 'user' else 'ai', 'text': t['text']}
+             for t in history[-8:]]
     try:
-        result = handle_command(text, user)
+        result = handle_command(text, user, shown)
     except Exception as exc:
         log.warning('chat action failed (%s): %s', text, exc)
         result = 'That action failed on the server — check the logs.'
@@ -295,7 +254,7 @@ def responder_reply(text, turn=0, user=None):
 
     if llm_available():
         try:
-            result = _llm_reply(text, turn)
+            result = _llm_reply(text, turn, user=user, history=history)
             if result:
                 return result
         except Exception as exc:
@@ -305,21 +264,12 @@ def responder_reply(text, turn=0, user=None):
 
 
 def _phrase_reply(text, action_result):
-    """Have Gemini phrase the action result in the user's language/style;
-    plain result text when no AI key is set."""
+    """Say what a command did, in the user's language and exactly as it
+    happened (core.assistant); the plain result when there is no model."""
     if not llm_available():
         return action_result
-    system = (
-        'You executed an action in a sales-agent app on the user\'s request. '
-        'Tell them what happened, in ONE or TWO short friendly sentences, plain text, '
-        'no markdown. Stay exactly faithful to the result — add no new claims. '
-        f'{LANGUAGE_RULES[detect_language_style(text)]}'
-    )
+    from .assistant import phrase_result   # late import: assistant needs this module
     try:
-        phrased = llm_complete(
-            f'USER ASKED: {text}\n\nACTION RESULT: {action_result}\n\n'
-            f'Tell the user the outcome briefly.',
-            system=system, timeout=45)
-        return _humanize(phrased) or action_result
+        return phrase_result(text, action_result)
     except Exception:
         return action_result

@@ -80,12 +80,47 @@ def resolve_provider(provider):
 
 def model_for(provider, requested):
     """The agent's configured model when it belongs to this provider, else
-    the provider default (a GLM id sent to Gemini fails every call)."""
+    the provider default (a GLM id sent to Gemini fails every call).
+
+    The self-hosted runtime is only ever sent a model it HAS: the per-agent
+    name is whatever the workspace typed for some provider — every new
+    workspace is seeded with "GLM-4.6" — and an unknown name is a 404 on
+    every call there (the pipeline fell back to templates and the Assistant
+    to keyword replies for every workspace after the first two)."""
     requested = (requested or '').strip()
+    if provider in LOCAL_PROVIDERS:
+        return requested if requested and requested in runtime_models(provider) else DEFAULT_MODELS[provider]
     families = MODEL_FAMILIES.get(provider, ())
     if requested and (not families or requested.lower().startswith(families)):
         return requested
     return DEFAULT_MODELS[provider]
+
+
+# what the self-hosted runtime was last asked about the models it has
+_RUNTIME_MODELS = {'at': 0.0, 'names': None}
+RUNTIME_MODELS_TTL = 600       # seconds
+
+
+def runtime_models(provider):
+    """Model tags the self-hosted runtime has pulled (asked once every ten
+    minutes). [] when it cannot be asked — then only the default is known
+    to exist."""
+    now = time.monotonic()
+    if _RUNTIME_MODELS['names'] is not None and now - _RUNTIME_MODELS['at'] < RUNTIME_MODELS_TTL:
+        return _RUNTIME_MODELS['names']
+    names = set()
+    try:
+        base = provider_base_url(provider).rstrip('/')
+        if base.endswith('/v1'):        # native routes live beside the /v1 shim
+            base = base[:-3]
+        resp = requests.get(f'{base}/api/tags', timeout=3)
+        resp.raise_for_status()
+        names = {str(m.get('model') or m.get('name') or '') for m in resp.json().get('models', [])}
+        names.discard('')
+    except Exception as exc:
+        log.info('could not list the local runtime models: %s', exc)
+    _RUNTIME_MODELS.update(at=now, names=names)
+    return names
 
 
 def provider_base_url(provider):
@@ -195,3 +230,68 @@ def llm_json(system, prompt, schema, max_tokens=256, timeout=240):
         log.warning('LLM JSON call failed: %s', exc)
         return None
     return out if isinstance(out, dict) else None
+
+
+def llm_chat(system, prompt, model='', max_tokens=320, timeout=240, schema=None, temperature=0.3):
+    """One turn of the CONVERSATION model — Assistant replies, the guide,
+    the command check, memory summaries.
+
+    On the self-hosted runtime the model's private thinking is switched OFF.
+    Measured on the VPS (qwen3:1.7b): with it on, a five-word answer spent
+    155 hidden tokens and every chat turn took 20-45 s; off, the command
+    check answers in 2.8 s instead of 23 s at the same accuracy. A small
+    model talking to a person does not need it, and it starved the answer.
+
+    Returns {'text', 'prompt_tokens', 'eval_tokens', 'cut'} — the measured
+    sizes let a conversation be kept inside the model's memory window, and
+    `cut` says the answer was stopped by `max_tokens` before it finished —
+    or None on any failure (never raises). `schema` locks the answer's
+    shape on the local runtime; other providers are asked for plain text."""
+    try:
+        settings = AppSettings.load()
+        provider = resolve_provider(settings.ai_provider)
+        if provider is None or (not settings.ai_key and provider not in LOCAL_PROVIDERS):
+            return None
+        base = provider_base_url(provider).rstrip('/')
+        messages = [{'role': 'system', 'content': system},
+                    {'role': 'user', 'content': prompt}]
+        if provider in LOCAL_PROVIDERS:
+            if base.endswith('/v1'):        # native routes live beside the /v1 shim
+                base = base[:-3]
+            body = {'model': model_for(provider, model), 'messages': messages,
+                    'stream': False, 'think': False,
+                    'options': {'temperature': temperature, 'num_predict': max_tokens}}
+            if schema:
+                body['format'] = schema
+            resp = requests.post(f'{base}/api/chat', json=body, timeout=timeout)
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get('error'):
+                raise RuntimeError(data['error'])
+            text = ((data.get('message') or {}).get('content') or '').strip()
+            tokens = {'prompt_tokens': data.get('prompt_eval_count'),
+                      'eval_tokens': data.get('eval_count')}
+            cut = data.get('done_reason') == 'length'
+        else:
+            headers = {'Content-Type': 'application/json'}
+            if settings.ai_key:
+                headers['Authorization'] = f'Bearer {settings.ai_key}'
+            resp = requests.post(
+                f'{base}/chat/completions', headers=headers,
+                json={'model': model_for(provider, model), 'messages': messages,
+                      'temperature': temperature, 'max_tokens': max_tokens},
+                timeout=timeout)
+            resp.raise_for_status()
+            data = resp.json()
+            choice = data['choices'][0]
+            text = ((choice.get('message') or {}).get('content') or '').strip()
+            usage = data.get('usage') or {}
+            tokens = {'prompt_tokens': usage.get('prompt_tokens'),
+                      'eval_tokens': usage.get('completion_tokens')}
+            cut = choice.get('finish_reason') == 'length'
+        if not text:
+            return None
+        return {'text': text, **tokens, 'cut': bool(cut)}
+    except Exception as exc:
+        log.warning('LLM chat call failed: %s', exc)
+        return None

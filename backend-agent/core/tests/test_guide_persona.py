@@ -3,6 +3,7 @@ next step. Structural behavior (actions, knowledge base, member/owner split
 of workspace_state) is covered by test_permissions / test_isolation_api."""
 from unittest import mock
 
+from core import convo, guide
 from core.guide import (FALLBACK_ANSWER, GUIDE_OPENERS, _next_opener,
                         guide_answer, workspace_state)
 from core.models import AppSettings, EmailDraft, Lead, Mailbox, User
@@ -95,15 +96,15 @@ class LLMPromptVoiceTests(TenantTestCase):
     def _capture(self):
         calls = []
 
-        def fake_complete(prompt, system='', **kw):
+        def fake_chat(system, prompt, **kw):
             calls.append({'prompt': prompt, 'system': system})
-            return 'Answer.'
+            return {'text': 'Answer.'}
 
         patcher = mock.patch.multiple(
-            'core.guide', llm_available=mock.DEFAULT, llm_complete=mock.DEFAULT)
+            'core.guide', llm_available=mock.DEFAULT, llm_chat=mock.DEFAULT)
         patched = patcher.start()
         patched['llm_available'].return_value = True
-        patched['llm_complete'].side_effect = fake_complete
+        patched['llm_chat'].side_effect = fake_chat
         self.addCleanup(patcher.stop)
         return calls
 
@@ -130,3 +131,118 @@ class LLMPromptVoiceTests(TenantTestCase):
         self.assertNotEqual(openers[0], openers[1])
         for opener in openers:
             self.assertIn(opener, GUIDE_OPENERS)
+
+
+class GuideMemoryTests(TenantTestCase):
+    """The guide answers inside the model's window: a long conversation is
+    compressed into a memory note, the least relevant knowledge is left out,
+    and a made-up answer is never shown."""
+
+    LONG = ('please explain again in detail how the pipeline finds companies and what '
+            'happens with every draft before it is sent ') * 3
+
+    def setUp(self):
+        s = AppSettings.load()
+        s.ai_provider, s.ai_key = 'Ollama', ''
+        s.save()
+        self.owner = User.objects.create_user(username='owner', password='pw123456')
+        lead = Lead.objects.create(company='Acme', website='acme.com')
+        EmailDraft.objects.create(lead=lead, company='Acme', to_email='a@acme.com',
+                                  subject='s', body='b')
+        self.prompts = []
+
+    def _chat(self, answers):
+        """Replace the model: memory calls get a note, answers come from `answers`."""
+        state = {'left': list(answers)}
+
+        def fake_chat(system, prompt, **_kw):
+            self.prompts.append((system, prompt))
+            if 'memory notes' in system:
+                text = 'The user is setting up email sending step by step.'
+            else:
+                text = state['left'].pop(0) if len(state['left']) > 1 else state['left'][0]
+            return {'text': text, 'prompt_tokens': 0, 'eval_tokens': 0}
+
+        patcher = mock.patch('core.guide.llm_chat', side_effect=fake_chat)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _long_history(self):
+        return [{'from': 'user', 'text': f'TURN {i}: ' + self.LONG} if i % 2 == 0 else
+                {'from': 'ai', 'text': f'TURN {i}: first open Settings and read every option. ' * 6}
+                for i in range(30)]
+
+    def test_a_long_conversation_is_compressed_into_a_memory_note(self):
+        self._chat(['Answer.'])
+        history = self._long_history()
+        self.assertEqual(guide_answer('what is next?', history=history, user=self.owner), 'Answer.')
+        prompt = self.prompts[-1][1]
+        self.assertIn('CONVERSATION SO FAR', prompt)
+        self.assertIn('setting up email sending', prompt)
+        self.assertNotIn('TURN 0:', prompt)                     # the oldest turns are folded into the note
+        self.assertIn('TURN 29:', prompt)                       # the newest stay word for word
+        self.assertEqual(len(self.prompts), 2)                  # one compression call, one answer
+        system = self.prompts[-1][0]
+        self.assertLessEqual(convo.estimate_tokens(system) + convo.estimate_tokens(prompt),
+                             guide.GUIDE_BUDGET)
+
+    def test_a_short_conversation_keeps_every_word(self):
+        self._chat(['Answer.'])
+        history = [{'from': 'user', 'text': 'how do I add a mailbox?'},
+                   {'from': 'ai', 'text': 'Settings, then Email sending.'}]
+        guide_answer('and then?', history=history, user=self.owner)
+        prompt = self.prompts[-1][1]
+        self.assertEqual(len(self.prompts), 1)                   # nothing to compress
+        self.assertIn('User: how do I add a mailbox?', prompt)
+        self.assertIn('Assistant: Settings, then Email sending.', prompt)
+
+    def test_only_the_knowledge_the_question_is_about_is_sent(self):
+        """Reading the whole base costs the model about 40 seconds before it
+        writes a word."""
+        self._chat(['Answer.'])
+        guide_answer('how do I connect my mailbox?', user=self.owner)
+        system, prompt = self.prompts[-1]
+        self.assertIn('Settings → Email sending', prompt)
+        self.assertIn('PRODUCT: WarmPulse', prompt)              # the one-line summary stays
+        self.assertNotIn('TROUBLESHOOTING', prompt)              # nothing to do with the question
+        self.assertLess(convo.estimate_tokens(system) + convo.estimate_tokens(prompt), 1500)
+
+    def test_a_question_that_matches_nothing_still_gets_all_the_knowledge(self):
+        self._chat(['Answer.'])
+        guide_answer('xyzzy plugh', user=self.owner)
+        prompt = self.prompts[-1][1]
+        self.assertIn('WHATSAPP', prompt)
+        self.assertIn('TROUBLESHOOTING', prompt)
+
+    def test_a_follow_up_question_is_answered_with_the_earlier_topic(self):
+        self._chat(['Answer.'])
+        history = [{'from': 'user', 'text': 'how do I set up follow-ups?'},
+                   {'from': 'ai', 'text': 'Settings, then Follow-ups.'}]
+        guide_answer('what else should I know?', history=history, user=self.owner)
+        prompt = self.prompts[-1][1]
+        self.assertIn('FOLLOW-UPS', prompt)
+        self.assertNotIn('Settings → Email templates', prompt)
+
+    def test_when_the_window_is_small_only_the_closest_knowledge_survives(self):
+        self._chat(['Answer.'])
+        with mock.patch.object(guide, 'GUIDE_KNOWLEDGE_TOKENS', 200):
+            guide_answer('how do I connect my mailbox?', user=self.owner)
+        system, prompt = self.prompts[-1]
+        self.assertIn('Settings → Email sending', prompt)       # the area the question is about
+        self.assertIn('PRODUCT: WarmPulse', prompt)              # the one-line summary always stays
+        self.assertNotIn('FOLLOW-UPS (', prompt)                 # related, but no longer fits
+        self.assertLess(convo.estimate_tokens(prompt), 1200)
+
+    def test_an_answer_that_ends_on_a_page_path_is_not_a_cut_off_answer(self):
+        self._chat(['Hey — open Settings, Email sending, add a mailbox'])
+        answer = guide_answer('how do I connect my mailbox?', user=self.owner)
+        self.assertEqual(answer, 'Hey — open Settings, Email sending, add a mailbox')
+        self.assertEqual(len(self.prompts), 1)                   # not flagged, not retried)
+
+    def test_asking_who_to_find_works_in_the_guide_too(self):
+        found = {'buyers': ['school', 'college'], 'ideal_client': 'Schools.', 'services': ['Courses'],
+                 'customer_type': 'organisations'}
+        with mock.patch('core.business_profile.analyse_buyers', return_value=found):
+            reply = guide_answer('who should I find?', user=self.owner)
+        self.assertIn('Reply "yes"', reply)
+        self.assertIn('school', reply)

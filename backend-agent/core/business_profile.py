@@ -29,6 +29,7 @@ from django.core.cache import cache
 from .ai import llm_json
 from .company_scrape import (BadUrl, company_details, fetch_public, normalize_url,
                              visible_text)
+from .models import AppSettings
 from .scraper import MAX_HTML, _registrable, name_from_domain
 
 log = logging.getLogger(__name__)
@@ -381,6 +382,29 @@ def settings_brief(settings):
             'text': (site['text'] + ' ' + brief['text']).strip()[:BRIEF_TEXT_CHARS]}
 
 
+def analyse_buyers(settings, about=''):
+    """Who buys from this workspace, worked out by the model from what it
+    does: its own profile (and homepage when it can be read) plus anything
+    the owner just said it sells (`about`). Returns {'buyers',
+    'ideal_client', 'services', 'customer_type'} — or None when there is
+    nothing to go on or the model cannot tell."""
+    brief = settings_brief(settings)
+    if about and about.strip():
+        said = ' '.join(about.split())[:900]
+        brief = {**brief, 'text': f'{said} {brief["text"]}'[:BRIEF_TEXT_CHARS],
+                 'description': (said + ' ' + brief['description'])[:300]}
+    if not brief['text'].strip():
+        return None
+    inferred = infer_profile(brief)
+    if inferred is None:
+        return None            # model unavailable — callers must not guess
+    buyers = inferred['buyers'] if inferred['customer_type'] in ('organisations', 'both') else []
+    return {'buyers': buyers,
+            'ideal_client': inferred['ideal_client'],
+            'services': inferred['services'],
+            'customer_type': inferred['customer_type']}
+
+
 def infer_buyers_for_settings(settings):
     """Buyer kinds for a workspace with no 'Who to find', worked out by the
     model from the workspace's own profile. Cached per profile; a failed
@@ -395,13 +419,28 @@ def infer_buyers_for_settings(settings):
     cached = cache.get(key)
     if cached is not None:
         return cached
-    brief = settings_brief(settings)
-    if not brief['text'].strip():
+    found = analyse_buyers(settings)
+    if found is None:
         return []
-    inferred = infer_profile(brief)
-    if inferred is None:
-        return []            # model unavailable — not cached, retried next cycle
     # customers are individuals → no company leads (an empty answer IS cached)
-    buyers = inferred['buyers'] if inferred['customer_type'] in ('organisations', 'both') else []
-    cache.set(key, buyers, BUYER_CACHE_TTL)
-    return buyers
+    cache.set(key, found['buyers'], BUYER_CACHE_TTL)
+    return found['buyers']
+
+
+def plan_targeting(about=''):
+    """What 'Who to find' should be for this workspace, as a plan the owner
+    can accept: {'buyers', 'countries', 'ideal', 'individuals', 'services'}
+    or None when nothing could be worked out. Countries come only from the
+    domain's own country code, and the workspace's own kind is never a
+    buyer (same guards as the search itself)."""
+    from .icp import competitor_regexes   # core.icp imports this module: keep it lazy
+    settings = AppSettings.load()
+    found = analyse_buyers(settings, about=about)
+    if not found:
+        return None
+    guards = list(competitor_regexes(settings))
+    return {'buyers': [b for b in found['buyers'] if not any(g.search(b) for g in guards)],
+            'countries': [c for c in (country_from_domain(settings.company_website or ''),) if c],
+            'ideal': found['ideal_client'],
+            'individuals': found['customer_type'] == 'individuals',
+            'services': found['services']}

@@ -758,9 +758,12 @@ def guide(request):
 def chat(request):
     if request.method == 'DELETE':
         deleted, _ = ChatMessage.objects.filter(user=request.user).delete()
-        if request.user.pending_action:
+        # a cleared conversation leaves nothing behind: not the confirmation,
+        # not the Assistant's memory note of it
+        if request.user.pending_action or request.user.chat_memory:
             request.user.pending_action = {}   # the confirmation is no longer visible
-            request.user.save(update_fields=['pending_action'])
+            request.user.chat_memory = {}
+            request.user.save(update_fields=['pending_action', 'chat_memory'])
         return Response({'cleared': True, 'deleted': deleted})
     # first-login setup wizard rides on the chat while it is active — plain
     # Q&A that configures the whole system, then hands over to the Responder.

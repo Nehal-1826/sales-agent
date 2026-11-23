@@ -17,7 +17,7 @@ from datetime import timedelta
 
 from django.utils import timezone
 
-from .ai import llm_available, llm_complete
+from .ai import llm_available, llm_chat
 from .mailer import valid_recipient
 from .outbox import enqueue_draft, kick_drain, queued_phrase
 from .models import AppSettings, EmailDraft, Lead, SearchProfile
@@ -28,11 +28,11 @@ log = logging.getLogger(__name__)
 
 ACTION_NAMES = ('run_pipeline', 'approve_draft', 'approve_all', 'reject_draft',
                 'delete_lead', 'set_frequency', 'set_report_email', 'send_report',
-                'switch_profile', 'draft_email', 'none')
+                'switch_profile', 'draft_email', 'suggest_targeting', 'none')
 
 # Actions that change or send things for real — they wait for an explicit "yes"
 CONFIRM_ACTIONS = {'approve_draft', 'approve_all', 'reject_draft', 'delete_lead',
-                   'switch_profile', 'set_report_email'}
+                   'switch_profile', 'set_report_email', 'suggest_targeting'}
 PENDING_TTL_MINUTES = 10
 _YES_POLITE = r'(?:[\s,]+(?:please|thanks|pls|do it))?'
 _NO_POLITE = r'(?:[\s,]+(?:please|thanks|pls|wait))?'   # "yes, wait" must never confirm
@@ -50,6 +50,45 @@ EMAIL_IN_TEXT = re.compile(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}')
 DRAFT_EMAIL_RE = re.compile(
     r'\b(?:draft|write|prepare|create|compose|send)\s+(?:me\s+)?(?:an?\s+)?'
     r'(?:cold\s+)?(?:outreach\s+)?(?:e-?mail|mail)\s+(?:to|for)\s+(.+?)\s*[.!]?\s*$', re.I)
+
+# "who should I find?" / "who is likely to buy from us?" — the Assistant can
+# work that out itself (core.business_profile); everything before the
+# question is what the owner says the company does. Only real requests
+# count: "where do I set who to find?" is a question about the product.
+_WHO_TO_FIND_RE = re.compile(
+    r'\bwho\s+(?:should|do|shall|can|would|will)\s+(?:i|we|you\s+)?\s*(?:find|look for|target|go after)|'
+    r'\b(?:what|which) (?:businesses|companies|kinds? of (?:businesses|companies))\s+'
+    r'(?:should|do|shall|can|would|will)\s+(?:i|we|you\s+)?\s*(?:find|look for|target|go after)|'
+    r'\b(?:work out|suggest|tell me|choose|pick|decide|figure out)(?: me)? who to find|'
+    r'^\s*who to find\??\s*$|'
+    r'\bwho (?:is|are|\'re) (?:likely )?to buy\b|\bwho buys from (?:us|me)\b|'
+    r'\bwork out (?:who|what|my|our)\b.{0,30}\b(?:find|target|buy)|\bsuggest (?:me )?(?:who|some leads|targeting)\b',
+    re.I)
+# "we publish journals and run conferences" — a plain statement of what the
+# company does (never a question: those are handled above)
+_WE_SELL_RE = re.compile(
+    r'^\s*(?:we|i|our company|our business)\s+(?:sell|sells|offer|offers|provide|provides|do|does|'
+    r'build|builds|make|makes|publish|publishes|run|runs|speciali[sz]e in|are a|\'re a|am a)\b[^?]*$', re.I)
+# without one of these words a message cannot be a command — small talk
+# never costs a model call
+_COMMAND_HINT = re.compile(
+    r'\b(run|running|start|trigger|cycle|pipeline|approve|approval|send|sending|mail|email|'
+    r'delete|remove|pause|stop|resume|enable|report|switch|activate|profile|draft|write|'
+    r'compose|reject|cadence|frequency|hourly|daily|leads?|do it|go ahead|yourself)\b', re.I)
+
+
+def _targeting_request(text, settings=None):
+    """'about' text when the message asks who to find — or says what the
+    company sells while Who to find is still empty. '' otherwise."""
+    text = (text or '').strip()
+    m = _WHO_TO_FIND_RE.search(text)
+    if m:
+        return text[:m.start()].strip(' .,;-') or text
+    if _WE_SELL_RE.match(text):
+        settings = settings or AppSettings.load()
+        if not (settings.target_industries or '').strip():
+            return text
+    return ''
 
 
 # ------------------------------------------------------------------
@@ -127,10 +166,24 @@ def _companies_context():
     return leads, drafts
 
 
+_SPEC_SCHEMA = {'type': 'object', 'properties': {
+    'action': {'type': 'string', 'enum': list(ACTION_NAMES)},
+    'company': {'type': 'string'}, 'frequency': {'type': 'string'}, 'profile': {'type': 'string'},
+    'email': {'type': 'string'}, 'about': {'type': 'string'}},
+    'required': ['action']}
+# only these fields mean anything for each action — anything else the model
+# fills in ("run_pipeline" with a company attached) is dropped
+_SPEC_FIELDS = {'approve_draft': ('company',), 'reject_draft': ('company',),
+                'delete_lead': ('company',), 'draft_email': ('company',),
+                'set_frequency': ('frequency',), 'set_report_email': ('email',),
+                'switch_profile': ('profile',), 'suggest_targeting': ('about',)}
+
+
 def detect_action_llm(text, history=None):
-    """Gemini classification → strict JSON; {'action': 'none'} on any doubt.
-    `history` (recent chat/guide turns) lets "do it yourself" resolve to the
-    action that was just suggested."""
+    """The model classifies the message → strict JSON; {'action': 'none'} on
+    any doubt. `history` (recent chat/guide turns) lets "do it yourself"
+    resolve to the action that was just suggested. On the self-hosted
+    runtime the answer's shape is locked by a schema (core.ai.llm_chat)."""
     if not llm_available():
         return {'action': 'none'}
     leads, drafts = _companies_context()
@@ -144,8 +197,8 @@ def detect_action_llm(text, history=None):
     system = (
         'You classify commands for a sales-agent app. Respond with ONLY minified '
         'JSON, no markdown, no explanation. Schema: '
-        '{"action":"run_pipeline|approve_draft|approve_all|reject_draft|delete_lead|set_frequency|set_report_email|send_report|switch_profile|draft_email|none",'
-        '"company":"","frequency":"15m|1h|6h|daily|pause|resume","profile":"","email":""} '
+        '{"action":"' + '|'.join(ACTION_NAMES) + '",'
+        '"company":"","frequency":"15m|1h|6h|daily|pause|resume","profile":"","email":"","about":""} '
         'Rules: company must be EXACTLY one of the listed company names (or ""). '
         'approve_draft/reject_draft pick from DRAFT COMPANIES; delete_lead from LEAD COMPANIES. '
         'draft_email = the user wants a NEW outreach email drafted for one of the LEAD '
@@ -153,12 +206,19 @@ def detect_action_llm(text, history=None):
         'set_report_email = the user is TELLING you the report recipient (e.g. "the daily '
         'report recipient is x@y.com", "send reports to x@y.com") — put the address in email. '
         'send_report = email the daily report NOW (no address given). '
+        'set_frequency also covers "every hour", "hourly", "run daily" (frequency 1h, 1h, daily) '
+        'and "stop running" / "pause" (frequency pause). '
+        'suggest_targeting = the user asks who they should find or target, or who is likely to '
+        'buy from them ("who should I find?", "work out who to find"); when they also say what '
+        'they sell ("we sell online courses - who should I find?"), put that in about. '
         'profile: the EXACT profile name when the user says it; when they use their own '
         'words ("the backup one", "shailog"), echo those words in profile — the '
         'executor fuzzy-matches them against the saved profiles. '
         'approve_all = approve and send EVERY awaiting draft at once. '
         'switch_profile = activate one of the saved lead-targeting profiles. '
         'Only pick an action when the user clearly asks for it; otherwise "none". '
+        'A question that only asks whether or should ("should I send all drafts?", "did you '
+        'send it?") is "none", and so is talking about something that already happened. '
         'set_frequency needs a frequency. run_pipeline = start a discovery/draft cycle. '
         'If the user asks the assistant to perform a previously suggested action '
         '("do it", "you do it", "do it yourself", "go ahead"), resolve WHICH action '
@@ -172,19 +232,19 @@ def detect_action_llm(text, history=None):
         f'USER MESSAGE: {text}\n\nJSON:'
     )
     try:
-        raw = llm_complete(prompt, system=system, timeout=45) or ''
-        raw = raw.strip().replace('```', '').strip()
-        m = re.search(r'\{.*\}', raw, re.S)
+        out = llm_chat(system, prompt, max_tokens=140, timeout=120, temperature=0,
+                       schema=_SPEC_SCHEMA)
+        raw = (out['text'] if out else '') or ''
+        m = re.search(r'\{.*\}', raw.strip().replace('```', ''), re.S)
         spec = json.loads(m.group(0)) if m else {}
-        if spec.get('action') not in ACTION_NAMES:
+        action = spec.get('action')
+        if action not in ACTION_NAMES or action == 'none':
             return {'action': 'none'}
-        return {
-            'action': spec['action'],
-            'company': (spec.get('company') or '').strip(),
-            'frequency': (spec.get('frequency') or '').strip(),
-            'profile': (spec.get('profile') or '').strip(),
-            'email': (spec.get('email') or '').strip(),
-        }
+        clean = {'action': action}
+        for field in _SPEC_FIELDS.get(action, ()):
+            if str(spec.get(field) or '').strip():
+                clean[field] = str(spec[field]).strip()[:300]
+        return clean
     except Exception as exc:
         log.warning('action classification failed: %s', exc)
         return {'action': 'none'}
@@ -194,6 +254,8 @@ def detect_action(text, history=None):
     spec = detect_action_regex(text)
     if spec:
         return spec
+    if not _COMMAND_HINT.search(text or ''):
+        return {'action': 'none'}    # small talk: not worth a model call
     return detect_action_llm(text, history)
 
 
@@ -443,6 +505,21 @@ def execute(spec, username='chat'):
         return (f'Switched to "{profile.name}" ({mode}, '
                 f'{profile.target_countries or "worldwide"}) — the next cycle already uses it.')
 
+    if action == 'set_targeting':
+        kinds = [k for k in (spec.get('industries') or []) if str(k).strip()][:8]
+        if not kinds:
+            return 'There was nothing to set — tell me what you sell and I\'ll work out who to find.'
+        s = AppSettings.load()
+        s.icp_mode = 'buyer'
+        s.target_industries = ', '.join(kinds)
+        if spec.get('countries'):
+            s.target_countries = ', '.join(spec['countries'])
+        s.icp_notes = str(spec.get('notes') or '')[:6000]
+        s.save(update_fields=['icp_mode', 'target_industries', 'target_countries', 'icp_notes', 'updated_at'])
+        where = ', '.join(x for x in (s.target_cities, s.target_countries) if x.strip()) or 'worldwide'
+        return (f'Done — Who to find is now: {", ".join(kinds)} (in {where}). The next search uses it; '
+                'change it any time in Settings, Who to find.')
+
     return ''
 
 
@@ -485,7 +562,50 @@ def _describe(spec):
         return f'I\'ll switch lead targeting to "{profile.name}".', {**spec, 'profile': profile.name}
     if action == 'set_report_email':
         return f'I\'ll send the daily report to {spec.get("email")} from now on.', spec
+    if action == 'suggest_targeting':
+        return _describe_targeting(spec)
     return '', spec
+
+
+TARGETING_UNKNOWN = (
+    'I couldn\'t work out who buys from you yet. Tell me what you sell in one line — for example '
+    '"we publish journals and run conferences" — and I\'ll work it out. (You can also set it '
+    'yourself in Settings, Who to find.)'
+)
+
+
+def _describe_targeting(spec):
+    """Work out who to find from what the company does, and prepare setting
+    it. Returns (summary, resolved_spec) or (message, None) when there is
+    nothing to offer."""
+    from .business_profile import plan_targeting
+    plan = plan_targeting(spec.get('about') or '')
+    if plan is None:
+        return TARGETING_UNKNOWN, None
+    if not plan['buyers']:
+        if plan['individuals']:
+            return ('It looks like your customers are individual people, not businesses - so there '
+                    'is no kind of company to find for you, and Who to find stays as it is.'), None
+        return ('I worked out what you do, but could not name kinds of businesses that buy it - '
+                'tell me a little more about your customers and I\'ll try again.'), None
+    s = AppSettings.load()
+    if plan['countries']:
+        where = ', '.join(plan['countries'])
+    else:
+        where = ', '.join(x.strip() for x in (s.target_cities, s.target_countries)
+                          if x and x.strip()) or 'worldwide'
+    said = ' '.join((spec.get('about') or '').split())
+    basis = ('From what you just told me' if said and not _WHO_TO_FIND_RE.search(said)
+             else 'From what your company does')
+    summary = (f'{basis}, the businesses most likely to buy from you are: '
+               f'{", ".join(plan["buyers"])}.')
+    if plan['ideal']:
+        summary += f' {plan["ideal"].rstrip(".")}.'
+    summary += f' I\'ll set them as Who to find (in {where})'
+    if s.icp_mode == 'agency':
+        summary += ' - this switches you from partner agencies to customers'
+    return summary + '.', {'action': 'set_targeting', 'industries': plan['buyers'],
+                           'countries': plan['countries'], 'notes': plan['ideal']}
 
 
 def _set_pending(user, value):
@@ -515,9 +635,15 @@ def handle_command(text, user, history=None):
             _set_pending(user, {})
             return 'Okay — cancelled, nothing was changed.'
         _set_pending(user, {})   # any other message drops the stale confirmation
-    if is_question_or_negation(text):
-        return ''
-    spec = detect_action(text, history)
+    # "who should I find?" is a question AND a request: the Assistant can work
+    # the answer out itself from what the company does
+    about = _targeting_request(text)
+    if about:
+        spec = {'action': 'suggest_targeting', 'about': about}
+    else:
+        if is_question_or_negation(text):
+            return ''
+        spec = detect_action(text, history)
     if not spec or spec.get('action') == 'none':
         return ''
     # chat is a second door to the same operations as the API: every action

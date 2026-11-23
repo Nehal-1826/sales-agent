@@ -8,9 +8,12 @@ Language matches the user (Tanglish / Tamil / English), same as the Responder.
 
 import itertools
 import logging
+import re
 
-from .ai import llm_available, llm_complete
-from .chat import _humanize, detect_language_style
+from . import convo
+from .ai import llm_available, llm_chat
+from .assistant import MEMORY_SYSTEM, clean, phrase_result
+from .chat import detect_language_style
 from .mailer import smtp_configured
 from .permissions import is_privileged
 from .models import Enrollment, OutreachTask, WhatsAppMessage, AppSettings, EmailDraft, EmailTemplate, Lead, Mailbox, PipelineRun, Potential
@@ -211,11 +214,130 @@ def _fallback_answer():
     return base
 
 
+def _kb_sections():
+    """The knowledge base cut into sections (one per page for PAGES, one per
+    area for Settings), so a long conversation can push the least relevant
+    ones out."""
+    sections, pages = [], None
+    for block in PRODUCT_KB.split('\n\n'):
+        block = block.strip()
+        if block.startswith('PAGES:'):
+            pages = block
+        elif block:
+            sections.append(block)
+    if pages:
+        current = None
+        for line in pages.partition('\n')[2].split('\n'):
+            if line.startswith('- '):
+                current = line.strip()
+                sections.append(current)
+            elif current is not None and line.strip():
+                current += ' ' + line.strip()
+                sections[-1] = current
+    result = []
+    for section in sections:
+        result.extend(_settings_areas(section) if section.startswith('- Settings:') else [section])
+    return result
+
+
+def _settings_areas(bullet):
+    """'- Settings: profile; Who to find (…); Email sending (…)' → one
+    section per area, so a question about email sending does not have to
+    carry the whole Settings page. Split at ';' outside brackets."""
+    parts, depth, current = [], 0, ''
+    for ch in bullet[len('- Settings:'):]:
+        if ch == ';' and depth == 0:
+            parts.append(current)
+            current = ''
+            continue
+        depth += ch in '([{'
+        depth -= ch in ')]}'
+        current += ch
+    parts.append(current)
+    return ['Settings → ' + ' '.join(part.split()) for part in parts if part.strip()]
+
+
+KB_SECTIONS = _kb_sections()
+
+# The whole base is about 2,000 tokens of the model's 4,096-token window.
+GUIDE_BUDGET = int(convo.CONTEXT_TOKENS * 0.80)
+# Reading the whole base costs the server's model about 40 seconds before it
+# writes a word (measured 2026-11-23: 2,305 tokens in, 61 out, 49 s). So a
+# question gets only the knowledge it is about; a question that matches
+# nothing still gets all of it.
+GUIDE_KNOWLEDGE_TOKENS = 600
+
+_STOP_WORDS = {'this', 'that', 'with', 'from', 'have', 'what', 'when', 'where', 'which', 'would',
+               'could', 'should', 'about', 'there', 'their', 'they', 'them', 'your', 'want',
+               'need', 'like', 'does', 'do', 'doing', 'the', 'and', 'for', 'are', 'can', 'how',
+               'why', 'who', 'will', 'into', 'onto', 'over', 'under', 'then', 'than', 'also',
+               'just', 'only', 'some', 'any', 'all', 'settings', 'please', 'tell', 'me', 'page'}
+
+
+def _tokens(text):
+    return [t for t in re.findall(r'[a-z0-9]+', (text or '').lower())
+            if len(t) >= 4 and t not in _STOP_WORDS]
+
+
+def relevance(section, ask):
+    """How much a knowledge section is about the words `ask`."""
+    words = _tokens(section)
+    body = set(words)
+    title = set(_tokens(section.split(':')[0]))
+    total = 0
+    for token in ask:
+        if token in title:
+            total += 3
+        elif token in body:
+            total += 2
+        elif len(token) >= 5 and any(w.startswith(token[:5]) for w in body):
+            total += 1
+    return total
+
+
+def _asked(question, history):
+    """The words that tell what a question is about: its own and those of
+    the last few turns (a follow-up may only say "and then?")."""
+    return _tokens(' '.join([question or ''] + [h.get('text', '') for h in (history or [])[-4:]]))
+
+
+def relevant_sections(question, history=None, budget_tokens=None, window_tokens=None):
+    """The knowledge for this question, in page order.
+
+    All of it while it fits in `budget_tokens`. Otherwise only the sections
+    the question is about (the one-line product summary always stays) —
+    unless nothing matches by keyword and the WHOLE base still fits in
+    `window_tokens`: a vague question ("it's not working") is then given
+    everything rather than a guess at what it meant."""
+    size = sum(convo.estimate_tokens(s) + 2 for s in KB_SECTIONS)
+    if budget_tokens is None or size <= budget_tokens:
+        return list(KB_SECTIONS)
+    ask = _asked(question, history)
+    scores = {section: relevance(section, ask) for section in KB_SECTIONS}
+    if window_tokens is not None and size <= window_tokens and not any(scores.values()):
+        return list(KB_SECTIONS)
+    ranked = sorted(KB_SECTIONS, key=lambda s: (s.startswith('PRODUCT:'), scores[s]), reverse=True)
+    kept, used = [], 0
+    for section in ranked:
+        need = convo.estimate_tokens(section) + 2
+        if section.startswith('PRODUCT:'):
+            kept.append(section)          # the one-line summary always stays
+            used += need
+        elif scores[section] and used + need <= budget_tokens:
+            kept.append(section)          # only what the question is about
+            used += need
+    order = {section: i for i, section in enumerate(KB_SECTIONS)}
+    return sorted(kept, key=lambda s: order[s])
+
+
 def guide_answer(question, history=None, user=None):
-    """One guide answer via Gemini — and the guide can ACT: commands
+    """One guide answer via the model — and the guide can ACT: commands
     ("run a cycle", "approve the draft for X", "do it yourself" after a
-    suggestion) are executed for real, then confirmed in the reply.
-    Friendly static pointer without an AI key."""
+    suggestion, "who should I find?") are executed for real, then confirmed
+    in the reply. The answer is built to fit the model's memory window: a
+    long conversation is compressed into a memory note and the least
+    relevant knowledge is left out; a made-up answer is replaced (core.convo).
+    Friendly static pointer without an AI model."""
     from .actions import handle_command  # late import — pipeline is heavy
 
     try:
@@ -230,13 +352,64 @@ def guide_answer(question, history=None, user=None):
 
     if not llm_available():
         return _fallback_answer()
+    history = history or []
     style = detect_language_style(question)
-    convo = ''
-    if history:
-        lines = [f'{"USER" if h.get("from") == "user" else "GUIDE"}: {h.get("text", "")}'
-                 for h in history[-8:]]
-        convo = 'RECENT CONVERSATION:\n' + '\n'.join(lines) + '\n\n'
-    system = (
+    state = workspace_state(user)
+    system = _system(style)
+    turns = [{'role': 'user' if h.get('from') == 'user' else 'assistant', 'text': h.get('text', '')}
+             for h in history]
+    base = convo.estimate_tokens(system) + convo.estimate_tokens(state) + 220
+
+    def summarise(prompt):
+        out = llm_chat(MEMORY_SYSTEM, prompt, max_tokens=240, temperature=0.1)
+        return out['text'] if out else None
+
+    def build(mode):
+        """What the model is given for this try: (prompt, knowledge, note)."""
+        if mode == 'tight':        # a made-up answer: far less to get lost in
+            kept = [dict(t, text=t['text'][:400]) for t in turns[-2:]]
+            kb_budget = GUIDE_KNOWLEDGE_TOKENS // 2
+        else:
+            kept, _ = convo.fit_turns(turns, GUIDE_BUDGET - base - GUIDE_KNOWLEDGE_TOKENS)
+            kb_budget = GUIDE_KNOWLEDGE_TOKENS     # only what the question is about
+        note = convo.roll_up('', turns[:len(turns) - len(kept)], model=summarise) \
+            if len(turns) > len(kept) else ''
+        room = GUIDE_BUDGET - base - sum(convo.estimate_tokens(t['text']) + 6 for t in kept) \
+            - convo.estimate_tokens(note)
+        kb = relevant_sections(question, history, budget_tokens=min(room, kb_budget),
+                               window_tokens=room)
+        prompt = (
+            '\n\n'.join(kb) + f'\n\n{state}\n\n'
+            + (f'CONVERSATION SO FAR (memory note):\n{note}\n\n' if note else '')
+            + (f'RECENT MESSAGES:\n{convo.render(kept)}\n\n' if kept else '')
+            + f'OPENER: {_next_opener()}\n\n'
+            f'USER QUESTION: {question}\n\n'
+            'Answer with the exact click-path. Anchor every workspace claim in the live '
+            'numbers above — quote them, never hedge ("you have 4 drafts waiting", not "you '
+            'may have drafts"). Finish with the single best next step and its page path; if the '
+            'first-run checklist has a missing item, name that item and its page. When an '
+            'action was already performed for the user, do not tell them to click it '
+            'themselves — report what happened instead.'
+        )
+        return prompt, '\n\n'.join(kb), note
+
+    def generate(mode):
+        prompt, _kb, _note = build(mode)
+        out = llm_chat(system, prompt, max_tokens=260)      # "under 120 words"
+        if not out or out.get('cut'):                       # never half a sentence
+            return None
+        return clean(out['text'])
+
+    answer, problems, regenerated = convo.guarded(
+        generate, fallback=_fallback_answer,
+        data=f'{state}\nUSER QUESTION: {question}', turns=convo.render(turns), language=style)
+    if problems:
+        log.info('guide: a made-up answer was replaced (%s), retried=%s', ','.join(problems), regenerated)
+    return answer
+
+
+def _system(style):
+    return (
         'You are the friendly in-product guide for WarmPulse. '
         'You help users learn to use the product: explain features, give exact click-paths '
         '(page → section → button), and suggest the best next step from the workspace state. '
@@ -263,24 +436,6 @@ def guide_answer(question, history=None, user=None):
          if style == 'tamil' else
          'Reply in friendly, natural English.')
     )
-    prompt = (
-        f'{PRODUCT_KB}\n\n{workspace_state(user)}\n\n'
-        f'{convo}'
-        f'OPENER: {_next_opener()}\n\n'
-        f'USER QUESTION: {question}\n\n'
-        'Answer with the exact click-path. Anchor every workspace claim in the live '
-        'numbers above — quote them, never hedge ("you have 4 drafts waiting", not "you '
-        'may have drafts"). Finish with the single best next step and its page path; if '
-        'the first-run checklist has a missing item, name that item and its page. When an '
-        'action was already performed for the user, do not tell them to click it '
-        'themselves — report what happened instead.'
-    )
-    try:
-        result = llm_complete(prompt, system=system, timeout=60)
-        return _humanize(result) if result else _fallback_answer()
-    except Exception as exc:
-        log.warning('Guide LLM call failed: %s', exc)
-        return _fallback_answer()
 
 
 def _phrase_action(question, action_result):
@@ -288,19 +443,6 @@ def _phrase_action(question, action_result):
     if not llm_available():
         return action_result
     try:
-        phrased = llm_complete(
-            f'USER ASKED: {question}\n\nACTION PERFORMED: {action_result}\n\n'
-            f'Confirm to the user what you just did, in 1-2 short friendly sentences.',
-            system=('You executed an action in the product for the user. Confirm exactly what '
-                    'happened, plain text, no markdown, no new claims. Open directly with the '
-                    'confirmation — no filler ("certainly", "great question", "sure"). Use the '
-                    'live numbers from the action result when it has them. If one obvious next '
-                    'step helps (e.g. "next: CRM → OUTREACH to send the rest"), end with that '
-                    'single step and its page — otherwise stop after the confirmation. ' +
-                    {'tanglish': 'Reply in natural Tanglish.',
-                     'tamil': 'Reply in Tamil script.'}.get(detect_language_style(question),
-                                                            'Reply in friendly English.')),
-            timeout=45)
-        return _humanize(phrased) or action_result
+        return phrase_result(question, action_result)
     except Exception:
         return action_result

@@ -57,6 +57,7 @@ cd backend-agent && DATABASE_URL=sqlite:///db-agent-test.sqlite3 .venv/Scripts/p
 cd backend && .venv/Scripts/python -m pytest tests/test_bridge_auth.py tests/test_auth.py tests/test_api_key_auth.py -q
 cd frontend && npm run build            # tsc + vite + SSR + prerender
 python scripts/e2e/flow.py              # full-stack gate (servers must be up)
+cd backend-agent && .venv/Scripts/python manage.py eval_assistant   # real-model regression (needs the local runtime)
 ```
 
 The shared bridge secret must be **32+ chars** and identical on both backends
@@ -192,6 +193,56 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   Enter/Add was pressed — "Who to find is not saving"); the product-tour card
   lifts above a visible Save bar (`body:has(.save-bar) .tutor-card`) — it sat
   exactly on "Save changes" for first-login users.
+- The Assistant (`core/assistant.py` + `core/convo.py`) — conversation calls
+  go through `ai.llm_chat`, NEVER `llm_complete`: on the local runtime it
+  switches the model's private thinking OFF (measured: a five-word answer
+  spent 155 hidden tokens, a turn took 40–90 s) and returns the real token
+  counts and `cut` (`done_reason == "length"`). Memory: `User.chat_memory`
+  (migration 0043) = `{summary, through}` — a note about every message up to
+  id `through`; later ones go word for word while they fit
+  `convo.PROMPT_BUDGET` (env `AI_PROMPT_BUDGET`, 2600 of the runtime's
+  `AI_CONTEXT_TOKENS`=4096). **Auto-compress** (1) when the turns no longer
+  fit and (2) whenever an answer is flagged — `compress(2)` folds all but
+  the two newest turns into the note. **Honesty guard** (`convo.guarded` →
+  `detect_problems`): made-up totals/names that are in neither the facts nor
+  the conversation, "I've sent/updated…" when no command ran, repetition,
+  leaked reasoning/other-AI names, placeholders, a cut-off sentence, wrong
+  script for Tamil. A flagged answer is never shown: compress + answer again
+  (`TIGHT_RULES`), else the honest keyword reply. Clearing the chat clears
+  the memory.
+- The model's job: `workspaces.RESPONDER_PROMPT` (+ `core/assistant.JOB` /
+  `ANSWER_RULES`). The first default described a lead-reply bot and sat in
+  the same prompt as "you are the sales assistant" — `fix_responder_prompt`
+  (migration 0044) repoints rows still on it; a prompt a workspace wrote
+  itself is never touched.
+- `ai.model_for`: the self-hosted runtime is only sent a model it HAS
+  (`runtime_models()` asks `/api/tags`, cached 10 min) — every new workspace
+  is seeded with the cloud name `GLM-4.6` in its agent rows, which was a 404
+  on EVERY AI call for every workspace after the first two (pipeline fell
+  back to templates, Assistant to keywords). Found by `eval_assistant`.
+- Command check (`actions.detect_action`): keyword rules → a hint gate
+  (`_COMMAND_HINT`: small talk never costs a model call) → the model with a
+  LOCKED shape (`_SPEC_SCHEMA`), only the action's own fields kept. "Who
+  should I find?" / "work out who to find" / "we sell …" (while Who to find
+  is empty) → `suggest_targeting` → `business_profile.plan_targeting` → a
+  yes/no offer → `set_targeting`. "Where do I set who to find?" is NOT a
+  request. The wizard's target step does the same for a typed list
+  (`onboarding._target_list_answer`).
+- Guide (`core/guide.py`): the knowledge base is split into sections
+  (`KB_SECTIONS`, one per Settings area) and a question is given only what
+  it is about (`relevant_sections`, ≤ `GUIDE_KNOWLEDGE_TOKENS`) — reading
+  all ~2,000 tokens cost the model ~40 s before it wrote a word; a question
+  that matches nothing still gets everything. History is fitted by tokens
+  and compressed into a note; same honesty guard.
+- `manage.py eval_assistant [--quick] [--show]` — the regression run for the
+  small local model: scripted conversations in a throwaway workspace against
+  the REAL runtime, scored (identity, real numbers, no false "I sent it",
+  memory, who-to-find analysis + set-on-yes, long chat compressed and inside
+  the window, Tamil, command check ≥ 17/20, guide, past made-up replies
+  caught). A change to the model's instructions, memory or guard is only
+  done when this passes; exit 1 otherwise. To try code on the VPS before a
+  deploy: `docker cp` the files into `warmpulse-django-1:/app` and run it —
+  the running gunicorn keeps the old code until the real deploy.
 - Admin secret slug (`/<6-digits>/…` console prefix): wrong hits are logged to
   `SlugAttempt` (no instant email) and emailed as a weekly digest via
   `manage.py send_slug_report` — VPS cron Monday 09:00 IST (03:30 UTC), log
@@ -222,6 +273,21 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   manage.py shell -c "exec(open(\"/app/x.py\").read())"`. `if __name__ ==
   '__main__'` never fires there, and backslash-heavy inline `python -c` breaks
   on quoting — use files.
+- The model runner grows the whole time it stays loaded (`llama-server`
+  inside `warmpulse-ollama`): 2.1 GB fresh → 3.3 GB after a day → 5.6 GB on
+  2026-11-23, when the 8 GB box ran out (load average 60, swap full, every AI
+  call timing out — the recurring "server is slow / AI can't process").
+  Guard rails: `mem_limit`/`memswap_limit` 4g + `MALLOC_ARENA_MAX=2` in the
+  compose `ollama` service, and `ops/ollama-watchdog.sh` from cron every 15
+  minutes (`*/15 * * * *`, log `/var/log/warmpulse-ollama-watchdog.log`)
+  which restarts the runtime when it passes 3600 MB and is idle — the model
+  reloads on the next request (~15 s). If the site is suddenly slow, check
+  `docker stats --no-stream warmpulse-ollama` and `free -m` FIRST.
+- The local model is one shared slot: a background pipeline cycle's AI calls
+  queue ahead of chat replies. Prompt size is latency — roughly 60 prompt
+  tokens and ~5 answer tokens per second on the 2-core box — so conversation
+  prompts are kept short and the stable parts (system, facts) come first for
+  the runtime's prefix cache.
 - Alembic (backend/) is Postgres-only; sqlite dev needs the bootstrap flag.
 - Branch state: single branch `main` (= `master`, synced via PR). Only
   `feat/client-ui-and-outreach-safety` preserved (Agy's work). Push to

@@ -20,7 +20,7 @@ import logging
 import re
 
 from .ai import llm_available
-from .business_profile import BadUrl, apply_profile, profile_from_domain
+from .business_profile import CATALOGUE, BadUrl, apply_profile, plan_targeting, profile_from_domain
 from .permissions import is_privileged
 from .models import AppSettings, SearchProfile
 
@@ -470,6 +470,60 @@ def _apply_icp(text, settings):
 # The wizard turn — parse the current answer, apply, advance
 # ------------------------------------------------------------------
 
+def _catalogue_kind(item):
+    """Is this a kind of organisation from the buyer catalogue
+    ("universities" is, "journal publishing" is not)?"""
+    item = item.strip().lower()
+    if not item:
+        return False
+    stem = item[:5]
+    return any(item in kind or kind in item or (len(item) >= 5 and kind.startswith(stem))
+               for kind in (k.lower() for k in CATALOGUE))
+
+
+def _target_list_answer(text, settings, user, answers):
+    """The owner answered "who should I find?" with a LIST. Mostly kinds of
+    organisations: that IS who to find. Mostly things the company sells:
+    they are added to What you sell and the model works out who buys them -
+    the next step is done for the owner, not just named back to them.
+    Returns None when the answer is not a list."""
+    items = _parse_services(text)
+    if len(items) < 2:
+        return None
+    if sum(1 for item in items if _catalogue_kind(item)) * 2 >= len(items):
+        settings.icp_mode = 'buyer'
+        settings.target_industries = ', '.join(items)
+        settings.save(update_fields=['icp_mode', 'target_industries', 'updated_at'])
+        answers['target_mode'] = 'buyer'
+        _save_state(user, step=4, answers=answers)
+        return f'Understood — I\'ll look for: {", ".join(items)}.\n\n' + _question_message(4)
+
+    known = {s.lower() for s in (settings.services or [])}
+    added = [item for item in items if item.lower() not in known]
+    settings.services = list(settings.services or []) + added
+    settings.save(update_fields=['services', 'updated_at'])
+    answers['services'] = list(settings.services)
+    plan = plan_targeting(about=', '.join(items))
+    if not plan or not plan['buyers']:
+        return ('Got it — I noted what you sell, but I couldn\'t work out who buys from you. '
+                'What kinds of businesses should I look for? Name a few.')
+    settings.icp_mode = 'buyer'
+    settings.target_industries = ', '.join(plan['buyers'])
+    if plan['countries']:
+        settings.target_countries = ', '.join(plan['countries'])
+    if plan['ideal']:
+        settings.icp_notes = plan['ideal']
+    settings.save(update_fields=['icp_mode', 'target_industries', 'target_countries',
+                                 'icp_notes', 'updated_at'])
+    answers['target_mode'] = 'buyer'
+    _save_state(user, step=4, answers=answers)
+    noted = 'Got it — I added them to What you sell.' if added else 'Got it.'
+    why = f' {plan["ideal"].rstrip(".")}' if plan['ideal'] else ''
+    return (f'{noted} From that, the businesses most likely to buy from you are: '
+            f'{", ".join(plan["buyers"])}.{why}\n'
+            'You can change them in Settings → Who to find.\n\n' + _question_message(4))
+
+
 def _question_message(step_index, prefix=''):
     key, _req, question, hint = STEPS[step_index]
     text = f'{prefix}{question}\n({hint})' if hint else f'{prefix}{question}'
@@ -583,6 +637,9 @@ def onboarding_reply(text, user, settings=None):
     if key == 'target':
         mode = _parse_target(text)
         if mode is None:
+            listed = _target_list_answer(text, settings, user, answers)
+            if listed:
+                return listed
             return ('Is it businesses that BUY what you sell, or other agencies to partner with? '
                     'Say "buyers" or "agencies".')
         settings.icp_mode = mode

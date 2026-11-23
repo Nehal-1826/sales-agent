@@ -237,9 +237,19 @@ services:
     container_name: warmpulse-ollama
     restart: unless-stopped
     environment:
-      # NEVER unload the model (-1) — the 1.4GB stays in RAM so every
+      # NEVER unload the model (-1) — the model stays in RAM so every
       # AI call is instant (no cold-start 404s on a 2-core box)
       OLLAMA_KEEP_ALIVE: "-1"
+      # The runner's memory creeps up the whole time it stays loaded: 2.1 GB
+      # fresh, 3.3 GB after a day, 5.6 GB when this 8 GB box began to thrash
+      # (2026-11-23: load 60, swap full, every AI call timing out). Fewer
+      # malloc arenas slows that growth; the ceiling below bounds it.
+      MALLOC_ARENA_MAX: "2"
+    # Hard ceiling. Beyond it the kernel stops the runner (only the runner)
+    # and Ollama loads it again on the next request, instead of the whole
+    # server starving. ops/ollama-watchdog.sh recycles it earlier, when idle.
+    mem_limit: 4g
+    memswap_limit: 4g
     volumes:
       - warmpulse_ollama_models:/root/.ollama
 

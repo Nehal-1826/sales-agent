@@ -5,6 +5,40 @@ defaults (no company data, no secrets)."""
 from .models import AgentConfig, AppSettings, Workspace
 from .tenancy import workspace_context
 
+# The Responder IS the Assistant: it talks to the person who runs the
+# workspace. Its first default described a different bot - one answering
+# prospects and booking meetings - and sat in the same prompt as "you are
+# the sales assistant of this workspace", so the model answered as neither
+# ("I don't have access to your personal information"). Kept only so rows
+# still carrying it can be pointed at the real job (fix_responder_prompt).
+OLD_RESPONDER_PROMPT = (
+    'You are the Responder (Chatbot) agent.\n'
+    'Handle replies from leads across email, LinkedIn and webchat.\n'
+    'Answer questions using the company profile and approved messaging,\n'
+    'book meetings when intent is clear, and escalate to a human when unsure.\n'
+    'Log every exchange under REPLY in the CRM.'
+)
+OLD_RESPONDER_NEGATIVE = (
+    'Never promise pricing, discounts or SLAs without approval.\n'
+    'Do not argue with leads; de-escalate and offer a call instead.\n'
+    'Do not continue a thread after an explicit opt-out.'
+)
+RESPONDER_PROMPT = (
+    'You are the AI sales assistant of this workspace, chatting with the person who runs it '
+    '(never with a customer). You know the workspace through the live facts you are given and '
+    'you remember the conversation. You help find leads, get outreach emails approved and sent, '
+    'follow up on replies, and set the assistant up. You say only what the facts say; when they '
+    'do not have an answer you say so and point to the right page. Nothing is run, sent or '
+    'changed unless the app did it.'
+)
+RESPONDER_NEGATIVE = (
+    'Never promise results, lead numbers, prices or delivery times that are not in the facts.\n'
+    'Never speak as if you were the company writing to a customer.\n'
+    'Never invent companies, people or numbers.'
+)
+
+
+
 AGENT_DEFAULTS = {
     'search': {
         'db_provider': 'mongodb', 'db_name': '', 'db_connection': '',
@@ -54,20 +88,20 @@ AGENT_DEFAULTS = {
     'responder': {
         'db_provider': 'mongodb', 'db_name': '', 'db_connection': '',
         'api_url': 'https://example.com/inbound-api', 'api_auth': 'Bearer ••••',
-        'system_prompt': (
-            'You are the Responder (Chatbot) agent.\n'
-            'Handle replies from leads across email, LinkedIn and webchat.\n'
-            'Answer questions using the company profile and approved messaging,\n'
-            'book meetings when intent is clear, and escalate to a human when unsure.\n'
-            'Log every exchange under REPLY in the CRM.'
-        ),
-        'negative_prompt': (
-            'Never promise pricing, discounts or SLAs without approval.\n'
-            'Do not argue with leads; de-escalate and offer a call instead.\n'
-            'Do not continue a thread after an explicit opt-out.'
-        ),
+        'system_prompt': RESPONDER_PROMPT,
+        'negative_prompt': RESPONDER_NEGATIVE,
     },
 }
+
+def fix_responder_prompt(Model=AgentConfig):
+    """Point Responder rows that still carry the old lead-reply-bot default
+    at the Assistant's real job. A prompt the workspace changed is its own
+    and is left alone. Returns how many rows were changed."""
+    changed = Model.objects.filter(agent='responder', system_prompt=OLD_RESPONDER_PROMPT) \
+        .update(system_prompt=RESPONDER_PROMPT)
+    changed += Model.objects.filter(agent='responder', negative_prompt=OLD_RESPONDER_NEGATIVE) \
+        .update(negative_prompt=RESPONDER_NEGATIVE)
+    return changed
 
 
 GENERIC_EMAIL_TEMPLATE = {

@@ -66,6 +66,10 @@ class User(AbstractUser):
     onboarding = models.JSONField(default=dict, blank=True)
     # chat action awaiting an explicit "yes" (core.actions): {spec, summary, expires}
     pending_action = models.JSONField(default=dict, blank=True)
+    # the Assistant's memory of the conversation (core.convo): {summary, through}
+    # — a short note about every message up to id `through`; later ones are
+    # sent word for word while they fit the model's memory window
+    chat_memory = models.JSONField(default=dict, blank=True)
     # null only for platform operators (superusers: Django admin / manage.py)
     workspace = models.ForeignKey(Workspace, null=True, blank=True,
                                   on_delete=models.CASCADE, related_name='users')

@@ -144,7 +144,7 @@ export function TargetingSection({ settings, onSaved }: { settings: SettingsStat
           emptyHint={
             agency
               ? 'None: using a built-in list of boutique agencies and studios.'
-              : 'None: the assistant picks businesses likely to buy what you sell.'
+              : 'None yet. Press Fetch next to your website (Your business) and the assistant works this out from your site — or add kinds of businesses here.'
           }
         />
 

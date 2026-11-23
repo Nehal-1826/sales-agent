@@ -9,7 +9,9 @@ machine, and the SSRF cases pin exactly the addresses the guard refuses.
 from unittest import mock
 
 import requests as requests_lib
+from bs4 import BeautifulSoup
 from django.core.cache import cache
+from django.test import SimpleTestCase
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
@@ -81,7 +83,8 @@ class CompanyScrapeTests(TenantTestCase):
         ws = make_ws('scrape-co')
         u = User.objects.create_user('scrape-owner', password='pw123456', workspace=ws, role='owner')
         tok = Token.objects.create(user=u).key
-        with mock.patch('socket.getaddrinfo', return_value=PUBLIC_DNS),                 mock.patch('core.company_scrape.requests.get', return_value=resp(PAGE)):
+        with mock.patch('socket.getaddrinfo', return_value=PUBLIC_DNS), \
+            mock.patch('core.company_scrape.requests.get', return_value=resp(PAGE)):
             first = self.client.post('/api/company/scrape/', {'url': 'https://a.test'}, format='json',
                                      HTTP_AUTHORIZATION=f'Token {tok}')
             self.assertEqual(first.status_code, 200, first.content)
@@ -190,3 +193,165 @@ class CompanyScrapeTests(TenantTestCase):
             r = self.call('https://acme.example/')
         self.assertEqual(r.status_code, 422, r.content)
         self.assertIn('detail', r.json())
+
+
+ABOUT_PAGE = """
+<html><head><title>About us</title></head><body>
+  <nav>Home About Journals Contact</nav>
+  <h2>Contact Us</h2>
+  <p>Email</p><p>editor@example-journal.org</p>
+  <p>Mobile</p><p>+91 8300169682</p>
+  <p>Website</p><p>www.example-journal.org</p>
+  <p>Address</p>
+  <p>158, E Block, TNHB, Green Park Avenue, Omalur Main Road, Perumanur, Salem, Tamil Nadu, India</p>
+  <h3>Ready to publish your research?</h3>
+  <p>Join a growing community of researchers.</p>
+</body></html>
+"""
+
+ADDRESS = '158, E Block, TNHB, Green Park Avenue, Omalur Main Road, Perumanur, Salem, Tamil Nadu, India'
+
+
+class AddressExtractionTests(SimpleTestCase):
+    """Where a business prints its postal address. The owner's own site puts
+    it on /about under an 'Address' label with NO PIN code — and the old
+    reader demanded a PIN code and looked at each page as one long line, so
+    long pages and un-coded addresses never matched."""
+
+    def test_address_line_without_a_pin_code(self):
+        from core.company_scrape import looks_like_address
+        self.assertTrue(looks_like_address(ADDRESS))
+        self.assertTrue(looks_like_address('490 Anna Salai, Chennai 600002, Tamil Nadu'))
+        self.assertTrue(looks_like_address('12 Workshop Road, Pune, Maharashtra, India'))
+
+    def test_ordinary_sentences_are_not_addresses(self):
+        from core.company_scrape import looks_like_address
+        for line in ('Contact Us', 'Email editor@example-journal.org', 'Mobile +91 8300169682',
+                     'Website www.example-journal.org', 'Ready to publish your research?',
+                     'We are located near the main road bus stop in Salem town',
+                     'Call us at +91 98765 43210 for door-step service',
+                     'Copyright 2026 | Privacy Policy | Terms'):
+            self.assertFalse(looks_like_address(line), line)
+
+    def test_label_then_address_on_the_next_line(self):
+        from core.company_scrape import address_in_text
+        self.assertEqual(address_in_text(ABOUT_PAGE), ADDRESS)
+
+    def test_label_and_address_on_one_line(self):
+        from core.company_scrape import address_in_text
+        html = ('<html><body><footer>Address: 12 Workshop Road, Pune, Maharashtra, India '
+                'Phone: +91 90000 00000 Email: hello@example.org</footer></body></html>')
+        self.assertEqual(address_in_text(html), '12 Workshop Road, Pune, Maharashtra, India')
+
+    def test_footer_address_on_a_long_page(self):
+        """Regression: the page used to be read as ONE line, so the footer of
+        any real-sized page was too 'long' to be an address."""
+        from core.company_scrape import address_in_text
+        filler = ''.join(f'<p>Paragraph number {i} about our journal and its editorial board.</p>'
+                         for i in range(80))
+        html = (f'<html><body>{filler}<footer>© 2026 Example Journal · '
+                '490 Anna Salai, Chennai 600002, Tamil Nadu, India</footer></body></html>')
+        self.assertGreater(len(filler), 3000)
+        self.assertEqual(address_in_text(html), '490 Anna Salai, Chennai 600002, Tamil Nadu, India')
+
+    def test_page_without_an_address(self):
+        from core.company_scrape import address_in_text
+        self.assertEqual(address_in_text(PAGE), '')
+        self.assertEqual(address_in_text('<html><body><p>Nothing here. Our address is on request.</p></body></html>'), '')
+
+    def test_long_sentences_with_commas_are_not_addresses(self):
+        """Seen on a real site: a course blurb was taken for the address."""
+        from core.company_scrape import looks_like_address
+        self.assertFalse(looks_like_address(
+            'CSS for styling the web — layout, flexbox, grid and responsive design. Taught step by step'))
+        self.assertFalse(looks_like_address(
+            'Founded in 2010, we work with startups, small shops, schools and clinics across India'))
+        self.assertTrue(looks_like_address(ADDRESS))        # the real one still passes
+
+    def test_garbled_text_is_never_an_address(self):
+        """Seen on a real site: a stray data block read '250008, ChÃ­a'."""
+        from core.company_scrape import looks_like_address, _jsonld_address
+        self.assertFalse(looks_like_address('2500008, ChÃ­a, Cundinamarca'))
+        html = ('<html><head><script type="application/ld+json">{"@type":"Organization",'
+                '"address":{"streetAddress":"Av. 9 No. 5", "addressLocality":"ChÃ­a"}}'
+                '</script></head><body><p>Hola</p></body></html>')
+        self.assertEqual(_jsonld_address(BeautifulSoup(html, 'lxml')), '')
+
+    def test_structured_town_only_loses_to_a_printed_street_address(self):
+        """A town alone in the structured data ('Salem, Tamil Nadu, IN') must
+        not shadow a full address the page prints."""
+        from core.company_scrape import company_details
+        html = ('<html><head><script type="application/ld+json">{"@type":"Organization",'
+                '"address":{"addressLocality":"Pleasanton","addressCountry":"US"}}'
+                '</script></head><body><p>Welcome to Acme, makers of fine software for teams.</p>'
+                '<footer>Acme Inc · 4950 Hopyard Road, Pleasanton, CA 94588 · Privacy</footer>'
+                '</body></html>')
+        with mock.patch('core.company_scrape._scrape_address_from_contact_pages', return_value=''):
+            found = company_details(html, 'https://acme.example/')
+        self.assertEqual(found['address'], '4950 Hopyard Road, Pleasanton, CA 94588')
+
+    def test_town_only_structured_address_is_still_an_answer(self):
+        """Nothing printed on the page, but the site declares its town — that
+        is better than an empty address box."""
+        from core.company_scrape import company_details
+        html = ('<html><head><script type="application/ld+json">{"@type":"Organization",'
+                '"address":{"addressLocality":"Salem","addressRegion":"Tamil Nadu",'
+                '"addressCountry":"IN"}}</script></head>'
+                '<body><p>We build software for ambitious teams everywhere.</p></body></html>')
+        with mock.patch('core.company_scrape._scrape_address_from_contact_pages', return_value=''):
+            self.assertEqual(company_details(html, 'https://acme.example/')['address'],
+                             'Salem, Tamil Nadu, IN')
+
+    def test_contact_page_fetches_are_short(self):
+        """Four contact paths must not hold the request for 4 × 6 seconds."""
+        from core import company_scrape as cs
+        seen = []
+        with mock.patch.object(cs, 'fetch_public',
+                               side_effect=lambda url, **kw: (seen.append(kw), resp(status=404))[1]):
+            cs._scrape_address_from_contact_pages('https://slow.example/')
+        self.assertTrue(seen)
+        self.assertTrue(all(0 < kw['budget'] <= 3 for kw in seen), seen)
+
+    def test_services_come_from_structured_data_not_headings(self):
+        """Headings are mostly marketing lines ('What a website-gap audit looks
+        like') — on real sites they made a wrong 'what you sell'. The model
+        reads the page for that; here only explicit offers count."""
+        from core.company_scrape import company_details
+        html = ('<html><head><title>WarmPulse</title></head><body>'
+                '<h2>What a website-gap audit looks like</h2>'
+                '<h2>Example Dental Clinic, Chennai</h2><h3>Safe by design</h3>'
+                '</body></html>')
+        with mock.patch('core.company_scrape._scrape_address_from_contact_pages', return_value=''):
+            self.assertEqual(company_details(html, 'https://wp.example/')['services'], [])
+        html = ('<html><head><script type="application/ld+json">{"@type":"ProfessionalService",'
+                '"makesOffer":[{"itemOffered":{"name":"Cold email warmup"}}]}</script></head>'
+                '<body><p>x</p></body></html>')
+        with mock.patch('core.company_scrape._scrape_address_from_contact_pages', return_value=''):
+            self.assertEqual(company_details(html, 'https://wp.example/')['services'], ['Cold email warmup'])
+
+    def test_contact_pages_are_tried_and_the_search_is_bounded(self):
+        """Homepage without an address → /about is read. A site that answers
+        404 everywhere must not hold the request for 8 slow round-trips."""
+        from core import company_scrape as cs
+        calls = []
+
+        def fake_get(url, **_kw):
+            calls.append(url)
+            if url.endswith('/about'):
+                return resp(ABOUT_PAGE)
+            return resp(status=404)
+
+        with mock.patch('core.company_scrape.requests.get', side_effect=fake_get),                 mock.patch('socket.getaddrinfo', return_value=PUBLIC_DNS):
+            found = cs._scrape_address_from_contact_pages('https://journal.example/')
+        self.assertEqual(found, ADDRESS)
+        self.assertLessEqual(len(calls), len(cs.CONTACT_PATHS))
+
+        calls.clear()
+
+        def all_missing(url, **_kw):
+            calls.append(url)
+            return resp(status=404)
+
+        with mock.patch('core.company_scrape.requests.get', side_effect=all_missing),                 mock.patch('socket.getaddrinfo', return_value=PUBLIC_DNS):
+            self.assertEqual(cs._scrape_address_from_contact_pages('https://gone.example/'), '')
+        self.assertLessEqual(len(calls), 4, calls)   # gives up after a few misses

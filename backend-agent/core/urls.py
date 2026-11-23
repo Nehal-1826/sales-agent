@@ -3,7 +3,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from . import company_scrape, google_auth, signup, unsubscribe, views, views_sequences as vs
+from . import company_infer, company_scrape, google_auth, signup, unsubscribe, views, views_sequences as vs
 
 router = DefaultRouter()
 router.register('leads', views.LeadViewSet, basename='lead')
@@ -60,6 +60,8 @@ urlpatterns = [
     path('admin-slug/check/', views.admin_slug_check, name='admin-slug-check'),
     # signup helper — fetch the user's own site, return brand name + blurb
     path('company/scrape/', company_scrape.company_scrape, name='company-scrape'),
+    # Settings → Fetch, step 2: the local model reads the site (what it sells, who buys)
+    path('company/infer/', company_infer.company_infer, name='company-infer'),
     # one-click mailbox connect (Zoho/Gmail/custom) — verifies + saves SMTP
     path('settings/smtp_connect/', views.smtp_connect, name='smtp-connect'),
     # search profiles — saved lead-targeting presets w/ one-click switching

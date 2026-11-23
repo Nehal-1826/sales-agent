@@ -677,31 +677,38 @@ def _run_cycle(triggered_by):
     # Every cycle searches REGIONS_PER_CYCLE different countries, so the CRM
     # spreads across the world instead of one region at a time — unless the
     # user set target countries (Settings → Lead Targeting), then only those.
-    # ICP targeting (core.icp): the industries searched are BUSINESSES THAT
-    # BUY what we sell — never our own vertical.  The legacy agency-heavy
-    # list used to fill the CRM with the user's own competitors.
+    # Who to search for (core.icp): BUSINESSES THAT BUY what we sell — the
+    # user's 'Who to find' list, else worked out from their own website.
+    # Never our own vertical, and never a fixed list: with nobody to look
+    # for, the cycle does NOT search (it used to fall back to a built-in
+    # list of somebody else's customers).
     settings = AppSettings.load()
     icp_industries = buyer_industries(settings)
     target_cities = [c.strip() for c in settings.target_cities.split(',') if c.strip()]
-    if target_cities:
+    target_countries = [c.strip() for c in settings.target_countries.split(',') if c.strip()]
+    base_queries = []
+    if not icp_industries:
         summary['notes'].append(
-            f'Search: CITY targeting on — sweeping {", ".join(target_cities)} '
-            f'for businesses that BUY {our_services_text(settings)}')
-    elif agency_mode(settings):
-        summary['notes'].append(
-            'Search: AGENCY-PARTNER targeting on — searching boutique agencies / software '
-            'shops (potential project partners); the competitor filter is off for peers')
-    elif not getattr(settings, 'target_industries', ''):
-        summary['notes'].append(
-            'Search: ICP buyer-targeting on — searching businesses that BUY '
-            f'{our_services_text(settings)}; peer/competitor agencies are filtered out')
-    base_queries = search_queries_for_cycle(
-        cycle,
-        n=DISCOVERY_QUERIES_PER_CYCLE,
-        regions=[c.strip() for c in settings.target_countries.split(',') if c.strip()],
-        industries=icp_industries,
-        cities=target_cities,
-    )
+            "Search: SKIPPED — I couldn't work out who buys from you, so I didn't guess. "
+            'Tell me in Settings → Who to find, or paste your website to the Assistant.')
+    else:
+        who = ', '.join(icp_industries[:6]) + ('…' if len(icp_industries) > 6 else '')
+        where = ', '.join(target_cities) or ', '.join(target_countries) or 'worldwide'
+        if agency_mode(settings):
+            origin, guard = 'agency partners', 'the competitor filter is off for peers'
+        elif not getattr(settings, 'target_industries', ''):
+            origin = 'worked out from your website — change it in Settings → Who to find'
+            guard = 'competitor/peer businesses are filtered out'
+        else:
+            origin, guard = 'your Who to find list', 'competitor/peer businesses are filtered out'
+        summary['notes'].append(f'Search: looking for {who} in {where} ({origin}); {guard}')
+        base_queries = search_queries_for_cycle(
+            cycle,
+            n=DISCOVERY_QUERIES_PER_CYCLE,
+            regions=target_countries,
+            industries=icp_industries,
+            cities=target_cities,
+        )
     # adaptive volume (core.discovery): the last cycle's new-vs-known ratio
     # decides how many phrasing variants / neighbouring cities to add
     widen_level = next_widen_level(last_discovery_stats())
@@ -778,11 +785,12 @@ def _run_cycle(triggered_by):
     hits = ', '.join(f'{engine_label(b)} {n}' for b, n in sorted(sources.items()) if ':' not in b
                      and b != 'exhausted') or 'none'
     misses = sum(n for b, n in sources.items() if b.endswith(':fail'))
-    summary['notes'].append(
-        f'Search sources: {hits} answered query(s); {misses} engine miss(es) '
-        f'(rate-limit/empty → next engine), {sources.get("exhausted", 0)} query(s) with no engine left; '
-        f'{len(queries)} queries at widen level {widen_level}: {len(seen_domains)} unique domains → '
-        f'{web_new} new, {known_hits} already known')
+    if queries:    # a skipped search has nothing to report
+        summary['notes'].append(
+            f'Search sources: {hits} answered query(s); {misses} engine miss(es) '
+            f'(rate-limit/empty → next engine), {sources.get("exhausted", 0)} query(s) with no engine left; '
+            f'{len(queries)} queries at widen level {widen_level}: {len(seen_domains)} unique domains → '
+            f'{web_new} new, {known_hits} already known')
     discovery_stats = {'widen_level': widen_level, 'queries': len(query_labels),
                        'candidates': len(seen_domains), 'new': web_new,
                        'known': known_hits, 'sources': sources}
@@ -794,7 +802,7 @@ def _run_cycle(triggered_by):
     # phone + address from the listing, nothing to audit, everything to build.
     # Skipped in agency mode — a boutique agency without a website is never a
     # project partner; those slots go to real agency discoveries instead.
-    if gmaps_available() and not agency_mode(settings) and not _out_of_time(deadline):
+    if gmaps_available() and queries and not agency_mode(settings) and not _out_of_time(deadline):
         # Maps-first funnel for listings WITH a website: collect → simple NLP →
         # one batched AI fit check → only FIT ones become leads (Profile + drafts follow)
         maps_terms, seen_terms = [], set()

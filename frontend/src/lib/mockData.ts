@@ -500,7 +500,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
     services: ['Custom SaaS platform development', 'MVP & product engineering', 'Mobile apps (React Native)', 'API & integrations'],
     address: 'Uthayapuri Colony, Narasothipatti, Salem, Tamil Nadu 636004, India',
   },
-  aiKey: { provider: 'Google AI', apiKey: '' },
+  aiKey: { provider: 'Google AI', apiKey: '', ready: false },
   smtp: { host: '', port: '587', user: '', password: '', from: '' },
   runs: { enabled: true, frequency: '1h' },
   report: { email: '' },

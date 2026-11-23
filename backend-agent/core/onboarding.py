@@ -5,18 +5,27 @@ normal language, each answer is parsed and applied to the live settings
 immediately.  Progress is stored PER USER (User.onboarding) so every new
 client login gets the wizard — existing users were marked done in migration
 0017 and are never hijacked.  Works with zero AI key (pure heuristics for
-the standard steps; the ICP step uses the LLM when available for sharper
-extraction, and falls back to storing the raw text).
+    the standard steps; the ICP step uses the LLM when available for sharper
+    extraction, and falls back to storing the raw text).
+
+    Pasting the DOMAIN instead of a company name is the shortcut: the local
+    model reads the site and fills both cards (core.business_profile).
 
     onboarding_status(user, settings)  → is the wizard active + current question
     onboarding_reply(text, user, settings) → parse one answer, apply, advance
 """
 
 import json
+import logging
 import re
 
+from .ai import llm_available
+from .business_profile import BadUrl, apply_profile, profile_from_domain
 from .permissions import is_privileged
 from .models import AppSettings, SearchProfile
+
+log = logging.getLogger(__name__)
+
 
 # ------------------------------------------------------------------
 # Country aliases — chat answers like "us, uk" must map onto the region
@@ -56,8 +65,10 @@ EMAIL_RE = re.compile(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}')
 
 STEPS = [
     ('company', True,
-     'First — what should I call your company? Just the name is perfect.',
-     'e.g. "Support Icon"'),
+     'First — what should I call your company? Just the name is perfect.\n'
+     'Shortcut: paste your WEBSITE instead (e.g. yourcompany.com) and I\'ll read it '
+     'and fill everything in for you.',
+     'e.g. "Support Icon" — or "supporticon.com"'),
     ('services', True,
      'Nice! What do you sell? A few words are enough — I use this to write '
      'your outreach emails and pick the right leads.',
@@ -96,55 +107,73 @@ DOMAIN_ANSWER = re.compile(
     re.I)
 
 
-def _try_domain_autofill(text, settings, user, answers):
-    """The owner pasted their DOMAIN at any early step — scrape the site and
-    auto-fill company name + services + website in one shot. Returns the
-    bot's reply, or None when the answer wasn't a domain."""
+def _try_domain_autofill(text, settings, user, answers, step):
+    """The owner pasted their DOMAIN at an early step — the AI reads the site
+    and fills BOTH setup cards in one shot: the business (name, website, what
+    it sells, address) and who to find (kinds of buyers; the country comes
+    from the domain itself). Returns the bot's reply, or None when the answer
+    wasn't a domain.
+
+    Nothing is guessed: a site that can't be read is said so and the same
+    question is asked again; answers the owner typed by hand always beat
+    the homepage.
+    """
     m = DOMAIN_ANSWER.match(text.strip())
     if not m:
         return None
     domain = m.group(1).lower()
+    at_website_step = STEP_KEYS[step] == 'website'
+
+    def website_only(note):
+        # the question was only "what's your website?" — the answer stands
+        # even when the page can't be read; the rest is asked the normal way
+        settings.company_website = domain
+        settings.save(update_fields=['company_website', 'updated_at'])
+        answers['website'] = domain
+        _save_state(user, step=3, answers=answers)
+        return (f'Got it — I saved {domain}, but {note}, '
+                "so I'll ask the rest the normal way.\n\n" + _question_message(3))
+
     try:
-        from .company_scrape import fetch_public, company_details, BadUrl
-        resp = fetch_public('https://' + domain)
-        details = company_details(resp.text[:1000000], resp.url)
+        profile = profile_from_domain(domain)
+    except BadUrl as exc:
+        reason = str(exc).rstrip('.')
+        if at_website_step:
+            return website_only(f'I couldn\'t read the page ({reason})')
+        return (f"I couldn't read {domain} ({reason}) — so I haven't "
+                'guessed anything. Check the address and paste it again, or just answer:\n\n'
+                + _question_message(step))
     except Exception:
-        details = {}
-    name = details.get('name') or name_from_domain_fallback(domain)
-    services = [s for s in (details.get('services') or []) if 2 < len(s) < 60][:5]
-    description = (details.get('description') or '')[:300]
+        log.exception('Website read failed for %s', domain)
+        if at_website_step:
+            return website_only("I couldn't read the page just now")
+        return (f"I couldn't read {domain} right now — so I haven't guessed anything. "
+                'Paste it again in a moment, or just answer:\n\n' + _question_message(step))
 
-    address = (details.get('address') or '').strip()[:300]
-    settings.company_name = name
-    settings.company_website = domain
-    settings.company_description = description
-    if services:
-        settings.services = services
-    if address:
-        settings.company_address = address
-    settings.save(update_fields=['company_name', 'company_website',
-                                 'company_description', 'services',
-                                 'company_address', 'updated_at'])
-    answers.update(company=name, website=domain,
-                   services=services or answers.get('services', []),
-                   description=description)
-    filled = [f'company name: {name}', f'website: {domain}']
-    if address:
-        filled.append('address: ' + address[:80] + ('…' if len(address) > 80 else ''))
-    if services:
-        filled.append('services: ' + ', '.join(services))
-    if description:
-        filled.append('what you do: ' + description[:120] + ('…' if len(description) > 120 else ''))
-    _save_state(user, step=3, answers=answers)   # jump past company/services/website
-    return ('I read your website and filled everything in —\n'
-            + '\n'.join(f'  • {f}' for f in filled)
-            + '\n\nYou can correct any of it later in Settings → Your business. '
-              'Now, the next question:\n\n' + _question_message(3))
-
-
-def name_from_domain_fallback(domain):
-    part = domain.split('.')[0]
-    return part.replace('-', ' ').replace('_', ' ').strip().title() or domain
+    if answers.get('company'):
+        profile['name'] = ''           # typed by hand — keep the owner's words
+    if answers.get('services'):
+        profile['services'] = []
+    lines = apply_profile(settings, profile)
+    answers['website'] = domain
+    filled = '\n'.join(f'  • {line}' for line in lines)
+    leads = [i for i in (profile.get('target_industries') or []) if i]
+    if leads:
+        # who to find + country are answered; the model is working, so only
+        # the mailbox is left (without one, the key question comes first)
+        step = 7 if llm_available() else 6
+        _save_state(user, step=step, answers=answers)
+        return ('I read your website and filled in both setup cards for you —\n' + filled
+                + '\n\nNot quite right? You can change any of it later in Settings → '
+                  'Your business and Who to find.\n\n' + _question_message(step))
+    _save_state(user, step=3, answers=answers)   # who to find is still open
+    if profile.get('customer_type') == 'individuals':
+        why = ('It looks like your customers are individual people, not companies — '
+               "so I haven't picked any companies to look for.")
+    else:
+        why = "I couldn't work out who buys from you, so I need to ask."
+    return ('I read your website and filled in your business details —\n' + filled
+            + '\n\n' + why + '\n\n' + _question_message(3))
 
 
 STEP_KEYS = [s[0] for s in STEPS]
@@ -516,7 +545,7 @@ def onboarding_reply(text, user, settings=None):
     if key == 'company':
         if re.match(r'^\s*(hi|hello|hey|vanakkam)\b', lowered) or text.strip().endswith('?'):
             return 'Hi! Before anything else — what should I call your company? Just the name is perfect.'
-        auto = _try_domain_autofill(text, settings, user, answers)
+        auto = _try_domain_autofill(text, settings, user, answers, step)
         if auto:
             return auto
         name = _clean_name(text)
@@ -539,7 +568,7 @@ def onboarding_reply(text, user, settings=None):
         return _question_message(2)
 
     if key == 'website':
-        auto = _try_domain_autofill(text, settings, user, answers)
+        auto = _try_domain_autofill(text, settings, user, answers, step)
         if auto:
             return auto
         domain = _parse_website(text)

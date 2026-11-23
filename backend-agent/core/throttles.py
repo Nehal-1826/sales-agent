@@ -36,11 +36,22 @@ class OtpThrottle(SimpleRateThrottle):
 
 
 class CompanyScrapeThrottle(_IpScope):
-    """POST /api/company/scrape — called by ANONYMOUS visitors on the signup
-    form, so the limit is per-IP.  The rate lives on the class on purpose:
-    the endpoint owns its own limit and DEFAULT_THROTTLE_RATES stays as is."""
+    """POST /api/company/scrape — the limit is per-IP.  The rate lives on the
+    class on purpose: the endpoint owns its own limit and
+    DEFAULT_THROTTLE_RATES stays as is."""
     scope = 'company_scrape'
     THROTTLE_RATES = {**SimpleRateThrottle.THROTTLE_RATES, 'company_scrape': '10/min'}
+
+
+class CompanyInferThrottle(SimpleRateThrottle):
+    """POST /api/company/infer — one call is a minute of the shared local
+    model, so the limit is tight and per signed-in user."""
+    scope = 'company_infer'
+    THROTTLE_RATES = {**SimpleRateThrottle.THROTTLE_RATES, 'company_infer': '5/min'}
+
+    def get_cache_key(self, request, view):
+        ident = request.user.pk if request.user and request.user.is_authenticated else self.get_ident(request)
+        return self.cache_format % {'scope': self.scope, 'ident': ident}
 
 
 class AdminSlugThrottle(SimpleRateThrottle):

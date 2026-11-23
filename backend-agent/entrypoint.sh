@@ -47,9 +47,15 @@ if [ "$ROLE" = "worker" ]; then
 fi
 
 echo "[entrypoint] starting gunicorn…"
+# Threaded workers: a chat reply or a website read waits a minute or more on
+# the local model. With single-threaded workers two such requests at once
+# held both workers and the whole API stood still for everyone; threads let
+# the other requests through while one waits on the model.
 exec gunicorn agentic.wsgi:application \
     --bind 0.0.0.0:8000 \
     --workers 2 \
+    --worker-class gthread \
+    --threads 4 \
     --timeout 300 \
     --access-logfile - \
     --error-logfile -

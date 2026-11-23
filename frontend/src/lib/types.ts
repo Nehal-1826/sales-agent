@@ -293,12 +293,34 @@ export interface CompanyProfile {
   address: string;
 }
 
+/** What the AI read from a company's website (POST /api/company/infer). */
+export interface CompanyInference {
+  domain: string;
+  name: string;
+  description: string;
+  address: string;
+  services: string[];
+  /** 'individuals' = single people buy (patients, shoppers, readers). */
+  customerType: 'organisations' | 'individuals' | 'both' | '';
+  /** Kinds of organisations that buy — [] when the customers are individuals. */
+  targetIndustries: string[];
+  /** Only ever the country in the domain itself (.in → India); [] = worldwide. */
+  targetCountries: string[];
+  /** One sentence about the ideal customer. */
+  icpNotes: string;
+  /** False when only the page's own facts could be read (the model added nothing). */
+  inferred: boolean;
+}
+
 export interface AiKeyConfig {
   provider: string;
   apiKey: string;
   apolloApiKey?: string; // Apollo.io — lead phone/company enrichment (masked on read)
   scalelistApiKey?: string; // Scalelist phone lookup (masked on read) — each company brings its own
   apifyApiKey?: string; // Apify Google Maps actor (masked on read)
+  /** Set by the server: true when the AI can run — a key, or the built-in
+   *  self-hosted model that needs none. Never sent back. */
+  ready?: boolean;
 }
 
 export interface SmtpConfig {
@@ -431,8 +453,10 @@ export type IcpMode = 'buyer' | 'agency';
 export interface TargetingState {
   countries: string[];
   industries: string[];
-  cities: string[]; // cities win over countries; [] industries = ICP auto-targeting
+  cities: string[]; // cities win over countries; [] industries = the model works out who buys (core.icp)
   icpMode: IcpMode;
+  /** One line about the ideal customer — steers lead vetting and every email. */
+  notes?: string;
 }
 
 /** Saved lead-targeting preset — one click on Activate copies it into the

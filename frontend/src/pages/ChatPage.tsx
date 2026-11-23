@@ -4,7 +4,7 @@ import { IconBot, IconSend, IconUser } from '../components/icons';
 import { ConfirmButton } from '../components/overlay';
 import { ThoughtLine, useThoughtProgress } from '../components/ThoughtLine';
 import { VoicePill, useVoiceDictation } from '../components/VoicePill';
-import { clearChat, getChatHistory, getOnboarding, isDemo, sendChatMessage } from '../lib/api';
+import { clearChat, getChatHistory, getOnboarding, isBareDomain, isDemo, sendChatMessage } from '../lib/api';
 import { useAsync } from '../lib/hooks';
 import { useWorkspaceStatus } from '../lib/status';
 import type { ChatMessage, OnboardingState } from '../lib/types';
@@ -21,6 +21,13 @@ const QUICK = [
 
 const CHAT_STEPS = ['Reading your request', 'Checking leads & drafts', 'Writing response'] as const;
 const SETUP_STEPS = ['Reading your answer', 'Updating assistant setup', 'Preparing next step'] as const;
+// a pasted website is read by the AI — about a minute, so say what is happening
+const SITE_STEPS = [
+  'Opening your website',
+  'Reading what you sell',
+  'Working out who buys from you',
+  'Filling in your setup',
+] as const;
 
 interface Bubble extends ChatMessage {
   error?: boolean;
@@ -44,8 +51,11 @@ export function ChatPage() {
   const [input, setInput] = useState('');
   const [typing, setTyping] = useState(false);
   const voice = useVoiceDictation({ value: input, onChange: setInput, append: true });
-  const thoughtSteps = onboarding?.needed ? SETUP_STEPS : CHAT_STEPS;
-  const liveSteps = useThoughtProgress(typing, thoughtSteps);
+  // during setup a pasted website is read by the AI — a longer, clearer wait
+  const [readingSite, setReadingSite] = useState(false);
+  const siteTurn = typing && readingSite;
+  const steps = siteTurn ? SITE_STEPS : onboarding?.needed ? SETUP_STEPS : CHAT_STEPS;
+  const liveSteps = useThoughtProgress(typing, steps);
   const scroller = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -68,8 +78,10 @@ export function ChatPage() {
   const send = async (raw?: string) => {
     const text = (raw ?? input).trim();
     if (!text || typing) return;
+    const turnSteps = onboarding?.needed && isBareDomain(text) ? SITE_STEPS : onboarding?.needed ? SETUP_STEPS : CHAT_STEPS;
     setInput('');
     setPending(null);
+    setReadingSite(turnSteps === SITE_STEPS);
     setMessages((m) => [...m, { id: Date.now(), from: 'user', text, time: now() }]);
     setTyping(true);
     const startedAt = performance.now();
@@ -85,7 +97,7 @@ export function ChatPage() {
     }
     setMessages((m) => [
       ...m,
-      { ...res.data.reply, thoughtSeconds: elapsed, thoughtSteps: [...thoughtSteps] },
+      { ...res.data.reply, thoughtSeconds: elapsed, thoughtSteps: [...turnSteps] },
     ]);
     setOnboarding(res.data.onboarding);
     setPending(res.data.pendingAction);
@@ -197,10 +209,10 @@ export function ChatPage() {
                 <span className="chat-avatar" aria-hidden>
                   <IconBot size={14} />
                 </span>
-                <div className="chat-bubble chat-bubble-thought" aria-label="Assistant is thinking">
+                <div className="chat-bubble chat-bubble-thought" aria-label={siteTurn ? 'Reading your website' : 'Assistant is thinking'}>
                   <ThoughtLine
                     working
-                    label="Thinking…"
+                    label={siteTurn ? 'Reading your website…' : 'Thinking…'}
                     steps={liveSteps}
                     color="var(--text)"
                     glyphColor="var(--accent-strong)"

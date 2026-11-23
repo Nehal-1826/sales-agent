@@ -47,6 +47,9 @@ export function TagInput({
               add();
             }
           }}
+          // leaving the field commits what was typed — it used to vanish
+          // unless Enter or "Add" was pressed, so "Save changes" saved nothing
+          onBlur={add}
         />
         {suggestions.length > 0 && (
           <datalist id={`${id}-options`}>
@@ -55,7 +58,15 @@ export function TagInput({
             ))}
           </datalist>
         )}
-        <button type="button" className="btn" onClick={add} disabled={!draft.trim()}>
+        {/* keep focus in the input on press, so the blur commit and this
+            click never both run for one press */}
+        <button
+          type="button"
+          className="btn"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={add}
+          disabled={!draft.trim()}
+        >
           Add
         </button>
       </div>

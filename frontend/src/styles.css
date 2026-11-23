@@ -2868,6 +2868,15 @@ input[type='radio'] {
   padding: 0;
   box-shadow: var(--shadow-lg);
   animation: tutor-rise 0.25s ease-out;
+  transition: bottom 0.2s ease;
+}
+
+/* A settings section with unsaved changes shows a sticky save bar across
+   the bottom — the card sat exactly on its "Save changes" button, so a
+   first-login user's click landed on the tour and nothing saved. Lift the
+   card clear of the bar while the bar is on screen. */
+body:has(.save-bar) .tutor-card {
+  bottom: 224px;
 }
 
 @keyframes tutor-rise {
@@ -2976,6 +2985,10 @@ input[type='radio'] {
   .tutor-card {
     right: 14px;
     bottom: 76px; /* mobile help fab sits at 14px + safe-area */
+  }
+
+  body:has(.save-bar) .tutor-card {
+    bottom: 236px; /* the bar wraps to two lines on phones */
   }
 }
 

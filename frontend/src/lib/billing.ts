@@ -5,6 +5,7 @@
  */
 import { attempt, inDemo, openPost, post, put, request, requestText, setSessionToken } from './transport';
 import type { Result } from './transport';
+import type { CompanyInference } from './types';
 
 export type BillingInterval = 'month' | 'year';
 export type BillingCurrency = 'INR' | 'USD';
@@ -199,3 +200,10 @@ export interface CompanyScrapeDetails {
 export const scrapeCompanyDetails = async (url: string): Promise<Result<CompanyScrapeDetails>> =>
   (await inDemo()) ? demoFail<CompanyScrapeDetails>() : attempt(() =>
     request<CompanyScrapeDetails>('/company/scrape/', post({ url }), 30_000));
+
+/** POST /api/company/infer — the local model reads the site and says what it
+ *  sells and who buys from it. It thinks for a minute or more on the small
+ *  server, so this one waits far longer than a normal call. */
+export const inferCompanyProfile = async (url: string): Promise<Result<CompanyInference>> =>
+  (await inDemo()) ? demoFail<CompanyInference>() : attempt(() =>
+    request<CompanyInference>('/company/infer/', post({ url }), 240_000));

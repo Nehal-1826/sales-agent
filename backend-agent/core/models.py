@@ -579,7 +579,9 @@ class AppSettings(TenantOwned, Timestamped):
     @classmethod
     def load(cls):
         ws = current_workspace()
-        obj, _ = cls.objects.get_or_create(workspace=ws)
+        from .ai import default_ai_provider   # core.ai imports these models: keep it lazy
+        obj, _ = cls.objects.get_or_create(workspace=ws,
+                                           defaults={'ai_provider': default_ai_provider()})
         obj._absorb_env_secrets()
         return obj
 

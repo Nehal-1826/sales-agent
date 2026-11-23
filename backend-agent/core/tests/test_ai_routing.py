@@ -155,3 +155,119 @@ class ProviderForKeyTests(TenantTestCase):
     def test_guessed_provider_is_routable(self):
         for key in ('gsk_abc', 'AIzaSyABC', 'sk-abc', '0123456789abcdef.AbCdEf'):
             self.assertIsNotNone(ai.resolve_provider(_provider_for_key(key)), key)
+
+
+class LlmJsonTests(TenantTestCase):
+    """llm_json — schema-constrained JSON from the LOCAL runtime only. The
+    grammar makes the reply parse; cloud providers and any failure give None."""
+
+    SCHEMA = {'type': 'object', 'properties': {'kind': {'type': 'string'}},
+              'required': ['kind']}
+
+    def _local(self):
+        s = AppSettings.load()
+        s.ai_provider, s.ai_key = 'Ollama', ''
+        s.save()
+
+    def _post_returning(self, content):
+        resp = mock.Mock(status_code=200)
+        resp.json.return_value = {'message': {'content': content}}
+        return mock.patch('core.ai.requests.post', return_value=resp)
+
+    def test_posts_to_the_native_api_with_the_schema_and_no_thinking(self):
+        self._local()
+        with self._post_returning('{"kind": "clinic"}') as post:
+            out = ai.llm_json('sys', 'prompt', self.SCHEMA)
+        self.assertEqual(out, {'kind': 'clinic'})
+        url = post.call_args.args[0]
+        self.assertEqual(url, 'http://localhost:11434/api/chat')
+        body = post.call_args.kwargs['json']
+        self.assertEqual(body['format'], self.SCHEMA)
+        self.assertIs(body['stream'], False)
+        self.assertIs(body['think'], False)
+        self.assertEqual(body['model'], ai.DEFAULT_MODELS['ollama'])
+        self.assertEqual(body['messages'][0], {'role': 'system', 'content': 'sys'})
+
+    def test_honours_the_configured_ollama_address(self):
+        self._local()
+        with mock.patch.dict(os.environ, {'OLLAMA_BASE_URL': 'http://ollama:11434/v1'}), \
+                self._post_returning('{"kind": "x"}') as post:
+            ai.llm_json('s', 'p', self.SCHEMA)
+        self.assertEqual(post.call_args.args[0], 'http://ollama:11434/api/chat')
+
+    def test_reply_that_is_not_a_json_object_is_none(self):
+        self._local()
+        for junk in ('[1, 2]', 'not json', '', 'null'):
+            with self.subTest(junk=junk), self._post_returning(junk):
+                self.assertIsNone(ai.llm_json('s', 'p', self.SCHEMA))
+
+    def test_transport_error_is_none(self):
+        import requests
+        self._local()
+        with mock.patch('core.ai.requests.post', side_effect=requests.ConnectionError('down')):
+            self.assertIsNone(ai.llm_json('s', 'p', self.SCHEMA))
+
+    def test_cloud_providers_are_never_asked_for_json(self):
+        s = AppSettings.load()
+        s.ai_provider, s.ai_key = 'OpenAI', 'sk-test-000000000000'
+        s.save()
+        with mock.patch('core.ai.requests.post') as post:
+            self.assertIsNone(ai.llm_json('s', 'p', self.SCHEMA))
+        post.assert_not_called()
+
+
+class AiReadyTests(TenantTestCase):
+    """Settings → aiKey.ready: the Home checklist must not nag for an API key
+    when the product's own local model does the work."""
+
+    def _ready(self, provider, key):
+        s = AppSettings.load()
+        s.ai_provider, s.ai_key = provider, key
+        s.save()
+        from core.serializers import SettingsSerializer
+        return SettingsSerializer(AppSettings.load()).data['aiKey']['ready']
+
+    def test_local_runtime_is_ready_without_a_key(self):
+        self.assertTrue(self._ready('Ollama', ''))
+
+    def test_cloud_provider_is_ready_only_with_its_key(self):
+        self.assertFalse(self._ready('OpenAI', ''))
+        self.assertTrue(self._ready('OpenAI', 'sk-test-000000000000'))
+
+    def test_unknown_provider_is_never_ready(self):
+        self.assertFalse(self._ready('Anthropic', 'some-key-000000'))
+
+
+class DefaultProviderTests(TenantTestCase):
+    """A NEW workspace starts on the self-hosted runtime when this deployment
+    runs one: the local model is a platform capability, not a secret each
+    company has to bring. (Without this the AI-filled setup — and the search
+    itself — silently did nothing for every workspace after the first.)"""
+
+    def _fresh(self, slug, env):
+        from billing.tests.test_entitlements import make_ws
+        from core.tenancy import workspace_context
+        ws = make_ws(slug)
+        with mock.patch.dict(os.environ, env), workspace_context(ws):
+            return AppSettings.load()
+
+    def test_new_workspace_starts_on_the_local_runtime(self):
+        s = self._fresh('fresh-co', {'AI_PROVIDER': 'Ollama'})
+        self.assertEqual(s.ai_provider, 'Ollama')
+        self.assertTrue(ai.llm_ready_for(s))          # and needs no key
+
+    def test_without_a_local_runtime_a_new_workspace_starts_on_openai(self):
+        s = self._fresh('plain-co', {'AI_PROVIDER': ''})
+        self.assertEqual(s.ai_provider, 'OpenAI')
+
+    def test_a_provider_the_workspace_already_chose_is_kept(self):
+        from billing.tests.test_entitlements import make_ws
+        from core.tenancy import workspace_context
+        ws = make_ws('chosen-co')
+        with workspace_context(ws):
+            AppSettings.load().delete()
+            s = AppSettings.load()
+            s.ai_provider = 'Gemini'
+            s.save()
+        with mock.patch.dict(os.environ, {'AI_PROVIDER': 'Ollama'}), workspace_context(ws):
+            self.assertEqual(AppSettings.load().ai_provider, 'Gemini')

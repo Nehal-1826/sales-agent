@@ -7,6 +7,7 @@ degrades gracefully: with no key configured, callers get None and
 fall back to built-in templates.
 """
 
+import json
 import logging
 import os
 import time
@@ -94,13 +95,26 @@ def provider_base_url(provider):
     return PROVIDER_BASE_URLS[p]
 
 
-def llm_available():
+def llm_ready_for(settings):
     """(Key set OR a self-hosted provider) AND the provider is known — an
     unknown provider is keyless mode, so the strict AI gate in the pipeline
     doesn't hold every lead forever."""
-    s = AppSettings.load()
-    provider = resolve_provider(s.ai_provider)
-    return (bool(s.ai_key) or provider in LOCAL_PROVIDERS) and provider is not None
+    provider = resolve_provider(settings.ai_provider)
+    return (bool(settings.ai_key) or provider in LOCAL_PROVIDERS) and provider is not None
+
+
+def llm_available():
+    return llm_ready_for(AppSettings.load())
+
+
+def default_ai_provider():
+    """Provider a NEW workspace starts on. The self-hosted runtime is a
+    platform capability, not a secret each company brings: when this
+    deployment runs one (AI_PROVIDER names it — the VPS runs Ollama) every
+    new workspace starts there and needs no key. Anything else keeps the
+    plain default (OpenAI, the workspace's own key)."""
+    provider = resolve_provider(os.environ.get('AI_PROVIDER', ''))
+    return 'Ollama' if provider in LOCAL_PROVIDERS else 'OpenAI'
 
 
 def llm_complete(prompt, system='', model='', timeout=45, temperature=0.7):
@@ -150,3 +164,34 @@ def llm_complete(prompt, system='', model='', timeout=45, temperature=0.7):
             return None
     log.warning('LLM call failed (%s): still throttled after retry', base)
     return None
+
+
+def llm_json(system, prompt, schema, max_tokens=256, timeout=240):
+    """Schema-constrained JSON object from the LOCAL runtime. Uses Ollama's
+    native API: `format` binds the reply to the schema's grammar, so the
+    answer always parses — a small model cannot drift off-format. Cloud
+    providers are never asked (returns None for them, and for any failure;
+    never raises)."""
+    try:
+        settings = AppSettings.load()
+        provider = resolve_provider(settings.ai_provider)
+        if provider not in LOCAL_PROVIDERS:
+            return None
+        base = provider_base_url(provider).rstrip('/')
+        if base.endswith('/v1'):        # native routes live beside the /v1 shim
+            base = base[:-3]
+        resp = requests.post(
+            f'{base}/api/chat',
+            headers={'Content-Type': 'application/json'},
+            json={'model': DEFAULT_MODELS[provider],
+                  'messages': [{'role': 'system', 'content': system},
+                               {'role': 'user', 'content': prompt}],
+                  'format': schema, 'stream': False, 'think': False,
+                  'options': {'temperature': 0, 'num_predict': max_tokens}},
+            timeout=timeout)
+        resp.raise_for_status()
+        out = json.loads(resp.json().get('message', {}).get('content') or '')
+    except Exception as exc:
+        log.warning('LLM JSON call failed: %s', exc)
+        return None
+    return out if isinstance(out, dict) else None

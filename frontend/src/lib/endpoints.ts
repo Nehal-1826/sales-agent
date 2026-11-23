@@ -464,6 +464,11 @@ export interface ChatTurn {
   pendingAction: string | null;
 }
 
+/** A website address on its own ("acme.com") — in the setup wizard the
+ *  assistant reads it with the AI, which takes a minute or more. */
+export const isBareDomain = (text: string): boolean =>
+  /^(?:https?:\/\/)?(?:www\.)?[a-z0-9][a-z0-9-]*\.[a-z]{2,}(?:\.[a-z]{2,})?\/?$/i.test(text.trim());
+
 export async function sendChatMessage(text: string): Promise<Result<ChatTurn>> {
   if (await inDemo()) {
     const reply: ChatMessage = {
@@ -475,11 +480,12 @@ export async function sendChatMessage(text: string): Promise<Result<ChatTurn>> {
     return { ok: true, data: { reply, onboarding: null, pendingAction: null } };
   }
   return attempt(async () => {
-    // actions (sending approved emails, reports) can take a while
+    // actions (sending approved emails, reports) can take a while; a pasted
+    // website is read by the AI, which takes longer still
     const r = await request<{ reply: ChatMessage; onboarding?: OnboardingState; pendingAction?: string | null }>(
       '/chat/',
       post({ text }),
-      90_000,
+      isBareDomain(text) ? 240_000 : 90_000,
     );
     return { reply: r.reply, onboarding: r.onboarding ?? null, pendingAction: r.pendingAction ?? null };
   });

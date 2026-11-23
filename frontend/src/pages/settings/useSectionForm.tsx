@@ -38,12 +38,16 @@ export function useSectionForm<T>(initial: T, persist: (value: T) => Promise<Res
     };
   }, [dirty]);
 
-  const save = useCallback(async () => {
+  /** Saves the form; pass `next` to save a value that was just produced
+   *  (e.g. by Fetch) instead of what the fields currently hold. */
+  const save = useCallback(async (next?: T) => {
+    const target = next ?? value;
     setSaving(true);
-    const res = await persist(value);
+    const res = await persist(target);
     setSaving(false);
     if (res.ok) {
-      setSaved(value);
+      if (next) setValue(next);
+      setSaved(target);
       toast.success('Saved.');
     } else {
       toast.error(res.error);
@@ -53,7 +57,7 @@ export function useSectionForm<T>(initial: T, persist: (value: T) => Promise<Res
 
   const discard = useCallback(() => setValue(saved), [saved]);
 
-  return { value, setValue, dirty, saving, save, discard };
+  return { value, setValue, saved, dirty, saving, save, discard };
 }
 
 /** Sticky bar that appears only while a section has unsaved changes. */

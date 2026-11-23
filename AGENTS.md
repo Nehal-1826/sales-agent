@@ -155,6 +155,42 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   locmem locally. DRF throttles + cache cooldowns MUST share this — per-worker
   locmem silently doubled every limit under gunicorn's 2 workers.
 - Secrets server-side only (env/.env.docker), masked in API responses, never frontend.
+- AI website reading (`core/business_profile.py`) — pasting a DOMAIN fills both
+  setup cards. `profile_from_domain` = model-free page facts
+  (`company_scrape.company_details`: name, description, schema.org services,
+  address) + ONE local-model call (`ai.llm_json`: Ollama's native `/api/chat`
+  with a JSON-schema `format` — always valid JSON, cloud providers never asked).
+  Measured rules for the small model: buyers are CHOSEN from the fixed
+  catalogue (`CATALOGUE`, max 4, minus the seller's own kind), countries come
+  ONLY from the domain's ccTLD (`CCTLD_COUNTRY`; no `.co/.io/.ai`), individual
+  customers → no company leads. Used by the wizard
+  (`onboarding._try_domain_autofill`: jumps to the mailbox step, typed answers
+  beat the page, an unreadable site is reported and nothing guessed),
+  `POST /api/company/infer/` (Settings → Fetch, step 2: owner/admin, 5/min per
+  user, ANSWERS only — the browser saves through `PUT /api/settings/`, whose
+  targeting now carries `notes` = `icp_notes`) and `icp.buyer_industries`.
+- NO built-in "who to find" list any more (`icp.BUYER_INDUSTRIES` /
+  `GIFTING_BUYER_INDUSTRIES` were deleted — one seller's customers handed to
+  every other seller filled workspaces with leads from the wrong line of work).
+  Order: the user's list → inferred by the model from the workspace's own site
+  (`infer_buyers_for_settings`, cached 30 days per profile) → `[]`, and the
+  cycle then SKIPS discovery with a plain "Search: SKIPPED" note. Never hand an
+  empty list to `search_queries_for_cycle` — it falls back to the legacy
+  `INDUSTRY_QUERIES`. Agency mode keeps its own default list.
+- New workspaces start on the deployment's self-hosted model
+  (`ai.default_ai_provider`, from `AI_PROVIDER`) — otherwise the AI, the
+  AI-filled setup and the search silently do nothing for every workspace after
+  the first. `settings.aiKey.ready` tells the UI the AI can run without a key.
+- Address reader (`company_scrape.address_in_text`): line-based — an "Address"
+  label on the same or the next line, footer bullets, then `/about` +
+  `/contact` pages inside one 8s budget; a street number counts without a PIN
+  code. Deliberately strict (it is printed under every cold email). The
+  model-free "what you sell" is schema.org offers ONLY — page headings were
+  marketing lines; the model reads the page for the rest.
+- Frontend: `TagInput` commits typed text on blur (it used to vanish unless
+  Enter/Add was pressed — "Who to find is not saving"); the product-tour card
+  lifts above a visible Save bar (`body:has(.save-bar) .tutor-card`) — it sat
+  exactly on "Save changes" for first-login users.
 - Admin secret slug (`/<6-digits>/…` console prefix): wrong hits are logged to
   `SlugAttempt` (no instant email) and emailed as a weekly digest via
   `manage.py send_slug_report` — VPS cron Monday 09:00 IST (03:30 UTC), log
@@ -172,6 +208,19 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   `netstat -ano | grep :5173` + `taskkill //F //PID` before restarts; port
   assignment is ready-order, not start-order.
 - Background servers die with the session — see Commands to bring the stack back.
+- Deploy rule: after `git pull`, rebuild AND recreate `django`, `django-worker`
+  and (for UI work) `frontend` TOGETHER —
+  `docker compose build django django-worker frontend && docker compose up -d --force-recreate django django-worker frontend`.
+  Recreating only `django` leaves the worker on stale code.
+- gunicorn runs `gthread` (2 workers × 4 threads): a chat reply or a website
+  read waits a minute or more on the local model, and single-threaded workers
+  let two such requests freeze the whole API. Timeouts line up: frontend 240s
+  (infer / wizard domain paste) ≤ nginx 300s ≤ gunicorn 300s.
+- VPS shell scripting: write the script to a local file → `scp` → `docker cp`
+  into `warmpulse-django-1:/app/x.py` → `docker compose exec -T django python
+  manage.py shell -c "exec(open(\"/app/x.py\").read())"`. `if __name__ ==
+  '__main__'` never fires there, and backslash-heavy inline `python -c` breaks
+  on quoting — use files.
 - Alembic (backend/) is Postgres-only; sqlite dev needs the bootstrap flag.
 - Branch state: single branch `main` (= `master`, synced via PR). Only
   `feat/client-ui-and-outreach-safety` preserved (Agy's work). Push to
@@ -180,6 +229,10 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   repo (GEMINI key was scrubbed; check before pushing new work).
 - E2E selectors worth knowing: `.side-logout`, `aside.sidebar` full-height rail,
   password-rule `li.pass/.fail` flip on signup, `.code-slots__input`, `.tfa-panel`, `.tfa-qr-box`.
+  A `.tags-field` found by `has_text` can match two fields (the Cities hint says
+  "countries") — filter by its own `label.field-label` instead. In DRF's
+  `APIClient`, `.credentials()` set earlier override a per-request
+  `HTTP_AUTHORIZATION` — use a fresh client for a second user.
 - Python env note on Windows: `backend-agent/.venv` and `backend/.venv` are currently
   absent/incomplete — the working venvs live in the sibling checkout
   `../Email-Warmup/` (`backend-agent/.venv` for Django incl. PyJWT;

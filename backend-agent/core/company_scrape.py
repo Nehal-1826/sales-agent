@@ -11,11 +11,11 @@ the guard.  Name/description extraction reuses the Search agent's
 scraper helpers (pick_site_name, name_from_domain); only the guarded
 fetch lives here.
 
-Open to anonymous visitors — the "Fetch details" button sits on the
-signup form, where no token exists yet — and rate-limited per IP by
-CompanyScrapeThrottle (10/min) instead.  No paywall: the user-initiated
-single fetch of their OWN site is not agent traffic (robots.txt
-politeness applies to the pipeline's discovery crawls, not to this).
+Signed-in owner/admin only (IsAuthenticatedOrReadOnly + the settings
+permission is not re-checked here; the data returned is the caller's own
+site) and rate-limited per IP by CompanyScrapeThrottle (10/min).  The
+richer model reading — what the site sells, who buys — is the second step,
+core.company_infer.
 """
 
 import ipaddress
@@ -90,10 +90,12 @@ def normalize_url(url):
     return url
 
 
-def fetch_public(url):
+def fetch_public(url, budget=None):
     """GET with hand-followed redirects; every hop is SSRF-checked BEFORE
-    the connection.  Returns the final non-redirect response."""
-    deadline = time.monotonic() + DEADLINE
+    the connection.  Returns the final non-redirect response.  `budget`
+    (seconds) shrinks the DEADLINE for callers that have several pages to
+    try inside one request."""
+    deadline = time.monotonic() + (DEADLINE if budget is None else budget)
     for _hop in range(MAX_HOPS):
         _require_public_host(urlparse(url).hostname)
         remaining = deadline - time.monotonic()
@@ -147,63 +149,56 @@ def _jsonld_services(soup):
     return services
 
 
-SERVICE_WORDS = re.compile(
-    r'\b(consulting|development|design|marketing|accounting|legal|repair|'
-    r'installation|maintenance|training|coaching|outsourcing|hosting|'
-    r'support|staffing|recruitment|manufacturing|logistics|printing|'
-    r'photography|catering|cleaning|plumbing|electrical|landscaping|'
-    r'real estate|insurance|healthcare|dental|clinic|education|'
-    r'e-?commerce|saas|software|web|cloud|seo|crm|erp|automation|'
-    r'services|solutions|platform|studio|agency|therapy|wellness|'
-    r'gym|fitness|salon|spa|restaurant|cafe|bakery|hotel|travel|'
-    r'tours|rental|dealer|shop|store|boutique|farm|dairy|organic|'
-    r'construction|builder|interior|architecture|engineering|'
-    r'audit|tax|advisory|investment|loans|banking|trading|export|'
-    r'distribution|supply|freight|transport|delivery|courier|'
-    r'publishing|media|advertising|branding|content|video|film|'
-    r'animation|gaming|iot|ai|ml|data|analytics|cyber|security|'
-    r'networking|telecom|mobile|app|game|wordpress|shopify|'
-    r'immigration|visa|advocates|law|chartered|company secretary)\b', re.I)
-
 ADDRESS_WORDS = re.compile(
     r'\b(street|st\.|road|rd\.|avenue|ave\.|nagar|colony|sector|'
     r'layout|cross|main road|highway|hwy|lane|ln\.|court|ct\.|drive|'
     r'plaza|complex|building|tower|block|floor|suite|unit|'
-    r'pin|pincode|zip|postal)\b', re.I)
+    r'pin|pincode|zip|postal|salai|vihar|puram|district|taluk)\b', re.I)
 
 
 CONTACT_PATHS = ('/contact', '/contact-us', '/contactus', '/about',
                  '/about-us', '/aboutus', '/contact.html', '/reach-us')
+CONTACT_BUDGET = 8          # seconds for the whole contact-page search
+CONTACT_FETCH = 3           # seconds per contact page — a missing page must not stall
+CONTACT_MAX_MISSES = 4      # give up after this many pages in a row with no address
 
 
 def _scrape_address_from_contact_pages(base_url):
-    """Many businesses put their address on /contact or /about instead of the
-    homepage. Try each common path (within the existing DEADLINE) and return
-    the first address found."""
-    from .scraper import MAX_HTML
+    """Many businesses put their address on /about or /contact instead of the
+    homepage. Try each common path in turn — within one time budget, and
+    giving up after a few pages in a row that hold no address."""
+    deadline = time.monotonic() + CONTACT_BUDGET
+    misses = 0
     for path in CONTACT_PATHS:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0 or misses >= CONTACT_MAX_MISSES:
+            break
         try:
-            resp = fetch_public(base_url.rstrip('/') + path)
+            resp = fetch_public(base_url.rstrip('/') + path,
+                                budget=min(CONTACT_FETCH, remaining))
             if resp.status_code != 200:
+                misses += 1
                 continue
             soup = BeautifulSoup(resp.text[:MAX_HTML], 'lxml')
-            addr = _jsonld_address(soup)
-            if not addr:
-                for tag in soup(['script', 'style', 'noscript']):
-                    tag.decompose()
-                import re as _re
-                visible = _re.sub(r'\s+', ' ', (soup.body or soup).get_text(' ', strip=True))
-                addr = _footer_address(visible)
-            if addr and len(addr) > 5:
-                return addr
-        except (BadUrl, Exception):
+            addr = _jsonld_address(soup) or address_in_text(soup)
+        except Exception:          # a dead path is simply not the address page
+            misses += 1
             continue
+        if addr and len(addr) > 5:
+            return addr[:300]
+        misses += 1
     return ''
 
 
-def _jsonld_address(soup):
-    """street address from schema.org JSON-LD (PostalAddress / address)."""
+# "ChÃ­a" — UTF-8 read as Latin-1: whatever the field is, it is not usable
+GARBLED_RE = re.compile(r'[\u00c2\u00c3][\u0080-\u00bf]')
+
+
+def _jsonld_addresses(soup):
+    """[(has_street, address)] from schema.org JSON-LD (PostalAddress /
+    address), in page order.  Garbled entries are skipped."""
     import json as _json
+    found = []
     for tag in soup.find_all('script', attrs={'type': 'application/ld+json'}):
         try:
             data = _json.loads(tag.string or '')
@@ -214,49 +209,138 @@ def _jsonld_address(soup):
                 continue
             addr = node.get('address')
             if isinstance(addr, dict):
-                parts = [str(addr.get(k, '')).strip() for k in
+                parts = [str(addr.get(k, '') or '').strip() for k in
                          ('streetAddress', 'addressLocality', 'addressRegion',
                           'postalCode', 'addressCountry')]
                 joined = ', '.join(p for p in parts if p)
-                if len(joined) > 5:
-                    return joined[:300]
-            if isinstance(addr, str) and len(addr.strip()) > 5:
-                return addr.strip()[:300]
+                if len(joined) > 5 and not GARBLED_RE.search(joined):
+                    found.append((bool(str(addr.get('streetAddress') or '').strip()), joined[:300]))
+            elif isinstance(addr, list):
+                for one in addr:
+                    if isinstance(one, str) and len(one.strip()) > 5 and not GARBLED_RE.search(one):
+                        found.append((True, one.strip()[:300]))
+            elif isinstance(addr, str) and len(addr.strip()) > 5 and not GARBLED_RE.search(addr):
+                found.append((True, addr.strip()[:300]))
+    return found
+
+
+def _jsonld_address(soup):
+    """The best schema.org address: a full street address beats a town-only
+    entry."""
+    found = _jsonld_addresses(soup)
+    return (next((a for has_street, a in found if has_street), '')
+            or next((a for has_street, a in found if not has_street), ''))
+
+
+ADDRESS_LABEL_RE = re.compile(
+    r'(?:postal\s+|mailing\s+|registered\s+|corporate\s+|office\s+|business\s+)?address\s*[:]?\s*', re.I)
+# what typically FOLLOWS an address on a line: "Address: 12 Road, Pune Phone: +91 …"
+NEXT_LABEL_RE = re.compile(
+    r'\b(?:phone|tel|telephone|mobile|whatsapp|email|e-mail|mail|website|web\b|fax|'
+    r'gstin|cin\b|copyright|©|all rights reserved|follow us|quick links)\b', re.I)
+# a PIN / ZIP code (4-6 digits — but not a year)
+ADDRESS_CODE_RE = re.compile(r'(?<![\d.])(?:(?!19\d\d|20\d\d)\d{4}|\d{5,6})(?![\d.])')
+# phone / mail lines carry numbers too — never an address
+CONTACT_LINE_RE = re.compile(
+    r'\b(?:call|phone|telephone|mobile|whatsapp|dial|fax|email|e-mail|skype|toll[- ]free)\b|[@+]\d', re.I)
+ADDRESS_LEAD_RE = re.compile(
+    r'^(?:we are (?:located|based )?(?:at|in)|located (?:at|in)|based (?:at|in)|address(?: is)?|'
+    r'visit us (?:at|in)|our address is|find us (?:at|in))\s*:?\s*', re.I)
+COPYRIGHT_LEAD_RE = re.compile(r'^(?:©|\(c\)|copyright)\s*(?:\d{4}\s*[–-]?\s*)?', re.I)
+SEGMENT_SPLIT_RE = re.compile(r'\s*[·•|]\s*')     # footer bullets: "Acme · 12 MG Road · Privacy"
+
+
+def tidy_address(text):
+    """Drop the words that may lead or trail an address
+    ('We are located at …', '© 2024 …', a trailing full stop)."""
+    return COPYRIGHT_LEAD_RE.sub('', ADDRESS_LEAD_RE.sub('', text)).strip(' ,;:.·•|')
+
+
+def looks_like_address(line):
+    """'158, E Block, TNHB, …, Salem, Tamil Nadu, India' — most sites print
+    their address with no PIN code, so a street number or a list of places
+    counts too.  Kept strict on purpose: this line is printed under every
+    cold email, so a wrong address is worse than none."""
+    line = tidy_address(line)
+    if not 10 <= len(line) <= 200 or GARBLED_RE.search(line) or CONTACT_LINE_RE.search(line):
+        return False
+    has_code = bool(ADDRESS_CODE_RE.search(line))
+    if has_code and ',' in line:                  # "490 Anna Salai, Chennai 600002, Tamil Nadu"
+        return True
+    words = {word.lower() for word in ADDRESS_WORDS.findall(line)}
+    if not words:
+        return False
+    if has_code:
+        return True
+    # no number at all: a short list of places naming two address words —
+    # never a sentence ("… layout, flexbox, grid and responsive design")
+    starts_with_number = bool(re.match(r'^\d{1,5}\b', line))
+    return (starts_with_number or (len(words) >= 2 and len(line) <= 120)) and line.count(',') >= 3
+
+
+def text_lines(page):
+    """The visible text of a page (html or a soup) as cleaned lines — the
+    line breaks a visitor sees are what separate an address from its label."""
+    soup = BeautifulSoup(page, 'lxml') if isinstance(page, str) else page
+    for tag in soup(['script', 'style', 'noscript']):
+        tag.decompose()
+    root = soup.body if soup.body is not None else soup
+    lines = (re.sub(r'\s+', ' ', line).strip(' \t•|,;') for line in root.get_text('\n').split('\n'))
+    return [line for line in lines if line]
+
+
+def address_in_text(page):
+    """The postal address a page prints, or ''. Read line by line: an
+    'Address' label (with the address under it or after it), then the footer
+    / contact block. Never one whole paragraph — a page read as a single
+    line is never an address."""
+    lines = text_lines(page)
+    # 1. 'Address' on its own line, the address on the next
+    for label, following in zip(lines, lines[1:]):
+        if ADDRESS_LABEL_RE.fullmatch(label) and looks_like_address(following):
+            return tidy_address(following)
+    # 2. 'Address: 12 Workshop Road, Pune  Phone: …' — up to the next label
+    for line in lines:
+        label = ADDRESS_LABEL_RE.search(line)
+        if not label or label.end() == len(line):
+            continue
+        rest = line[label.end():]
+        cut = NEXT_LABEL_RE.search(rest)
+        candidate = (rest[:cut.start()] if cut else rest).strip(' ,;')
+        if looks_like_address(candidate):
+            return tidy_address(candidate)
+    # 3. no label: an address-shaped line (the footer is the usual place, so
+    #    read from the bottom) — or one bullet of a shared footer line
+    for line in reversed(lines):
+        parts = SEGMENT_SPLIT_RE.split(line) if SEGMENT_SPLIT_RE.search(line) else [line]
+        for part in parts:
+            if looks_like_address(part):
+                return tidy_address(part)
     return ''
 
 
-def _footer_address(visible_text):
-    """an address-looking line from the page text — the footer area is the
-    most common place businesses put it."""
-    tail = visible_text[-1500:] if len(visible_text) > 1500 else visible_text
-    for line in re.split(r'[\n\u2022|]', tail):
-        line = line.strip(' ,;-–—')
-        if 10 < len(line) < 200 and ADDRESS_WORDS.search(line):
-            # must also contain a digit (street no. or pincode) to cut noise
-            if re.search(r'\d{4,6}\b', line) or re.search(r'\b\d+[-\s]', line):
-                return line[:300]
-    return ''
-
-
-def _heading_services(soup, cap=6):
-    """short h2/h3 phrases that read like service lines."""
-    out = []
-    for h in soup.find_all(['h2', 'h3']):
-        text = re.sub(r'\s+', ' ', h.get_text(' ', strip=True))
-        if 3 < len(text) < 60 and SERVICE_WORDS.search(text):
-            out.append(text)
-        if len(out) >= cap:
-            break
-    return out
+def visible_text(html, body_only=False):
+    """Whitespace-normalised text a visitor can read. body_only=True also
+    drops the nav/footer/header chrome — menus are not 'what you do'."""
+    soup = BeautifulSoup(html or '', 'lxml')
+    drop = ['script', 'style', 'noscript'] + (['nav', 'footer', 'header'] if body_only else [])
+    for tag in soup(drop):
+        tag.decompose()
+    root = soup.body if soup.body is not None else soup
+    return re.sub(r'\s+', ' ', root.get_text(' ', strip=True))
 
 
 def company_details(html, final_url):
-    """{name, description, services} from one homepage: brand from
-    og:site_name/title (pick_site_name cleans junk), registrable-domain
-    name as the fallback; description from meta description when
-    meaningful, else the first visible excerpt; services distilled from
-    JSON-LD, service-y headings, and (when the local AI is up) a qwen
-    summary of the page text."""
+    """Fast, model-free page facts: {name, description, services, address}.
+
+    brand from og:site_name/title (pick_site_name cleans junk), registrable-
+    domain name as the fallback; description from the meta description when
+    meaningful, else the first excerpt of the page BODY; services only from
+    explicit schema.org offers (page headings are marketing lines, not a
+    list of what is sold — the model reads the page for that). The address
+    is a schema.org street address, else one the page prints (footer,
+    'Address:' label, /about), else a schema.org town-only entry. The richer
+    model reading (what it sells, who buys) lives in core.business_profile."""
     soup = BeautifulSoup(html or '', 'lxml')
 
     og_site = soup.find('meta', attrs={'property': 'og:site_name'})
@@ -270,42 +354,17 @@ def company_details(html, final_url):
 
     meta_desc = soup.find('meta', attrs={'name': 'description'})
     description = (meta_desc.get('content') or '').strip() if meta_desc else ''
-
-    for tag in soup(['script', 'style', 'noscript']):
-        tag.decompose()
-    root = soup.body if soup.body is not None else soup
-    visible = re.sub(r'\s+', ' ', root.get_text(' ', strip=True))
-    if len(description) < 40:
-        description = visible[:MAX_DESCRIPTION].strip()
+    if len(description) < 40:  # absent or too thin to be meaningful
+        description = visible_text(html, body_only=True)[:MAX_DESCRIPTION].strip()
 
     services = _jsonld_services(soup)
-    if not services:
-        services = _heading_services(soup)
-    if len(services) < 2:
-        from .ai import llm_available, llm_complete
-        try:
-            ai_up = llm_available()
-        except Exception:
-            ai_up = False   # no workspace context (shell/tests) — skip AI
-        if ai_up:
-            try:
-                out = llm_complete(
-                    'From this homepage text, list exactly what the company sells/does '
-                    'as 2-5 short service phrases separated by commas (max 5 words each). '
-                    'Reply with ONLY the comma list, nothing else.\n\n'
-                    + visible[:2500],
-                    system='You extract service lists. Reply with only a comma-separated list.',
-                    temperature=0, timeout=8)
-                if out and len(out) < 300 and '\n' not in out:
-                    services = [s.strip(' .') for s in out.split(',') if 2 < len(s.strip()) < 60]
-            except Exception:
-                pass  # AI down or slow — the JSON-LD/heading list stands
 
-    address = _jsonld_address(soup)
+    structured = _jsonld_addresses(soup)
+    with_street = [a for has_street, a in structured if has_street]
+    town_only = [a for has_street, a in structured if not has_street]
+    address = next((a for a in [*with_street, address_in_text(soup), *town_only] if a), '')
     if not address:
-        address = _footer_address(visible)
-    if not address:
-        # many businesses put their address on /contact not the homepage
+        # many businesses put their address on /about or /contact instead
         try:
             address = _scrape_address_from_contact_pages(final_url)
         except Exception:

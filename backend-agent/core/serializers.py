@@ -3,6 +3,7 @@
 from django.utils import timezone
 from rest_framework import serializers
 
+from .ai import llm_ready_for
 from .models import (Enrollment, OutreachTask, Sequence, SequenceStep, WhatsAppMessage,
                      AgentConfig, AppSettings, ChatMessage, EmailDraft, EmailTemplate, Lead, Mailbox,
                      PipelineRun, Potential, Reply, SearchProfile)
@@ -331,6 +332,10 @@ class SettingsSerializer(serializers.ModelSerializer):
                 'apolloApiKey': '••••' + instance.apollo_api_key[-4:] if instance.apollo_api_key else '',
                 'scalelistApiKey': '••••' + instance.scalelist_api_key[-4:] if instance.scalelist_api_key else '',
                 'apifyApiKey': '••••' + instance.apify_api_key[-4:] if instance.apify_api_key else '',
+                # true when the AI can run (a key, or the self-hosted runtime)
+                # — the setup checklist must not ask for a key the product
+                # does not need
+                'ready': llm_ready_for(instance),
             },
             'smtp': {
                 'host': instance.smtp_host,
@@ -347,6 +352,8 @@ class SettingsSerializer(serializers.ModelSerializer):
                 'industries': [i.strip() for i in instance.target_industries.split(',') if i.strip()],
                 'cities': [c.strip() for c in instance.target_cities.split(',') if c.strip()],
                 'icpMode': instance.icp_mode or 'buyer',
+                # one line about the ideal customer — steers lead vetting and every email
+                'notes': instance.icp_notes or '',
             },
             'outbox': {
                 'windowStart': instance.send_window_start,
@@ -422,6 +429,8 @@ class SettingsSerializer(serializers.ModelSerializer):
             # country-level sweep.  Cities win over countries in discovery.
             instance.target_cities = ', '.join(
                 str(c).strip() for c in (targeting.get('cities') or []) if str(c).strip())
+        if 'notes' in targeting:
+            instance.icp_notes = str(targeting.get('notes') or '')[:6000]
         icp_mode = targeting.get('icpMode')
         if icp_mode in ('buyer', 'agency'):
             # 'agency' = agencies/software shops are the leads (partnership

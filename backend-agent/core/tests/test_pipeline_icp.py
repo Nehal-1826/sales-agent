@@ -35,6 +35,8 @@ def fake_audit(name, website, prefer_country=''):
             'state': 'Maharashtra', 'country': 'India'}
 
 
+INFERRED_BUYERS = ['dental clinic', 'gym']
+
 MAPS_PLACE = {'name': 'Iron Gym', 'phone': '+91 98765 43210', 'website': '',
               'address': 'FC Road, Pune', 'rating': 4.5, 'reviews': 88,
               'category': 'Gym'}
@@ -62,6 +64,9 @@ def pipeline_patches():
         mock.patch('core.pipeline.apollo_enrich_domain', return_value={}),
         mock.patch('core.pipeline.apify_maps_available', return_value=False),
         mock.patch('core.pipeline.time.sleep', lambda *_: None),
+        # nobody set 'Who to find' here: the model is said to have read the
+        # seller's site and named these buyers (core.business_profile)
+        mock.patch('core.icp.infer_buyers_for_settings', return_value=list(INFERRED_BUYERS)),
     ]
 
 
@@ -78,14 +83,14 @@ class RunPipelineIcpTests(TenantTestCase):
         s.save()
         self.settings = s
 
-    def _run(self):
-        patches = pipeline_patches()
+    def _run(self, *extra):
+        patches = pipeline_patches() + list(extra)
         for p in patches:
             p.start()
         try:
             return run_pipeline(triggered_by='test')
         finally:
-            for p in patches:
+            for p in reversed(patches):   # innermost first, or a mock gets left behind
                 p.stop()
 
     def test_agency_is_deleted_and_blacklisted(self):
@@ -128,12 +133,41 @@ class RunPipelineIcpTests(TenantTestCase):
     def test_cycle_summary_reports_icp_and_sources(self):
         run = self._run()
         notes = ' | '.join(run.summary['notes'])
-        self.assertIn('ICP buyer-targeting', notes)
+        self.assertIn('looking for dental clinic, gym', notes)   # who, in plain words
         self.assertIn('Google Maps', notes)
         self.assertIn('competitor/peer', notes)   # the rejection is explained
         self.assertEqual(run.leads_created, 2)    # clinic + gym, agency rejected
         agents = {a['agent']: a['action'] for a in run.summary['agents']}
         self.assertIn('DuckDuckGo + Google Maps', agents['search'])
+
+    def test_who_to_find_came_from_the_website_says_so(self):
+        notes = ' | '.join(self._run().summary['notes'])
+        self.assertIn('worked out from your website', notes)
+        self.assertIn('Who to find', notes)      # and where to change it
+
+    def test_a_who_to_find_the_user_typed_is_named_as_theirs(self):
+        self.settings.target_industries = 'dental clinic, gym'
+        self.settings.save()
+        notes = ' | '.join(self._run().summary['notes'])
+        self.assertIn('looking for dental clinic, gym', notes)
+        self.assertNotIn('worked out from your website', notes)
+
+    def test_no_buyers_worked_out_skips_the_search_with_a_plain_note(self):
+        """The bug the owner hit: with nothing to go on, discovery used to
+        fall back to a fixed list of somebody else's customers (clinics, yoga
+        studios…) and fill the CRM with leads from the wrong line of work."""
+        search, maps = mock.Mock(return_value=DDG_RESULTS), mock.Mock(return_value=[MAPS_PLACE])
+        run = self._run(mock.patch('core.pipeline.search_companies', search),
+                        mock.patch('core.pipeline.discover_no_website_places', maps),
+                        mock.patch('core.icp.infer_buyers_for_settings', return_value=[]))
+        search.assert_not_called()
+        maps.assert_not_called()
+        self.assertFalse(Lead.objects.exists())
+        self.assertEqual(run.leads_created, 0)
+        notes = ' | '.join(run.summary['notes'])
+        self.assertIn('Search: SKIPPED', notes)
+        self.assertIn('Who to find', notes)
+        self.assertNotIn('Search sources', notes)   # nothing ran, nothing to report
 
     def test_maps_lead_survives_without_phone_being_overwritten_by_audit(self):
         # regression guard: Profile used to assign audit's empty phone over the

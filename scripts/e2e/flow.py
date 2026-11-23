@@ -218,6 +218,58 @@ with sync_playwright() as p:
     check('settings: "WarmPulse (optional)" absent from DOM', "WarmPulse (optional)" not in settings_text)
     check('settings: "Risk of a ban" absent from DOM', "Risk of a ban" not in settings_text)
 
+    # ── 3c. Settings → Who to find: a typed entry must save WITHOUT Enter ──
+    # The owner typed a country, clicked "Save changes" and it was gone: the
+    # tag input only committed on Enter / the Add button. This is that exact
+    # click path. The operator's real targeting is read first and put back.
+    def settings_api(method: str, body=None):
+        return page.evaluate(
+            """async ([method, body]) => {
+                const res = await fetch('/api/settings/', {
+                    method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: 'Token ' + localStorage.getItem('agentic-ai:token'),
+                    },
+                    body: body ? JSON.stringify(body) : undefined,
+                });
+                return { status: res.status, data: await res.json() };
+            }""",
+            [method, body],
+        )
+
+    original_targeting = settings_api("GET")["data"]["targeting"]
+    page.goto(BASE + "/settings/targeting")
+    page.wait_for_timeout(1200)
+    # by its own label: the Cities field's hint also mentions "countries"
+    def countries_field():
+        return page.locator(".tags-field").filter(
+            has=page.locator("label.field-label", has_text=re.compile(r"^Countries$")))
+
+    probe = "E2E Tagland"
+    countries_field().locator("input").fill(probe)
+    page.locator("#sec-targeting").click()          # leave the field — no Enter, no Add
+    page.wait_for_timeout(400)
+    save_button = page.locator("button", has_text="Save changes").first
+    check("settings targeting: leaving the field turns the typed text into a tag",
+          countries_field().locator(".tag", has_text=probe).count() == 1,
+          str(countries_field().locator(".tag").all_inner_texts()))
+    if save_button.count():
+        save_button.click()
+        page.wait_for_timeout(1200)
+    saved_countries = settings_api("GET")["data"]["targeting"]["countries"]
+    check("settings targeting: typed entry is saved without pressing Enter",
+          probe in saved_countries, str(saved_countries))
+    page.reload()
+    page.wait_for_timeout(1200)
+    shown_tags = countries_field().locator(".tag").all_inner_texts()
+    check("settings targeting: the saved entry survives a reload",
+          any(probe in tag for tag in shown_tags), str(shown_tags))
+    page.screenshot(path=str(SHOTS / "03c-settings-targeting.png"))
+    settings_api("PUT", {"targeting": original_targeting})
+    check("settings targeting: the operator's own list is put back",
+          settings_api("GET")["data"]["targeting"] == original_targeting)
+
     # ── 4. Leads sub-tabs (pipeline-tab analog) ─────────────────────
     page.locator("button.nav-item", has_text="Leads").first.click()
     page.wait_for_timeout(800)

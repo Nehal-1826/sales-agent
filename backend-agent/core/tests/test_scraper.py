@@ -7,6 +7,27 @@ from core.scraper import (BLOCKED_DOMAINS, INDUSTRY_QUERIES, REGIONS,
                           _plausible_company_name, search_queries_for_cycle)
 
 
+# sample buyer kinds for the query builder — real 'Who to find' entries come
+# from the user or the model (core.business_profile), never a built-in list
+BUYERS = [
+    'dental clinic', 'medical clinic', 'veterinary clinic',
+    'boutique hotel', 'resort', 'fitness studio', 'gym', 'yoga studio',
+    'restaurant', 'cafe', 'bakery', 'catering service',
+    'boutique law firm', 'accounting firm', 'insurance agency', 'real estate agency',
+    'construction company', 'architecture studio', 'interior design studio',
+    'landscaping company', 'cleaning service company', 'security services company',
+    'driving school', 'coaching center', 'playschool', 'daycare center',
+    'beauty salon', 'spa', 'tattoo studio', 'photography studio',
+    'event management company', 'travel agency', 'tour operator',
+    'car dealership', 'auto repair shop', 'bike service center',
+    'furniture store', 'jewellery store', 'optical store', 'pharmacy',
+    'clothing boutique', 'bookstore', 'toy store',
+    'logistics company', 'courier service', 'cold storage',
+    'import export company', 'trading company',
+    'organic farm', 'nursery and garden center', 'pet grooming service',
+]
+
+
 class QueryBuilderTests(SimpleTestCase):
     def test_legacy_default_still_works_without_icp(self):
         slices = search_queries_for_cycle(0)
@@ -17,7 +38,7 @@ class QueryBuilderTests(SimpleTestCase):
             self.assertEqual(query, f'{industry} in {query.rsplit(" in ", 1)[-1]}')
 
     def test_icp_industries_replace_the_agency_heavy_defaults(self):
-        buyers = icp.BUYER_INDUSTRIES  # the default seller persona's list
+        buyers = BUYERS
         slices = search_queries_for_cycle(0, industries=buyers)
         for query, industry in slices:
             self.assertIn(industry, buyers)
@@ -25,7 +46,7 @@ class QueryBuilderTests(SimpleTestCase):
                              msg=f'{industry} must never be searched for a web seller')
 
     def test_no_legacy_agency_query_survives_with_icp_industries(self):
-        buyers = icp.BUYER_INDUSTRIES
+        buyers = BUYERS
         # the AGENCY terms from the legacy list must never be searched again;
         # genuine buyer industries (dental clinic, boutique hotel) legitimately
         # exist in both lists and are fine
@@ -37,27 +58,27 @@ class QueryBuilderTests(SimpleTestCase):
                 self.assertNotIn(industry, legacy_agencies)
 
     def test_rotation_is_deterministic(self):
-        buyers = icp.BUYER_INDUSTRIES
+        buyers = BUYERS
         a = search_queries_for_cycle(3, industries=buyers)
         b = search_queries_for_cycle(3, industries=buyers)
         self.assertEqual(a, b)
 
     def test_india_priority_slice_uses_icp_industries(self):
-        buyers = icp.BUYER_INDUSTRIES
+        buyers = BUYERS
         slices = search_queries_for_cycle(5, industries=buyers)
         query, industry = slices[0]
         self.assertIn('India', query)
         self.assertIn(industry, buyers)
 
     def test_target_country_pool_respects_industries(self):
-        buyers = icp.BUYER_INDUSTRIES
+        buyers = BUYERS
         slices = search_queries_for_cycle(0, regions=['India'], industries=buyers)
         for query, industry in slices:
             self.assertTrue(query.endswith(' in India'), msg=query)
             self.assertIn(industry, buyers)
 
     def test_every_region_yields_valid_queries_with_buyers(self):
-        buyers = icp.BUYER_INDUSTRIES[:5]
+        buyers = BUYERS[:5]
         # sample many rotation points: each slice pairs a buyer industry with a region
         for cycle in range(0, 50):
             for query, industry in search_queries_for_cycle(cycle, industries=buyers):
@@ -99,7 +120,7 @@ class CityTargetingTests(SimpleTestCase):
         self.assertEqual(len(set(queries)), 9)  # all 3 × 3 pairs, no repeats
 
     def test_city_queries_never_contain_agency_terms(self):
-        buyers = icp.BUYER_INDUSTRIES[:6]
+        buyers = BUYERS[:6]
         for cycle in range(10):
             for query, industry in search_queries_for_cycle(
                     cycle, cities=['Salem', 'Omalur'], industries=buyers):

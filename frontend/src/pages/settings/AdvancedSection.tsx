@@ -67,8 +67,9 @@ export function AdvancedSection({ settings, onSaved }: { settings: SettingsState
           AI
         </h2>
         <p className="panel-note">
-          The AI reads each lead's website, writes the company summary and personalises every email. Without a key,
-          your template is used as-is.
+          {settings.aiKey.ready && !storedKey
+            ? "WarmPulse's own AI is on for this workspace — no key needed. It reads each lead's website, writes the company summary and personalises every email."
+            : "The AI reads each lead's website, writes the company summary and personalises every email. Without a key, your template is used as-is."}
         </p>
         <div className="settings-grid">
           <Field label="AI provider">
@@ -80,7 +81,16 @@ export function AdvancedSection({ settings, onSaved }: { settings: SettingsState
               options={[...AI_PROVIDERS]}
             />
           </Field>
-          <Field label="API key" hint={storedKey ? `Saved (${storedKey}). Leave blank to keep it.` : 'No key saved yet.'}>
+          <Field
+            label="API key"
+            hint={
+              storedKey
+                ? `Saved (${storedKey}). Leave blank to keep it.`
+                : settings.aiKey.ready
+                  ? 'Not needed — the built-in AI is running. Add a key only to use your own provider.'
+                  : 'No key saved yet.'
+            }
+          >
             <span className="input-with-action">
               <input
                 type={showKey ? 'text' : 'password'}

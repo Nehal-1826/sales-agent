@@ -1,9 +1,12 @@
 """Exhaustive offline tests for the ICP engine (core.icp).
 
-Covers: vertical detection, buyer-industry selection (default + user override
-+ agency-term dropping), and the competitor heuristic — including the
-false-positive traps that motivated the two-signal free-text rule.
+Covers: vertical detection, buyer-industry selection (model-inferred from the
+workspace's own profile + user override + peer-term dropping) and the
+competitor heuristic — including the false-positive traps that motivated the
+two-signal free-text rule.
 """
+
+from unittest import mock
 
 from django.test import SimpleTestCase
 
@@ -53,11 +56,15 @@ class GiftingVerticalTests(SimpleTestCase):
         s = gifting_seller(company_description='Order via our website shrifragrance.in')
         self.assertEqual(icp.vertical(s), 'corporate_gifting')
 
-    def test_buyers_are_event_and_corporate_industries(self):
-        buyers = icp.buyer_industries(gifting_seller())
-        self.assertIn('event management company', buyers)
-        self.assertIn('real estate builder', buyers)
-        self.assertIn('IT company', buyers)
+    def test_buyers_come_from_the_model_reading_this_seller(self):
+        """No built-in list: what to search is worked out from THIS seller's
+        own profile, and whatever comes back must be a real buyer — never a
+        gift-shop competitor or a web-agency peer."""
+        with mock.patch('core.icp.infer_buyers_for_settings',
+                        return_value=['event management company', 'IT company']) as infer:
+            buyers = icp.buyer_industries(gifting_seller())
+        infer.assert_called_once()
+        self.assertEqual(buyers, ['event management company', 'IT company'])
         for industry in buyers:
             self.assertFalse(icp.NEVER_SEARCH_INDUSTRIES.search(industry),
                              msg=f'{industry} is a web-agency term')
@@ -122,26 +129,44 @@ class VerticalTests(SimpleTestCase):
 
 
 class BuyerIndustryTests(SimpleTestCase):
-    def test_default_list_has_no_agency_terms(self):
-        for industry in icp.buyer_industries(web_seller()):
-            self.assertFalse(icp.NEVER_SEARCH_INDUSTRIES.search(industry),
-                             msg=f'{industry} is a peer/agency term')
+    """Who to search for. There is NO built-in list any more: it was one
+    seller's customers (clinics, yoga studios…) handed to every other
+    seller, which filled unrelated workspaces with leads from the wrong
+    line of work. With no 'Who to find' set, the model reads the
+    workspace's own profile; if it can't tell, nothing is searched."""
 
-    def test_default_list_is_substantial(self):
-        self.assertGreaterEqual(len(icp.buyer_industries(web_seller())), 30)
+    def test_no_override_is_inferred_from_this_workspace(self):
+        with mock.patch('core.icp.infer_buyers_for_settings',
+                        return_value=['school', 'college']) as infer:
+            self.assertEqual(icp.buyer_industries(web_seller()), ['school', 'college'])
+        infer.assert_called_once()
 
-    def test_user_override_is_used(self):
+    def test_inferred_buyers_get_the_same_peer_guard(self):
+        with mock.patch('core.icp.infer_buyers_for_settings',
+                        return_value=['web design agency', 'dental clinic']):
+            self.assertEqual(icp.buyer_industries(web_seller()), ['dental clinic'])
+
+    def test_model_silent_means_no_search_not_a_guess(self):
+        with mock.patch('core.icp.infer_buyers_for_settings', return_value=[]):
+            self.assertEqual(icp.buyer_industries(web_seller()), [])
+            self.assertEqual(icp.buyer_industries(gifting_seller()), [])
+
+    def test_user_override_wins_and_the_model_is_not_asked(self):
         s = web_seller(target_industries='dental clinic, gym, boutique hotel')
-        self.assertEqual(icp.buyer_industries(s),
-                         ['dental clinic', 'gym', 'boutique hotel'])
+        with mock.patch('core.icp.infer_buyers_for_settings') as infer:
+            self.assertEqual(icp.buyer_industries(s),
+                             ['dental clinic', 'gym', 'boutique hotel'])
+        infer.assert_not_called()
 
     def test_override_drops_agency_terms(self):
         s = web_seller(target_industries='dental clinic, web design agency, seo agency, gym')
         self.assertEqual(icp.buyer_industries(s), ['dental clinic', 'gym'])
 
-    def test_override_of_only_agency_terms_falls_back_to_buyers(self):
+    def test_override_of_only_peer_terms_searches_nothing(self):
+        """Dropping the peers must not quietly bring back somebody else's
+        customer list."""
         s = web_seller(target_industries='web design agency, digital marketing agency')
-        self.assertEqual(icp.buyer_industries(s), icp.BUYER_INDUSTRIES)
+        self.assertEqual(icp.buyer_industries(s), [])
 
     def test_override_handles_newlines_and_spaces(self):
         s = web_seller(target_industries=' dental clinic ,\ngym ,  spa  ')
@@ -201,7 +226,10 @@ class CompetitorDetectionTests(SimpleTestCase):
 
     def test_buyer_industry_tags_are_never_flagged(self):
         s = web_seller()
-        for industry in icp.BUYER_INDUSTRIES:
+        for industry in ('dental clinic', 'boutique hotel', 'gym', 'yoga studio',
+                         'restaurant', 'law firm', 'accounting firm', 'school',
+                         'real estate agency', 'construction company', 'pharmacy',
+                         'e-commerce store', 'manufacturing company', 'travel agency'):
             self.assertFalse(
                 icp.looks_like_competitor(lead(company='Some Local Business',
                                                industry=industry), s),

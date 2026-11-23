@@ -63,12 +63,24 @@ class OnboardingStatusTests(TenantTestCase):
         self.assertFalse(status['needed'])
 
 
+def no_website_read(testcase):
+    """These flows type every answer by hand: a bare domain at the website
+    step must take the 'saved, but the page can't be read' path — never the
+    network or the model."""
+    from core.company_scrape import BadUrl
+    patcher = mock.patch('core.onboarding.profile_from_domain',
+                         side_effect=BadUrl('That website answered HTTP 404.'))
+    patcher.start()
+    testcase.addCleanup(patcher.stop)
+
+
 class OnboardingFlowTests(TenantTestCase):
     """Drive the whole wizard with messy, human answers."""
 
     def setUp(self):
         self.s = fresh_settings()
         self.u = User.objects.create_user(username='op', password='pass12345')
+        no_website_read(self)
 
     def answer(self, text):
         return onboarding_reply(text, self.u, self.s)
@@ -493,6 +505,7 @@ class IcpStepTests(TenantTestCase):
         self.s.target_countries = 'United States'
         self.s.save()
         self.u = User.objects.create_user(username='op', password='pass12345')
+        no_website_read(self)
 
     def test_icp_stored_and_llm_extraction_merged(self):
         self.s.target_industries = ''
@@ -623,41 +636,135 @@ class GenericTemplateTests(TenantTestCase):
 
 
 class DomainAutofillTests(TenantTestCase):
-    """The owner pastes their DOMAIN at the company (or website) step — the
-    wizard scrapes it, fills company/services/website/description in one
-    shot and jumps to the target step."""
+    """The owner pastes their DOMAIN — the AI reads the site and fills BOTH
+    setup cards: the business (name, website, what you sell, address) and
+    who to find (kinds of buyers, country). The model call itself lives in
+    core.business_profile (tested there); these tests pin the wizard."""
+
+    PROFILE = {
+        'domain': 'zylker.com', 'name': 'Zylker',
+        'description': 'CRM software for small teams.', 'address': '495 Chuves St',
+        'services': ['CRM platform', 'Sales automation'],
+        'customer_type': 'organisations',
+        'target_industries': ['small business', 'startup'],
+        'target_countries': [], 'target_cities': [], 'icp_notes': 'Small sales teams.',
+        'inferred': True,
+    }
 
     def setUp(self):
-        from billing.tests.test_entitlements import make_ws
-        self.ws = make_ws('autofill-co')
-        self.u = User.objects.create_user('af-owner', password='pw123456',
-                                          role='owner', workspace=self.ws)
-        self.s = AppSettings.load()
+        self.s = fresh_settings()
+        self.u = User.objects.create_user(username='af-owner', password='pass12345')
 
-    def test_domain_at_company_step_autofills(self):
-        from unittest import mock
-        PAGE = ('<html><head><title>Zylker CRM | Sales Software</title>'
-                '<meta name="description" content="CRM software for small teams"></head>'
-                '<body><h2>CRM Consulting</h2><h2>Sales Automation</h2></body></html>')
-        with mock.patch('core.company_scrape.fetch_public',
-                        return_value=mock.Mock(status_code=200, text=PAGE, url='https://zylker.com')), \
-             mock.patch('core.company_scrape.llm_available', return_value=False, create=True):
-            from core.onboarding import onboarding_reply, onboarding_status
-            # start the wizard at step 0
-            onboarding_reply('hi', self.u)   # gets the company re-ask; wizard now started
+    def _paste(self, domain='zylker.com', profile=None, ai_available=True):
+        profile = dict(self.PROFILE, **(profile or {}))
+        with mock.patch('core.onboarding.profile_from_domain', return_value=profile) as pfd, \
+            mock.patch('core.onboarding.llm_available', return_value=ai_available):
+            onboarding_reply('hi', self.u)            # starts the wizard at step 0
+            reply = onboarding_reply(domain, self.u)
+        pfd.assert_called_once_with(domain)
+        self.s.refresh_from_db()
+        return reply
+
+    def test_fills_the_business_card(self):
+        self._paste()
+        self.assertEqual(self.s.company_name, 'Zylker')
+        self.assertEqual(self.s.company_website, 'zylker.com')
+        self.assertEqual(self.s.company_description, 'CRM software for small teams.')
+        self.assertEqual(self.s.company_address, '495 Chuves St')
+        self.assertEqual(self.s.services, ['CRM platform', 'Sales automation'])
+
+    def test_fills_the_who_to_find_card(self):
+        self._paste()
+        self.assertEqual(self.s.target_industries, 'small business, startup')
+        self.assertEqual(self.s.icp_notes, 'Small sales teams.')
+        self.assertEqual(self.s.target_countries, '')      # .com → worldwide
+
+    def test_reply_lists_what_was_filled_for_both_cards(self):
+        reply = self._paste()
+        self.assertIn('what you sell: CRM platform, Sales automation', reply)
+        self.assertIn("who I'll look for: small business, startup", reply)
+        self.assertIn('worldwide', reply)
+
+    def test_country_tld_sets_the_search_country(self):
+        self._paste(domain='zylker.in', profile={'domain': 'zylker.in',
+                                                 'target_countries': ['India']})
+        self.assertEqual(self.s.target_countries, 'India')
+
+    def test_only_the_mailbox_question_is_left(self):
+        reply = self._paste(ai_available=True)
+        self.assertEqual(onboarding_status(self.u, self.s)['stepKey'], 'email')
+        self.assertIn('mailbox', reply.lower())
+
+    def test_an_ai_key_is_asked_for_only_without_a_local_model(self):
+        self._paste(ai_available=False)
+        self.assertEqual(onboarding_status(self.u, self.s)['stepKey'], 'ai_key')
+
+    def test_individual_customers_get_no_invented_company_leads(self):
+        reply = self._paste(profile={'customer_type': 'individuals',
+                                     'target_industries': [], 'icp_notes': ''})
+        self.assertEqual(self.s.target_industries, '')
+        self.assertEqual(onboarding_status(self.u, self.s)['stepKey'], 'target')
+        self.assertIn('individual people', reply)
+
+    def test_site_read_but_no_buyers_worked_out_still_asks(self):
+        """Page facts only (model down, or nothing it can pin down): the
+        business card is filled, 'who to find' is still asked — never guessed."""
+        reply = self._paste(profile={'inferred': False, 'customer_type': '',
+                                     'target_industries': [], 'icp_notes': ''})
+        self.assertEqual(self.s.company_name, 'Zylker')
+        self.assertEqual(self.s.services, ['CRM platform', 'Sales automation'])
+        self.assertEqual(self.s.target_industries, '')
+        self.assertEqual(onboarding_status(self.u, self.s)['stepKey'], 'target')
+        self.assertIn("couldn't work out who buys", reply)
+
+    def test_unreadable_site_at_the_website_step_still_saves_it(self):
+        """Asked only "what's your website?": the answer stands even when the
+        page is down — the wizard just continues the normal way."""
+        from core.company_scrape import BadUrl
+        with mock.patch('core.onboarding.profile_from_domain',
+                        side_effect=BadUrl('That website answered HTTP 404.')):
+            onboarding_reply('Acme Corp', self.u)
+            onboarding_reply('gadgets', self.u)
             reply = onboarding_reply('zylker.com', self.u)
         self.s.refresh_from_db()
         self.assertEqual(self.s.company_website, 'zylker.com')
-        self.assertTrue(self.s.company_name)
-        self.assertTrue(self.s.services)
-        self.assertIn('filled everything in', reply)
-        state = onboarding_status(self.u, self.s)
-        self.assertEqual(state['stepKey'], 'target', 'should jump past services+website')
+        self.assertEqual(self.s.company_name, 'Acme Corp')
+        self.assertEqual(onboarding_status(self.u, self.s)['stepKey'], 'target')
+        self.assertIn("I saved zylker.com", reply)
+        self.assertIn("couldn't read the page", reply)
 
-    def test_non_domain_answer_takes_normal_path(self):
-        from core.onboarding import onboarding_reply, onboarding_status
-        onboarding_reply('hi', self.u)
-        reply = onboarding_reply('Acme Corp', self.u)
+    def test_unreadable_site_is_reported_and_nothing_is_guessed(self):
+        from core.company_scrape import BadUrl
+        with mock.patch('core.onboarding.profile_from_domain',
+                        side_effect=BadUrl('That website answered HTTP 403.')), \
+                            mock.patch('core.onboarding.llm_available', return_value=True):
+            onboarding_reply('hi', self.u)
+            reply = onboarding_reply('dead-site.com', self.u)
+        self.s.refresh_from_db()
+        self.assertEqual((self.s.company_name, self.s.company_website, self.s.services),
+                         ('', '', []))
+        self.assertIn("couldn't read dead-site.com", reply)
+        self.assertIn('HTTP 403', reply)
+        self.assertEqual(onboarding_status(self.u, self.s)['stepKey'], 'company')
+
+    def test_typed_answers_are_not_overwritten_by_the_site(self):
+        with mock.patch('core.onboarding.profile_from_domain',
+                        return_value=dict(self.PROFILE)), \
+                            mock.patch('core.onboarding.llm_available', return_value=True):
+            onboarding_reply('Acme Corp', self.u)       # typed by hand at step 0
+            onboarding_reply('gadgets, gizmos', self.u)  # typed by hand at step 1
+            onboarding_reply('zylker.com', self.u)       # domain pasted at step 2
+        self.s.refresh_from_db()
+        self.assertEqual(self.s.company_name, 'Acme Corp')
+        self.assertEqual(self.s.services, ['gadgets', 'gizmos'])
+        self.assertEqual(self.s.company_website, 'zylker.com')
+        self.assertEqual(self.s.target_industries, 'small business, startup')
+
+    def test_a_plain_company_name_still_takes_the_normal_path(self):
+        with mock.patch('core.onboarding.profile_from_domain') as pfd:
+            onboarding_reply('hi', self.u)
+            onboarding_reply('Acme Corp', self.u)
+        pfd.assert_not_called()
         self.s.refresh_from_db()
         self.assertEqual(self.s.company_name, 'Acme Corp')
         self.assertEqual(onboarding_status(self.u, self.s)['stepKey'], 'services')

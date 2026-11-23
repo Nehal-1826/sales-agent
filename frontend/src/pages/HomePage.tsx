@@ -257,15 +257,20 @@ function SetupChecklist() {
   if (!settings.data || !templates.data || !outreach) return null;
   const s = settings.data;
   const items: { done: boolean; label: string; hint: string; section: SettingsSection }[] = [
-    { done: !!s.company.name, label: 'Tell us about your business', hint: 'Name, website and what you sell', section: 'business' },
+    {
+      done: !!s.company.name,
+      label: 'Tell us about your business',
+      hint: 'Press Fetch next to your website — the assistant fills it in',
+      section: 'business',
+    },
     {
       done: s.targeting.countries.length + s.targeting.cities.length + s.targeting.industries.length > 0,
       label: 'Choose who to find',
-      hint: 'Places and kinds of businesses',
+      hint: 'Fetch fills this in too — or pick places and kinds of businesses',
       section: 'targeting',
     },
     { done: outreach.smtpConfigured, label: 'Connect your email', hint: 'So approved emails are delivered', section: 'email' },
-    { done: !!s.aiKey.apiKey, label: 'Add an AI key', hint: 'For research summaries and personal emails', section: 'advanced' },
+    { done: !!s.aiKey.ready, label: 'Turn on the AI', hint: 'For research summaries and personal emails', section: 'advanced' },
     { done: templates.data.length > 0, label: 'Write your email template', hint: 'The base every email starts from', section: 'templates' },
   ];
   const remaining = items.filter((i) => !i.done);

@@ -203,13 +203,13 @@ ABOUT_PAGE = """
   <p>Mobile</p><p>+91 8300169682</p>
   <p>Website</p><p>www.example-journal.org</p>
   <p>Address</p>
-  <p>158, E Block, TNHB, Green Park Avenue, Omalur Main Road, Perumanur, Salem, Tamil Nadu, India</p>
+  <p>158, E Block, TNHB, Green Park Avenue, Omalur Main Road, Peramanur, Salem, Tamil Nadu, India</p>
   <h3>Ready to publish your research?</h3>
   <p>Join a growing community of researchers.</p>
 </body></html>
 """
 
-ADDRESS = '158, E Block, TNHB, Green Park Avenue, Omalur Main Road, Perumanur, Salem, Tamil Nadu, India'
+ADDRESS = '158, E Block, TNHB, Green Park Avenue, Omalur Main Road, Peramanur, Salem, Tamil Nadu, India'
 
 
 class AddressExtractionTests(SimpleTestCase):
@@ -328,6 +328,21 @@ class AddressExtractionTests(SimpleTestCase):
                 '<body><p>x</p></body></html>')
         with mock.patch('core.company_scrape._scrape_address_from_contact_pages', return_value=''):
             self.assertEqual(company_details(html, 'https://wp.example/')['services'], ['Cold email warmup'])
+
+    def test_address_broken_over_several_lines_under_a_label(self):
+        """The owner's own About page: one paragraph, three lines."""
+        from core.company_scrape import address_in_text
+        html = ('<html><body><div><div>Address</div>'
+                '<p>158, E Block, TNHB, Green Park Avenue,<br/>Omalur Main Road, Peramanur,<br/>'
+                'Salem, Tamil Nadu, India</p></div>'
+                '<h3>Ready to Publish Your Research?</h3><p>Join the community.</p></body></html>')
+        self.assertEqual(address_in_text(html), ADDRESS)
+
+    def test_address_broken_over_several_lines_in_a_footer(self):
+        from core.company_scrape import address_in_text
+        html = ('<html><body><p>We make fine software for teams of every size.</p>'
+                '<footer><p>4950 Hopyard Road,<br/>Pleasanton, CA 94588</p></footer></body></html>')
+        self.assertEqual(address_in_text(html), '4950 Hopyard Road, Pleasanton, CA 94588')
 
     def test_contact_pages_are_tried_and_the_search_is_bounded(self):
         """Homepage without an address → /about is read. A site that answers

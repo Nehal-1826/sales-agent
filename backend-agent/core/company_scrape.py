@@ -278,44 +278,66 @@ def looks_like_address(line):
     return (starts_with_number or (len(words) >= 2 and len(line) <= 120)) and line.count(',') >= 3
 
 
+# one address is often one paragraph broken with <br>: those lines belong together
+BLOCK_TAGS = ['p', 'li', 'td', 'th', 'address', 'dd', 'dt', 'blockquote', 'figcaption',
+              'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'caption', 'label', 'button']
+
+
 def text_lines(page):
-    """The visible text of a page (html or a soup) as cleaned lines — the
-    line breaks a visitor sees are what separate an address from its label."""
+    """[(block, line)] — the visible text of a page (html or a soup) as
+    cleaned lines, each with the block element it belongs to. The line breaks
+    a visitor sees separate an address from its label, while a `<br>` inside
+    one paragraph makes several lines of ONE address."""
     soup = BeautifulSoup(page, 'lxml') if isinstance(page, str) else page
     for tag in soup(['script', 'style', 'noscript']):
         tag.decompose()
     root = soup.body if soup.body is not None else soup
-    lines = (re.sub(r'\s+', ' ', line).strip(' \t•|,;') for line in root.get_text('\n').split('\n'))
-    return [line for line in lines if line]
+    lines = []
+    for node in root.find_all(string=True):
+        block = node.find_parent(BLOCK_TAGS)
+        if block is None:
+            block = node
+        for piece in str(node).split('\n'):
+            piece = re.sub(r'\s+', ' ', piece).strip(' \t•|,;')
+            if piece:
+                lines.append((id(block), piece))
+    return lines
 
 
 def address_in_text(page):
-    """The postal address a page prints, or ''. Read line by line: an
+    """The postal address a page prints, or ''. Read block by block: an
     'Address' label (with the address under it or after it), then the footer
     / contact block. Never one whole paragraph — a page read as a single
     line is never an address."""
     lines = text_lines(page)
-    # 1. 'Address' on its own line, the address on the next
-    for label, following in zip(lines, lines[1:]):
-        if ADDRESS_LABEL_RE.fullmatch(label) and looks_like_address(following):
-            return tidy_address(following)
+    blocks = {}
+    for block, line in lines:
+        blocks.setdefault(block, []).append(line)
+    whole = [', '.join(parts) for parts in blocks.values()]      # the page, one text per block
+
+    # 1. 'Address' on its own line, the address in the block under it
+    for i, (_, label) in enumerate(lines[:-1]):
+        if ADDRESS_LABEL_RE.fullmatch(label):
+            following = ', '.join(blocks[lines[i + 1][0]])
+            if looks_like_address(following):
+                return tidy_address(following)
     # 2. 'Address: 12 Workshop Road, Pune  Phone: …' — up to the next label
-    for line in lines:
-        label = ADDRESS_LABEL_RE.search(line)
-        if not label or label.end() == len(line):
+    for text in whole:
+        label = ADDRESS_LABEL_RE.search(text)
+        if not label or label.end() == len(text):
             continue
-        rest = line[label.end():]
+        rest = text[label.end():]
         cut = NEXT_LABEL_RE.search(rest)
         candidate = (rest[:cut.start()] if cut else rest).strip(' ,;')
         if looks_like_address(candidate):
             return tidy_address(candidate)
-    # 3. no label: an address-shaped line (the footer is the usual place, so
+    # 3. no label: an address-shaped block (the footer is the usual place, so
     #    read from the bottom) — or one bullet of a shared footer line
-    for line in reversed(lines):
-        parts = SEGMENT_SPLIT_RE.split(line) if SEGMENT_SPLIT_RE.search(line) else [line]
-        for part in parts:
-            if looks_like_address(part):
-                return tidy_address(part)
+    for text in reversed(whole):
+        candidates = SEGMENT_SPLIT_RE.split(text) if SEGMENT_SPLIT_RE.search(text) else [text]
+        for candidate in candidates:
+            if looks_like_address(candidate):
+                return tidy_address(candidate)
     return ''
 
 

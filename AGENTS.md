@@ -362,14 +362,20 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   own nginx.conf edits. `ops/deploy/deploy.sh` is the OLD pre-merge path
   (systemd, `git reset --hard`): never run it on this stack.
 - Public traffic enters through the HOST nginx
-  (`/etc/nginx/sites-available/warmpulse.conf`, :443, Let's Encrypt) in front
-  of the compose gateway (`127.0.0.1:8088`), and it handles `/wp-api/` itself
-  (`proxy_pass http://127.0.0.1:8001/api/`). A public `/wp-api/*` 502
-  therefore never reaches the compose gateway: check `ss -ltn | grep 8001`
-  and `/var/log/nginx/error.log` ("connect() failed … upstream"), not the
-  gateway log. Inside the network the gateway's own `/wp-api/api/` → fastapi
-  route is the reference (the gateway re-resolves upstream names every 10 s,
-  so recreated containers need no gateway restart).
+  (`/etc/nginx/sites-available/warmpulse.conf`, :443, Let's Encrypt — a file
+  on the server, not in the repo) in front of the compose gateway
+  (`127.0.0.1:8088`). Its `/wp-api/` location forwards the path to that
+  gateway UNCHANGED (`proxy_pass http://127.0.0.1:8088;`, since 2026-11-24)
+  and the gateway's own `/wp-api/api/` → fastapi route does the rewrite.
+  Until then it pointed at `127.0.0.1:8001/api/`, the old host-level API
+  (retired 2026-11-22): for two days every public `/wp-api/*` was a 502 (the
+  Warmup section and the console's warmup-backed pages) while everything
+  inside the docker network answered fine. So when a public path 502s and the
+  gateway log shows nothing, look at the HOST nginx
+  (`/var/log/nginx/error.log`: "connect() failed … upstream"). Change that
+  file only with a backup + `nginx -t` + `systemctl reload nginx` (earlier
+  copies in `/root/nginx-backups/`). The gateway re-resolves upstream names
+  every 10 s, so recreated containers need no gateway restart.
 - gunicorn runs `gthread` (2 workers × 4 threads): a chat reply or a website
   read waits a minute or more on the local model, and single-threaded workers
   let two such requests freeze the whole API. Timeouts line up: frontend 240s

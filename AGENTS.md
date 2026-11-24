@@ -12,7 +12,8 @@ Brand: **WarmPulse**, accent theme **orange** (`#f97316` family — restored
   Landing/login/signup + workspace shell (Home · Approvals · Replies · Tasks ·
   Leads · Activity · Assistant · Warmup · Mail · Settings). Sidebar at all widths
   (bottom tab bar removed). Prerendered marketing build (SSR + `scripts/prerender.mjs`).
-  Platform console at `#/platform` (19 pages grouped: Overview · Analytics · Mail
+  Platform console at `/<admin-slug>/<page>` (19 pages grouped: Overview ·
+  Analytics · Mail
   [same webmail client as user panel] · PeerInboxes · PoolRouting · AI Usage ·
   Users · Tenants · Retention · Leads · Plans · Add-ons · Billing · Payments ·
   Invoices · Reports · Audit · Settings · Marketing). SystemHealth, PlatformMail
@@ -28,7 +29,7 @@ Brand: **WarmPulse**, accent theme **orange** (`#f97316` family — restored
 - `whatsapp-sidecar/` — WhatsApp runtime service (node). `warmpulse-mobile/` — RN app.
 - `ops/` — gateway nginx (`/api/`→django:8000, `/wp-api/`→fastapi:8001 rewritten
   to its internal `/api/`), db init. Root `docker-compose.yml` = full stack.
-- `scripts/e2e/flow.py` — the Playwright gate (58+ checks; run before every push).
+- `scripts/e2e/flow.py` — the Playwright gate (106 checks; run before every push).
 - `docs/superpowers/` — specs + plans (foundation, shell-ux batch, warmup dashboards).
 
 ## Commands (local dev, Windows Git Bash — quote paths, space in "Devesh B")
@@ -371,6 +372,25 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   "countries") — filter by its own `label.field-label` instead. In DRF's
   `APIClient`, `.credentials()` set earlier override a per-request
   `HTTP_AUTHORIZATION` — use a fresh client for a second user.
+- The gate signs in to the platform console FOR REAL (section 8c): a throwaway
+  superadmin `e2e-console-admin` with a known authenticator secret is created
+  in the e2e DB (`django_shell`), signs in at the admin door with a fresh
+  code (`totp_code` — same arithmetic as `core/totp.py`), and is deleted in a
+  `finally`. To look at the console by hand do the same: give a local
+  platform admin a `totp_secret` and type the current code. The walk never
+  reloads the page — `POST /api/admin-slug/check/` allows 5 a minute per IP
+  (each page load sends it twice in dev), a further one answers 429 and the
+  app shows that as its 404 page.
+- Console shell (`PlatformShell`): NO top bar on a wide screen — it only
+  repeated the brand and the open page, and every page has its own title
+  (`.pf-topbar` is `display: none` above 900px; below that the rail becomes a
+  drawer and the bar is back holding only `.menu-btn`). `.sidebar-brand` is
+  `flex: none`: the console's 19-item menu squeezed that row to 40–50px (it
+  is 58px, 50px under 760px tall, 46px under 640px) and the logo sat jammed
+  against the top — a long menu scrolls `.side-nav`, never the brand. Its
+  12px inset puts the logo tile and the workspace card on one left edge, and
+  the logo goes to Overview through `navigateAdmin` (it used to append a
+  stale `#/platform/overview`).
 - Python env note on Windows: `backend-agent/.venv` and `backend/.venv` are currently
   absent/incomplete — the working venvs live in the sibling checkout
   `../Email-Warmup/` (`backend-agent/.venv` for Django incl. PyJWT;

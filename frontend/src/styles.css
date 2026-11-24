@@ -261,9 +261,15 @@ body,
 .sidebar-brand {
   display: flex;
   align-items: center;
+  /* never squeezed by a long menu (the platform console's 19 pages squashed
+     this row to 40px and the logo sat jammed against the top): it keeps its
+     height, the nav below is the part that scrolls */
+  flex: none;
   gap: 10px;
   height: 58px;
-  padding: 0 14px;
+  /* 12px = the inset of the workspace card and nav pills below, so the logo
+     tile and the card share one left edge */
+  padding: 0 12px;
   border: none;
   border-bottom: 1px solid var(--chrome-border);
   background: none;
@@ -532,6 +538,24 @@ body,
   border-radius: var(--radius-sm);
   background: var(--chrome-2);
   color: var(--chrome-text);
+}
+
+/* Platform console (pf-shell): no top bar on a wide screen. It only repeated
+   the brand and the open page — the rail shows both, and every page has its
+   own title. Where the rail becomes a drawer (the .menu-btn breakpoint) the
+   bar comes back holding that one button. */
+.pf-topbar {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .pf-topbar {
+    display: flex;
+  }
+}
+
+.pf-demo-note {
+  margin: 0 0 12px;
 }
 
 .content {

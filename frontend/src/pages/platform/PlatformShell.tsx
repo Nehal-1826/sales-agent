@@ -171,10 +171,14 @@ export function PlatformShell({ demo, onSignOut, slug }: { demo: boolean; onSign
       <GlassBackdrop />
       <aside className={`sidebar${menuOpen ? ' open' : ''}`} aria-label="Platform navigation">
         <a
-          href="#/platform/overview"
+          href={`/${slug}/overview`}
           className="sidebar-brand"
-          onClick={() => setMenuOpen(false)}
           aria-label="Go to Overview"
+          onClick={(e) => {
+            e.preventDefault();
+            navigateAdmin(slug, 'overview');
+            setMenuOpen(false);
+          }}
         >
           <img src="/warmpulse-logo.svg" alt="" className="brand-logo" />
           <span className="brand-name">WarmPulse</span>
@@ -230,19 +234,22 @@ export function PlatformShell({ demo, onSignOut, slug }: { demo: boolean; onSign
       {menuOpen && <div className="scrim" onClick={() => setMenuOpen(false)} aria-hidden />}
 
       <div className="main">
-        <header className="topbar">
+        {/* no top bar on a wide screen (styles: .pf-topbar): the rail already
+            shows the brand and the open page. On phones this is only the
+            button that opens the rail. */}
+        <header className="topbar pf-topbar">
           <button className="menu-btn" onClick={() => setMenuOpen(true)} aria-label="Open navigation">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden>
               <path d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <div className="topbar-title">WarmPulse — Platform console</div>
-          <div className="topbar-actions">
-            {demo && <span className="chip chip-warn">Demo data (read-only)</span>}
-            <span className="chip chip-accent">{LABELS[page]}</span>
-          </div>
         </header>
         <main className="content" id="main" tabIndex={-1}>
+          {demo && (
+            <p className="pf-demo-note">
+              <span className="chip chip-warn">Demo data (read-only)</span>
+            </p>
+          )}
           <PageErrorBoundary key={page}>
           {page === 'overview' && <OverviewPage />}
           {page === 'analytics' && <PlatformAnalyticsPage />}

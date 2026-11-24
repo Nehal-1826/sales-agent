@@ -28,12 +28,17 @@ Accent checks are theme-agnostic (owner may retune the palette any time):
 each one resolves var(--accent) in the page (computed color of a throwaway
 probe element) and compares against that, never against a literal color.
 """
+import base64
+import hashlib
+import hmac
 import io
 import json
 import os
 import re
+import struct
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -88,29 +93,106 @@ BASE = pick_base()
 WP_UP = http_ok("http://127.0.0.1:8001/health")
 
 
-def ensure_admin_slug() -> tuple[bool, str]:
-    """Point the e2e DB's admin slug at ADMIN_SLUG (seed_demo leaves it blank).
-    Uses the same Django management command the operator runs; venv resolution
-    mirrors the bring-up notes (own .venv, else the sibling Email-Warmup one)."""
+def django_python():
+    """Python that can run manage.py against the e2e DB — the repo's own
+    .venv, else the sibling Email-Warmup one (see the bring-up notes)."""
     dj = ROOT / "backend-agent"
     candidates = [
         dj / ".venv" / "Scripts" / "python.exe",
         ROOT.parent / "Email-Warmup" / "backend-agent" / ".venv" / "Scripts" / "python.exe",
         Path(sys.executable),
     ]
-    py = next((p for p in candidates if p.exists()), None)
+    return next((p for p in candidates if p.exists()), None)
+
+
+def django_shell(code: str) -> tuple[bool, str]:
+    """Run `manage.py shell -c <code>` against the e2e DB. OK when the code ran
+    and printed E2E_SHELL_OK; `detail` carries the end of its output."""
+    py = django_python()
+    if py is None:
+        return False, "no usable python found for the Django shell"
+    try:
+        r = subprocess.run(
+            [str(py), "manage.py", "shell", "-c", code],
+            cwd=str(ROOT / "backend-agent"),
+            env={**os.environ, "DATABASE_URL": "sqlite:///db-agent-e2e.sqlite3"},
+            capture_output=True, text=True, timeout=90,
+        )
+        out = (r.stdout or "") + (r.stderr or "")
+        return r.returncode == 0 and "E2E_SHELL_OK" in out, out[-300:].strip()
+    except Exception as exc:  # noqa: BLE001
+        return False, f"{type(exc).__name__}: {exc}"
+
+
+def ensure_admin_slug() -> tuple[bool, str]:
+    """Point the e2e DB's admin slug at ADMIN_SLUG (seed_demo leaves it blank).
+    Uses the same Django management command the operator runs."""
+    py = django_python()
     if py is None:
         return False, "no usable python found for the Django shell"
     try:
         r = subprocess.run(
             [str(py), "manage.py", "set_admin_slug", ADMIN_SLUG],
-            cwd=str(dj),
+            cwd=str(ROOT / "backend-agent"),
             env={**os.environ, "DATABASE_URL": "sqlite:///db-agent-e2e.sqlite3"},
             capture_output=True, text=True, timeout=90,
         )
         return r.returncode == 0 and "Admin slug set" in r.stdout, (r.stderr or r.stdout)[-200:]
     except Exception as exc:  # noqa: BLE001
         return False, f"{type(exc).__name__}: {exc}"
+
+
+# ── Console walk (8c): a REAL platform-admin sign-in ────────────────
+# A throwaway superadmin with a known authenticator secret is created in the
+# e2e DB, signs in through the admin door with a fresh code, and is deleted
+# again whatever happens.
+CONSOLE_ADMIN = "e2e-console-admin"
+CONSOLE_PW = "e2e-console-pw-2026"
+CONSOLE_SECRET = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"
+
+
+def totp_code(secret: str) -> str:
+    """6-digit authenticator code — the same arithmetic as
+    backend-agent/core/totp.py (HMAC-SHA1, 30 s step). Waits for a step with
+    at least 7 s left: a code dies with its step and is accepted only once."""
+    while int(time.time()) % 30 > 30 - 7:
+        time.sleep(0.5)
+    key = base64.b32decode(secret + "=" * (-len(secret) % 8))
+    digest = hmac.new(key, struct.pack(">Q", int(time.time()) // 30), hashlib.sha1).digest()
+    offset = digest[-1] & 0x0F
+    number = struct.unpack(">I", digest[offset:offset + 4])[0] & 0x7FFFFFFF
+    return f"{number % 1_000_000:06d}"
+
+
+def console_admin_code(action: str) -> str:
+    """Django shell code that creates / deletes the throwaway console admin."""
+    if action == "create":
+        return (
+            "from django.contrib.auth import get_user_model\n"
+            "U = get_user_model()\n"
+            f"U.objects.filter(username='{CONSOLE_ADMIN}').delete()\n"
+            f"u = U.objects.create_superuser(username='{CONSOLE_ADMIN}', password='{CONSOLE_PW}',\n"
+            "                                email='e2e-console@example.invalid')\n"
+            "u.is_staff = True\n"
+            f"u.totp_secret = '{CONSOLE_SECRET}'\n"
+            "u.save()\n"
+            "print('E2E_SHELL_OK created')\n"
+        )
+    return (
+        "from django.contrib.auth import get_user_model\n"
+        "from rest_framework.authtoken.models import Token\n"
+        "from core.models import PlatformSession\n"
+        "U = get_user_model()\n"
+        f"u = U.objects.filter(username='{CONSOLE_ADMIN}').first()\n"
+        "n = 0\n"
+        "if u:\n"
+        "    for t in Token.objects.filter(user=u):\n"
+        "        n += PlatformSession.objects.filter(token=t).delete()[0]\n"
+        "        t.delete()\n"
+        "    u.delete()\n"
+        f"left = U.objects.filter(username__startswith='{CONSOLE_ADMIN}').count()\n"
+        "print('E2E_SHELL_OK', 'deleted' if u else 'absent', 'sessions', n, 'left', left)\n"
+    )
 
 
 results = []
@@ -601,8 +683,7 @@ with sync_playwright() as p:
     # ── 8b. Admin door, signed out (login split): /<slug> lands on the admin
     # login card and WORKSPACE credentials are turned away with the admin-only
     # 403. Deliberately AFTER the hygiene snapshot — the expected 403 (and its
-    # console line) must not count as session noise. A full platform-admin
-    # login is NOT automated (TOTP enrollment is beyond a shallow walk).
+    # console line) must not count as session noise.
     slug_ready, slug_detail = ensure_admin_slug()
     check(f"admin door: e2e slug set to {ADMIN_SLUG} (manage.py set_admin_slug)",
           slug_ready, slug_detail)
@@ -625,6 +706,89 @@ with sync_playwright() as p:
           "This page is for platform administrators only." in door_err, door_err)
     page.screenshot(path=str(SHOTS / "09-admin-door.png"))
     # (operator's happy path through the DEFAULT door is section 2 above)
+
+    # ── 8c. Console walk: sign in for real as a throwaway platform admin and
+    # look at the rail. This stays on the page already loaded above — every
+    # load checks the admin URL and that check allows 5 a minute.
+    created, detail = django_shell(console_admin_code("create"))
+    check("console: throwaway platform admin created in the e2e DB", created, detail)
+    try:
+        if created:
+            page.locator("input[autocomplete=username]").fill(CONSOLE_ADMIN)
+            page.locator("input[type=password]").fill(CONSOLE_PW)
+            page.locator("button.login-submit").click()
+            slot = page.locator(".code-slots__input")
+            slot.wait_for(state="attached", timeout=15_000)
+            slot.click()
+            page.keyboard.type(totp_code(CONSOLE_SECRET))
+            page.locator("aside.sidebar").wait_for(state="visible", timeout=30_000)
+            page.wait_for_load_state("networkidle")
+            page.wait_for_timeout(800)
+            check("console: a real platform-admin sign-in reaches the console",
+                  page.url.endswith(f"/{ADMIN_SLUG}/overview"), page.url)
+
+            # No top bar on a wide screen (it only repeated the brand and the
+            # open page) — and the page carries its own title instead.
+            topbar = page.locator("header.topbar")
+            body_text = page.locator("body").inner_text()
+            check("console: no 'Platform console' top bar on a wide screen",
+                  topbar.evaluate("el => getComputedStyle(el).display") == "none"
+                  and "Platform console" not in body_text)
+
+            # The rail's brand row used to be squeezed to 40px by the console's
+            # 19-item menu (it is 58px; 50px under 760px tall, 46px under 640px)
+            # and the logo sat 2px right of the card below it.
+            geo = page.evaluate(
+                """() => {
+                    const box = (sel) => {
+                        const b = document.querySelector(sel).getBoundingClientRect();
+                        return {left: b.left, top: b.top, height: b.height};
+                    };
+                    return {brand: box('.sidebar-brand'), logo: box('.brand-logo'),
+                            badge: box('.workspace-badge'), title: box('.content .page-header')};
+                }"""
+            )
+            height = page.viewport_size["height"]
+            wanted = 58 if height > 760 else 50 if height > 640 else 46
+            check("console: the brand row keeps its height under the 19-item menu",
+                  abs(geo["brand"]["height"] - wanted) < 0.5, str(geo["brand"]))
+            check("console: the logo is flush with the card below it",
+                  abs(geo["logo"]["left"] - geo["badge"]["left"]) < 0.5,
+                  f"logo {geo['logo']['left']} vs card {geo['badge']['left']}")
+            check("console: the page starts with its own title (no bar above it)",
+                  geo["title"]["top"] < 60, str(geo["title"]))
+            page.screenshot(path=str(SHOTS / "09b-console.png"))
+
+            # The logo says "Go to Overview": it used to append a stale
+            # #/platform/overview and stay on the page.
+            page.locator(".side-nav .nav-item", has_text="Users").first.click()
+            page.wait_for_timeout(700)
+            on_users = page.url.endswith(f"/{ADMIN_SLUG}/users")
+            page.locator(".sidebar-brand").click()
+            page.wait_for_timeout(700)
+            check("console: the logo goes to Overview",
+                  on_users and page.url.endswith(f"/{ADMIN_SLUG}/overview"), page.url)
+
+            # On a phone the rail is a drawer: the bar is back, holding the
+            # one button that opens it.
+            page.set_viewport_size({"width": 375, "height": 812})
+            page.wait_for_timeout(700)
+            menu_btn = page.locator(".menu-btn")
+            check("console: on a phone the bar is back with only the menu button",
+                  topbar.evaluate("el => getComputedStyle(el).display") != "none"
+                  and menu_btn.is_visible() and "Platform console" not in topbar.inner_text())
+            menu_btn.click()
+            page.wait_for_timeout(600)
+            check("console: the menu button opens the rail",
+                  "open" in (page.locator("aside.sidebar").get_attribute("class") or ""))
+            page.screenshot(path=str(SHOTS / "09c-console-phone.png"))
+            page.set_viewport_size({"width": 1920, "height": 1080})
+    except Exception as exc:  # noqa: BLE001  — reported as a FAIL, never aborts the gate
+        check("console: the walk finished", False, f"{type(exc).__name__}: {exc}"[:200])
+    finally:
+        removed, detail = django_shell(console_admin_code("delete"))
+    check("console: throwaway platform admin removed again",
+          removed and "left 0" in detail, detail)
 
     browser.close()
 

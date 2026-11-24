@@ -60,3 +60,12 @@ Exit code 0 = all green. Screenshots land in
   count as failures like every other route's.
 - **Dist checks** need `npm run build` first; without `dist/` they print
   one `SKIP` line.
+- **Console walk (real platform-admin sign-in)**: after the admin-door checks
+  the gate creates a throwaway superadmin `e2e-console-admin` in the e2e
+  `db-agent-e2e.sqlite3` (through `manage.py shell`, using the repo's
+  `.venv` or the sibling `Email-Warmup` one), signs in with a fresh
+  authenticator code, checks the console's rail and top bar on a wide screen
+  and at 375px, then deletes the account again (also on a failure). The
+  e2e DB must be the one Django serves, and `manage.py set_admin_slug`
+  must work there — both are the same requirement the admin-door checks
+  already had.

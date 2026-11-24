@@ -413,16 +413,16 @@ export function AdminReportsPage({ demo = false }: { demo?: boolean }) {
       {!typesQ.data && !typesQ.error && <Skeleton rows={4} />}
 
       {typesQ.data && (
-        <div className="pf-grid" style={{ gridTemplateColumns: 'minmax(300px, 360px) 1fr', alignItems: 'start' }}>
+        <div className="pf-studio">
           {/* ── builder column ── */}
           <div style={{ display: 'grid', gap: 12 }}>
             <section className="card pf-plan">
               <SectionLabel>1 · Report type</SectionLabel>
               {types.length === 0 && <EmptyState title="No report types available yet">The backend reports module is not enabled.</EmptyState>}
               {types.map((rt) => (
-                <button key={rt.key} className={`btn btn-sm${rt.key === typeKey ? ' btn-primary' : ''}`} style={{ display: 'block', width: '100%', textAlign: 'left', marginBottom: 6 }} onClick={() => setTypeKey(rt.key)}>
+                <button key={rt.key} className={`btn btn-sm pf-pick${rt.key === typeKey ? ' btn-primary' : ''}`} onClick={() => setTypeKey(rt.key)}>
                   {rt.label}
-                  {rt.key === typeKey && <small style={{ display: 'block' }}>{rt.description}</small>}
+                  {rt.key === typeKey && <small>{rt.description}</small>}
                 </button>
               ))}
             </section>

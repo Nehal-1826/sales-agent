@@ -27,7 +27,7 @@ function StatusChip({ status }: { status: string }) {
   return <Chip tone={s.tone}>{s.text}</Chip>;
 }
 
-export function PaymentsPage({ demo }: { demo: boolean }) {
+export function PaymentsPage({ demo, embedded = false }: { demo: boolean; embedded?: boolean }) {
   const [page, setPage] = useState(1);
   const [target, setTarget] = useState<PaymentRow | null>(null);
   const [amount, setAmount] = useState('');
@@ -39,7 +39,15 @@ export function PaymentsPage({ demo }: { demo: boolean }) {
 
   return (
     <>
-      <PageHeader title="Payments" subtitle="Money customers paid you. You can send any of it back." />
+      {embedded ? (
+        // inside Payment (the Payments tab): the section carries the title,
+        // the sentence that matters stays
+        <p className="field-hint" style={{ marginTop: 0 }}>
+          Money customers paid you. You can send any of it back.
+        </p>
+      ) : (
+        <PageHeader title="Payments" subtitle="Money customers paid you. You can send any of it back." />
+      )}
       {error && <LoadError message={error} onRetry={() => void reload()} />}
       {!data && !error && <Skeleton rows={5} />}
       {data && data.results.length === 0 && (

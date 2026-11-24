@@ -12,12 +12,14 @@ Brand: **WarmPulse**, accent theme **orange** (`#f97316` family — restored
   Landing/login/signup + workspace shell (Home · Approvals · Replies · Tasks ·
   Leads · Activity · Assistant · Warmup · Mail · Settings). Sidebar at all widths
   (bottom tab bar removed). Prerendered marketing build (SSR + `scripts/prerender.mjs`).
-  Platform console at `/<admin-slug>/<page>` (19 pages grouped: Overview ·
-  Analytics · Mail
-  [same webmail client as user panel] · PeerInboxes · PoolRouting · AI Usage ·
-  Users · Tenants · Retention · Leads · Plans · Add-ons · Billing · Payments ·
-  Invoices · Reports · Audit · Settings · Marketing). SystemHealth, PlatformMail
-  and MailViewer were removed (broken locally, replaced by the real Mail page).
+  Platform console at `/<admin-slug>/<page>` (14 sidebar entries in 4 groups:
+  Overview · Platform stats | Mail [same webmail client as user panel] ·
+  Test accounts · Account routing | Users · Tenants · Leads · Plans ·
+  Payment | Reports · Audit log · Settings · Marketing). Payment is ONE
+  section with three tabs (Billing · Payments · Invoices = `PaymentPage`).
+  Removed over time: SystemHealth, PlatformMail, MailViewer (broken locally);
+  AI usage, Retention and Add-ons (2026-11-24, owner's order — their pages
+  are gone, the old addresses land on the Overview).
 - `backend-agent/` — Django + DRF: pipeline, scraper, AI, mailer/outbox, billing,
   workspaces, OTP, WhatsApp approvals, mailbox probe, company scrape. Own AGENTS.md
   (pre-merge doc; paths there are historical).
@@ -29,7 +31,7 @@ Brand: **WarmPulse**, accent theme **orange** (`#f97316` family — restored
 - `whatsapp-sidecar/` — WhatsApp runtime service (node). `warmpulse-mobile/` — RN app.
 - `ops/` — gateway nginx (`/api/`→django:8000, `/wp-api/`→fastapi:8001 rewritten
   to its internal `/api/`), db init. Root `docker-compose.yml` = full stack.
-- `scripts/e2e/flow.py` — the Playwright gate (111 checks; run before every push).
+- `scripts/e2e/flow.py` — the Playwright gate (131 checks; run before every push).
 - `docs/superpowers/` — specs + plans (foundation, shell-ux batch, warmup dashboards).
 
 ## Commands (local dev, Windows Git Bash — quote paths, space in "Devesh B")
@@ -430,12 +432,38 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   repeated the brand and the open page, and every page has its own title
   (`.pf-topbar` is `display: none` above 900px; below that the rail becomes a
   drawer and the bar is back holding only `.menu-btn`). `.sidebar-brand` is
-  `flex: none`: the console's 19-item menu squeezed that row to 40–50px (it
+  `flex: none`: the console's long menu squeezed that row to 40–50px (it
   is 58px, 50px under 760px tall, 46px under 640px) and the logo sat jammed
   against the top — a long menu scrolls `.side-nav`, never the brand. Its
-  12px inset puts the logo tile and the workspace card on one left edge, and
+  12px inset puts the logo tile and the nav pills on one left edge, and
   the logo goes to Overview through `navigateAdmin` (it used to append a
-  stale `#/platform/overview`).
+  stale `#/platform/overview`). The rail has NO "Console / Platform admin"
+  card (owner, 2026-11-24). `resolvePlatformPage` (`shared.tsx`) is the ONE
+  place an address becomes a page: current ones as is, `billing` → the
+  Payment page, retired ones (`llm`, `revenge`, `addons`) → Overview — and
+  `PlatformShell`'s `sync` runs it on arrival AND on every popstate, putting
+  the real address in the bar (tidying only on a page change left `/addons`
+  in the bar when the Overview was already open). Payment's tabs are the
+  addresses `payment` (Billing) · `payments` · `invoices`; the three tab
+  components take `embedded` to skip their own header. The Payment entry is
+  the open one for all three (`isOpen`).
+- Collapsible rail (console): `.sidebar-toggle` is a round button on the
+  rail's edge inside `.sidebar-brand-row`; it adds `.collapsed` (72px icon
+  rail: names hidden, `title` on each item, hairlines between groups, avatar
+  + sign-out icon only) and `.app-shell:has(.sidebar.collapsed) .main`
+  follows at `margin-left: 96px`. Remembered in `localStorage`
+  `agentic-ai:sidebar`. Everything collapsed-related lives in
+  `@media (min-width: 901px)`: at 900px and under the rail is a drawer and the
+  button is hidden. Only the console has the button; the workspace sidebar
+  shares the CSS and could get one.
+- Report studio (`AdminReportsPage`) lays out with `.pf-studio`: builder
+  column `minmax(280px, 340px)` + preview `minmax(0, 1fr)`, stacked at
+  1100px and under, children `min-width: 0`. The report-type buttons are
+  `.pf-pick` and WRAP — `.btn` is `white-space: nowrap`, so the longest
+  description ("Platform-wide send volume, engagement funnel…") made its
+  card 429px wide in a 340px column and 60px of it slid under the preview.
+  `.pf-filters > select` sits on the filter row like its search box (the
+  form default `width: 100%` used to put every dropdown on its own line).
 - Python env note on Windows: `backend-agent/.venv` and `backend/.venv` are currently
   absent/incomplete — the working venvs live in the sibling checkout
   `../Email-Warmup/` (`backend-agent/.venv` for Django incl. PyJWT;

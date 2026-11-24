@@ -5,7 +5,7 @@ import { useAsync } from '../../lib/hooks';
 import { listInvoices, viewPlatformInvoice, money } from '../../lib/platform';
 import { Pager } from './shared';
 
-export function InvoicesPage() {
+export function InvoicesPage({ embedded = false }: { embedded?: boolean }) {
   const [page, setPage] = useState(1);
   const { data, error, reload } = useAsync(() => listInvoices(page), [page], { keepStale: true });
 
@@ -16,7 +16,8 @@ export function InvoicesPage() {
 
   return (
     <>
-      <PageHeader title="Invoices" />
+      {/* inside Payment (the Invoices tab) the section carries the title */}
+      {!embedded && <PageHeader title="Invoices" />}
       {error && <LoadError message={error} onRetry={() => void reload()} />}
       {!data && !error && <Skeleton rows={5} />}
       {data && data.results.length === 0 && <EmptyState title="No invoices yet" />}

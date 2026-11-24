@@ -258,10 +258,16 @@ body,
   z-index: 40;
 }
 
+/* the brand row and, on its edge, the button that collapses the rail */
+.sidebar-brand-row {
+  position: relative;
+  flex: none;
+}
+
 .sidebar-brand {
   display: flex;
   align-items: center;
-  /* never squeezed by a long menu (the platform console's 19 pages squashed
+  /* never squeezed by a long menu (the platform console's menu squashed
      this row to 40px and the logo sat jammed against the top): it keeps its
      height, the nav below is the part that scrolls */
   flex: none;
@@ -302,6 +308,99 @@ body,
 
 .sidebar-brand:active .brand-logo {
   opacity: 0.7;
+}
+
+/* ---- collapsible rail --------------------------------------------------
+   A small button on the rail's edge folds it to icons (console). It sits in
+   the 24px gutter between the rail and the page, so it covers nothing. Only
+   on wide screens: at 900px and under the rail is a drawer with its own
+   menu button, and the collapsed class is ignored. */
+.sidebar-toggle {
+  position: absolute;
+  top: 50%;
+  right: -13px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--chrome-border);
+  border-radius: 50%;
+  background: var(--chrome-2);
+  color: var(--chrome-text-2);
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  transition:
+    color var(--t-fast) var(--ease),
+    background var(--t-fast) var(--ease),
+    border-color var(--t-fast) var(--ease);
+}
+
+.sidebar-toggle:hover {
+  color: var(--chrome-text);
+  border-color: var(--accent-border);
+  background: rgba(249, 115, 22, 0.18);
+}
+
+.sidebar-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (min-width: 901px) {
+  .sidebar {
+    transition: width var(--t-med) var(--ease);
+  }
+
+  .main {
+    transition: margin-left var(--t-med) var(--ease);
+  }
+
+  .sidebar.collapsed {
+    width: 72px;
+  }
+
+  /* the page follows the rail: 12px margin + 72px rail + 12px gutter */
+  .app-shell:has(.sidebar.collapsed) .main {
+    margin-left: 96px;
+  }
+
+  .sidebar.collapsed .brand-name,
+  .sidebar.collapsed .nav-group-label,
+  .sidebar.collapsed .nav-item > span:not(.nav-badge),
+  .sidebar.collapsed .sidebar-user > div {
+    display: none;
+  }
+
+  .sidebar.collapsed .sidebar-brand {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .sidebar.collapsed .side-nav {
+    padding: 10px 8px 12px;
+  }
+
+  .sidebar.collapsed .nav-item {
+    justify-content: center;
+    padding: 0;
+  }
+
+  /* without their labels the groups are told apart by a hairline */
+  .sidebar.collapsed .nav-group + .nav-group {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--chrome-border);
+  }
+
+  .sidebar.collapsed .sidebar-foot {
+    padding: 12px 8px 16px;
+  }
+
+  .sidebar.collapsed .sidebar-user {
+    justify-content: center;
+  }
 }
 
 .side-nav {
@@ -3325,6 +3424,11 @@ body:has(.save-bar) .tutor-card {
   .sidebar.open {
     transform: none;
   }
+  /* the rail is a drawer here: full width whenever it is open, and the
+     fold-to-icons button has no job */
+  .sidebar-toggle {
+    display: none;
+  }
   .scrim {
     display: block;
     position: fixed;
@@ -4251,6 +4355,9 @@ body:has(.save-bar) .tutor-card {
 .pf-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-bottom: 12px; }
 .pf-filters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
 .pf-filters > input { width: auto; flex: 0 1 190px; }
+/* the row's dropdowns too — the form default is width:100%, which put each
+   on a line of its own under the search box */
+.pf-filters > select { width: auto; flex: 0 1 190px; }
 .pf-table.table-wrap {
   margin: 0;
   border: 1px solid var(--border);
@@ -4275,6 +4382,49 @@ body:has(.save-bar) .tutor-card {
 .pf-dl dd { margin: 0; }
 .pf-usage { margin: 0 0 12px; padding-left: 18px; }
 .pf-brand { padding: 14px 16px; }
+
+/* Report studio: the builder column and the live preview side by side, one
+   under the other on a narrow screen. The report-type buttons WRAP — `.btn`
+   never does, so the longest description pushed its card 60px under the
+   preview (the card is a grid item: its minimum is its longest line unless
+   min-width is 0). */
+.pf-studio {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  margin-bottom: 12px;
+}
+
+.pf-studio > * {
+  min-width: 0;
+}
+
+.pf-studio .pf-pick {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 38px;
+  margin-bottom: 6px;
+  padding: 8px 12px;
+  white-space: normal;
+  text-align: left;
+  line-height: 1.35;
+}
+
+.pf-studio .pf-pick small {
+  display: block;
+  margin-top: 2px;
+  white-space: normal;
+  font-weight: 500;
+  text-align: left;
+}
+
+@media (max-width: 1100px) {
+  .pf-studio {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 .pf-chart { margin: 0; }
 .pf-chart svg { width: 100%; display: block; }
 .pf-chart-axis { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-2); }

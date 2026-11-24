@@ -126,7 +126,7 @@ function SubDrawer({ sub, demo, onClose }: { sub: SubRow; demo: boolean; onClose
 
 /* ---------------- page ---------------- */
 
-export function AdminBillingPage({ demo = false }: { demo?: boolean }) {
+export function AdminBillingPage({ demo = false, embedded = false }: { demo?: boolean; embedded?: boolean }) {
   const [search, setSearch] = useState('');
   const [filterPlan, setFilterPlan] = useState('All');
   const [filterStatus, setFilterStatus] = useState<SubStatus | 'All'>('All');
@@ -251,39 +251,45 @@ export function AdminBillingPage({ demo = false }: { demo?: boolean }) {
 
   const arrow = (k: SortKey): string => (sortKey === k ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '');
 
+  const actions = (
+    <>
+      <button className="btn" onClick={exportLedger} disabled={subs.length === 0}>
+        Export ledger CSV
+      </button>
+      <button className="btn" disabled={expBusy || demo} onClick={() => void handleServerExport()}>
+        {expBusy ? 'Exporting…' : 'Export payments CSV'}
+      </button>
+    </>
+  );
+
   return (
     <>
-      <PageHeader
-        title="Revenue cockpit"
-        subtitle="Cross-workspace subscriptions ledger · super admin"
-        actions={
-          <>
-            <button className="btn" onClick={exportLedger} disabled={subs.length === 0}>
-              Export ledger CSV
-            </button>
-            <button className="btn" disabled={expBusy || demo} onClick={() => void handleServerExport()}>
-              {expBusy ? 'Exporting…' : 'Export payments CSV'}
-            </button>
-          </>
-        }
-      />
+      {/* inside Payment (the Billing tab) the section carries the title, so
+          the exports stand on their own row */}
+      {embedded ? (
+        <div className="pf-actions" style={{ marginTop: 0 }}>
+          {actions}
+        </div>
+      ) : (
+        <PageHeader title="Revenue cockpit" subtitle="Cross-workspace subscriptions ledger · super admin" actions={actions} />
+      )}
 
       <div className="pf-kpis">
         <div className="pf-kpi">
           <strong>{loading ? '…' : activeSubs.toLocaleString()}</strong>
-          <small>Active subs · paying workspaces</small>
+          <small>Paying customers · workspaces on a paid plan</small>
         </div>
         <div className="pf-kpi">
           <strong>{loading ? '…' : `$${totalMrr.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}</strong>
-          <small>Total MRR · monthly recurring</small>
+          <small>Money per month · what customers pay each month</small>
         </div>
         <div className="pf-kpi">
           <strong>{loading ? '…' : pastDue.toLocaleString()}</strong>
-          <small>Past due · need attention</small>
+          <small>Payment failed · we&apos;re retrying their card</small>
         </div>
         <div className="pf-kpi">
           <strong>{loading ? '…' : trials.toLocaleString()}</strong>
-          <small>Trials · trial period active</small>
+          <small>Trying for free · trial period active</small>
         </div>
       </div>
 

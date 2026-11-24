@@ -6,23 +6,22 @@ import { toast } from '../../components/feedback';
 import type { Result } from '../../lib/transport';
 
 /**
- * All routable platform-console pages (hash: `#/platform/<id>`).
- * Order mirrors the sidebar nav; the grouped display lives in PlatformShell.
+ * All routable platform-console pages (`/<admin-slug>/<page>`). Order
+ * mirrors the sidebar nav; the grouped display lives in PlatformShell.
+ * "Payment" is ONE section with three tabs: `payment` is its Billing tab,
+ * `payments` and `invoices` the other two (PaymentPage).
  */
 export const PLATFORM_PAGES = [
   'overview',
   'analytics',
   'peers',
   'routing',
-  'llm',
   'mail',
   'users',
   'tenants',
-  'revenge',
   'crm',
   'plans',
-  'addons',
-  'billing',
+  'payment',
   'payments',
   'invoices',
   'reports',
@@ -31,6 +30,27 @@ export const PLATFORM_PAGES = [
   'marketing',
 ] as const;
 export type PlatformPage = (typeof PLATFORM_PAGES)[number];
+
+/** The Payment section's tabs — each is also the last part of its address. */
+export const PAYMENT_TABS = ['payment', 'payments', 'invoices'] as const;
+export type PaymentTab = (typeof PAYMENT_TABS)[number];
+
+/** Addresses that no longer have a page of their own (24 Nov 2026, owner):
+ *  Billing became the first tab of Payment; AI usage, Retention and Add-ons
+ *  were removed from the console. */
+const OLD_PAGES: Record<string, PlatformPage> = {
+  billing: 'payment',
+  llm: 'overview',
+  revenge: 'overview',
+  addons: 'overview',
+};
+
+/** The page an address names: a current one as is, an old one mapped, and
+ *  anything else (retired, mistyped) the Overview. */
+export function resolvePlatformPage(page: string): PlatformPage {
+  if ((PLATFORM_PAGES as readonly string[]).includes(page)) return page as PlatformPage;
+  return OLD_PAGES[page] ?? 'overview';
+}
 
 export function Pager({
   page,

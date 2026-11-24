@@ -790,8 +790,10 @@ with sync_playwright() as p:
                   and "Platform console" not in body_text)
 
             # The rail's brand row used to be squeezed to 40px by the console's
-            # 19-item menu (it is 58px; 50px under 760px tall, 46px under 640px)
-            # and the logo sat 2px right of the card below it.
+            # long menu (it is 58px; 50px under 760px tall, 46px under 640px)
+            # and the logo sat 2px right of what lies below it. There is no
+            # "Console / Platform admin" card any more (owner, 24 Nov): the
+            # logo lines up with the nav pills.
             geo = page.evaluate(
                 """() => {
                     const box = (sel) => {
@@ -799,16 +801,16 @@ with sync_playwright() as p:
                         return {left: b.left, top: b.top, height: b.height};
                     };
                     return {brand: box('.sidebar-brand'), logo: box('.brand-logo'),
-                            badge: box('.workspace-badge'), title: box('.content .page-header')};
+                            pill: box('.side-nav .nav-item'), title: box('.content .page-header')};
                 }"""
             )
             height = page.viewport_size["height"]
             wanted = 58 if height > 760 else 50 if height > 640 else 46
-            check("console: the brand row keeps its height under the 19-item menu",
+            check("console: the brand row keeps its height under the long menu",
                   abs(geo["brand"]["height"] - wanted) < 0.5, str(geo["brand"]))
-            check("console: the logo is flush with the card below it",
-                  abs(geo["logo"]["left"] - geo["badge"]["left"]) < 0.5,
-                  f"logo {geo['logo']['left']} vs card {geo['badge']['left']}")
+            check("console: the logo is flush with the nav pills below it",
+                  abs(geo["logo"]["left"] - geo["pill"]["left"]) < 0.5,
+                  f"logo {geo['logo']['left']} vs pill {geo['pill']['left']}")
             check("console: the page starts with its own title (no bar above it)",
                   geo["title"]["top"] < 60, str(geo["title"]))
             page.screenshot(path=str(SHOTS / "09b-console.png"))
@@ -823,6 +825,148 @@ with sync_playwright() as p:
             check("console: the logo goes to Overview",
                   on_users and page.url.endswith(f"/{ADMIN_SLUG}/overview"), page.url)
 
+            # ── The rail and pages as the owner asked for them (24 Nov). Each
+            # look is guarded: a missing element is a FAIL for that look and
+            # never aborts the rest of the walk.
+            def look(name, probe):
+                try:
+                    cond, detail = probe()
+                except Exception as exc:  # noqa: BLE001
+                    cond, detail = False, f"{type(exc).__name__}: {exc}"[:200]
+                check(name, cond, detail)
+
+            def one_line(text):
+                return " ".join(text.split())[:200]
+
+            page.set_default_timeout(8_000)
+            rail = page.locator("aside.sidebar")
+
+            def no_console_card():
+                return rail.locator(".workspace-badge").count() == 0, one_line(safe_text(rail))
+            look("console rail: no 'Console / Platform admin' card", no_console_card)
+
+            nav_text = safe_text(rail.locator(".side-nav"))
+            for gone in ("AI usage", "Retention", "Add-ons", "Billing", "Payments", "Invoices"):
+                look(f"console rail: '{gone}' is gone",
+                     lambda gone=gone: (gone not in nav_text, one_line(nav_text)))
+            # a whole word: "Payments" must not pass for it
+            look("console rail: 'Payment' is one entry",
+                 lambda: (len(re.findall(r"\bPayment\b", nav_text)) == 1, one_line(nav_text)))
+
+            def payment_page():
+                rail.locator(".nav-item", has_text="Payment").first.click()
+                page.wait_for_timeout(700)
+                tabs = [t.strip() for t in page.locator(".content .subtabs .subtab").all_inner_texts()]
+                return (page.url.endswith(f"/{ADMIN_SLUG}/payment")
+                        and tabs == ["Billing", "Payments", "Invoices"], f"{page.url} tabs={tabs}")
+            look("console payment: the entry opens one Payment page with three tabs", payment_page)
+
+            def payment_tab(label, address):
+                page.locator(".content .subtabs .subtab", has_text=label).click()
+                page.wait_for_timeout(600)
+                active = page.locator(".content .subtabs .subtab.active").inner_text().strip()
+                return page.url.endswith(f"/{ADMIN_SLUG}/{address}") and active == label, f"{page.url} active={active}"
+            look("console payment: the Payments tab switches the page",
+                 lambda: payment_tab("Payments", "payments"))
+            look("console payment: the Invoices tab switches the page",
+                 lambda: payment_tab("Invoices", "invoices"))
+
+            # Old addresses still land somewhere sensible. No page reload (the
+            # admin-URL check is rate-limited): history + popstate is exactly
+            # what the router does itself.
+            def visit(address):
+                page.evaluate(
+                    "(p) => { history.pushState(null, '', p); dispatchEvent(new PopStateEvent('popstate')); }",
+                    f"/{ADMIN_SLUG}/{address}")
+                page.wait_for_timeout(700)
+
+            def lands(address, want):
+                visit(address)
+                return page.url.endswith(f"/{ADMIN_SLUG}/{want}"), page.url
+            look("console payment: the old /billing address opens Payment",
+                 lambda: lands("billing", "payment"))
+            for old in ("llm", "revenge", "addons"):
+                look(f"console: the removed /{old} address lands on Overview",
+                     lambda old=old: lands(old, "overview"))
+
+            # Report studio: the report-type buttons never wrapped, so the
+            # longest description pushed its card under the preview panel.
+            def studio():
+                rail.locator(".nav-item", has_text="Reports").first.click()
+                page.wait_for_timeout(900)
+                page.set_viewport_size({"width": 1366, "height": 690})
+                page.wait_for_timeout(500)
+                page.locator(".content button", has_text="Warmup Usage").first.click()
+                page.wait_for_timeout(500)
+                boxes = page.evaluate(
+                    """() => {
+                        const cardOf = (text) => [...document.querySelectorAll('.content section.card')]
+                          .find((s) => s.innerText.includes(text));
+                        const r = (el) => {
+                            if (!el) return null;
+                            const b = el.getBoundingClientRect();
+                            return {left: Math.round(b.left), right: Math.round(b.right),
+                                    top: Math.round(b.top), bottom: Math.round(b.bottom)};
+                        };
+                        return {builder: r(cardOf('1 · Report type')), preview: r(cardOf('Live preview')),
+                                viewport: window.innerWidth};
+                    }"""
+                )
+                b, v = boxes["builder"], boxes["preview"]
+                covered = bool(b and v and b["right"] > v["left"] + 1 and v["bottom"] > b["top"] + 1
+                               and b["bottom"] > v["top"] + 1)
+                inside = bool(v and v["right"] <= boxes["viewport"])
+                return bool(b and v and not covered and inside), str(boxes)
+            look("console reports: the preview does not cover the builder column on a 1366px screen", studio)
+
+            # The sidebar toggle: collapse to an icon rail, remembered, and back.
+            page.set_viewport_size({"width": 1920, "height": 1080})
+            page.wait_for_timeout(500)
+
+            def collapse():
+                wide = rail.bounding_box()["width"]
+                page.get_by_role("button", name="Collapse sidebar").click()
+                page.wait_for_function(
+                    "() => document.querySelector('aside.sidebar').getBoundingClientRect().width < 100",
+                    timeout=8_000)
+                slim = rail.bounding_box()["width"]
+                return wide > 200 and 40 < slim < 100, f"{wide}px -> {slim}px"
+            look("console rail: the toggle collapses the sidebar to an icon rail", collapse)
+
+            def collapsed_still_usable():
+                item = rail.locator('.nav-item[title="Users"]')
+                item.first.click()
+                page.wait_for_timeout(600)
+                return item.count() == 1 and page.url.endswith(f"/{ADMIN_SLUG}/users"), page.url
+            look("console rail: a collapsed item keeps its name on hover and still opens its page",
+                 collapsed_still_usable)
+
+            def remembered():
+                # The reload only has to prove the rail's remembered state. Its
+                # admin-URL check is answered here instead of by the server:
+                # that check allows 5 a minute, and this walk has already used
+                # some (a dev-server reload spends more).
+                page.route("**/api/admin-slug/check/",
+                           lambda route: route.fulfill(status=200, json={"valid": True}))
+                try:
+                    page.reload()
+                    rail.wait_for(state="visible", timeout=30_000)
+                    page.wait_for_timeout(800)
+                    return rail.bounding_box()["width"] < 100, f"{rail.bounding_box()['width']}px after reload"
+                finally:
+                    page.unroute("**/api/admin-slug/check/")
+            look("console rail: it stays collapsed after a reload", remembered)
+
+            def expand():
+                page.get_by_role("button", name="Expand sidebar").click()
+                page.wait_for_function(
+                    "() => document.querySelector('aside.sidebar').getBoundingClientRect().width > 200",
+                    timeout=8_000)
+                names = rail.locator(".nav-item span").all_inner_texts()
+                return "Users" in names, one_line(" ".join(names))
+            look("console rail: it expands again and shows the names", expand)
+            page.set_default_timeout(30_000)
+
             # On a phone the rail is a drawer: the bar is back, holding the
             # one button that opens it.
             page.set_viewport_size({"width": 375, "height": 812})
@@ -834,7 +978,7 @@ with sync_playwright() as p:
             menu_btn.click()
             page.wait_for_timeout(600)
             check("console: the menu button opens the rail",
-                  "open" in (page.locator("aside.sidebar").get_attribute("class") or ""))
+                  "open" in (rail.get_attribute("class") or ""))
             page.screenshot(path=str(SHOTS / "09c-console-phone.png"))
             page.set_viewport_size({"width": 1920, "height": 1080})
     except Exception as exc:  # noqa: BLE001  — reported as a FAIL, never aborts the gate

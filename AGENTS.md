@@ -331,6 +331,27 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   and (for UI work) `frontend` TOGETHER —
   `docker compose build django django-worker frontend && docker compose up -d --force-recreate django django-worker frontend`.
   Recreating only `django` leaves the worker on stale code.
+- Deploying while autopilot is on: the restart cuts a running cycle in half
+  (the worker is also the email sender). A cycle writes its `PipelineRun` only
+  when it FINISHES, so an "unfinished runs" query cannot show a running cycle
+  — read the worker log: `[slug] Cycle due — running pipeline…` starts one,
+  `[slug] Run #N: …` or `Pipeline cycle failed [slug]` ends it (a cycle may
+  take 35 min). Wait for the end line, `docker compose stop django-worker` at
+  once (then no new cycle can start), build, switch all three over; the image
+  entrypoint runs `migrate` itself at start. If the model runner is over
+  ~3 GB when the cycle ends, `ops/ollama-watchdog.sh` recycles the idle runner
+  before the build. Pull with `--ff-only` only — the server tree carries its
+  own nginx.conf edits. `ops/deploy/deploy.sh` is the OLD pre-merge path
+  (systemd, `git reset --hard`): never run it on this stack.
+- Public traffic enters through the HOST nginx
+  (`/etc/nginx/sites-available/warmpulse.conf`, :443, Let's Encrypt) in front
+  of the compose gateway (`127.0.0.1:8088`), and it handles `/wp-api/` itself
+  (`proxy_pass http://127.0.0.1:8001/api/`). A public `/wp-api/*` 502
+  therefore never reaches the compose gateway: check `ss -ltn | grep 8001`
+  and `/var/log/nginx/error.log` ("connect() failed … upstream"), not the
+  gateway log. Inside the network the gateway's own `/wp-api/api/` → fastapi
+  route is the reference (the gateway re-resolves upstream names every 10 s,
+  so recreated containers need no gateway restart).
 - gunicorn runs `gthread` (2 workers × 4 threads): a chat reply or a website
   read waits a minute or more on the local model, and single-threaded workers
   let two such requests freeze the whole API. Timeouts line up: frontend 240s

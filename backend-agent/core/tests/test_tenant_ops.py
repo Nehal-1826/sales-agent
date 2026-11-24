@@ -40,9 +40,11 @@ class TwoTenantBase(TenantTestCase):
 
 class WorkerPerWorkspaceTests(TwoTenantBase):
     def test_only_due_tenant_runs_and_failing_tenant_backs_off(self):
-        a = self._make('a', runs_enabled=True)   # new workspaces are born paused
-        b = self._make('b', runs_enabled=False)
-        c = self._make('c', runs_enabled=True)
+        # proper data too: autopilot never runs a workspace without it (core.lead_gate)
+        proper = dict(company_name='Proper Co', services=['Widgets'], target_industries='startup')
+        a = self._make('a', runs_enabled=True, **proper)   # new workspaces are born paused
+        b = self._make('b', runs_enabled=False, **proper)
+        c = self._make('c', runs_enabled=True, **proper)
         self.only_active(a, b, c)
         seen = []
 

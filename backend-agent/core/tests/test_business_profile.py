@@ -8,7 +8,6 @@ history). Every test here mocks the model itself; the contract is what
 matters, not the model's mood."""
 from unittest import mock
 
-from django.core.cache import cache
 from django.test import SimpleTestCase
 
 from core import business_profile as bp
@@ -227,7 +226,6 @@ class ProfileFromDomainTests(SimpleTestCase):
 
 class ApplyProfileTests(TenantTestCase):
     def setUp(self):
-        cache.clear()
         self.s = AppSettings.load()
 
     def test_applies_business_and_targeting_to_the_settings(self):
@@ -261,53 +259,58 @@ class ApplyProfileTests(TenantTestCase):
         self.assertEqual(self.s.icp_notes, '')
 
 
-class InferBuyersForSettingsTests(TenantTestCase):
-    """The pipeline's fallback when a workspace never set 'Who to find'."""
+class AnalyseBuyersTests(TenantTestCase):
+    """Who buys from this workspace, worked out by the model - the reading
+    behind "who should I find?", the wizard's last step and Fetch. It is
+    only ever the FIRST half: the answer is saved into Who to find by the
+    caller, and the search itself never calls the model."""
 
     def setUp(self):
-        cache.clear()
-        self.ws = make_ws('infer-co')
+        self.ws = make_ws('analyse-co')
         self.s = AppSettings.load()
 
-    def test_brief_is_built_from_the_workspace_own_profile(self):
+    def test_the_brief_is_built_from_the_workspace_own_profile(self):
         self.s.company_name = 'Zoho'
         self.s.services = ['CRM', 'Mail']
         self.s.company_website = ''
         self.s.save()
         with mock.patch.object(bp, 'llm_json', return_value=ai_reply(
                 own_kind='', buyers=['small business', 'startup'])) as lj:
-            self.assertEqual(bp.infer_buyers_for_settings(self.s), ['small business', 'startup'])
+            found = bp.analyse_buyers(self.s)
+        self.assertEqual(found['buyers'], ['small business', 'startup'])
         prompt = lj.call_args.kwargs['prompt']
         self.assertIn('Zoho', prompt)
         self.assertIn('CRM', prompt)
 
-    def test_result_is_cached_per_profile_so_the_pipeline_does_not_re_ask(self):
+    def test_what_the_owner_just_said_is_part_of_the_question(self):
         self.s.company_name = 'Zoho'
         self.s.services = ['CRM']
         self.s.save()
         with mock.patch.object(bp, 'llm_json', return_value=ai_reply(own_kind='')) as lj:
-            bp.infer_buyers_for_settings(self.s)
-            bp.infer_buyers_for_settings(self.s)
-            self.assertEqual(lj.call_count, 1)
-            # a changed profile is a different question
-            self.s.services = ['CRM', 'Mail']
-            self.s.save()
-            bp.infer_buyers_for_settings(self.s)
-            self.assertEqual(lj.call_count, 2)
+            bp.analyse_buyers(self.s, about='we run coding bootcamps for engineers')
+        self.assertIn('we run coding bootcamps for engineers', lj.call_args.kwargs['prompt'])
 
-    def test_model_failure_is_not_cached(self):
+    def test_an_empty_profile_never_asks_the_model(self):
+        with mock.patch.object(bp, 'llm_json') as lj:
+            self.assertIsNone(bp.analyse_buyers(self.s))
+        lj.assert_not_called()
+
+    def test_a_model_that_cannot_answer_means_none_never_a_guess(self):
         self.s.company_name = 'Zoho'
         self.s.services = ['CRM']
         self.s.save()
-        with mock.patch.object(bp, 'llm_json', return_value=None) as lj:
-            self.assertEqual(bp.infer_buyers_for_settings(self.s), [])
-            self.assertEqual(bp.infer_buyers_for_settings(self.s), [])
-        self.assertEqual(lj.call_count, 2, 'a miss must be retried, not remembered')
+        with mock.patch.object(bp, 'llm_json', return_value=None):
+            self.assertIsNone(bp.analyse_buyers(self.s))
 
-    def test_empty_profile_never_asks_the_model(self):
-        with mock.patch.object(bp, 'llm_json') as lj:
-            self.assertEqual(bp.infer_buyers_for_settings(self.s), [])
-        lj.assert_not_called()
+    def test_individual_customers_mean_no_company_kinds(self):
+        self.s.company_name = 'MyVet'
+        self.s.services = ['Pet care']
+        self.s.save()
+        with mock.patch.object(bp, 'llm_json', return_value=ai_reply(
+                own_kind='', customer_type='individuals', buyers=['pet grooming service'])):
+            found = bp.analyse_buyers(self.s)
+        self.assertEqual(found['buyers'], [])
+        self.assertEqual(found['customer_type'], 'individuals')
 
     def test_site_text_enriches_the_brief_but_a_dead_site_does_not_break_it(self):
         from core.company_scrape import BadUrl
@@ -319,12 +322,10 @@ class InferBuyersForSettingsTests(TenantTestCase):
                                              '<body><h2>CRM software for teams</h2></body></html>')
         with mock.patch.object(bp, 'fetch_public', return_value=resp), \
              mock.patch.object(bp, 'llm_json', return_value=ai_reply(own_kind='')) as lj:
-            bp.infer_buyers_for_settings(self.s)
+            bp.analyse_buyers(self.s)
         self.assertIn('CRM software for teams', lj.call_args.kwargs['prompt'])
 
-        self.s.services = ['CRM', 'Mail']      # new profile → cache miss
-        self.s.save()
         with mock.patch.object(bp, 'fetch_public', side_effect=BadUrl('down')), \
              mock.patch.object(bp, 'llm_json', return_value=ai_reply(own_kind='')) as lj:
-            bp.infer_buyers_for_settings(self.s)
+            bp.analyse_buyers(self.s)
         self.assertIn('Zoho', lj.call_args.kwargs['prompt'])

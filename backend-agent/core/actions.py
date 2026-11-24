@@ -18,6 +18,7 @@ from datetime import timedelta
 from django.utils import timezone
 
 from .ai import llm_available, llm_chat
+from .lead_gate import LeadFetchNotReady, lead_fetch_reason, missing_lead_data
 from .mailer import valid_recipient
 from .outbox import enqueue_draft, kick_drain, queued_phrase
 from .models import AppSettings, EmailDraft, Lead, SearchProfile
@@ -323,6 +324,8 @@ def execute(spec, username='chat'):
         from billing.entitlements import BillingError
         try:
             started = start_pipeline_async(f'chat:{username}')
+        except LeadFetchNotReady as exc:   # no proper data: lead finding stays off
+            return str(exc)
         except BillingError as exc:   # unpaid / runs per day / lead quota: say so, run nothing
             return ("I can't start a cycle: " + (
                 'your subscription is inactive.' if exc.payload['error'] == 'payment_required'
@@ -429,6 +432,12 @@ def execute(spec, username='chat'):
             s.runs_enabled = False
             s.save(update_fields=['runs_enabled', 'updated_at'])
             return 'Paused the autonomous runs — trigger cycles manually anytime.'
+        if freq in ('resume', '15m', '1h', '6h', 'daily'):
+            # autopilot is a way of fetching leads: it needs the same proper
+            # data as the "Find leads now" button (core.lead_gate)
+            missing = missing_lead_data(s)
+            if missing:
+                return "I can't switch autopilot on yet — " + lead_fetch_reason(missing)
         if freq == 'resume':
             s.runs_enabled = True
             s.save(update_fields=['runs_enabled', 'updated_at'])

@@ -169,6 +169,9 @@ def _quiet():
 
 
 class LockHeartbeatTests(TenantTestCase):
+    def setUp(self):
+        self.lead_ready()      # the lead gate refuses to run an unconfigured workspace
+
     def _since(self):
         return AppSettings.objects.values_list('pipeline_running_since', flat=True).first()
 
@@ -218,6 +221,9 @@ class LockHeartbeatTests(TenantTestCase):
 
 
 class CycleBudgetTests(TenantTestCase):
+    def setUp(self):
+        self.lead_ready()      # the lead gate refuses to run an unconfigured workspace
+
     def test_budget_stops_profiling_and_leaves_leads_for_next_cycle(self):
         for i in range(3):
             Lead.objects.create(company=f'Shop {i}', website=f'shop{i}.com')
@@ -235,6 +241,9 @@ class CycleBudgetTests(TenantTestCase):
 
 
 class ReprofileTests(TenantTestCase):
+    def setUp(self):
+        self.lead_ready()      # the lead gate refuses to run an unconfigured workspace
+
     def _lead(self, name, days_old, **kw):
         lead = Lead.objects.create(company=name, website=f'{name}.com', profiled=True,
                                    contact_email=f'info@{name}.com', **kw)

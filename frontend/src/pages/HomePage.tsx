@@ -12,7 +12,7 @@ import { getDrafts, getLeads, getSettings, getTemplates, isDemo } from '../lib/a
 import { greeting, plural, timeAgo } from '../lib/format';
 import { useAsync } from '../lib/hooks';
 import { navigate } from '../lib/router';
-import { useWorkspaceStatus } from '../lib/status';
+import { leadFetchBlock, leadFetchFixSection, useWorkspaceStatus } from '../lib/status';
 import type { Lead, SettingsSection } from '../lib/types';
 
 /** HOME — Liquid-glass bento overview: status, KPIs, approvals, newest leads, checklist. */
@@ -204,9 +204,12 @@ export function HomePage() {
 function StatusHero() {
   const { pipeline } = useWorkspaceStatus();
   const summary = useAutopilotSummary(isDemo());
+  const gate = leadFetchBlock(pipeline);
   const last = pipeline?.lastRun;
   return (
-    <section className={`status-hero status-hero--bento tone-${summary.tone}`} aria-live="polite">
+    // while the setup has no proper data this tile IS the notice (lead-gate-note):
+    // it says what is missing and takes the owner straight to the fix
+    <section className={`status-hero status-hero--bento tone-${summary.tone}${gate ? ' lead-gate-note' : ''}`} aria-live="polite">
       <span className={`status-dot dot-${summary.tone}${summary.pulse ? ' dot-pulse' : ''}`} aria-hidden />
       <div className="status-hero-text">
         <strong>{summary.label}</strong>
@@ -224,9 +227,15 @@ function StatusHero() {
           <span className="dim">No searches yet</span>
         )}
       </div>
-      <button className="btn btn-ghost btn-sm" onClick={() => navigate('activity')}>
-        Details
-      </button>
+      {gate ? (
+        <button className="btn btn-primary btn-sm" onClick={() => navigate('settings', leadFetchFixSection(gate))}>
+          Add what's missing
+        </button>
+      ) : (
+        <button className="btn btn-ghost btn-sm" onClick={() => navigate('activity')}>
+          Details
+        </button>
+      )}
     </section>
   );
 }
@@ -256,17 +265,19 @@ function SetupChecklist() {
   const templates = useAsync(getTemplates);
   if (!settings.data || !templates.data || !outreach) return null;
   const s = settings.data;
+  // the first two are what lead finding needs (core.lead_gate): until they are
+  // done, "Find leads now" stays off — so "done" here means the same thing
   const items: { done: boolean; label: string; hint: string; section: SettingsSection }[] = [
     {
-      done: !!s.company.name,
+      done: !!s.company.name && s.company.services.length > 0,
       label: 'Tell us about your business',
-      hint: 'Press Fetch next to your website — the assistant fills it in',
+      hint: 'Your name and what you sell — press Fetch next to your website and the assistant fills it in',
       section: 'business',
     },
     {
-      done: s.targeting.countries.length + s.targeting.cities.length + s.targeting.industries.length > 0,
+      done: s.targeting.icpMode === 'agency' || s.targeting.industries.length > 0,
       label: 'Choose who to find',
-      hint: 'Fetch fills this in too — or pick places and kinds of businesses',
+      hint: 'Fetch fills this in too — or pick the kinds of businesses to look for',
       section: 'targeting',
     },
     { done: outreach.smtpConfigured, label: 'Connect your email', hint: 'So approved emails are delivered', section: 'email' },

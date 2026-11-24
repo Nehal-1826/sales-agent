@@ -4,6 +4,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from .ai import llm_ready_for
+from .lead_gate import lead_fetch_message, missing_lead_data
 from .models import (Enrollment, OutreachTask, Sequence, SequenceStep, WhatsAppMessage,
                      AgentConfig, AppSettings, ChatMessage, EmailDraft, EmailTemplate, Lead, Mailbox,
                      PipelineRun, Potential, Reply, SearchProfile)
@@ -420,8 +421,9 @@ class SettingsSerializer(serializers.ModelSerializer):
             instance.target_countries = ', '.join(
                 str(c).strip() for c in (targeting.get('countries') or []) if str(c).strip())
         if 'industries' in targeting:
-            # buyer industries to search; empty = ICP auto-targeting (core.icp).
-            # Peer/agency terms are dropped at read time by the ICP engine.
+            # kinds of businesses to search, the ONLY source of "who to find"
+            # (peer terms are dropped by the ICP engine); empty = nobody to
+            # look for, so lead finding stays off (core.lead_gate)
             instance.target_industries = ', '.join(
                 str(i).strip() for i in (targeting.get('industries') or []) if str(i).strip())
         if 'cities' in targeting:
@@ -470,6 +472,19 @@ class SettingsSerializer(serializers.ModelSerializer):
                 instance.whatsapp_daily_cap = max(0, min(int(wa['dailyCap']), 200))
             except (TypeError, ValueError):
                 raise serializers.ValidationError({'whatsapp': 'Daily limit must be a whole number.'})
+        # autopilot is a way of fetching leads, so it needs the same proper
+        # data as "Find leads now" (core.lead_gate). Checked after the whole
+        # request is applied, so saving the details and switching on together
+        # works. Switching ON without the data is refused; but a save that
+        # takes the data away from an already-on autopilot is the owner's own
+        # profile and is always saved — autopilot simply goes off with it and
+        # the view tells them (autopilot_went_off).
+        missing = missing_lead_data(instance)
+        if missing and instance.runs_enabled:
+            if runs.get('enabled'):
+                raise serializers.ValidationError({'detail': lead_fetch_message(missing)})
+            instance.runs_enabled = False
+            self.autopilot_went_off = missing
         # never write pipeline_running_since from this (stale) copy — a bare
         # save() would clobber a live run lock held by a cycle (core.runlock)
         instance.save(update_fields=[

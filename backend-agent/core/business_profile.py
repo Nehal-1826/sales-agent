@@ -2,8 +2,10 @@
 works out what it sells and WHO BUYS from it.
 
 Used by the first-login wizard (paste a domain → both setup cards fill),
-Settings → Fetch, and the pipeline's fallback when a workspace never set
-'Who to find'.
+Settings → Fetch, "who should I find?" in chat and the wizard's last step.
+The result is always SAVED into the settings; the search itself never calls
+the model and never guesses (core.lead_gate keeps lead finding off until
+Who to find is saved).
 
 The local model is deliberately not free here. Measured on real sites, a
 1.7B model asked open questions invented countries and copied the prompt's
@@ -12,23 +14,21 @@ the pipeline. So:
   * services        — the model's reading of the page (far better than the
                       heading/JSON-LD heuristics, which stay as the fallback);
   * buyers          — CHOSEN from the fixed catalogue below (schema-locked),
-                      minus the seller's own kind, at most 4;
+                      minus the seller's own kind, the 3 best;
   * countries       — never from the model: only the domain's country TLD.
 A workspace whose customers are individuals gets no invented company leads.
 """
 
-import hashlib
-import json
 import logging
 import re
 from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
-from django.core.cache import cache
 
 from .ai import llm_json
 from .company_scrape import (BadUrl, company_details, fetch_public, normalize_url,
                              visible_text)
+from .icp import competitor_regexes
 from .models import AppSettings
 from .scraper import MAX_HTML, _registrable, name_from_domain
 
@@ -40,7 +40,6 @@ BRIEF_TEXT_CHARS = 2200
 MAX_HEADING_CHARS = 90
 MAX_HEADINGS = 18
 IDEAL_CLIENT_CHARS = 240
-BUYER_CACHE_TTL = 30 * 24 * 60 * 60    # 30 days: a profile is a stable question
 
 # Who to look for. These become search queries ('<kind> in <region>'), so
 # every entry is an organisation kind that has its own website.
@@ -405,35 +404,13 @@ def analyse_buyers(settings, about=''):
             'customer_type': inferred['customer_type']}
 
 
-def infer_buyers_for_settings(settings):
-    """Buyer kinds for a workspace with no 'Who to find', worked out by the
-    model from the workspace's own profile. Cached per profile; a failed
-    call is NOT cached (it is retried next cycle). [] when there is nothing
-    to go on or the model cannot tell — callers must then not guess."""
-    def facts():
-        return json.dumps([settings.company_name, settings.services,
-                           settings.company_description, settings.company_website],
-                          default=str)
-    fingerprint = hashlib.sha1(facts().encode('utf-8')).hexdigest()
-    key = f'icp:buyers:{settings.workspace_id or 0}:{fingerprint}'
-    cached = cache.get(key)
-    if cached is not None:
-        return cached
-    found = analyse_buyers(settings)
-    if found is None:
-        return []
-    # customers are individuals → no company leads (an empty answer IS cached)
-    cache.set(key, found['buyers'], BUYER_CACHE_TTL)
-    return found['buyers']
-
-
 def plan_targeting(about=''):
     """What 'Who to find' should be for this workspace, as a plan the owner
     can accept: {'buyers', 'countries', 'ideal', 'individuals', 'services'}
     or None when nothing could be worked out. Countries come only from the
     domain's own country code, and the workspace's own kind is never a
-    buyer (same guards as the search itself)."""
-    from .icp import competitor_regexes   # core.icp imports this module: keep it lazy
+    buyer (same guards as the search itself). The result is SAVED into Who
+    to find by the caller; the search itself never calls the model."""
     settings = AppSettings.load()
     found = analyse_buyers(settings, about=about)
     if not found:

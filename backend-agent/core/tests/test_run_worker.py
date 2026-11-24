@@ -31,6 +31,7 @@ class WorkerLoopTests(TenantTestCase):
     """Drives Command.handle for a bounded number of 30 s ticks."""
 
     def setUp(self):
+        self.lead_ready()      # the lead gate refuses to run an unconfigured workspace
         # the worker loops over every ACTIVE workspace; keep only this test's
         Workspace.all_tenants.exclude(pk=self.workspace.pk).update(is_active=False)
         # new workspaces are born PAUSED (setup gate) — these tests drive the

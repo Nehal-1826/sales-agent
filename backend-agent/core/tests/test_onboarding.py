@@ -63,15 +63,22 @@ class OnboardingStatusTests(TenantTestCase):
         self.assertFalse(status['needed'])
 
 
-def no_website_read(testcase):
+WIZARD_PLAN = {'buyers': ['university', 'research institute'], 'countries': [],
+               'ideal': 'Research institutes that want to publish.', 'individuals': False,
+               'services': ['Journal publishing']}
+
+
+def no_website_read(testcase, plan=WIZARD_PLAN):
     """These flows type every answer by hand: a bare domain at the website
-    step must take the 'saved, but the page can't be read' path — never the
-    network or the model."""
+    step must take the 'saved, but the page can't be read' path, and the
+    last step's "work out who to find from what you sell" must neither -
+    never the network or the model."""
     from core.company_scrape import BadUrl
-    patcher = mock.patch('core.onboarding.profile_from_domain',
-                         side_effect=BadUrl('That website answered HTTP 404.'))
-    patcher.start()
-    testcase.addCleanup(patcher.stop)
+    for patcher in (mock.patch('core.onboarding.profile_from_domain',
+                              side_effect=BadUrl('That website answered HTTP 404.')),
+                    mock.patch('core.onboarding.plan_targeting', return_value=plan)):
+        patcher.start()
+        testcase.addCleanup(patcher.stop)
 
 
 class OnboardingFlowTests(TenantTestCase):
@@ -555,9 +562,11 @@ class IcpStepTests(TenantTestCase):
 
 
 class RunsGateTests(TenantTestCase):
-    """New workspaces are born PAUSED; completing (or skipping) the setup
-    wizard is what turns the autopilot on — nothing scrapes leads before
-    the owner has configured the workspace."""
+    """New workspaces are born PAUSED; completing the setup wizard is what
+    turns the autopilot on — and only when the wizard actually leaves
+    proper data behind (company name, what it sells, who to find: core.
+    lead_gate). Finishing or skipping it with nothing typed keeps it off:
+    that used to switch it on, and an empty workspace then fetched leads."""
 
     def setUp(self):
         from billing.tests.test_entitlements import make_ws
@@ -569,12 +578,22 @@ class RunsGateTests(TenantTestCase):
         with workspace_context(self.u.workspace):
             self.assertFalse(AppSettings.load().runs_enabled)
 
-    def test_onboarding_done_enables_runs(self):
+    def test_onboarding_done_enables_runs_once_the_data_is_there(self):
         from core.onboarding import _save_state
         from core.tenancy import workspace_context
         with workspace_context(self.u.workspace):
+            s = AppSettings.load()
+            s.company_name, s.services, s.target_industries = 'Gate Co', ['Widgets'], 'startup'
+            s.save()
             _save_state(self.u, done=True)
             self.assertTrue(AppSettings.load().runs_enabled)
+
+    def test_onboarding_done_with_nothing_typed_keeps_runs_off(self):
+        from core.onboarding import _save_state
+        from core.tenancy import workspace_context
+        with workspace_context(self.u.workspace):
+            _save_state(self.u, done=True, skipped=True)
+            self.assertFalse(AppSettings.load().runs_enabled)
 
     def test_partial_setup_keeps_runs_paused(self):
         from core.onboarding import _save_state

@@ -519,9 +519,12 @@ class AppSettings(TenantOwned, Timestamped):
     # Lead targeting — comma-separated country names; empty = worldwide sweep
     target_countries = models.TextField(blank=True)
 
-    # Lead targeting — comma-separated BUYER industries; empty = the ICP engine
-    # (core.icp) auto-picks businesses that buy what we sell.  Peer/agency
-    # terms are always dropped so competitors can't be re-introduced here.
+    # Lead targeting — comma-separated BUYER industries = who to find.  Only
+    # this list is ever searched: empty means nobody to look for, and lead
+    # finding stays off until it is filled (core.lead_gate) — the Assistant
+    # can work it out from what the seller does (business_profile.plan_targeting),
+    # nothing guesses it at fetch time.  Peer/agency terms are always dropped
+    # in buyer mode so competitors can't be re-introduced here.
     target_industries = models.TextField(blank=True)
 
     # Lead targeting — comma-separated cities/towns/districts (e.g.

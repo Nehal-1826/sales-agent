@@ -14,6 +14,7 @@ import {
   MOCK_TEMPLATES,
   mockResponderReply,
 } from './mockData';
+import { toast } from '../components/feedback';
 import { attempt, downloadFile, inDemo, post, put, request } from './transport';
 import type { Result } from './transport';
 import type { TotpDevice, TotpDeviceList, TotpDeviceSetup } from './platform';
@@ -132,6 +133,7 @@ const DEMO_STATUS: PipelineStatus = {
   cycleStartedAt: null,
   workerOnline: false,
   nextRunInMinutes: 42,
+  leadFetch: { ready: true, missing: [], message: '' },
   lastRun: null,
 };
 
@@ -362,10 +364,16 @@ export async function getSettings(): Promise<SettingsState> {
   return request<SettingsState>('/settings/');
 }
 
-/** Partial save — send only the sections that changed. */
+/** Partial save — send only the sections that changed. When the save took the
+ *  proper data away while autopilot was on, the server switched it off and
+ *  says so in `notice`: the person is told here, once, whoever saved. */
 export async function putSettings(patch: Partial<SettingsState>): Promise<Result<SettingsState>> {
   if (await inDemo()) return demoFail();
-  return attempt(() => request<SettingsState>('/settings/', put(patch)));
+  return attempt(async () => {
+    const { notice, ...data } = await request<SettingsState & { notice?: string }>('/settings/', put(patch));
+    if (notice) toast.warn(notice); // "worked, but not fully": saved, autopilot went off
+    return data;
+  });
 }
 
 export interface SmtpConnectResult {
@@ -400,9 +408,13 @@ export async function createProfile(
   return attempt(() => request<SearchProfile>('/profiles/', post(profile)));
 }
 
-export async function activateProfile(id: number): Promise<Result<{ settings: SettingsState }>> {
+/** `notice` is present when the switch took the proper data away while
+ *  autopilot was on: the server switched it off and says so. */
+export async function activateProfile(id: number): Promise<Result<{ settings: SettingsState; notice?: string }>> {
   if (await inDemo()) return demoFail();
-  return attempt(() => request<{ settings: SettingsState }>(`/profiles/${id}/activate/`, post()));
+  return attempt(() =>
+    request<{ settings: SettingsState; notice?: string }>(`/profiles/${id}/activate/`, post()),
+  );
 }
 
 export async function getTemplates(): Promise<EmailTemplate[]> {

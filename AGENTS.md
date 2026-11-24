@@ -173,12 +173,40 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   targeting now carries `notes` = `icp_notes`) and `icp.buyer_industries`.
 - NO built-in "who to find" list any more (`icp.BUYER_INDUSTRIES` /
   `GIFTING_BUYER_INDUSTRIES` were deleted — one seller's customers handed to
-  every other seller filled workspaces with leads from the wrong line of work).
-  Order: the user's list → inferred by the model from the workspace's own site
-  (`infer_buyers_for_settings`, cached 30 days per profile) → `[]`, and the
-  cycle then SKIPS discovery with a plain "Search: SKIPPED" note. Never hand an
-  empty list to `search_queries_for_cycle` — it falls back to the legacy
-  `INDUSTRY_QUERIES`. Agency mode keeps its own default list.
+  every other seller filled workspaces with leads from the wrong line of work),
+  and nothing is INFERRED at fetch time either (`infer_buyers_for_settings`
+  removed): `icp.buyer_industries` = the saved list (peer terms dropped) or
+  `[]`. The model still works out who to find — from what the seller does
+  (`business_profile.plan_targeting`) — but only through a door that SAVES
+  the answer first: Settings → Fetch, the setup wizard, "who should I find?"
+  in chat. Agency mode keeps its own default list.
+- **Lead-finding gate** (`core/lead_gate.py`, migration 0045) — a workspace
+  without proper data cannot fetch leads. The owner found 726 garbage leads
+  (veterinary clinics, tattoo shops) in a journal publisher's workspace: the
+  setup wizard switched autopilot ON when it was finished OR skipped, whatever
+  the data, and the button was always live. "Proper data" = three SAVED
+  things: company name, at least one thing you sell, who to find (choosing
+  "partner agencies" counts; a list made only of businesses like the seller's
+  own does not). `missing_lead_data(settings)` is the ONE rule; enforced
+  before the run lock in `pipeline.run_pipeline` / `start_pipeline_async`
+  (so chat, API and both schedulers are covered), as 422 in `pipeline_run`,
+  as 400 in the settings serializer, in the chat `set_frequency` action and
+  in both scheduler ticks. `GET /api/pipeline/status/` carries `leadFetch
+  {ready, missing, message}`; the app reads it through
+  `status.leadFetchBlock` — "Find leads now" (TopBar + `CycleButton`, 7
+  places) is disabled with the message on hover, the status pill says "Lead
+  finding off", Home's status tile (`.lead-gate-note`) and the Leads page say
+  what is missing with an "Add what's missing" button, and the Autopilot
+  toggle is disabled. The wizard's finish/skip turns autopilot on only when
+  the data is there. Switching autopilot ON without the data is refused; a
+  save (or a saved-profile switch) that TAKES the data away while autopilot
+  is on is never refused — autopilot goes off with it and the response
+  carries `notice` (shown as a toast). The live status refreshes on every
+  settings save and on in-app navigation. Tests that start a cycle on a
+  fresh workspace call `self.lead_ready()` (`core/tests/base.py`) first.
+  E2E section "3d" in `scripts/e2e/flow.py` covers it (a workspace that has
+  not finished its wizard is taken from Home to the wizard on page load, so
+  the gate asks for Home again).
 - New workspaces start on the deployment's self-hosted model
   (`ai.default_ai_provider`, from `AI_PROVIDER`) — otherwise the AI, the
   AI-filled setup and the search silently do nothing for every workspace after

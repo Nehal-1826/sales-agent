@@ -12,6 +12,7 @@ from core.pipeline import run_pipeline
 
 class DraftSafetyTests(TenantTestCase):
     def setUp(self):
+        self.lead_ready()      # the lead gate refuses to run an unconfigured workspace
         self.user = User.objects.create_user(username='o', password='pass12345', role='owner')
         self.client = APIClient()
         self.client.credentials(HTTP_AUTHORIZATION=f'Token {Token.objects.create(user=self.user).key}')
@@ -158,6 +159,7 @@ class DraftFixRound1Tests(TenantTestCase):
     """Edit race, send-path hardening, admin action, pipeline candidate query."""
 
     def setUp(self):
+        self.lead_ready()      # the lead gate refuses to run an unconfigured workspace
         self.user = User.objects.create_user(username='o3', password='pass12345', role='owner')
         self.client = APIClient()
         self.client.credentials(HTTP_AUTHORIZATION=f'Token {Token.objects.create(user=self.user).key}')

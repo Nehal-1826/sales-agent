@@ -15,14 +15,14 @@ and answers three questions for the pipeline:
     3.  looks_like_competitor(...)→ fast heuristic gate applied to every
                                     discovered lead, works with NO AI key
 
-The user can override the industry list any time in Settings → Who to find
-(target_industries) — those are used. Without one, the local model works the
-buyers out from the workspace's own website; there is no built-in list.
+The user sets the industry list in Settings → Who to find (target_industries)
+— or the model's reading of the website is saved there (core.business_profile)
+— and only that is searched. There is no built-in list for buyers and no
+guessing: without a saved list nothing is searched (core.lead_gate keeps
+lead finding off until the setup is complete).
 """
 
 import re
-
-from .business_profile import infer_buyers_for_settings
 
 log = __import__('logging').getLogger(__name__)
 
@@ -173,18 +173,19 @@ def buyer_industries(settings):
 
     1. user override (Settings → Who to find), minus peer/competitor terms
        that would reintroduce competitors;
-    2. otherwise — worked out by the model from THIS workspace's own profile
-       (core.business_profile reads its website), minus the same peer terms.
+    2. otherwise NOTHING.
 
-    There is deliberately NO built-in list. The old fallback was one seller's
-    customers (clinics, yoga studios…) handed to every other seller, which
-    filled unrelated workspaces with leads from the wrong line of work. When
-    nothing can be worked out the answer is [] and the pipeline skips
-    discovery instead of guessing.
+    There is deliberately NO built-in list and NO guessing. The old fallback
+    was one seller's customers (clinics, yoga studios…) handed to every other
+    seller, which filled unrelated workspaces with leads from the wrong line
+    of work. Who to find means what was SAVED: the model's reading of a
+    website is saved into the settings first (Settings → Fetch, the setup
+    wizard, "who should I find?" in chat) — and a workspace with nothing
+    saved there does not find leads at all (core.lead_gate).
 
     AGENCY MODE is the exception: agencies are the target, so the override is
     used verbatim (the peer-guard would drop exactly the terms we want) and
-    the fallback is the agency-shop list above."""
+    choosing agencies with no list means the built-in agency-shop list."""
     if agency_mode(settings):
         raw = (getattr(settings, 'target_industries', '') or '').strip()
         if raw:
@@ -195,10 +196,7 @@ def buyer_industries(settings):
         picked = [i.strip() for i in re.split(r'[,\n]', raw) if i.strip()]
         guards = _never_search_regexes(settings) + list(competitor_regexes(settings))
         return _drop_peers(picked, guards, 'user industry override')
-    # the model already leaves out the seller's own kind; the vertical's own
-    # fingerprints are the second line of defence
-    return _drop_peers(list(infer_buyers_for_settings(settings) or []),
-                       list(competitor_regexes(settings)), 'inferred buyer')
+    return []
 
 
 def _drop_peers(picked, guards, what):

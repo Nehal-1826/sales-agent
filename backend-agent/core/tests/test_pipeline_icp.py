@@ -35,8 +35,6 @@ def fake_audit(name, website, prefer_country=''):
             'state': 'Maharashtra', 'country': 'India'}
 
 
-INFERRED_BUYERS = ['dental clinic', 'gym']
-
 MAPS_PLACE = {'name': 'Iron Gym', 'phone': '+91 98765 43210', 'website': '',
               'address': 'FC Road, Pune', 'rating': 4.5, 'reviews': 88,
               'category': 'Gym'}
@@ -64,9 +62,6 @@ def pipeline_patches():
         mock.patch('core.pipeline.apollo_enrich_domain', return_value={}),
         mock.patch('core.pipeline.apify_maps_available', return_value=False),
         mock.patch('core.pipeline.time.sleep', lambda *_: None),
-        # nobody set 'Who to find' here: the model is said to have read the
-        # seller's site and named these buyers (core.business_profile)
-        mock.patch('core.icp.infer_buyers_for_settings', return_value=list(INFERRED_BUYERS)),
     ]
 
 
@@ -77,7 +72,9 @@ class RunPipelineIcpTests(TenantTestCase):
         s.company_website = 'shailog.example'
         s.services = ['web design', 'SEO', 'digital marketing']
         s.target_countries = ''
-        s.target_industries = ''
+        # the workspace's SAVED Who to find (typed, or saved by Fetch / the
+        # wizard): with nothing saved the lead gate refuses to run at all
+        s.target_industries = 'dental clinic, gym'
         s.icp_mode = 'buyer'   # buyer-mode tests — agency-partner mode has its own suite
         s.ai_key = ''            # keyless — ICP heuristic is the only gate
         s.save()
@@ -140,10 +137,10 @@ class RunPipelineIcpTests(TenantTestCase):
         agents = {a['agent']: a['action'] for a in run.summary['agents']}
         self.assertIn('DuckDuckGo + Google Maps', agents['search'])
 
-    def test_who_to_find_came_from_the_website_says_so(self):
+    def test_the_saved_who_to_find_list_is_named_with_where_to_change_it(self):
         notes = ' | '.join(self._run().summary['notes'])
-        self.assertIn('worked out from your website', notes)
-        self.assertIn('Who to find', notes)      # and where to change it
+        self.assertIn('looking for dental clinic, gym', notes)
+        self.assertIn('your Who to find list', notes)          # and that it is theirs to change
 
     def test_a_who_to_find_the_user_typed_is_named_as_theirs(self):
         self.settings.target_industries = 'dental clinic, gym'
@@ -152,14 +149,17 @@ class RunPipelineIcpTests(TenantTestCase):
         self.assertIn('looking for dental clinic, gym', notes)
         self.assertNotIn('worked out from your website', notes)
 
-    def test_no_buyers_worked_out_skips_the_search_with_a_plain_note(self):
-        """The bug the owner hit: with nothing to go on, discovery used to
-        fall back to a fixed list of somebody else's customers (clinics, yoga
+    def test_the_cycle_itself_never_searches_without_a_saved_list(self):
+        """Defence in depth behind the lead gate: should a cycle ever start
+        with nobody to look for, discovery does not run - it used to fall
+        back to a fixed list of somebody else's customers (clinics, yoga
         studios…) and fill the CRM with leads from the wrong line of work."""
         search, maps = mock.Mock(return_value=DDG_RESULTS), mock.Mock(return_value=[MAPS_PLACE])
-        run = self._run(mock.patch('core.pipeline.search_companies', search),
-                        mock.patch('core.pipeline.discover_no_website_places', maps),
-                        mock.patch('core.icp.infer_buyers_for_settings', return_value=[]))
+        self.settings.target_industries = ''
+        self.settings.save()
+        with mock.patch('core.pipeline.check_lead_fetch_ready'):      # as if the gate had passed
+            run = self._run(mock.patch('core.pipeline.search_companies', search),
+                            mock.patch('core.pipeline.discover_no_website_places', maps))
         search.assert_not_called()
         maps.assert_not_called()
         self.assertFalse(Lead.objects.exists())
@@ -178,6 +178,9 @@ class RunPipelineIcpTests(TenantTestCase):
 
 
 class PerCycleNotesTests(TenantTestCase):
+    def setUp(self):
+        self.lead_ready()      # the lead gate refuses to run an unconfigured workspace
+
     def test_old_leads_without_email_are_not_counted_in_this_cycles_notes(self):
         from core.tests.test_runlock import quiet_cycle
         Lead.objects.create(company='OldNoMail', website='oldnomail.example', profiled=True,

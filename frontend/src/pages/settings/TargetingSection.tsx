@@ -36,7 +36,9 @@ export function TargetingSection({ settings, onSaved }: { settings: SettingsStat
     form.discard();
     onSaved(res.data.settings);
     void profiles.reload();
-    toast.success(`Now finding leads for “${p.name}”. The next search uses it.`);
+    // a profile with nobody to find switches autopilot off — never "now finding leads"
+    if (res.data.notice) toast.warn(res.data.notice);
+    else toast.success(`Now finding leads for “${p.name}”. The next search uses it.`);
   };
 
   const saveAsProfile = async () => {

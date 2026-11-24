@@ -56,15 +56,15 @@ class GiftingVerticalTests(SimpleTestCase):
         s = gifting_seller(company_description='Order via our website shrifragrance.in')
         self.assertEqual(icp.vertical(s), 'corporate_gifting')
 
-    def test_buyers_come_from_the_model_reading_this_seller(self):
-        """No built-in list: what to search is worked out from THIS seller's
-        own profile, and whatever comes back must be a real buyer — never a
-        gift-shop competitor or a web-agency peer."""
-        with mock.patch('core.icp.infer_buyers_for_settings',
-                        return_value=['event management company', 'IT company']) as infer:
-            buyers = icp.buyer_industries(gifting_seller())
-        infer.assert_called_once()
-        self.assertEqual(buyers, ['event management company', 'IT company'])
+    def test_buyers_are_only_what_this_seller_saved(self):
+        """No built-in list and no guessing: nothing saved means nobody to
+        look for; what is saved is used, minus this seller's own kind (a
+        gift shop is a competitor, never a lead)."""
+        s = gifting_seller()
+        self.assertEqual(icp.buyer_industries(s), [])
+        s.target_industries = 'event management company, gift shop, real estate builder'
+        buyers = icp.buyer_industries(s)
+        self.assertEqual(buyers, ['event management company', 'real estate builder'])
         for industry in buyers:
             self.assertFalse(icp.NEVER_SEARCH_INDUSTRIES.search(industry),
                              msg=f'{industry} is a web-agency term')
@@ -129,34 +129,28 @@ class VerticalTests(SimpleTestCase):
 
 
 class BuyerIndustryTests(SimpleTestCase):
-    """Who to search for. There is NO built-in list any more: it was one
-    seller's customers (clinics, yoga studios…) handed to every other
-    seller, which filled unrelated workspaces with leads from the wrong
-    line of work. With no 'Who to find' set, the model reads the
-    workspace's own profile; if it can't tell, nothing is searched."""
+    """Who to search for: only the user's SAVED 'Who to find' list. There is
+    no built-in list (it was one seller's customers - clinics, yoga studios -
+    handed to every other seller, which filled unrelated workspaces with
+    leads from the wrong line of work) and no guessing, not even by the
+    model: its reading of a website is SAVED into the list first (Fetch,
+    the wizard, "who should I find?"), and a workspace with nothing saved
+    does not find leads at all (core.lead_gate)."""
 
-    def test_no_override_is_inferred_from_this_workspace(self):
-        with mock.patch('core.icp.infer_buyers_for_settings',
-                        return_value=['school', 'college']) as infer:
-            self.assertEqual(icp.buyer_industries(web_seller()), ['school', 'college'])
-        infer.assert_called_once()
-
-    def test_inferred_buyers_get_the_same_peer_guard(self):
-        with mock.patch('core.icp.infer_buyers_for_settings',
-                        return_value=['web design agency', 'dental clinic']):
-            self.assertEqual(icp.buyer_industries(web_seller()), ['dental clinic'])
-
-    def test_model_silent_means_no_search_not_a_guess(self):
-        with mock.patch('core.icp.infer_buyers_for_settings', return_value=[]):
+    def test_no_saved_list_means_nobody_to_look_for(self):
+        with mock.patch('core.ai.llm_json') as ask:          # and nothing asks the model
             self.assertEqual(icp.buyer_industries(web_seller()), [])
             self.assertEqual(icp.buyer_industries(gifting_seller()), [])
+        ask.assert_not_called()
 
-    def test_user_override_wins_and_the_model_is_not_asked(self):
+    def test_the_saved_list_is_used_as_given(self):
         s = web_seller(target_industries='dental clinic, gym, boutique hotel')
-        with mock.patch('core.icp.infer_buyers_for_settings') as infer:
-            self.assertEqual(icp.buyer_industries(s),
-                             ['dental clinic', 'gym', 'boutique hotel'])
-        infer.assert_not_called()
+        self.assertEqual(icp.buyer_industries(s), ['dental clinic', 'gym', 'boutique hotel'])
+
+    def test_choosing_partner_agencies_with_no_list_means_the_agency_list(self):
+        s = web_seller()
+        s.icp_mode = 'agency'
+        self.assertEqual(icp.buyer_industries(s), list(icp.AGENCY_TARGET_INDUSTRIES))
 
     def test_override_drops_agency_terms(self):
         s = web_seller(target_industries='dental clinic, web design agency, seo agency, gym')

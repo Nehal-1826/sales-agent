@@ -4,6 +4,7 @@ import { PageHeader } from '../components/ui';
 import { getSettings, isDemo } from '../lib/api';
 import { useAsync } from '../lib/hooks';
 import { navigate } from '../lib/router';
+import { useWorkspaceStatus } from '../lib/status';
 import type { SettingsSection, SettingsState } from '../lib/types';
 import { AccountSection } from './settings/AccountSection';
 import { TwoFactorSection } from './settings/TwoFactorSection';
@@ -42,10 +43,19 @@ export function SettingsPage({ section: raw }: { section: string }) {
   const section: SettingsSection = SECTIONS.some((s) => s.key === raw) ? (raw as SettingsSection) : 'business';
   const loaded = useAsync(getSettings);
   const [settings, setSettings] = useState<SettingsState | null>(null);
+  const status = useWorkspaceStatus();
 
   useEffect(() => {
     if (loaded.data) setSettings(loaded.data);
   }, [loaded.data]);
+
+  // a saved setting can switch lead finding on or off (autopilot, or the
+  // setup gaining/losing proper data) — the live status follows at once
+  // instead of at its next poll
+  const onSaved = (s: SettingsState) => {
+    setSettings(s);
+    void status.refresh();
+  };
 
   return (
     <div className="page">
@@ -86,21 +96,21 @@ export function SettingsPage({ section: raw }: { section: string }) {
           ) : !settings ? (
             <LoadError message={loaded.error ?? 'Settings are unavailable.'} onRetry={() => void loaded.reload()} />
           ) : section === 'business' ? (
-            <BusinessSection settings={settings} onSaved={setSettings} />
+            <BusinessSection settings={settings} onSaved={onSaved} />
           ) : section === 'targeting' ? (
-            <TargetingSection settings={settings} onSaved={setSettings} />
+            <TargetingSection settings={settings} onSaved={onSaved} />
           ) : section === 'email' ? (
-            <EmailSection settings={settings} onSaved={setSettings} />
+            <EmailSection settings={settings} onSaved={onSaved} />
           ) : section === 'mailboxes' ? (
-            <MailboxesSection settings={settings} onSaved={setSettings} />
+            <MailboxesSection settings={settings} onSaved={onSaved} />
           ) : section === 'followups' ? (
-            <FollowupsSection settings={settings} onSaved={setSettings} />
+            <FollowupsSection settings={settings} onSaved={onSaved} />
           ) : section === 'whatsapp' ? (
-            <WhatsAppSection settings={settings} onSaved={setSettings} />
+            <WhatsAppSection settings={settings} onSaved={onSaved} />
           ) : section === 'schedule' ? (
-            <ScheduleSection settings={settings} onSaved={setSettings} />
+            <ScheduleSection settings={settings} onSaved={onSaved} />
           ) : (
-            <AdvancedSection settings={settings} onSaved={setSettings} />
+            <AdvancedSection settings={settings} onSaved={onSaved} />
           )}
         </div>
       </div>

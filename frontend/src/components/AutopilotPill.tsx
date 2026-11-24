@@ -1,4 +1,4 @@
-import { useWorkspaceStatus } from '../lib/status';
+import { leadFetchBlock, useWorkspaceStatus } from '../lib/status';
 import type { RunFrequency } from '../lib/types';
 
 export const FREQUENCY_LABEL: Record<RunFrequency, string> = {
@@ -10,7 +10,7 @@ export const FREQUENCY_LABEL: Record<RunFrequency, string> = {
 
 type Tone = 'success' | 'accent' | 'warn' | 'gray' | 'danger';
 
-/** One honest sentence about the robot: running now / on / paused / offline. */
+/** One honest sentence about the robot: running now / on / paused / off / offline. */
 export function useAutopilotSummary(demo = false): { tone: Tone; label: string; detail: string; pulse: boolean } {
   const { pipeline, error } = useWorkspaceStatus();
   if (demo) return { tone: 'gray', label: 'Demo data', detail: 'Offline demo: nothing here is real.', pulse: false };
@@ -18,6 +18,9 @@ export function useAutopilotSummary(demo = false): { tone: Tone; label: string; 
   if (!pipeline) return { tone: 'gray', label: 'Checking…', detail: '', pulse: false };
   if (pipeline.cycleRunning)
     return { tone: 'accent', label: 'Searching now', detail: 'Finding and researching new companies.', pulse: true };
+  // the setup has no proper data yet: nothing can fetch leads, not even autopilot
+  const gate = leadFetchBlock(pipeline);
+  if (gate) return { tone: 'warn', label: 'Lead finding off', detail: gate.message, pulse: false };
   if (!pipeline.autopilot)
     return { tone: 'gray', label: 'Autopilot paused', detail: 'Searches only run when you start one.', pulse: false };
   if (!pipeline.workerOnline)

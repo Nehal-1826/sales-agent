@@ -32,6 +32,7 @@ from core.models import AppSettings, PipelineRun, Workspace
 from core.inbox import POLL_EVERY, poll_all_workspaces
 from core.outbox import drain_all_workspaces
 from core.pipeline import FREQUENCY_MINUTES, PipelineBusy, run_pipeline
+from core.lead_gate import missing_lead_data
 from core.scheduler import start_report_scheduler
 from core.tenancy import workspace_context
 
@@ -125,6 +126,9 @@ class Command(BaseCommand):
         settings = AppSettings.load()
         if not settings.runs_enabled:
             return
+        if missing_lead_data(settings):
+            return  # no proper data (company name, what it sells, who to find):
+                    # lead finding is off until the setup is complete
         last = PipelineRun.objects.first()
         interval = FREQUENCY_MINUTES.get(settings.run_frequency, 60) * 60
         # measure from the run's END: started_at is the real cycle start,

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { toast } from '../components/feedback';
 import { errorMessage, getOutreachStatus, getPipelineStatus, runPipeline } from './api';
-import type { OutreachStatus, PipelineStatus } from './types';
+import type { LeadFetchStatus, OutreachStatus, PipelineStatus, SettingsSection } from './types';
 
 /**
  * One live picture of the workspace for the whole shell (sidebar, top bar,
@@ -32,6 +32,9 @@ export function WorkspaceStatusProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [cycleVersion, setCycleVersion] = useState(0);
   const wasRunning = useRef(false);
+  /** the latest status, for callers that act between two polls (startCycle) */
+  const latest = useRef<PipelineStatus | null>(null);
+  latest.current = pipeline;
   /** newest run id seen while idle — a finish only counts if a NEWER run shows up */
   const baseRunId = useRef(0);
   /** when we first saw "not running" while still waiting for the new run's record */
@@ -95,20 +98,33 @@ export function WorkspaceStatusProvider({ children }: { children: ReactNode }) {
       if (!stopped) schedule(RUNNING_MS);
     };
     schedule(0);
-    const onVisible = () => {
+    // back on the tab, or another page inside the app (the router announces
+    // both as popstate): the picture is refreshed at once — a setting fixed
+    // on one page must show on the next, not 15 s later
+    const onResume = () => {
       if (!document.hidden) void refresh();
     };
-    document.addEventListener('visibilitychange', onVisible);
+    document.addEventListener('visibilitychange', onResume);
+    window.addEventListener('popstate', onResume);
     return () => {
       stopped = true;
       generation += 1;
       window.clearTimeout(timer);
       kick.current = () => undefined;
-      document.removeEventListener('visibilitychange', onVisible);
+      document.removeEventListener('visibilitychange', onResume);
+      window.removeEventListener('popstate', onResume);
     };
   }, [refresh]);
 
   const startCycle = useCallback(async () => {
+    // lead finding is off until the setup has proper data (core.lead_gate).
+    // The server refuses the run anyway (422) — this keeps the click honest
+    // without a round trip, with the same words everywhere.
+    const gate = leadFetchBlock(latest.current);
+    if (gate) {
+      toast.error(gate.message);
+      return false;
+    }
     const res = await runPipeline();
     if (!res.ok) {
       toast.error(res.error);
@@ -133,4 +149,23 @@ export function useWorkspaceStatus(): WorkspaceStatus {
   const ctx = useContext(Ctx);
   if (!ctx) throw new Error('useWorkspaceStatus must be used inside WorkspaceStatusProvider');
   return ctx;
+}
+
+/** The lead-finding gate of a live status: what still blocks lead finding,
+ *  or null when nothing does (ready, not loaded yet, or an older server). */
+export function leadFetchBlock(pipeline: PipelineStatus | null | undefined): LeadFetchStatus | null {
+  const gate = pipeline?.leadFetch;
+  return gate && !gate.ready ? gate : null;
+}
+
+/** Same, from the live status — use it wherever "Find leads now" lives. */
+export function useLeadFetchBlock(): LeadFetchStatus | null {
+  const { pipeline } = useWorkspaceStatus();
+  return leadFetchBlock(pipeline);
+}
+
+/** Where the person fixes what is missing: the first Settings section named
+ *  by the gate (the business profile covers the name and what you sell). */
+export function leadFetchFixSection(gate: LeadFetchStatus): SettingsSection {
+  return gate.missing.length === 1 && gate.missing[0] === 'who' ? 'targeting' : 'business';
 }

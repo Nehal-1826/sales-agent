@@ -29,10 +29,12 @@ each one resolves var(--accent) in the page (computed color of a throwaway
 probe element) and compares against that, never against a literal color.
 """
 import io
+import json
 import os
 import re
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -275,6 +277,132 @@ with sync_playwright() as p:
     settings_api("PUT", {"targeting": original_targeting})
     check("settings targeting: the operator's own list is put back",
           settings_api("GET")["data"]["targeting"] == original_targeting)
+
+    # ── 3d. Lead finding is OFF until the setup has proper data ───────────
+    # The owner's rule: a workspace nobody set up must never fetch leads
+    # ("726 garbage leads … for none users"). Take "what you sell" away and
+    # the button, the server and autopilot all refuse and say why; put it
+    # back and everything returns. The operator's real settings are restored.
+    def api_call(method, path, body=None):
+        return page.evaluate(
+            """async ([method, path, body]) => {
+                const res = await fetch(path, {
+                    method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: 'Token ' + localStorage.getItem('agentic-ai:token'),
+                    },
+                    body: body ? JSON.stringify(body) : undefined,
+                });
+                let data = null;
+                try { data = await res.json(); } catch (e) { data = null; }
+                return { status: res.status, data };
+            }""",
+            [method, path, body],
+        )
+
+    def lead_gate():
+        return api_call("GET", "/api/pipeline/status/")["data"]["leadFetch"]
+
+    # The refused calls are made OUTSIDE the browser: a 4xx answer logs a console
+    # error and counts as a bad response in the hygiene checks at the end.
+    token = page.evaluate("() => localStorage.getItem('agentic-ai:token')")
+
+    def refused_call(method, path, body=None):
+        req = urllib.request.Request(
+            BASE + path, method=method,
+            data=json.dumps(body).encode() if body is not None else None,
+            headers={'Content-Type': 'application/json', 'Authorization': f'Token {token}'})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return r.status, json.loads(r.read() or b'null')
+        except urllib.error.HTTPError as exc:
+            return exc.code, json.loads(exc.read() or b'null')
+
+    original = settings_api("GET")["data"]
+    ready_before = lead_gate()["ready"]
+    settings_api("PUT", {"company": {"name": "Shailog Technologies", "services": ["Web design"]},
+                         "targeting": {"industries": ["dental clinic"]}})
+    check("lead gate: proper data allows lead finding", lead_gate() == {
+        "ready": True, "missing": [], "message": ""}, str(lead_gate()))
+
+    def go_home():
+        # a workspace that has not finished its setup wizard is taken from Home
+        # to the wizard when the page loads (App.tsx) — so ask for Home again
+        page.locator("button.nav-item", has_text="Home").first.click()
+        page.locator(".topbar-title", has_text="Home").wait_for(state="visible", timeout=30_000)
+        # the live status is polled; wait until it has caught up with the save
+        try:
+            page.wait_for_function(
+                "() => document.querySelectorAll('.lead-gate-note').length === 0"
+                " && !document.querySelector('button.topbar-run').disabled",
+                timeout=30_000)
+        except Exception:  # noqa: BLE001  — reported as a FAIL below, never aborts the gate
+            pass
+
+    go_home()
+    check("lead gate: 'Find leads now' is enabled with proper data",
+          page.locator("button.topbar-run").is_enabled())
+    check("lead gate: no warning with proper data", page.locator(".lead-gate-note").count() == 0)
+
+    settings_api("PUT", {"company": {"services": []}})              # nothing saved as "what you sell"
+    gate = lead_gate()
+    check("lead gate: without 'what you sell' it is not allowed", gate["ready"] is False, str(gate))
+    check("lead gate: it names what is missing", gate["missing"] == ["services"]
+          and "what you sell" in gate["message"], str(gate))
+    refused_status, refused_data = refused_call("POST", "/api/pipeline/run/?wait=1", {})
+    check("lead gate: the server refuses a run", refused_status == 422
+          and (refused_data or {}).get("missing") == ["services"], str(refused_data)[:200])
+    autopilot_status, autopilot_data = refused_call("PUT", "/api/settings/", {"runs": {"enabled": True}})
+    check("lead gate: autopilot cannot be switched on", autopilot_status == 400
+          and "what you sell" in str(autopilot_data), str(autopilot_data)[:200])
+    page.reload()
+    try:
+        page.locator("button.topbar-run").wait_for(state="visible", timeout=30_000)
+        page.wait_for_load_state("networkidle")
+    except Exception:  # noqa: BLE001  — reported as a FAIL below, never aborts the gate
+        pass
+    run_button = page.locator("button.topbar-run")
+    check("lead gate: 'Find leads now' is disabled", run_button.is_disabled())
+    check("lead gate: the disabled button says why", "what you sell" in (run_button.get_attribute("title") or ""),
+          run_button.get_attribute("title"))
+    check("lead gate: the status pill says lead finding is off",
+          "off" in safe_text(page.locator(".topbar .status-pill")).lower(),
+          safe_text(page.locator(".topbar .status-pill")))
+    # the notice lives in Home's status tile (one element, class lead-gate-note)
+    page.locator("button.nav-item", has_text="Home").first.click()
+    try:
+        page.locator(".lead-gate-note").wait_for(state="visible", timeout=30_000)
+    except Exception:  # noqa: BLE001  — reported as a FAIL below, never aborts the gate
+        pass
+    note = page.locator(".lead-gate-note")
+    check("lead gate: Home tells the owner what is missing",
+          note.count() == 1 and "what you sell" in safe_text(note), safe_text(note))
+    check("lead gate: Home offers the way to fix it",
+          page.locator(".lead-gate-note button", has_text="Add what's missing").count() == 1)
+    page.screenshot(path=str(SHOTS / "03d-lead-gate-off.png"))
+
+    settings_api("PUT", {"company": original["company"], "targeting": original["targeting"],
+                         "runs": original["runs"]})
+    page.reload()
+    try:
+        page.locator("button.topbar-run").wait_for(state="visible", timeout=30_000)
+        page.wait_for_load_state("networkidle")
+    except Exception:  # noqa: BLE001  — reported as a FAIL below, never aborts the gate
+        pass
+    check("lead gate: the operator's own settings are put back",
+          settings_api("GET")["data"]["company"] == original["company"]
+          and settings_api("GET")["data"]["targeting"] == original["targeting"]
+          and lead_gate()["ready"] == ready_before, str(lead_gate()))
+    # the status is polled: wait for it to agree with what was put back
+    try:
+        page.wait_for_function(
+            "(ready) => document.querySelector('button.topbar-run').disabled === !ready",
+            arg=ready_before, timeout=30_000)
+    except Exception:  # noqa: BLE001  — reported as a FAIL below, never aborts the gate
+        pass
+    check("lead gate: 'Find leads now' follows the settings again",
+          page.locator("button.topbar-run").is_enabled() == ready_before)
 
     # ── 4. Leads sub-tabs (pipeline-tab analog) ─────────────────────
     page.locator("button.nav-item", has_text="Leads").first.click()

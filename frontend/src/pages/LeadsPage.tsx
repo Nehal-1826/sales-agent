@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { CycleButton } from '../components/CycleButton';
 import { GlideSelect } from '../components/GlideSelect';
+import { LeadGateNote } from '../components/LeadGateNote';
 import { LeadBoard, STAGE_LABEL, leadStage } from '../components/LeadBoard';
 import { FitChip, LeadDrawer } from '../components/LeadDrawer';
 import { ReportPanel } from '../components/ReportPanel';
@@ -49,6 +50,8 @@ export function LeadsPage({ tab: rawTab }: { tab: string }) {
           </>
         }
       />
+
+      <LeadGateNote />
 
       <nav className="subtabs" aria-label="Leads views">
         {TABS.map((t) => (

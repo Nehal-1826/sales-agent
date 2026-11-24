@@ -20,6 +20,7 @@ from core.models import (
     PipelineRun, Potential, Reply, SearchProfile, User, Workspace,
 )
 from core.tenancy import current_workspace, workspace_context
+from core.tests.base import lead_ready
 
 
 def _client(user):
@@ -44,9 +45,12 @@ def _seed(ws, tag):
         run = PipelineRun.objects.create(summary={'tag': tag})
         s = AppSettings.load()
         s.company_name = f'{tag} Inc'
+        # proper data, so the lead gate (core.lead_gate) lets these workspaces run
+        s.services = [f'{tag} service']
+        s.target_industries = 'dental clinic'
         # apollo key: a secret that triggers no outbound call in any test
         s.apollo_api_key = f'{tag}-secret-key'
-        s.save(update_fields=['company_name', 'apollo_api_key'])
+        s.save(update_fields=['company_name', 'services', 'target_industries', 'apollo_api_key'])
     return {'lead': lead, 'draft': draft, 'pot': pot, 'reply': reply, 'tpl': tpl,
             'profile': prof, 'cfg': cfg, 'run': run}
 
@@ -317,6 +321,8 @@ class BackgroundThreadTests(TransactionTestCase):
         self.wb = Workspace.all_tenants.create(name='Beta', slug='beta')
         ensure_manual_subscription(self.wa)
         ensure_manual_subscription(self.wb)
+        with workspace_context(self.wa):
+            lead_ready()          # the lead gate refuses to run an unconfigured workspace
         with workspace_context(self.wb):
             Lead.objects.create(company='B-existing')
 

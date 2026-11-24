@@ -1,6 +1,8 @@
 import { toast } from '../../components/feedback';
 import { Field, Toggle } from '../../components/ui';
 import { putSettings, sendTestReport } from '../../lib/api';
+import { navigate } from '../../lib/router';
+import { leadFetchFixSection, useLeadFetchBlock } from '../../lib/status';
 import type { FrequentRuns, ReportConfig, RunFrequency, SettingsState } from '../../lib/types';
 import { SaveBar, useSectionForm } from './useSectionForm';
 
@@ -18,6 +20,9 @@ interface ScheduleForm {
 
 /** Schedule & reports — how often to search, and where the evening report goes. */
 export function ScheduleSection({ settings, onSaved }: { settings: SettingsState; onSaved: (s: SettingsState) => void }) {
+  // autopilot is a way of fetching leads: it stays off, with the reason,
+  // until the setup has proper data (core.lead_gate) — the server refuses too
+  const gate = useLeadFetchBlock();
   const form = useSectionForm<ScheduleForm>({ runs: settings.runs, report: settings.report }, async (v) => {
     const res = await putSettings({ runs: v.runs, report: v.report });
     if (res.ok) onSaved(res.data);
@@ -43,12 +48,23 @@ export function ScheduleSection({ settings, onSaved }: { settings: SettingsState
       <div className="settings-row">
         <div>
           <strong>Autopilot</strong>
-          <small>Search for new companies automatically. Turn off to only search when you ask.</small>
+          {gate ? (
+            <small>{gate.message}</small>
+          ) : (
+            <small>Search for new companies automatically. Turn off to only search when you ask.</small>
+          )}
+          {gate && (
+            <button className="link-btn schedule-gate-fix" onClick={() => navigate('settings', leadFetchFixSection(gate))}>
+              Add what's missing
+            </button>
+          )}
         </div>
         <Toggle
           checked={runs.enabled}
           onChange={(enabled) => form.setValue({ ...form.value, runs: { ...runs, enabled } })}
           label="Autopilot"
+          disabled={!!gate}
+          title={gate ? gate.message : undefined}
         />
       </div>
 

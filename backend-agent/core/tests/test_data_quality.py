@@ -187,7 +187,8 @@ class PipelineGateTests(TenantTestCase):
     def setUp(self):
         s = AppSettings.load()
         s.company_name, s.services = 'Shailog Technologies', ['web design', 'SEO']
-        s.icp_mode, s.target_industries, s.ai_key = 'buyer', '', ''
+        # who to find is saved: the lead gate (core.lead_gate) must let the cycle start
+        s.icp_mode, s.target_industries, s.ai_key = 'buyer', 'dental clinic', ''
         s.save()
         self.scalelist = mock.Mock(return_value='')
         self.apollo = mock.Mock(return_value={})

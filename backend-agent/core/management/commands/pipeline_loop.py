@@ -13,6 +13,7 @@ from django.core.management.base import BaseCommand
 
 from core.models import AppSettings, PipelineRun, Workspace
 from core.pipeline import FREQUENCY_MINUTES, PipelineBusy, run_pipeline
+from core.lead_gate import missing_lead_data
 from core.tenancy import workspace_context
 
 
@@ -41,6 +42,9 @@ class Command(BaseCommand):
         settings = AppSettings.load()
         if not settings.runs_enabled:
             return
+        if missing_lead_data(settings):
+            return  # no proper data (company name, what it sells, who to find):
+                    # lead finding is off until the setup is complete
         last = PipelineRun.objects.first()
         interval = FREQUENCY_MINUTES.get(settings.run_frequency, 60) * 60
         elapsed = (time.time() - last.started_at.timestamp()) if last else interval

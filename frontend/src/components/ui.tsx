@@ -58,10 +58,15 @@ export function Toggle({
   checked,
   onChange,
   label,
+  disabled = false,
+  title,
 }: {
   checked: boolean;
   onChange: (next: boolean) => void;
   label: string;
+  /** can't be flipped — say why in `title` */
+  disabled?: boolean;
+  title?: string;
 }) {
   return (
     <button
@@ -71,6 +76,8 @@ export function Toggle({
       aria-label={label}
       className={`toggle${checked ? ' on' : ''}`}
       onClick={() => onChange(!checked)}
+      disabled={disabled}
+      title={title}
     >
       <span className="toggle-knob" />
     </button>

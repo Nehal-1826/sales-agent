@@ -51,6 +51,12 @@ from .throttles import AdminSlugThrottle
 from .permissions import IsOtpSatisfied, IsWorkspaceAdmin, IsWorkspaceAdminOrReadOnly
 from .models import AgentConfig, AppSettings, ChatMessage, EmailDraft, EmailTemplate, Lead, Mailbox, PipelineRun, PlatformSession, Potential, Reply, SearchProfile, SlugAttempt, User
 from .pipeline import PipelineBusy, pipeline_status, run_pipeline, start_pipeline_async
+from .lead_gate import (
+    LeadFetchNotReady,
+    autopilot_went_off_message,
+    lead_fetch_status,
+    missing_lead_data,
+)
 from .reports import _resolve_recipients, send_daily_report
 from .runlock import running_since
 from .warmup_bridge import mint_warmup_token
@@ -490,7 +496,13 @@ def settings_view(request):
         serializer = SettingsSerializer(obj, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        return Response(serializer.data)
+        data = serializer.data
+        # the save took the proper data away while autopilot was on: it went
+        # off with the save, and the person is told (core.lead_gate)
+        went_off = getattr(serializer, 'autopilot_went_off', None)
+        if went_off:
+            data['notice'] = autopilot_went_off_message(went_off)
+        return Response(data)
     return Response(SettingsSerializer(obj).data)
 
 
@@ -523,10 +535,23 @@ def profile_activate(request, profile_id):
     if profile is None:
         return Response({'detail': 'profile not found'}, status=404)
     profile.apply()
-    return Response({
+    settings = AppSettings.load()
+    # the switch rewrote who to find: the same rule as a Settings save — if it
+    # took the proper data away while autopilot was on, autopilot goes off
+    # with it and the person is told (core.lead_gate)
+    went_off = None
+    if settings.runs_enabled:
+        went_off = missing_lead_data(settings) or None
+        if went_off:
+            settings.runs_enabled = False
+            settings.save(update_fields=['runs_enabled', 'updated_at'])
+    data = {
         'profile': SearchProfileSerializer(profile).data,
-        'settings': SettingsSerializer(AppSettings.load()).data,
-    })
+        'settings': SettingsSerializer(settings).data,
+    }
+    if went_off:
+        data['notice'] = autopilot_went_off_message(went_off)
+    return Response(data)
 
 
 # ------------------------------------------------------------------
@@ -1347,7 +1372,14 @@ def pipeline_status_view(request):
 @permission_classes([IsWorkspaceAdmin])
 def pipeline_run(request):
     """Start one cycle.  Default: background thread → 202 and the UI polls
-    /pipeline/status/.  ?wait=1 runs synchronously (scripts)."""
+    /pipeline/status/.  ?wait=1 runs synchronously (scripts).
+
+    422 when the workspace has no proper data (company name, what it sells,
+    who to find): lead finding stays off until the setup is complete — the
+    reply says what is missing."""
+    gate = lead_fetch_status()
+    if not gate['ready']:
+        return Response({'detail': gate['message'], 'missing': gate['missing']}, status=422)
     triggered_by = request.data.get('triggeredBy', 'manual')
     busy = Response({'detail': 'A cycle is already running — results appear when it finishes.'},
                     status=409)

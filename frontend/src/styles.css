@@ -1064,6 +1064,19 @@ input[type='radio'] {
   transform: translateX(20px);
 }
 
+/* can't be flipped yet (reason on hover) — e.g. autopilot while the setup
+   has no proper data */
+.toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* the reason sits under "Autopilot", with the way to the fix below it */
+.settings-row .schedule-gate-fix {
+  margin-top: 4px;
+  align-self: flex-start;
+}
+
 .tags-field {
   display: flex;
   flex-direction: column;

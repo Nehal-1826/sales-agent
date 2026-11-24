@@ -38,6 +38,7 @@ from .gmaps import (
 )
 from .health import status_of
 from .icp import agency_mode, buyer_industries, looks_like_competitor, our_services_text, vertical
+from .lead_gate import check_lead_fetch_ready, lead_fetch_status
 from .models import (AgentConfig, AppSettings, EmailDraft, EmailTemplate, Lead, PipelineRun, Potential,
                      Suppression)
 from .discovery import QUERIES_HARD_CAP, expand_queries, last_discovery_stats, next_widen_level
@@ -610,7 +611,11 @@ def check_run_quota():
 def run_pipeline(triggered_by='manual'):
     """Run one orchestrator cycle synchronously.  Raises PipelineBusy when a
     cycle is already running anywhere (API, chat, worker).  Raises the billing
-    402 errors (unpaid / runs-per-day / lead quota) BEFORE taking the lock."""
+    402 errors (unpaid / runs-per-day / lead quota) BEFORE taking the lock.
+    Raises LeadFetchNotReady first of all when the workspace has no proper
+    data (company name, what it sells, who to find) - a workspace nobody
+    set up must never fetch leads."""
+    check_lead_fetch_ready()
     check_run_quota()
     token = acquire_run_lock()
     if not token:
@@ -631,7 +636,9 @@ def run_pipeline(triggered_by='manual'):
 def start_pipeline_async(triggered_by='manual'):
     """Take the lock now (so callers can answer 'busy' immediately), run the
     cycle on a daemon thread, release when done.  Returns False when busy.
-    Raises the billing 402 errors before taking the lock."""
+    Raises LeadFetchNotReady (no proper data) and the billing 402 errors
+    before taking the lock."""
+    check_lead_fetch_ready()
     check_run_quota()
     token = acquire_run_lock()
     if not token:
@@ -677,11 +684,15 @@ def _run_cycle(triggered_by):
     # Every cycle searches REGIONS_PER_CYCLE different countries, so the CRM
     # spreads across the world instead of one region at a time — unless the
     # user set target countries (Settings → Lead Targeting), then only those.
-    # Who to search for (core.icp): BUSINESSES THAT BUY what we sell — the
-    # user's 'Who to find' list, else worked out from their own website.
+    # Who to search for (core.icp): BUSINESSES THAT BUY what we sell — ONLY
+    # the saved 'Who to find' list (the gate in core.lead_gate has already
+    # made sure it exists; the model's reading of a website is saved into the
+    # settings first, never used from here).
     # Never our own vertical, and never a fixed list: with nobody to look
     # for, the cycle does NOT search (it used to fall back to a built-in
-    # list of somebody else's customers).
+    # list of somebody else's customers). Never pass an empty list to
+    # search_queries_for_cycle — the scraper still falls back to
+    # INDUSTRY_QUERIES.
     settings = AppSettings.load()
     icp_industries = buyer_industries(settings)
     target_cities = [c.strip() for c in settings.target_cities.split(',') if c.strip()]
@@ -689,16 +700,13 @@ def _run_cycle(triggered_by):
     base_queries = []
     if not icp_industries:
         summary['notes'].append(
-            "Search: SKIPPED — I couldn't work out who buys from you, so I didn't guess. "
+            "Search: SKIPPED — there is no Who to find list to search with, so I didn't guess. "
             'Tell me in Settings → Who to find, or paste your website to the Assistant.')
     else:
         who = ', '.join(icp_industries[:6]) + ('…' if len(icp_industries) > 6 else '')
         where = ', '.join(target_cities) or ', '.join(target_countries) or 'worldwide'
         if agency_mode(settings):
             origin, guard = 'agency partners', 'the competitor filter is off for peers'
-        elif not getattr(settings, 'target_industries', ''):
-            origin = 'worked out from your website — change it in Settings → Who to find'
-            guard = 'competitor/peer businesses are filtered out'
         else:
             origin, guard = 'your Who to find list', 'competitor/peer businesses are filtered out'
         summary['notes'].append(f'Search: looking for {who} in {where} ({origin}); {guard}')
@@ -1252,4 +1260,7 @@ def pipeline_status():
         # no countdown while autopilot is off — nothing is scheduled
         'nextRunInMinutes': None if due or not settings.runs_enabled
                             else max(0, int(next_run_minutes - (elapsed or 0))),
+        # whether this workspace may find leads at all (proper data), and if
+        # not, what is missing — the app disables "Find leads now" on it
+        'leadFetch': lead_fetch_status(settings),
     }

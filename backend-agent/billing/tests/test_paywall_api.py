@@ -8,7 +8,7 @@ from rest_framework.test import APIClient
 
 from billing.models import Invoice, Subscription
 from billing.tests.test_entitlements import make_ws
-from core.models import EmailDraft, Lead, Mailbox, PipelineRun, User
+from core.models import AppSettings, EmailDraft, Lead, Mailbox, PipelineRun, User
 from core.tenancy import workspace_context
 
 
@@ -58,6 +58,19 @@ class QuotaApiTests(TestCase):
     def setUp(self):
         self.ws = make_ws('qa')   # startups, paid
         self.c, self.user = client_for(self.ws, 'qa_owner')
+        # proper data, so a run gets past the lead gate (core.lead_gate) to the
+        # quota these tests are about — the gate answers before any quota does
+        with workspace_context(self.ws):
+            AppSettings.objects.create(company_name='Acme Journals',
+                                       services=['Journal publishing'],
+                                       target_industries='university')
+
+    def test_pipeline_run_refused_before_any_quota_when_the_data_is_missing(self):
+        with workspace_context(self.ws):
+            AppSettings.objects.update(company_name='')
+        r = self.c.post('/api/pipeline/run/', {}, format='json')
+        self.assertEqual(r.status_code, 422)
+        self.assertEqual(r.json()['missing'], ['company_name'])
 
     def test_mailbox_create_quota(self):
         body = {'fromEmail': 'a@x.test', 'smtpHost': 'smtp.x.test', 'smtpUser': 'a@x.test',

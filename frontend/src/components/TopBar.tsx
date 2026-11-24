@@ -1,5 +1,5 @@
 import { AutopilotPill } from './AutopilotPill';
-import { useWorkspaceStatus } from '../lib/status';
+import { leadFetchBlock, useWorkspaceStatus } from '../lib/status';
 import type { PageKey } from '../lib/types';
 
 const TITLES: Record<PageKey, string> = {
@@ -18,6 +18,8 @@ const TITLES: Record<PageKey, string> = {
 export function TopBar({ page, onMenu, demo }: { page: PageKey; onMenu: () => void; demo: boolean }) {
   const { pipeline, startCycle } = useWorkspaceStatus();
   const running = !!pipeline?.cycleRunning;
+  // off, with the reason on hover, until the setup has proper data (core.lead_gate)
+  const gate = leadFetchBlock(pipeline);
 
   return (
     <header className="topbar">
@@ -32,8 +34,8 @@ export function TopBar({ page, onMenu, demo }: { page: PageKey; onMenu: () => vo
         <button
           className="btn btn-primary btn-sm topbar-run"
           onClick={() => void startCycle()}
-          disabled={running || demo || !pipeline}
-          title={running ? 'A search is already running' : 'Find and research new companies now'}
+          disabled={running || demo || !pipeline || !!gate}
+          title={running ? 'A search is already running' : gate ? gate.message : 'Find and research new companies now'}
         >
           {running ? 'Searching…' : 'Find leads now'}
         </button>

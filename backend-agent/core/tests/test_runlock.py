@@ -20,6 +20,9 @@ def quiet_cycle():
 
 
 class RunLockTests(TenantTestCase):
+    def setUp(self):
+        self.lead_ready()      # the lead gate refuses to run an unconfigured workspace
+
     def test_second_acquire_fails_until_release(self):
         self.assertTrue(runlock.acquire_run_lock())
         self.assertFalse(runlock.acquire_run_lock())
@@ -85,6 +88,9 @@ class RunLockTests(TenantTestCase):
 
 
 class StartAsyncTests(TenantTestCase):
+    def setUp(self):
+        self.lead_ready()      # the lead gate refuses to run an unconfigured workspace
+
     def test_returns_false_when_busy(self):
         runlock.acquire_run_lock()
         with mock.patch('core.pipeline.threading.Thread') as thread:
@@ -131,6 +137,7 @@ class StartAsyncTests(TenantTestCase):
 
 class RunEndpointTests(TenantTestCase):
     def setUp(self):
+        self.lead_ready()      # the lead gate refuses to run an unconfigured workspace
         user = User.objects.create_user(username='o', password='pass12345', role='owner')
         self.client = APIClient()
         self.client.credentials(HTTP_AUTHORIZATION=f'Token {Token.objects.create(user=user).key}')

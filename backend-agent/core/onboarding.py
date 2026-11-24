@@ -21,6 +21,8 @@ import re
 
 from .ai import llm_available
 from .business_profile import CATALOGUE, BadUrl, apply_profile, plan_targeting, profile_from_domain
+from .icp import agency_mode, buyer_industries
+from .lead_gate import missing_lead_data
 from .permissions import is_privileged
 from .models import AppSettings, SearchProfile
 
@@ -202,10 +204,14 @@ def _save_state(user, **patch):
     user.save(update_fields=['onboarding'])
     # setup finished → the workspace's autopilot may start running (new
     # workspaces are born PAUSED so nothing scrapes before configuration).
+    # ONLY with proper data: finishing - or skipping - the wizard with
+    # nothing typed used to switch it on too, and an empty workspace then
+    # went looking for leads (core.lead_gate).
     # get_or_create first: a fresh workspace may have no settings row yet.
     if patch.get('done') and getattr(user, 'workspace_id', None):
-        AppSettings.all_tenants.get_or_create(workspace_id=user.workspace_id)
-        AppSettings.all_tenants.filter(workspace_id=user.workspace_id).update(runs_enabled=True)
+        settings, _ = AppSettings.all_tenants.get_or_create(workspace_id=user.workspace_id)
+        ready = not missing_lead_data(settings)
+        AppSettings.all_tenants.filter(workspace_id=user.workspace_id).update(runs_enabled=ready)
     return state
 
 
@@ -530,9 +536,29 @@ def _question_message(step_index, prefix=''):
     return text
 
 
+def _work_out_who_to_find(settings):
+    """"buyers → India → skip" leaves Who to find empty. Work it out from
+    what the company sells and SAVE it; returns what was saved ('' when
+    nothing could be). The search never guesses who to find (core.lead_gate),
+    so without this the wizard would end with lead finding switched off."""
+    if agency_mode(settings) or buyer_industries(settings) or not settings.services:
+        return ''
+    plan = plan_targeting(about=', '.join(settings.services))
+    if not plan or not plan['buyers']:
+        return ''
+    settings.target_industries = ', '.join(plan['buyers'])
+    if plan['countries'] and not (settings.target_countries or '').strip():
+        settings.target_countries = ', '.join(plan['countries'])
+    if plan['ideal'] and not settings.icp_notes:
+        settings.icp_notes = plan['ideal']
+    settings.save(update_fields=['target_industries', 'target_countries', 'icp_notes', 'updated_at'])
+    return settings.target_industries
+
+
 def _finish(settings, user):
     """Wizard complete: snapshot the chat-set targeting as the active
     profile so one-click switching starts from a true picture."""
+    who = _work_out_who_to_find(settings)
     _save_state(user, done=True)
     answers = _load_state(user).get('answers') or {}
     profile, _ = SearchProfile.objects.get_or_create(
@@ -545,8 +571,20 @@ def _finish(settings, user):
     SearchProfile.objects.exclude(pk=profile.pk).update(is_active=False)
     profile.is_active = True
     profile.save()
+    if missing_lead_data(settings):
+        # the same rule _save_state used to leave autopilot off: the setup is incomplete
+        return (
+            'That\'s the questions done — but I can\'t find leads for you yet: who to find is '
+            'not set, so lead finding is switched off. Tell me which kinds of businesses buy '
+            'from you, or say "who should I find?" and I\'ll work it out from your website. '
+            'You can also add it in Settings → Who to find.'
+        )
+    head = 'That\'s everything — you\'re set up! 🎉 '
+    if who:
+        head += (f'I worked out who to find from what you sell: {who}. '
+                 'Change it any time in Settings → Who to find. ')
     return (
-        'That\'s everything — you\'re set up! 🎉 Here\'s what I\'ll do: discover '
+        head + 'Here\'s what I\'ll do: discover '
         f'{answers.get("target_mode", "buyer") == "agency" and "agency partners" or "buyer businesses"} '
         f'in {settings.target_countries or "a worldwide sweep"}, draft the outreach emails, and wait '
         'for your approval before anything sends. '

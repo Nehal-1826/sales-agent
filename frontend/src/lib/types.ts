@@ -453,7 +453,7 @@ export type IcpMode = 'buyer' | 'agency';
 export interface TargetingState {
   countries: string[];
   industries: string[];
-  cities: string[]; // cities win over countries; [] industries = the model works out who buys (core.icp)
+  cities: string[]; // cities win over countries; [] industries = nobody to look for, so lead finding stays off
   icpMode: IcpMode;
   /** One line about the ideal customer — steers lead vetting and every email. */
   notes?: string;
@@ -492,6 +492,16 @@ export interface OnboardingState {
   progress: string;
 }
 
+/** Whether this workspace may find leads yet (core.lead_gate): lead finding is
+ *  off until three things are SAVED — company name, what you sell, who to find. */
+export interface LeadFetchStatus {
+  ready: boolean;
+  /** what is still missing: 'company_name' | 'services' | 'who' */
+  missing: string[];
+  /** plain words — what is missing and where to add it ('' when ready) */
+  message: string;
+}
+
 /** Live loop state — GET /api/pipeline/status/. */
 export interface PipelineStatus {
   autopilot: boolean; // Settings → Schedule: automatic runs on/off
@@ -500,6 +510,8 @@ export interface PipelineStatus {
   cycleStartedAt: string | null;
   workerOnline: boolean; // background worker heartbeat is fresh
   nextRunInMinutes: number | null;
+  /** absent only on an older server (mid-deploy) — that server still refuses */
+  leadFetch?: LeadFetchStatus;
   lastRun: {
     id: number;
     at: string | null;

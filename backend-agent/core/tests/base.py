@@ -11,13 +11,32 @@ from unittest import mock
 
 from django.test import TestCase
 
-from core.models import Workspace
+from core.models import AppSettings, Workspace
 from billing.services import ensure_manual_subscription
 from core.tenancy import reset_workspace, set_workspace
 
 
+def lead_ready(**overrides):
+    """Give the current workspace proper data so lead finding is allowed
+    (core.lead_gate): a company name, something it sells and who to find.
+    A test that starts a cycle on a fresh workspace calls this first — the
+    gate refuses to run on an empty one, as it should."""
+    s = AppSettings.load()
+    s.company_name = 'Acme Journals'
+    s.services = ['Journal publishing']
+    s.icp_mode = 'buyer'
+    s.target_industries = 'university'
+    for field, value in overrides.items():
+        setattr(s, field, value)
+    s.save()
+    return s
+
+
 class TenantTestCase(TestCase):
     workspace_slug = 'test'
+
+    def lead_ready(self, **overrides):
+        return lead_ready(**overrides)
 
     def _pre_setup(self):
         super()._pre_setup()

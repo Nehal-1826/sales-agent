@@ -7,6 +7,7 @@ from typing import Annotated, Any
 import bcrypt
 from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -86,7 +87,16 @@ async def _provision_bridge_user(session: AsyncSession, claims: dict[str, Any]) 
             onboarding_status=OnboardingStatus.mailbox_pending,
         )
         session.add(user)
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError:
+            # A first sign-in fires several requests at once and each one
+            # got here with "no user yet"; another of them inserted this
+            # email first. Take its row instead of failing with a 500.
+            await session.rollback()
+            user = (
+                await session.execute(select(User).where(func.lower(User.email) == email))
+            ).scalar_one()
     return user
 
 

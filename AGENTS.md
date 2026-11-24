@@ -31,7 +31,7 @@ Brand: **WarmPulse**, accent theme **orange** (`#f97316` family — restored
 - `whatsapp-sidecar/` — WhatsApp runtime service (node). `warmpulse-mobile/` — RN app.
 - `ops/` — gateway nginx (`/api/`→django:8000, `/wp-api/`→fastapi:8001 rewritten
   to its internal `/api/`), db init. Root `docker-compose.yml` = full stack.
-- `scripts/e2e/flow.py` — the Playwright gate (131 checks; run before every push).
+- `scripts/e2e/flow.py` — the Playwright gate (132 checks; run before every push).
 - `docs/superpowers/` — specs + plans (foundation, shell-ux batch, warmup dashboards).
 
 ## Commands (local dev, Windows Git Bash — quote paths, space in "Devesh B")
@@ -70,8 +70,13 @@ The shared bridge secret must be **32+ chars** and identical on both backends
 
 - One login: Django identity (workspaces, OTP, billing). `POST /api/auth/warmup-token/`
   mints an HS256 `iss=agent-bridge` JWT (12h) — FastAPI auto-provisions passwordless
-  users from it (both auth dependencies guard foreign `iss`; kill-switch
-  `AGENT_BRIDGE_ENABLED`). Platform admins and 2FA-enabled workspace users need a
+  users from it, keyed on the email (`backend/app/api/deps.py
+  _provision_bridge_user`). A FIRST sign-in fires several requests at once
+  and two could both try the insert: the loser used to answer 500 on the
+  unique email (every brand-new admin's or customer's first sign-in); it now
+  rolls back and takes the row that won (2026-11-24). Both auth dependencies
+  guard foreign `iss` (kill-switch `AGENT_BRIDGE_ENABLED`). Platform admins
+  and 2FA-enabled workspace users need a
   satisfied OTP session (`PlatformSession` within 12h) to mint or access protected APIs.
 - Two login doors (login split): `POST /api/auth/admin-login/` is platform
   admins ONLY (staff, no workspace) — workspace users get 403 "This page is
@@ -350,7 +355,9 @@ The shared bridge secret must be **32+ chars** and identical on both backends
 - Deploy rule: after `git pull`, rebuild AND recreate `django`, `django-worker`
   and (for UI work) `frontend` TOGETHER —
   `docker compose build django django-worker frontend && docker compose up -d --force-recreate django django-worker frontend`.
-  Recreating only `django` leaves the worker on stale code.
+  Recreating only `django` leaves the worker on stale code. When `backend/`
+  (the warmup API) changed too, rebuild and recreate `fastapi` in the same
+  step (`docker compose build fastapi && docker compose up -d --force-recreate fastapi`).
 - Deploying while autopilot is on: the restart cuts a running cycle in half
   (the worker is also the email sender). A cycle writes its `PipelineRun` only
   when it FINISHES, so an "unfinished runs" query cannot show a running cycle
@@ -423,7 +430,11 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   superadmin `e2e-console-admin` with a known authenticator secret is created
   in the e2e DB (`django_shell`), signs in at the admin door with a fresh
   code (`totp_code` — same arithmetic as `core/totp.py`), and is deleted in a
-  `finally`. To look at the console by hand do the same: give a local
+  `finally` — together with the copy the warmup side makes of anyone who
+  signs in through the bridge (`forget_warmup_copy`: `users` in the LOCAL
+  `backend/db-warmup-e2e.sqlite3`, keyed on email, plus whatever points at
+  it), so every run is a genuine first sign-in and nothing is left behind.
+  To look at the console by hand do the same: give a local
   platform admin a `totp_secret` and type the current code. The walk never
   reloads the page — `POST /api/admin-slug/check/` allows 5 a minute per IP
   (each page load sends it twice in dev), a further one answers 429 and the

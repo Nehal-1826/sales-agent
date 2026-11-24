@@ -9,6 +9,7 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
@@ -357,3 +358,59 @@ class TestBridgeAuthViaUserOrApiKeyDependency:
         res = await client.get(self.ROUTE, headers={"Authorization": f"Bearer {token}"})
         assert res.status_code == 403, res.text
         assert res.json()["detail"] == "Account suspended"
+
+
+class _SessionThatLostTheRace:
+    """What a session sees when ANOTHER request inserts the same email between
+    this request's lookup and its insert: the first lookup finds nobody, the
+    commit hits the unique email, the next lookup finds the row that won."""
+
+    def __init__(self, winner: User) -> None:
+        self.winner = winner
+        self.lookups = 0
+        self.added: list[User] = []
+        self.rolled_back = False
+
+    async def execute(self, _stmt):
+        self.lookups += 1
+        row = None if self.lookups == 1 else self.winner
+
+        class _Rows:
+            def scalar_one_or_none(self_inner) -> User | None:
+                return row
+
+            def scalar_one(self_inner) -> User:
+                assert row is not None, "after the race the winning row must be there"
+                return row
+
+        return _Rows()
+
+    def add(self, row: User) -> None:
+        self.added.append(row)
+
+    async def commit(self) -> None:
+        raise IntegrityError("INSERT INTO users", {}, Exception("UNIQUE constraint failed: users.email"))
+
+    async def rollback(self) -> None:
+        self.rolled_back = True
+
+
+class TestFirstSignInRace:
+    @pytest.mark.asyncio
+    async def test_the_request_that_lost_the_insert_takes_the_row_that_won(self):
+        """A first sign-in fires several requests at once (the console loads
+        its panels in parallel). Each one looks for the bridged user's copy
+        and, finding none, inserts it — so two can try, and the loser crashed
+        with a 500 on the unique email (seen on a fresh browser-gate run, and
+        it would hit every brand-new admin's or customer's first sign-in).
+        The loser must roll back and return the row that won."""
+        from app.api.deps import _provision_bridge_user
+
+        winner = User(email="first-sign-in@example.invalid", role=UserRole.super_admin)
+        session = _SessionThatLostTheRace(winner)
+        user = await _provision_bridge_user(
+            session, {"email": "first-sign-in@example.invalid", "role": "super_admin"}
+        )
+        assert user is winner
+        assert session.rolled_back
+        assert len(session.added) == 1

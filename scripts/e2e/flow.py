@@ -196,6 +196,33 @@ def console_admin_code(action: str) -> str:
     )
 
 
+def forget_warmup_copy(email: str) -> tuple[bool, str]:
+    """The warmup side keeps a passwordless copy of anyone who signs in
+    through the bridge (backend/app/api/deps.py, keyed on the email). Remove
+    the walk's copy from the LOCAL warmup test database, with whatever points
+    at it, so repeated runs leave nothing behind. (False only if a copy is
+    still there afterwards; no local database is fine.)"""
+    import sqlite3
+    db = ROOT / "backend" / "db-warmup-e2e.sqlite3"
+    if not db.exists():
+        return True, "no local warmup database"
+    try:
+        con = sqlite3.connect(db, timeout=10)
+        removed = 0
+        for (user_id,) in con.execute("select id from users where lower(email) = lower(?)", (email,)).fetchall():
+            for (table,) in con.execute("select name from sqlite_master where type = 'table'").fetchall():
+                for fk in con.execute(f"pragma foreign_key_list('{table}')").fetchall():
+                    if fk[2] == "users":
+                        removed += con.execute(f'delete from "{table}" where "{fk[3]}" = ?', (user_id,)).rowcount
+            removed += con.execute("delete from users where id = ?", (user_id,)).rowcount
+        con.commit()
+        left = con.execute("select count(*) from users where lower(email) = lower(?)", (email,)).fetchone()[0]
+        con.close()
+        return left == 0, f"removed {removed} row(s), left {left}"
+    except Exception as exc:  # noqa: BLE001
+        return False, f"{type(exc).__name__}: {exc}"[:200]
+
+
 results = []
 
 
@@ -987,6 +1014,8 @@ with sync_playwright() as p:
         removed, detail = django_shell(console_admin_code("delete"))
     check("console: throwaway platform admin removed again",
           removed and "left 0" in detail, detail)
+    copied, detail = forget_warmup_copy(f"{CONSOLE_ADMIN.replace('-admin', '')}@example.invalid")
+    check("console: the walk's copy on the warmup side is removed too", copied, detail)
 
     browser.close()
 

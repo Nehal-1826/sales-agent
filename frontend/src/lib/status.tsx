@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { toast } from '../components/feedback';
 import { errorMessage, getOutreachStatus, getPipelineStatus, runPipeline } from './api';
-import type { LeadFetchStatus, OutreachStatus, PipelineStatus, SettingsSection } from './types';
+import type { LeadFetchStatus, OutreachStatus, PipelineStatus, SearchCooldown, SettingsSection } from './types';
 
 /**
  * One live picture of the workspace for the whole shell (sidebar, top bar,
@@ -53,9 +53,18 @@ export function WorkspaceStatusProvider({ children }: { children: ReactNode }) {
         if (r && r.id > baseRunId.current) {
           // a cycle just finished — tell the user what it produced
           setCycleVersion((v) => v + 1);
-          toast.success(
-            `Search finished: ${r.leadsCreated} new compan${r.leadsCreated === 1 ? 'y' : 'ies'}, ${r.draftsCreated} email${r.draftsCreated === 1 ? '' : 's'} written.`,
-          );
+          const produced =
+            `${r.leadsCreated} new compan${r.leadsCreated === 1 ? 'y' : 'ies'}, ` +
+            `${r.draftsCreated} email${r.draftsCreated === 1 ? '' : 's'} written.`;
+          if (r.summary?.searchPaused) {
+            // nothing found for a known reason: say which, and when a search can work again
+            const wait = p.searchCooldown
+              ? ` We can try again ${waitWords(p.searchCooldown.inMinutes)}.`
+              : ' They should be open again now.';
+            toast.warn(`Search finished: ${produced} The search engines were rate-limiting us.${wait}`);
+          } else {
+            toast.success(`Search finished: ${produced}`);
+          }
           wasRunning.current = false;
           idleSince.current = null;
         } else {
@@ -168,4 +177,24 @@ export function useLeadFetchBlock(): LeadFetchStatus | null {
  *  by the gate (the business profile covers the name and what you sell). */
 export function leadFetchFixSection(gate: LeadFetchStatus): SettingsSection {
   return gate.missing.length === 1 && gate.missing[0] === 'who' ? 'targeting' : 'business';
+}
+
+/** The engine cooldown of a live status — the last search found nothing
+ *  because every search engine was rate-limiting us and they are still
+ *  resting — or null when a search can work. */
+export function searchCooldownOf(
+  pipeline: PipelineStatus | null | undefined,
+): SearchCooldown | null {
+  return pipeline?.searchCooldown ?? null;
+}
+
+/** Same, from the live status. */
+export function useSearchCooldown(): SearchCooldown | null {
+  const { pipeline } = useWorkspaceStatus();
+  return searchCooldownOf(pipeline);
+}
+
+/** "in about 25 minutes" — a wait in words (the server rounds it up). */
+export function waitWords(minutes: number): string {
+  return minutes === 1 ? 'in about a minute' : `in about ${minutes} minutes`;
 }

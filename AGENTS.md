@@ -29,7 +29,7 @@ Brand: **WarmPulse**, accent theme **orange** (`#f97316` family — restored
 - `whatsapp-sidecar/` — WhatsApp runtime service (node). `warmpulse-mobile/` — RN app.
 - `ops/` — gateway nginx (`/api/`→django:8000, `/wp-api/`→fastapi:8001 rewritten
   to its internal `/api/`), db init. Root `docker-compose.yml` = full stack.
-- `scripts/e2e/flow.py` — the Playwright gate (106 checks; run before every push).
+- `scripts/e2e/flow.py` — the Playwright gate (111 checks; run before every push).
 - `docs/superpowers/` — specs + plans (foundation, shell-ux batch, warmup dashboards).
 
 ## Commands (local dev, Windows Git Bash — quote paths, space in "Devesh B")
@@ -208,6 +208,24 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   E2E section "3d" in `scripts/e2e/flow.py` covers it (a workspace that has
   not finished its wizard is taken from Home to the wizard on page load, so
   the gate asks for Home again).
+- **Rate-limited search says so** (`core.search_backends.pause`,
+  `pipeline.search_cooldown`) — every engine that rate-limits us is parked
+  for 1 minute after its first failure, doubling to a 30-minute cap; a cycle
+  whose web search got no answer from any engine (no backend hit in
+  `cycle_stats()`, some query `exhausted`, engines still resting) records
+  `summary.searchPaused = {until, engines}` and puts a plain "Search paused:
+  the search engines are rate-limiting us (8 of 8 resting) … They open up
+  again in about 30 minutes" FIRST in the run's notes. `GET
+  /api/pipeline/status/` carries `searchCooldown {until, inMinutes}` while
+  that lasts (minutes counted at the look, always rounded UP), else `null`.
+  The app: the finished-search toast says why and when to try again (read
+  from `lastRun.summary.searchPaused`, so it still tells the reason once the
+  wait is over), the status pill + Home tile say "Search paused", "Find
+  leads now" stays clickable with the wait on hover; the evening report marks
+  the run. Engine health is PER PROCESS (the worker and the API each keep
+  their own table — they share the IP, so the wait is approximate, never a
+  promise), and a run saved before this change has no wait. E2E "3e" adds a
+  cooldown to the status answer for a moment (nothing saved).
 - New workspaces start on the deployment's self-hosted model
   (`ai.default_ai_provider`, from `AI_PROVIDER`) — otherwise the AI, the
   AI-filled setup and the search silently do nothing for every workspace after

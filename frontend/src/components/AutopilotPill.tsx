@@ -1,4 +1,4 @@
-import { leadFetchBlock, useWorkspaceStatus } from '../lib/status';
+import { leadFetchBlock, searchCooldownOf, useWorkspaceStatus, waitWords } from '../lib/status';
 import type { RunFrequency } from '../lib/types';
 
 export const FREQUENCY_LABEL: Record<RunFrequency, string> = {
@@ -21,6 +21,16 @@ export function useAutopilotSummary(demo = false): { tone: Tone; label: string; 
   // the setup has no proper data yet: nothing can fetch leads, not even autopilot
   const gate = leadFetchBlock(pipeline);
   if (gate) return { tone: 'warn', label: 'Lead finding off', detail: gate.message, pulse: false };
+  // the last search found nothing: every search engine was rate-limiting us
+  // and they are still resting — say so, and roughly for how long
+  const cooldown = searchCooldownOf(pipeline);
+  if (cooldown)
+    return {
+      tone: 'warn',
+      label: 'Search paused',
+      detail: `The search engines are rate-limiting us. We can try again ${waitWords(cooldown.inMinutes)}.`,
+      pulse: false,
+    };
   if (!pipeline.autopilot)
     return { tone: 'gray', label: 'Autopilot paused', detail: 'Searches only run when you start one.', pulse: false };
   if (!pipeline.workerOnline)

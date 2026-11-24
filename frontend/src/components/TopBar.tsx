@@ -1,5 +1,5 @@
 import { AutopilotPill } from './AutopilotPill';
-import { leadFetchBlock, useWorkspaceStatus } from '../lib/status';
+import { leadFetchBlock, searchCooldownOf, useWorkspaceStatus, waitWords } from '../lib/status';
 import type { PageKey } from '../lib/types';
 
 const TITLES: Record<PageKey, string> = {
@@ -20,6 +20,9 @@ export function TopBar({ page, onMenu, demo }: { page: PageKey; onMenu: () => vo
   const running = !!pipeline?.cycleRunning;
   // off, with the reason on hover, until the setup has proper data (core.lead_gate)
   const gate = leadFetchBlock(pipeline);
+  // the search engines are resting after rate limits: clickable, but the hover says to wait
+  const cooldown = searchCooldownOf(pipeline);
+  const waitHint = cooldown && !running ? waitWords(cooldown.inMinutes) : '';
 
   return (
     <header className="topbar">
@@ -35,7 +38,15 @@ export function TopBar({ page, onMenu, demo }: { page: PageKey; onMenu: () => vo
           className="btn btn-primary btn-sm topbar-run"
           onClick={() => void startCycle()}
           disabled={running || demo || !pipeline || !!gate}
-          title={running ? 'A search is already running' : gate ? gate.message : 'Find and research new companies now'}
+          title={
+            running
+              ? 'A search is already running'
+              : gate
+                ? gate.message
+                : waitHint
+                  ? `The search engines are still resting, so a search now may find nothing. Try again ${waitHint}.`
+                  : 'Find and research new companies now'
+          }
         >
           {running ? 'Searching…' : 'Find leads now'}
         </button>

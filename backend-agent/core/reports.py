@@ -116,9 +116,11 @@ def build_daily_report(day=None):
 
     lines += ['', f'PIPELINE CYCLES {"TODAY" if day else "TOTAL"}: {len(runs)}']
     for r in runs:
-        lines.append(
-            f'  • Run #{r.id} ({r.triggered_by}): {r.leads_created} lead(s), '
-            f'{r.potentials_created} potential(s)')
+        line = (f'  • Run #{r.id} ({r.triggered_by}): {r.leads_created} lead(s), '
+                f'{r.potentials_created} potential(s)')
+        if (r.summary or {}).get('searchPaused'):   # "0 leads" had a reason
+            line += ' — search paused (search engines were rate-limiting us)'
+        lines.append(line)
 
     totals = (Lead.objects.count(), Potential.objects.count())
     brand = (AppSettings.load().company_name or 'WarmPulse').strip()

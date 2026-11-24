@@ -22,7 +22,7 @@ import re
 import threading
 import time
 from contextvars import ContextVar
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from django.db.models import Q
 from django.db.models.functions import Lower, Trim
@@ -43,7 +43,15 @@ from .models import (AgentConfig, AppSettings, EmailDraft, EmailTemplate, Lead, 
                      Suppression)
 from .discovery import QUERIES_HARD_CAP, expand_queries, last_discovery_stats, next_widen_level
 from .runlock import acquire_run_lock, heartbeat_run_lock, release_run_lock, running_since
-from .search_backends import cycle_stats, engine_label, reset_cycle_stats
+from .search_backends import (
+    BACKENDS,
+    cycle_stats,
+    engine_label,
+    minutes_left,
+    pause as search_pause,
+    reset_cycle_stats,
+    wait_phrase,
+)
 from .scalelist import scalelist_phone_find
 from .tenancy import current_workspace, workspace_context
 from .scraper import (
@@ -799,6 +807,21 @@ def _run_cycle(triggered_by):
             f'(rate-limit/empty → next engine), {sources.get("exhausted", 0)} query(s) with no engine left; '
             f'{len(queries)} queries at widen level {widen_level}: {len(seen_domains)} unique domains → '
             f'{web_new} new, {known_hits} already known')
+    # No engine answered a single query and they are still resting: say so in
+    # plain words, first, with roughly when they open up again. "0 leads" on
+    # its own reads as a fault (the owner asked for the wait to be visible);
+    # `until` is absolute, so the app can count the minutes down later.
+    answered = any(b != 'exhausted' and ':' not in b for b in sources)
+    resting, wait = search_pause()
+    if queries and sources.get('exhausted') and not answered and resting:
+        summary['searchPaused'] = {
+            'until': (timezone.now() + timedelta(seconds=wait)).isoformat(),
+            'engines': resting,
+        }
+        summary['notes'].insert(0, (
+            f'Search paused: the search engines are rate-limiting us ({resting} of {len(BACKENDS)} '
+            f'resting), so the web search found nothing this time. They open up again '
+            f'{wait_phrase(wait)} — a search after that can try again.'))
     discovery_stats = {'widen_level': widen_level, 'queries': len(query_labels),
                        'candidates': len(seen_domains), 'new': web_new,
                        'known': known_hits, 'sources': sources}
@@ -1208,6 +1231,8 @@ def _run_cycle(triggered_by):
             'query': summary.get('query', ''),
             'drafts_created': drafts_created,
             'discovery': discovery_stats,
+            # only when the web search was paused (engines rate-limiting us)
+            **({'searchPaused': summary['searchPaused']} if summary.get('searchPaused') else {}),
             'agents': [
                 {'agent': 'search', 'action': f'{len(new_leads)} new lead(s) via DuckDuckGo'
                     + (' + Google Maps' if gmaps_available() and not agency_mode(settings) else '')
@@ -1227,6 +1252,20 @@ def _run_cycle(triggered_by):
 
 
 FREQUENCY_MINUTES = {'15m': 15, '1h': 60, '6h': 360, 'daily': 1440}
+
+
+def search_cooldown(run):
+    """{'until', 'inMinutes'} while the engine cooldown recorded by `run` (the
+    last search) still lasts, else None. The minutes are counted at the moment
+    of the look, so the wait counts down by itself."""
+    until = ((run.summary or {}).get('searchPaused') or {}).get('until') if run else None
+    if not until:
+        return None
+    try:
+        seconds = (datetime.fromisoformat(until) - timezone.now()).total_seconds()
+    except (TypeError, ValueError):
+        return None
+    return {'until': until, 'inMinutes': minutes_left(seconds)} if seconds > 0 else None
 
 
 def pipeline_status():
@@ -1263,4 +1302,7 @@ def pipeline_status():
         # whether this workspace may find leads at all (proper data), and if
         # not, what is missing — the app disables "Find leads now" on it
         'leadFetch': lead_fetch_status(settings),
+        # the last search found nothing because every search engine was
+        # rate-limiting us: how much longer they are likely to rest
+        'searchCooldown': search_cooldown(last),
     }

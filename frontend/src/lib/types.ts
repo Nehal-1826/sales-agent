@@ -502,6 +502,15 @@ export interface LeadFetchStatus {
   message: string;
 }
 
+/** The last search found nothing because every search engine was rate-limiting
+ *  us (core.search_backends parks each one, 1 minute doubling to 30). Present
+ *  only while that cooldown still lasts; `inMinutes` is counted at the look. */
+export interface SearchCooldown {
+  /** when the engines open up again (ISO) */
+  until: string;
+  inMinutes: number;
+}
+
 /** Live loop state — GET /api/pipeline/status/. */
 export interface PipelineStatus {
   autopilot: boolean; // Settings → Schedule: automatic runs on/off
@@ -512,6 +521,8 @@ export interface PipelineStatus {
   nextRunInMinutes: number | null;
   /** absent only on an older server (mid-deploy) — that server still refuses */
   leadFetch?: LeadFetchStatus;
+  /** null when the search engines are not resting; absent on an older server */
+  searchCooldown?: SearchCooldown | null;
   lastRun: {
     id: number;
     at: string | null;
@@ -519,7 +530,12 @@ export interface PipelineStatus {
     leadsCreated: number;
     potentialsCreated: number;
     draftsCreated: number;
-    summary: { notes?: string[]; query?: string };
+    summary: {
+      notes?: string[];
+      query?: string;
+      /** the web search was paused by rate limits (the reason behind "0 leads") */
+      searchPaused?: { until: string; engines: number };
+    };
   } | null;
 }
 

@@ -134,6 +134,7 @@ const DEMO_STATUS: PipelineStatus = {
   workerOnline: false,
   nextRunInMinutes: 42,
   leadFetch: { ready: true, missing: [], message: '' },
+  searchCooldown: null,
   lastRun: null,
 };
 

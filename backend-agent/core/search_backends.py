@@ -72,6 +72,31 @@ def cooling_down(now=None):
         return {b: round(h['until'] - now) for b, h in _health.items() if h['until'] > now}
 
 
+def pause(now=None):
+    """How long the pool is still parked: (engines resting, seconds until the
+    last of them opens). (0, 0) when every engine is free. After a search that
+    no engine answered, this is the wait the person is told about."""
+    now = time.time() if now is None else now
+    with _lock:
+        resting = [h['until'] for h in _health.values() if h['until'] > now]
+    return len(resting), round(max(resting) - now) if resting else 0
+
+
+def minutes_left(seconds):
+    """A wait in whole minutes, rounded UP so it is never promised too early
+    (1799 s → 30); 0 once it has passed."""
+    return -(-int(max(0, seconds)) // 60)
+
+
+def wait_phrase(seconds):
+    """'in about 25 minutes' — the same wait, in words (always rounded up, so
+    it is never promised too early)."""
+    minutes = minutes_left(seconds)
+    if minutes > 1:
+        return f'in about {minutes} minutes'
+    return 'in about a minute' if minutes else 'any moment now'
+
+
 def _healthy_order(now):
     with _lock:
         start = _rotation[0] % len(BACKENDS)

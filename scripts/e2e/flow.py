@@ -41,6 +41,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -485,6 +486,59 @@ with sync_playwright() as p:
         pass
     check("lead gate: 'Find leads now' follows the settings again",
           page.locator("button.topbar-run").is_enabled() == ready_before)
+
+    # ── 3e. A search that found nothing because of rate limits says so ──
+    # Every search engine parks itself after rate limits (1 minute, doubling
+    # to 30). The owner asked for that wait to be visible, with its timing. A
+    # real cooldown cannot be staged here, so one is added to the status
+    # answer for a moment (nothing is saved); the app must show it as
+    # "Search paused" with roughly when the engines open up again.
+    def status_with_cooldown(route):
+        response = route.fetch()
+        data = response.json()
+        data["leadFetch"] = {"ready": True, "missing": [], "message": ""}   # a workspace that may search
+        data["searchCooldown"] = {
+            "until": (datetime.now(timezone.utc) + timedelta(minutes=25)).isoformat(),
+            "inMinutes": 25,
+        }
+        route.fulfill(response=response, json=data)
+
+    def pill_text():
+        return safe_text(page.locator(".topbar .status-pill")).lower()
+
+    status_pattern = "**/api/pipeline/status/"
+    page.route(status_pattern, status_with_cooldown)
+    try:
+        page.locator("button.nav-item", has_text="Home").first.click()      # a page change refreshes the status
+        try:
+            page.wait_for_function(
+                "() => (document.querySelector('.topbar .status-pill')?.innerText || '').toLowerCase()"
+                ".includes('search paused')",
+                timeout=30_000)
+        except Exception:  # noqa: BLE001  — reported as a FAIL below, never aborts the gate
+            pass
+        check("search cooldown: the status pill says the search is paused", "search paused" in pill_text(),
+              pill_text())
+        tile = safe_text(page.locator(".status-hero")).lower()
+        check("search cooldown: Home says why", "search engines are rate-limiting us" in tile, tile[:160])
+        check("search cooldown: Home says roughly when it opens up", "in about 25 minutes" in tile, tile[:160])
+        hover = page.locator("button.topbar-run").get_attribute("title") or ""
+        check("search cooldown: 'Find leads now' stays clickable and its hover says to wait",
+              page.locator("button.topbar-run").is_enabled() and "in about 25 minutes" in hover, hover)
+        page.screenshot(path=str(SHOTS / "03e-search-paused.png"))
+    finally:
+        page.unroute(status_pattern, status_with_cooldown)
+    # back to the truth: the next refresh answers with the real status again
+    page.locator("button.nav-item", has_text="Leads").first.click()
+    try:
+        page.wait_for_function(
+            "() => !(document.querySelector('.topbar .status-pill')?.innerText || '').toLowerCase()"
+            ".includes('search paused')",
+            timeout=30_000)
+    except Exception:  # noqa: BLE001  — reported as a FAIL below, never aborts the gate
+        pass
+    check("search cooldown: the notice goes once the engines are rested", "search paused" not in pill_text(),
+          pill_text())
 
     # ── 4. Leads sub-tabs (pipeline-tab analog) ─────────────────────
     page.locator("button.nav-item", has_text="Leads").first.click()

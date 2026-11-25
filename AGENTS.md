@@ -424,7 +424,15 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   `[slug] Run #N: …` or `Pipeline cycle failed [slug]` ends it (a cycle may
   take 35 min). Wait for the end line, `docker compose stop django-worker` at
   once (then no new cycle can start), build, switch all three over; the image
-  entrypoint runs `migrate` itself at start. If the model runner is over
+  entrypoint runs `migrate` itself at start. From that `stop` to the
+  switch-over the site sends no e-mail, reads no inbox and runs no cycle —
+  and the 20:00 IST daily report is MISSED when it falls inside the window
+  (its loop waits for the NEXT 20:00 and has no catch-up). Keep the window
+  short (the build is about a minute warm), and if the build or the switch
+  fails, `docker compose start django-worker` AT ONCE and sort it out with
+  the site running. On 25 Nov 2026 the worker stood still for 2 h 47 min
+  because the switch-over never actually started (the ssh trap two bullets
+  below); no e-mail was due, but that evening's report was lost. If the model runner is over
   ~3 GB when the cycle ends, `ops/ollama-watchdog.sh` recycles the idle runner
   before the build. Pull with `--ff-only` only — the server tree carries its
   own nginx.conf edits. `ops/deploy/deploy.sh` is the OLD pre-merge path
@@ -452,7 +460,15 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   into `warmpulse-django-1:/app/x.py` → `docker compose exec -T django python
   manage.py shell -c "exec(open(\"/app/x.py\").read())"`. `if __name__ ==
   '__main__'` never fires there, and backslash-heavy inline `python -c` breaks
-  on quoting — use files.
+  on quoting — use files. A file fed through stdin works ONLY in a command
+  that backgrounds nothing: in a non-interactive ssh shell a list started
+  with `&` reads its stdin from /dev/null, so
+  `cat > job.sh && nohup bash job.sh > log 2>&1 < /dev/null &` wrote an
+  EMPTY file and the job did nothing, silently (25 Nov 2026). Write the file
+  in one command and look at it (`wc -l`, its last lines), start the job in
+  another, and read its FIRST log line before waiting on it. A wait loop must
+  also check that the job is still alive (`pgrep -f job.sh`) — one that only
+  greps the log spins forever on a log that stays empty.
 - The model runner grows the whole time it stays loaded (`llama-server`
   inside `warmpulse-ollama`): 2.1 GB fresh → 3.3 GB after a day → 5.6 GB on
   2026-11-23, when the 8 GB box ran out (load average 60, swap full, every AI

@@ -49,17 +49,26 @@ class WarmupTokenTests(TenantTestCase):
         res = self.client.post("/api/auth/warmup-token/")
         self.assertEqual(res.status_code, 401)
 
-    # ── OTP gate on platform-admin (super_admin) minting ─────────────────
+    # ── Second check on platform-admin (super_admin) minting ────────────
     # Same pattern as billing/tests/test_platform_base.make_admin: staff
     # user with no workspace + Token + PlatformSession(otp_verified_at).
+    # The admin has two-factor unless a test says otherwise: for such an
+    # account a verified code is the second check (2026-11-25 it became the
+    # admin's own choice; without it the password is the second check).
 
-    def _admin_token(self, otp_verified_at):
+    ADMIN_SECRET = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+
+    def _admin_token(self, otp_verified_at, enrolled=True):
         # User.save() inherits the ACTIVE workspace — create the operator with
         # the tenant context cleared so workspace_id stays None (platform admin).
         ctx = set_workspace(None)
         try:
             admin = User.objects.create_user(username="root", password="pass12345-x",
                                              email="root@shailog.test", is_staff=True)
+            if enrolled:
+                # a plain UPDATE: save() here would give the admin the test's workspace
+                User.objects.filter(pk=admin.pk).update(totp_secret=self.ADMIN_SECRET)
+                admin.refresh_from_db()
         finally:
             reset_workspace(ctx)
         self.assertIsNone(admin.workspace_id)   # platform operator, not a tenant
@@ -75,12 +84,24 @@ class WarmupTokenTests(TenantTestCase):
         )
 
     def test_platform_admin_without_otp_session_gets_403(self):
-        # A bare DRF token must never buy a 12 h super_admin FastAPI session.
+        # A bare DRF token of an admin WITH two-factor must never buy a 12 h
+        # super_admin FastAPI session.
         _set_secret(self)
         _, tok = self._admin_token(otp_verified_at=None)
         res = self._post(tok)
         self.assertEqual(res.status_code, 403)
         self.assertEqual(res.json(), {"detail": "OTP required"})
+
+    def test_platform_admin_without_two_factor_mints_with_the_password_alone(self):
+        """Two-factor is the admin's own choice (2026-11-25): without it the
+        password was the second check, so the token it issued may mint."""
+        _set_secret(self)
+        admin, tok = self._admin_token(otp_verified_at=None, enrolled=False)
+        self.assertFalse(admin.totp_secret)
+        res = self._post(tok)
+        self.assertEqual(res.status_code, 200)
+        claims = pyjwt.decode(res.json()["token"], SECRET, algorithms=["HS256"])
+        self.assertEqual((claims["role"], claims["sub"]), ("super_admin", str(admin.id)))
 
     def test_platform_admin_with_expired_otp_gets_403(self):
         _set_secret(self)

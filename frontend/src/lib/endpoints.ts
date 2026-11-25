@@ -17,7 +17,7 @@ import {
 import { toast } from '../components/feedback';
 import { attempt, downloadFile, inDemo, post, put, request } from './transport';
 import type { Result } from './transport';
-import type { TotpDevice, TotpDeviceList, TotpDeviceSetup } from './platform';
+import type { TwoFactorStatus } from './platform';
 import type {
   AgentConfig,
   AgentKey,
@@ -75,9 +75,11 @@ export interface UserTotpSetup {
   provisioning_uri?: string;
 }
 
-export async function getUser2faStatus(): Promise<{ enabled: boolean }> {
-  if (await inDemo()) return { enabled: false };
-  return request<{ enabled: boolean }>('/auth/2fa/status/');
+export async function getUser2faStatus(): Promise<TwoFactorStatus> {
+  if (await inDemo()) {
+    return { enabled: false, enrolled_at: null, enrolled_ip: '', enrolled_device: '', last_used_ip: '' };
+  }
+  return request<TwoFactorStatus>('/auth/2fa/status/');
 }
 
 export const setupUser2fa = async () =>
@@ -101,27 +103,6 @@ export const rotateUser2faConfirm = async (code: string) =>
   (await inDemo())
     ? demoFail<unknown>()
     : attempt(() => request<unknown>('/auth/2fa/rotate/confirm/', post({ code })));
-
-/** Extra authenticator devices (max 3) — any device's code works at sign-in. */
-export async function listUserTotpDevices(): Promise<TotpDeviceList> {
-  if (await inDemo()) return { primary: false, primary_detail: null, remaining: 3, devices: [] };
-  return request<TotpDeviceList>('/auth/2fa/devices/');
-}
-
-export const addUserTotpDevice = async (name: string) =>
-  (await inDemo())
-    ? demoFail<TotpDeviceSetup>()
-    : attempt(() => request<TotpDeviceSetup>('/auth/2fa/devices/', post({ name })));
-
-export const confirmUserTotpDevice = async (id: TotpDevice['id'], code: string) =>
-  (await inDemo())
-    ? demoFail<{ ok: boolean }>()
-    : attempt(() => request<{ ok: boolean }>(`/auth/2fa/devices/${id}/confirm/`, post({ code })));
-
-export const removeUserTotpDevice = async (id: TotpDevice['id']) =>
-  (await inDemo())
-    ? demoFail<unknown>()
-    : attempt(() => request<unknown>(`/auth/2fa/devices/${id}/`, { method: 'DELETE' }));
 
 /* ---------------- workspace status ---------------- */
 

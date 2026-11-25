@@ -76,10 +76,19 @@ class MeFieldsTests(TestCase):
         d = self.me(u)
         self.assertEqual((d['email_verified'], d['platform_admin'], d['otp_required']), (False, False, False))
 
-    def test_platform_admin_needs_otp(self):
+    def test_platform_admin_without_two_factor_needs_no_code(self):
+        """Two-factor is the admin's own choice (2026-11-25): without it the
+        password was the second check."""
         u = User.objects.create_user('adm', password='x', is_staff=True)
         d = self.me(u)
-        self.assertEqual((d['platform_admin'], d['otp_required']), (True, True))
+        self.assertEqual((d['platform_admin'], d['totp_enabled'], d['otp_required']), (True, False, False))
+
+    def test_platform_admin_with_two_factor_needs_otp(self):
+        u = User.objects.create_user('adm2', password='x', is_staff=True)
+        u.totp_secret = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'
+        u.save(update_fields=['totp_secret'])
+        d = self.me(u)
+        self.assertEqual((d['platform_admin'], d['totp_enabled'], d['otp_required']), (True, True, True))
 
     def test_staff_with_workspace_not_admin(self):
         u = User.objects.create_user('s', password='x', is_staff=True, workspace=make_ws('me2'))

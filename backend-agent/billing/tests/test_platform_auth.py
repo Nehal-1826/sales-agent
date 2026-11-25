@@ -95,7 +95,9 @@ class TwoFactorFlowTests(TestCase):
         self.assertEqual(r.status_code, 200)
         secret = r.json()['secret']
         self.assertTrue(r.json()['otpauth_uri'].startswith('otpauth://totp/'))
-        self.assertEqual(c.get('/api/auth/me/').json()['otp_required'], True)
+        # two-factor is the admin's own choice: a key waiting to be confirmed
+        # is not "on", so no code is asked yet
+        self.assertEqual(c.get('/api/auth/me/').json()['otp_required'], False)
         bad = c.post('/api/platform/2fa/confirm/', {'code': '000000'}, format='json')
         self.assertEqual(bad.status_code, 400)
         ok = c.post('/api/platform/2fa/confirm/', {'code': totp.totp(secret)}, format='json')
@@ -103,8 +105,12 @@ class TwoFactorFlowTests(TestCase):
         u.refresh_from_db()
         self.assertEqual((u.totp_secret, u.totp_pending), (secret, ''))
         self.assertEqual(c.post('/api/platform/2fa/setup/').status_code, 409)   # only while not enrolled
-        self.assertFalse(c.get('/api/auth/me/').json()['otp_required'])
+        self.assertFalse(c.get('/api/auth/me/').json()['otp_required'])       # the code just confirmed this session
         self.assertEqual(c.get('/api/platform/overview/').status_code, 200)
+        # …but from now on a session without a verified code is stopped
+        PlatformSession.objects.filter(token=tok).update(otp_verified_at=None)
+        self.assertTrue(c.get('/api/auth/me/').json()['otp_required'])
+        self.assertEqual(c.get('/api/platform/overview/').status_code, 403)
         self.assertNotIn(secret, c.get('/api/auth/me/').content.decode())
         c.post('/api/auth/logout/')
         self.assertFalse(PlatformSession.objects.exists())

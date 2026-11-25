@@ -18,13 +18,9 @@ import { Chip, Field, PageHeader, SectionLabel, Toggle } from '../../components/
 import { LoadError, Skeleton, toast } from '../../components/feedback';
 import { useAsync } from '../../lib/hooks';
 import {
-  addTotpDevice,
   changeUsername,
-  confirmTotpDevice,
   getMe,
   getPlatform2faStatus,
-  listTotpDevices,
-  removeTotpDevice,
   totpConfirm,
   totpDisable,
   totpRotateConfirm,
@@ -321,10 +317,6 @@ export function AdminSettingsPage({ demo = false }: { demo?: boolean }) {
       disable: totpDisable,
       rotateStart: totpRotateStart,
       rotateConfirm: totpRotateConfirm,
-      listDevices: listTotpDevices,
-      addDevice: addTotpDevice,
-      confirmDevice: confirmTotpDevice,
-      removeDevice: removeTotpDevice,
     }),
     [],
   );
@@ -376,16 +368,17 @@ export function AdminSettingsPage({ demo = false }: { demo?: boolean }) {
 
       <SettingsCard
         title="Two-factor authentication"
+        // the admin's own choice (2026-11-25): off is not a warning
         summary={
           twoFaEnabled === null
-            ? 'Checking authenticator protection…'
+            ? 'Checking two-factor…'
             : twoFaEnabled
-              ? 'Authenticator app active · required on every console sign-in'
-              : 'Not enrolled · set up an authenticator app for console security'
+              ? 'On · a code from your authenticator app is asked on every console sign-in'
+              : 'Off · optional, and recommended for this account'
         }
         tag={
           twoFaEnabled === null ? undefined : (
-            <Chip tone={twoFaEnabled ? 'success' : 'warn'}>{twoFaEnabled ? 'Enabled' : 'Not set up'}</Chip>
+            <Chip tone={twoFaEnabled ? 'success' : 'neutral'}>{twoFaEnabled ? 'On' : 'Off'}</Chip>
           )
         }
         defaultOpen
@@ -393,7 +386,11 @@ export function AdminSettingsPage({ demo = false }: { demo?: boolean }) {
         <TwoFactorPanel
           api={twoFaApi}
           demo={demo}
-          description="Protect your platform admin account with a TOTP authenticator app (Google Authenticator, Authy, 1Password)."
+          description={
+            twoFaEnabled
+              ? 'A code from your authenticator app is asked every time this account signs in to the console.'
+              : "Two-factor is optional. Keep it on if this account can enter customers' workspaces or delete accounts."
+          }
           enabledNote="Console sign-ins and privileged platform actions require a 6-digit code from your authenticator."
           onStatusChange={setTwoFaEnabled}
         />

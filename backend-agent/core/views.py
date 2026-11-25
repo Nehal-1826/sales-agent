@@ -16,12 +16,7 @@ from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from . import lockout
 from .authz import (
     auth_extras,
-    enforce_otp,
     handle_2fa_confirm,
-    handle_2fa_device_add,
-    handle_2fa_device_confirm,
-    handle_2fa_device_remove,
-    handle_2fa_devices,
     handle_2fa_disable,
     handle_2fa_rotate_confirm,
     handle_2fa_rotate_start,
@@ -315,29 +310,6 @@ def user_2fa_rotate(request):
 @throttle_classes([AnonRateThrottle, UserRateThrottle, OtpThrottle])
 def user_2fa_rotate_confirm(request):
     return handle_2fa_rotate_confirm(request)
-
-
-# extra authenticator devices (max 3; any confirmed device satisfies OTP)
-@api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
-def user_2fa_devices(request):
-    if request.method == 'POST':   # listing is always visible; adding demands a
-        enforce_otp(request)       # satisfied OTP session (no-op for the un-enrolled)
-        return handle_2fa_device_add(request)
-    return handle_2fa_devices(request)
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle, OtpThrottle])
-def user_2fa_device_confirm(request, device_id):
-    return handle_2fa_device_confirm(request, device_id)
-
-
-@api_view(['DELETE'])
-@permission_classes([IsAuthenticated, IsOtpSatisfied])
-def user_2fa_device_remove(request, device_id):
-    return handle_2fa_device_remove(request, device_id)
 
 
 @api_view(['POST'])

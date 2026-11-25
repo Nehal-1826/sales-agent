@@ -4,26 +4,19 @@ import { QRCodeSVG } from 'qrcode.react';
 import { CodeSlots, type CodeSlotsStatus } from './CodeSlots';
 import { toast } from './feedback';
 import { Chip } from './ui';
-import type { TotpDeviceList, TotpDeviceSetup, TotpSetup } from '../lib/platform';
+import type { TotpSetup, TwoFactorStatus } from '../lib/platform';
 import type { Result } from '../lib/transport';
 
 export interface TwoFactorApi {
-  getStatus: () => Promise<{ enabled: boolean }>;
+  getStatus: () => Promise<TwoFactorStatus>;
   setup: () => Promise<Result<TotpSetup>>;
   confirm: (code: string) => Promise<Result<unknown>>;
   disable: (code: string) => Promise<Result<unknown>>;
   rotateStart: (code: string) => Promise<Result<TotpSetup>>;
   rotateConfirm: (code: string) => Promise<Result<unknown>>;
-  listDevices: () => Promise<TotpDeviceList>;
-  addDevice: (name: string) => Promise<Result<TotpDeviceSetup>>;
-  confirmDevice: (id: number, code: string) => Promise<Result<{ ok: boolean }>>;
-  removeDevice: (id: number) => Promise<Result<unknown>>;
 }
 
 type PanelMode = 'loading' | 'disabled' | 'setup' | 'enabled' | 'verify-rotate' | 'rotate-setup' | 'verify-disable';
-
-/** Inline add-a-device flow state inside the devices card. */
-type DeviceFlow = { step: 'name' } | { step: 'enroll'; id: number; name: string; uri: string | null };
 
 const STAGE_EASE: [number, number, number, number] = [0.22, 1, 0.36, 1];
 
@@ -34,8 +27,26 @@ function formatSecret(raw: string): string {
     .trim();
 }
 
-/** "Added …" date for a device row (date only — matches the admin tables). */
-const deviceDate = (iso: string): string => new Date(iso).toLocaleDateString();
+/** "12 Nov 2026" — the date alone, in the same order for everyone. */
+const trailDate = (iso: string): string =>
+  new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+
+/** "Set up on 12 Nov 2026 from Chrome · Windows · IP 1.2.3.4" — the parts the
+ *  server does not know are left out. Null = set up before the trail existed. */
+function enrolledLine(status: TwoFactorStatus): string | null {
+  if (!status.enrolled_at) return null;
+  let line = `Set up on ${trailDate(status.enrolled_at)}`;
+  if (status.enrolled_device) line += ` from ${status.enrolled_device}`;
+  if (status.enrolled_ip) line += ` · IP ${status.enrolled_ip}`;
+  return line;
+}
+
+/** "Last code used from IP 5.6.7.8" — only while the last code came from
+ *  somewhere other than the set-up. */
+function lastUsedLine(status: TwoFactorStatus): string | null {
+  const ip = status.last_used_ip;
+  return ip && ip !== status.enrolled_ip ? `Last code used from IP ${ip}` : null;
+}
 
 export function useCompactOtpSlots(maxWidthPx = 520): boolean {
   const [compact, setCompact] = useState(
@@ -51,7 +62,7 @@ export function useCompactOtpSlots(maxWidthPx = 520): boolean {
   return compact;
 }
 
-/** QR + manual base32 secret card shared by TotpScreen and Settings 2FA. */
+/** QR + manual base32 secret card — shown while turning 2FA on or changing the authenticator. */
 export function TotpEnrollCard({ setup }: { setup: TotpSetup }) {
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -136,26 +147,10 @@ export function TwoFactorPanel({
   const [error, setError] = useState('');
   const doneTimer = useRef<number | undefined>(undefined);
 
-  // ── authenticator devices (max 3, QR-only — no raw secrets) ──────────
-  const [deviceList, setDeviceList] = useState<TotpDeviceList | null>(null);
-  const [deviceFlow, setDeviceFlow] = useState<DeviceFlow | null>(null);
-  const [deviceName, setDeviceName] = useState('');
-  const [deviceCode, setDeviceCode] = useState('');
-  const [deviceSlotStatus, setDeviceSlotStatus] = useState<CodeSlotsStatus>('idle');
-  const [deviceError, setDeviceError] = useState('');
-  const [devicesBusy, setDevicesBusy] = useState(false);
-  const [confirmRemoveId, setConfirmRemoveId] = useState<number | null>(null);
-  /** QR of a device added this session — kept so "Finish pending setup" can re-show it. */
-  const pendingSetup = useRef<TotpDeviceSetup | null>(null);
-  const deviceDoneTimer = useRef<number | undefined>(undefined);
+  /** The account's authenticator + security trail, read with the status. */
+  const [trail, setTrail] = useState<TwoFactorStatus | null>(null);
 
-  useEffect(
-    () => () => {
-      window.clearTimeout(doneTimer.current);
-      window.clearTimeout(deviceDoneTimer.current);
-    },
-    [],
-  );
+  useEffect(() => () => window.clearTimeout(doneTimer.current), []);
 
   useEffect(() => {
     let alive = true;
@@ -163,6 +158,7 @@ export function TwoFactorPanel({
       try {
         const res = await api.getStatus();
         if (!alive) return;
+        setTrail(res);
         setMode(res.enabled ? 'enabled' : 'disabled');
         onStatusChange?.(res.enabled);
       } catch {
@@ -176,25 +172,6 @@ export function TwoFactorPanel({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // devices card only exists while 2FA is on; re-fetch on every entry into 'enabled'
-  useEffect(() => {
-    if (mode !== 'enabled') return;
-    let alive = true;
-    setDeviceError('');
-    api
-      .listDevices()
-      .then((list) => {
-        if (alive) setDeviceList(list);
-      })
-      .catch(() => {
-        if (alive) setDeviceError('Could not load authenticator devices.');
-      });
-    return () => {
-      alive = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode]);
 
   function resetInput() {
     setCode('');
@@ -259,6 +236,7 @@ export function TwoFactorPanel({
         setMode('enabled');
         onStatusChange?.(true);
         toast.success(msg);
+        void refreshTrail(); // the trail belongs to the authenticator just set up
       });
       return;
     }
@@ -288,6 +266,7 @@ export function TwoFactorPanel({
       }
       transitionAfterSuccess(() => {
         setSetup(null);
+        setTrail(null); // no authenticator, so no trail
         setMode('disabled');
         onStatusChange?.(false);
         toast.success('Two-factor authentication disabled.');
@@ -295,102 +274,15 @@ export function TwoFactorPanel({
     }
   }
 
-  // ── authenticator devices: add / confirm / remove ────────────────────
-
-  function resetDeviceInput() {
-    setDeviceCode('');
-    setDeviceSlotStatus('idle');
-    setDeviceError('');
-  }
-
-  async function refreshDevices() {
-    // does NOT clear deviceError on purpose: add/remove failure handlers set an
-    // API error and refresh in the same tick — a clear here would batch over it
+  /** Read the trail again — it belongs to the account's one authenticator, so
+   *  it changes whenever one is set up. A failed read shows nothing rather
+   *  than the trail of the previous authenticator. */
+  async function refreshTrail() {
     try {
-      setDeviceList(await api.listDevices());
+      setTrail(await api.getStatus());
     } catch {
-      setDeviceError('Could not load authenticator devices.');
+      setTrail(null);
     }
-  }
-
-  function closeDeviceFlow() {
-    window.clearTimeout(deviceDoneTimer.current);
-    const wasEnroll = deviceFlow?.step === 'enroll';
-    resetDeviceInput();
-    setDeviceFlow(null);
-    setDeviceName('');
-    setConfirmRemoveId(null);
-    // a device added but not confirmed stays pending server-side — resurface it
-    if (wasEnroll) void refreshDevices();
-  }
-
-  async function startAddDevice() {
-    if (devicesBusy) return;
-    const name = deviceName.trim();
-    if (!name) return;
-    setDevicesBusy(true);
-    setDeviceError('');
-    const res = await api.addDevice(name);
-    setDevicesBusy(false);
-    if (!res.ok) {
-      setDeviceError(res.error);
-      void refreshDevices(); // the list may be stale (e.g. a pending device appeared)
-      return;
-    }
-    pendingSetup.current = res.data;
-    resetDeviceInput();
-    setDeviceFlow({ step: 'enroll', id: res.data.id, name: res.data.name, uri: res.data.otpauth_uri });
-  }
-
-  /** The Add button turns into this while a pending device exists. */
-  function finishPendingSetup() {
-    const pending = deviceList?.devices.find((d) => !d.confirmed);
-    if (!pending) return;
-    const kept = pendingSetup.current?.id === pending.id ? pendingSetup.current : null;
-    resetDeviceInput();
-    setConfirmRemoveId(null);
-    setDeviceFlow({ step: 'enroll', id: pending.id, name: pending.name, uri: kept?.otpauth_uri ?? null });
-  }
-
-  async function submitDeviceCode(rawCode: string) {
-    if (devicesBusy || deviceSlotStatus === 'success' || rawCode.length !== 6) return;
-    if (!deviceFlow || deviceFlow.step !== 'enroll') return;
-    setDevicesBusy(true);
-    setDeviceError('');
-    const res = await api.confirmDevice(deviceFlow.id, rawCode);
-    setDevicesBusy(false);
-    if (!res.ok) {
-      setDeviceSlotStatus('error');
-      setDeviceError(res.error);
-      return;
-    }
-    setDeviceSlotStatus('success');
-    setDeviceCode('');
-    window.clearTimeout(deviceDoneTimer.current);
-    deviceDoneTimer.current = window.setTimeout(() => {
-      setDeviceSlotStatus('idle');
-      pendingSetup.current = null;
-      closeDeviceFlow(); // refreshes the list — the flow was open
-      toast.success('Authenticator device added.');
-    }, reduce ? 120 : 520);
-  }
-
-  async function removeDevice(id: number) {
-    if (devicesBusy) return;
-    setDevicesBusy(true);
-    setDeviceError('');
-    const res = await api.removeDevice(id);
-    setDevicesBusy(false);
-    setConfirmRemoveId(null);
-    if (!res.ok) {
-      setDeviceError(res.error);
-      void refreshDevices();
-      return;
-    }
-    if (pendingSetup.current?.id === id) pendingSetup.current = null;
-    if (deviceFlow?.step === 'enroll' && deviceFlow.id === id) closeDeviceFlow(); // refreshes
-    else void refreshDevices();
-    toast.success('Authenticator device removed.');
   }
 
   const stageMotion = reduce
@@ -457,7 +349,9 @@ export function TwoFactorPanel({
     </form>
   );
 
-  const pendingDevice = deviceList?.devices.find((d) => !d.confirmed) ?? null;
+  // no line at all without a known set-up date (null = before the trail existed)
+  const enrolled = trail ? enrolledLine(trail) : null;
+  const lastUsed = enrolled && trail ? lastUsedLine(trail) : null;
 
   return (
     <div className="tfa-panel">
@@ -570,236 +464,10 @@ export function TwoFactorPanel({
         )}
       </AnimatePresence>
 
-      {mode === 'enabled' && (
+      {mode === 'enabled' && enrolled && (
         <div className="tfa-enroll-card">
-          <div className="tfa-device-row">
-            <strong>Authenticator devices</strong>
-            {deviceList && (
-              <Chip tone={deviceList.remaining > 0 ? 'neutral' : 'warn'}>
-                {deviceList.remaining > 0 ? `${deviceList.remaining} of 3 slots free` : 'Device limit reached'}
-              </Chip>
-            )}
-          </div>
-
-          {deviceError && (
-            <p className="pf-error" role="alert">
-              {deviceError}
-            </p>
-          )}
-
-          {deviceFlow?.step === 'name' && (
-            <form
-              className="tfa-verify-form"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void startAddDevice();
-              }}
-            >
-              <div className="field">
-                <span className="field-label">Device name</span>
-                <input
-                  value={deviceName}
-                  maxLength={60}
-                  required
-                  autoFocus
-                  placeholder="e.g. iPhone"
-                  aria-label="Device name"
-                  onChange={(e) => setDeviceName(e.target.value)}
-                />
-                <small className="field-hint">Label this device so you know which phone or app it is.</small>
-              </div>
-              <div className="tfa-actions">
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={devicesBusy || deviceName.trim().length === 0}
-                >
-                  {devicesBusy ? 'Creating…' : 'Continue'}
-                </button>
-                <button type="button" className="btn btn-ghost" disabled={devicesBusy} onClick={closeDeviceFlow}>
-                  Cancel
-                </button>
-              </div>
-            </form>
-          )}
-
-          {deviceFlow?.step === 'enroll' && (
-            <>
-              <div className="tfa-step-head">
-                <Chip tone="accent">Setup</Chip>
-                <strong>
-                  {deviceFlow.uri
-                    ? `Scan the QR for “${deviceFlow.name}”, then enter its 6-digit code`
-                    : `Enter the 6-digit code for “${deviceFlow.name}”`}
-                </strong>
-              </div>
-              {deviceFlow.uri ? (
-                <div className="tfa-qr-wrap">
-                  <div className="tfa-qr-box">
-                    <QRCodeSVG value={deviceFlow.uri} size={168} level="M" marginSize={2} />
-                  </div>
-                  <small className="field-hint">
-                    Scan with Google Authenticator, Authy, 1Password, or Microsoft Authenticator.
-                  </small>
-                </div>
-              ) : (
-                <p className="field-hint">
-                  The QR is only shown when a device is added. Lost it? Cancel, remove the pending device, then add
-                  it again for a fresh QR.
-                </p>
-              )}
-              <form
-                className="tfa-verify-form"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  void submitDeviceCode(deviceCode);
-                }}
-              >
-                <div className="field otp-slots-field tfa-slots-field">
-                  <span className="field-label">6-digit code from the new device</span>
-                  <CodeSlots
-                    key={deviceFlow.id}
-                    length={6}
-                    value={deviceCode}
-                    status={deviceSlotStatus}
-                    disabled={devicesBusy}
-                    slotSize={compactSlots ? 38 : 49}
-                    gap={compactSlots ? 6 : 10}
-                    accentColor="#f97316"
-                    inkColor="#ffffff"
-                    slotColor="rgba(255, 255, 255, 0.08)"
-                    digitColor="#f5f2ed"
-                    dangerColor="#f87171"
-                    autoFocus
-                    ariaLabel="6-digit code from the new device"
-                    onChange={(next) => {
-                      setDeviceCode(next);
-                      if (deviceSlotStatus === 'error') {
-                        setDeviceSlotStatus('idle');
-                        setDeviceError('');
-                      }
-                    }}
-                    onComplete={(full) => void submitDeviceCode(full)}
-                  />
-                </div>
-                <div className="tfa-actions">
-                  <button
-                    type="submit"
-                    className="btn btn-primary"
-                    disabled={devicesBusy || deviceCode.length !== 6 || deviceSlotStatus === 'success'}
-                  >
-                    {devicesBusy ? 'Checking…' : 'Confirm device'}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    disabled={devicesBusy || deviceSlotStatus === 'success'}
-                    onClick={closeDeviceFlow}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            </>
-          )}
-
-          {!deviceFlow && (
-            <>
-              <p className="field-hint">Up to 3 authenticator devices — any device’s 6-digit code works at sign-in.</p>
-              {!deviceList && !deviceError && <p className="field-hint">Loading devices…</p>}
-              {deviceList && (
-                <div className="tfa-devices-list">
-                  {deviceList.primary && (
-                    <div className="tfa-device-row" title="Rotate or disable via the buttons above">
-                      <div>
-                        <strong>Primary</strong> <Chip tone="neutral">Built-in</Chip>
-                        {deviceList.primary_detail ? (
-                          <>
-                            <small className="field-hint">
-                              Enrolled {deviceDate(deviceList.primary_detail.added_at)}
-                              {(deviceList.primary_detail.added_device || deviceList.primary_detail.added_ip) && (
-                                <>
-                                  {' '}· {deviceList.primary_detail.added_device || 'Unknown device'} ·{' '}
-                                  {deviceList.primary_detail.added_ip || 'IP unknown'}
-                                </>
-                              )}
-                            </small>
-                            {deviceList.primary_detail.last_used_ip && (
-                              <small className="field-hint">
-                                Last used from {deviceList.primary_detail.last_used_ip}
-                              </small>
-                            )}
-                          </>
-                        ) : (
-                          <small className="field-hint">Set up when 2FA was enabled</small>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                  {deviceList.devices.map((d) => (
-                    <div className="tfa-device-row" key={d.id}>
-                      <div>
-                        <strong>{d.name}</strong>
-                        {!d.confirmed && (
-                          <>
-                            {' '}
-                            <Chip tone="warn">Pending setup</Chip>
-                          </>
-                        )}
-                        <small className="field-hint">
-                          Added {deviceDate(d.created_at)}
-                          {d.confirmed && (d.added_device || d.added_ip) && (
-                            <> · {d.added_device || 'Unknown device'} · {d.added_ip || 'IP unknown'}</>
-                          )}
-                        </small>
-                        <small className="field-hint">
-                          Last used {d.last_used_at ? deviceDate(d.last_used_at) : 'Never'}
-                          {d.last_used_at && d.last_used_ip && <> · from {d.last_used_ip}</>}
-                        </small>
-                      </div>
-                      <button
-                        type="button"
-                        className={`btn btn-sm ${confirmRemoveId === d.id ? 'btn-danger' : 'btn-ghost'}`}
-                        disabled={devicesBusy}
-                        onClick={() =>
-                          confirmRemoveId === d.id ? void removeDevice(d.id) : setConfirmRemoveId(d.id)
-                        }
-                      >
-                        {confirmRemoveId === d.id ? 'Really remove?' : 'Remove'}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="tfa-actions">
-                {pendingDevice ? (
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    disabled={devicesBusy}
-                    onClick={finishPendingSetup}
-                  >
-                    Finish pending setup
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    disabled={devicesBusy || !deviceList || deviceList.remaining <= 0}
-                    onClick={() => {
-                      setConfirmRemoveId(null);
-                      setDeviceName('');
-                      setDeviceError('');
-                      setDeviceFlow({ step: 'name' });
-                    }}
-                  >
-                    Add device
-                  </button>
-                )}
-                {demo && <small className="field-hint">Connect to the live server to manage devices.</small>}
-              </div>
-            </>
-          )}
+          <small className="field-hint">{enrolled}</small>
+          {lastUsed && <small className="field-hint">{lastUsed}</small>}
         </div>
       )}
     </div>

@@ -175,10 +175,13 @@ def ensure_admin_slug() -> tuple[bool, str]:
 
 
 # ── Console walk (8c): a REAL platform-admin sign-in ────────────────
-# A throwaway superadmin with a known authenticator secret is created in the
-# e2e DB, signs in through the admin door with a fresh code, and is deleted
-# again whatever happens.
+# Throwaway superadmins are created in the e2e DB, sign in through the admin
+# door, and are deleted again whatever happens: one WITH an authenticator
+# (known secret, signs in with a fresh code) and one WITHOUT two-factor
+# (two-factor is the superadmin's own choice since 2026-11-25 — the password
+# alone must open the console).
 CONSOLE_ADMIN = "e2e-console-admin"
+CONSOLE_PLAIN = "e2e-console-plain"
 CONSOLE_PW = "e2e-console-pw-2026"
 CONSOLE_SECRET = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"
 
@@ -197,17 +200,21 @@ def totp_code(secret: str) -> str:
 
 
 def console_admin_code(action: str) -> str:
-    """Django shell code that creates / deletes the throwaway console admin."""
+    """Django shell code that creates / deletes the throwaway console admins."""
     if action == "create":
         return (
             "from django.contrib.auth import get_user_model\n"
             "U = get_user_model()\n"
-            f"U.objects.filter(username='{CONSOLE_ADMIN}').delete()\n"
+            f"U.objects.filter(username__startswith='e2e-console-').delete()\n"
             f"u = U.objects.create_superuser(username='{CONSOLE_ADMIN}', password='{CONSOLE_PW}',\n"
             "                                email='e2e-console@example.invalid')\n"
             "u.is_staff = True\n"
             f"u.totp_secret = '{CONSOLE_SECRET}'\n"
             "u.save()\n"
+            f"p = U.objects.create_superuser(username='{CONSOLE_PLAIN}', password='{CONSOLE_PW}',\n"
+            "                                email='e2e-console-plain@example.invalid')\n"
+            "p.is_staff = True\n"
+            "p.save()\n"
             "print('E2E_SHELL_OK created')\n"
         )
     return (
@@ -215,15 +222,16 @@ def console_admin_code(action: str) -> str:
         "from rest_framework.authtoken.models import Token\n"
         "from core.models import PlatformSession\n"
         "U = get_user_model()\n"
-        f"u = U.objects.filter(username='{CONSOLE_ADMIN}').first()\n"
         "n = 0\n"
-        "if u:\n"
+        "gone = 0\n"
+        "for u in U.objects.filter(username__startswith='e2e-console-'):\n"
         "    for t in Token.objects.filter(user=u):\n"
         "        n += PlatformSession.objects.filter(token=t).delete()[0]\n"
         "        t.delete()\n"
         "    u.delete()\n"
-        f"left = U.objects.filter(username__startswith='{CONSOLE_ADMIN}').count()\n"
-        "print('E2E_SHELL_OK', 'deleted' if u else 'absent', 'sessions', n, 'left', left)\n"
+        "    gone += 1\n"
+        f"left = U.objects.filter(username__startswith='e2e-console-').count()\n"
+        "print('E2E_SHELL_OK', 'deleted', gone, 'sessions', n, 'left', left)\n"
     )
 
 
@@ -1082,14 +1090,59 @@ with sync_playwright() as p:
                   "open" in (rail.get_attribute("class") or ""))
             page.screenshot(path=str(SHOTS / "09c-console-phone.png"))
             page.set_viewport_size({"width": 1920, "height": 1080})
+
+            # ── A superadmin WITHOUT two-factor: the password alone opens the
+            # console (no code screen), and Settings says it is optional.
+            # Same page, no reload (the admin-URL check is rate-limited).
+            def sign_out():
+                page.locator("button.side-logout").click()
+                page.locator("input[autocomplete=username]").wait_for(state="visible", timeout=15_000)
+                return True, "admin login card shown"
+
+            def password_only_sign_in():
+                page.locator("input[autocomplete=username]").fill(CONSOLE_PLAIN)
+                page.locator("input[type=password]").fill(CONSOLE_PW)
+                page.locator("button.login-submit").click()
+                rail.wait_for(state="visible", timeout=30_000)
+                page.wait_for_load_state("networkidle")
+                page.wait_for_timeout(800)
+                asked = page.locator(".code-slots__input").count()
+                return asked == 0 and page.url.endswith(f"/{ADMIN_SLUG}/overview"), \
+                    f"code screens on page={asked} url={page.url}"
+
+            def optional_in_settings():
+                rail.locator(".nav-item", has_text="Settings").first.click()
+                page.wait_for_timeout(1200)
+                body = " ".join(page.locator("body").inner_text().split())
+                has = "Two-factor is optional. Keep it on if this account can enter customers' workspaces or delete accounts." in body
+                summary = "Off · optional, and recommended for this account" in body
+                return has and summary, body[:200]
+
+            # Signing out makes the app validate the admin address again (twice
+            # on the dev server) and that check is limited to 5 a minute — the
+            # walk has spent most of them. It is not what these checks test,
+            # so it is answered here for this step only.
+            slug_ok = lambda route: route.fulfill(status=200, json={"valid": True})  # noqa: E731
+            page.route("**/api/admin-slug/check/", slug_ok)
+            try:
+                look("console: signing out returns to the admin login card", sign_out)
+                look("console: a superadmin without two-factor signs in with the password alone (no code screen)",
+                     password_only_sign_in)
+                look("console: Settings says two-factor is optional", optional_in_settings)
+                page.screenshot(path=str(SHOTS / "09d-console-2fa-optional.png"))
+            finally:
+                page.unroute("**/api/admin-slug/check/", slug_ok)
     except Exception as exc:  # noqa: BLE001  — reported as a FAIL, never aborts the gate
         check("console: the walk finished", False, f"{type(exc).__name__}: {exc}"[:200])
     finally:
         removed, detail = django_shell(console_admin_code("delete"))
-    check("console: throwaway platform admin removed again",
+    check("console: throwaway platform admins removed again",
           removed and "left 0" in detail, detail)
-    copied, detail = forget_warmup_copy(f"{CONSOLE_ADMIN.replace('-admin', '')}@example.invalid")
-    check("console: the walk's copy on the warmup side is removed too", copied, detail)
+    for email in (f"{CONSOLE_ADMIN.replace('-admin', '')}@example.invalid",
+                  f"{CONSOLE_PLAIN}@example.invalid"):
+        copied, detail = forget_warmup_copy(email)
+        check(f"console: the walk's copy on the warmup side is removed too ({email.split('@')[0]})",
+              copied, detail)
 
     browser.close()
 

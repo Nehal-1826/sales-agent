@@ -1,14 +1,10 @@
 import { useMemo } from 'react';
 import { TwoFactorPanel, type TwoFactorApi } from '../../components/TwoFactorPanel';
 import {
-  addUserTotpDevice,
   confirmUser2fa,
-  confirmUserTotpDevice,
   disableUser2fa,
   getUser2faStatus,
   isDemo,
-  listUserTotpDevices,
-  removeUserTotpDevice,
   rotateUser2faConfirm,
   rotateUser2faStart,
   setupUser2fa,
@@ -28,10 +24,6 @@ export function TwoFactorSection() {
       disable: disableUser2fa,
       rotateStart: rotateUser2faStart,
       rotateConfirm: rotateUser2faConfirm,
-      listDevices: listUserTotpDevices,
-      addDevice: addUserTotpDevice,
-      confirmDevice: confirmUserTotpDevice,
-      removeDevice: removeUserTotpDevice,
     }),
     [],
   );

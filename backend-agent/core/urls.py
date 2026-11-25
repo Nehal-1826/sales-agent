@@ -37,11 +37,6 @@ urlpatterns = [
     path('auth/2fa/disable/', views.user_2fa_disable, name='user-2fa-disable'),
     path('auth/2fa/rotate/', views.user_2fa_rotate, name='user-2fa-rotate'),
     path('auth/2fa/rotate/confirm/', views.user_2fa_rotate_confirm, name='user-2fa-rotate-confirm'),
-    # extra authenticator devices (max 3; any confirmed device satisfies OTP)
-    path('auth/2fa/devices/', views.user_2fa_devices, name='user-2fa-devices'),
-    path('auth/2fa/devices/<int:device_id>/confirm/', views.user_2fa_device_confirm,
-         name='user-2fa-device-confirm'),
-    path('auth/2fa/devices/<int:device_id>/', views.user_2fa_device_remove, name='user-2fa-device-remove'),
     # bridge: HS256 JWT for backend-warmup (FastAPI) — same DRF token auth
     path('auth/warmup-token/', views.warmup_token, name='warmup-token'),
     # Google sign-in via Firebase (existing users; dormant until FIREBASE_PROJECT_ID set)

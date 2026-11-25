@@ -8,8 +8,6 @@ from rest_framework.response import Response
 
 OTP_TTL = timedelta(hours=12)
 
-MAX_TOTP_DEVICES = 3
-
 OTP_EXEMPT_PATHS = (
     '/api/auth/me/',
     '/api/auth/logout/',
@@ -26,17 +24,12 @@ def is_platform_admin(user):
                 and user.is_staff and user.is_active)
 
 
-def user_totp_secrets(user):
-    """Active TOTP secrets: the primary (if set) + every confirmed device's.
-    A pending device's secret is NEVER included — it must be confirmed first."""
-    secrets = [user.totp_secret] if user.totp_secret else []
-    secrets += [d.secret for d in user.totp_devices.filter(confirmed=True)]
-    return secrets
-
-
 def user_2fa_active(user):
-    """2FA is on when the primary secret is set OR any device is confirmed."""
-    return bool(user.totp_secret) or user.totp_devices.filter(confirmed=True).exists()
+    """2FA is on when the account's one authenticator is set up.
+
+    One authenticator per account (owner's order, 2026-11-25): the extra
+    devices of migration 0038 are gone."""
+    return bool(user.totp_secret)
 
 
 def token_otp_satisfied(request, now=None):
@@ -52,9 +45,20 @@ def token_otp_satisfied(request, now=None):
 
 
 def otp_satisfied(request, now=None):
-    """Platform admin whose token session passed TOTP within the last 12 h."""
+    """Platform admin who has passed the second check.
+
+    The second check is a code from the account's authenticator when it has
+    two-factor, and the password itself when it does not: two-factor is the
+    admin's own choice (owner's order, 2026-11-25 — it used to be forced). An
+    account without it is protected by its password alone, and this is the one
+    place that says so: every platform gate and the warmup bridge token read
+    it from here."""
     user = getattr(request, 'user', None)
-    return is_platform_admin(user) and token_otp_satisfied(request, now=now)
+    if not is_platform_admin(user):
+        return False
+    if not user_2fa_active(user):
+        return True
+    return token_otp_satisfied(request, now=now)
 
 
 def enforce_otp(request):
@@ -69,13 +73,17 @@ def enforce_otp(request):
 
 
 def auth_extras(user, request=None):
+    """/api/auth/me/ fields (and the sign-in answer) for THIS user. The
+    second check is only asked of an account that has two-factor — for anyone
+    else it was passed with the password."""
     admin = is_platform_admin(user)
     enrolled = user_2fa_active(user)
-    otp_required = (not otp_satisfied(request)) if admin else (enrolled and not token_otp_satisfied(request))
     return {'email_verified': user.email_verified_at is not None,
             'platform_admin': admin,
             'totp_enabled': enrolled,
-            'otp_required': otp_required}
+            # at sign-in request.user is still anonymous, so this is decided
+            # for `user`: a new session of an enrolled account always needs the code
+            'otp_required': enrolled and not token_otp_satisfied(request)}
 
 
 def check_totp_code(request, secret):
@@ -100,10 +108,11 @@ def check_totp_code(request, secret):
     return step, None
 
 
-def check_totp_any(request):
-    """check_totp_code across EVERY active secret (primary + confirmed devices):
-    same lockout gate, one failure per attempt (never per secret), and the
-    replay guard applied to all secrets.  Returns (step, None) or (None, error)."""
+def check_own_code(request):
+    """Validate a code from the signed-in user's one authenticator, with the
+    per-user lockout and the replay guard (a step already used by any of this
+    user's sessions never matches again), and stamp where it was used from.
+    Returns (step, None) or (None, error Response)."""
     from . import lockout, totp
     from .models import PlatformSession, User
 
@@ -112,25 +121,19 @@ def check_totp_any(request):
     if lockout.is_locked(lock_key, ''):
         return None, Response({'error': 'too_many_attempts'}, status=429)
     code = request.data.get('code') if hasattr(request.data, 'get') else ''
+    if not user.totp_secret:
+        return None, Response({'error': 'invalid_code', 'detail': 'Invalid or expired code.'}, status=400)
     last = max([ps.last_otp_step for ps in PlatformSession.objects.filter(token__user=user)] or [0])
-    for secret in user_totp_secrets(user):
-        step = totp.match_step(secret, code if isinstance(code, str) else '', last_step=last)
-        if step is not None:
-            lockout.clear(lock_key, '')
-            if secret != user.totp_secret:   # a confirmed device matched → stamp it
-                device = user.totp_devices.filter(confirmed=True, secret=secret).first()
-                if device:
-                    device.last_used_at = timezone.now()
-                    device.last_used_ip = _client_ip(request)
-                    device.save(update_fields=['last_used_at', 'last_used_ip'])
-            else:                            # the primary matched → stamp its last-use IP
-                ip = _client_ip(request)
-                if ip and ip != user.totp_last_used_ip:
-                    user.totp_last_used_ip = ip
-                    User.objects.filter(pk=user.pk).update(totp_last_used_ip=ip)
-            return step, None
-    lockout.record_failure(lock_key, '')
-    return None, Response({'error': 'invalid_code', 'detail': 'Invalid or expired code.'}, status=400)
+    step = totp.match_step(user.totp_secret, code if isinstance(code, str) else '', last_step=last)
+    if step is None:
+        lockout.record_failure(lock_key, '')
+        return None, Response({'error': 'invalid_code', 'detail': 'Invalid or expired code.'}, status=400)
+    lockout.clear(lock_key, '')
+    ip = _client_ip(request)
+    if ip and ip != user.totp_last_used_ip:
+        user.totp_last_used_ip = ip
+        User.objects.filter(pk=user.pk).update(totp_last_used_ip=ip)
+    return step, None
 
 
 def _client_ip(request):
@@ -190,7 +193,19 @@ def _stamp_primary_enrollment(request, u):
 
 
 def handle_2fa_status(request):
-    return Response({'enabled': bool(request.user.totp_secret)})
+    """Whether 2FA is on, and the trail of the account's one authenticator:
+    where and from what it was set up, and where its code was last used.
+    `enrolled_at` is None when there is no trail (2FA off, or set up before
+    the trail existed)."""
+    u = request.user
+    trail = bool(u.totp_secret and u.totp_added_at)
+    return Response({
+        'enabled': bool(u.totp_secret),
+        'enrolled_at': u.totp_added_at.isoformat() if trail else None,
+        'enrolled_ip': (u.totp_added_ip or '') if trail else '',
+        'enrolled_device': _ua_device(u.totp_added_user_agent) if trail else '',
+        'last_used_ip': (u.totp_last_used_ip or '') if trail else '',
+    })
 
 
 def handle_2fa_setup(request, already_detail='Two-factor is already enabled.'):
@@ -227,7 +242,7 @@ def handle_2fa_verify(request, not_enrolled_detail='Two-factor is not enabled.')
     u = request.user
     if not user_2fa_active(u):
         return _err('not_enrolled', not_enrolled_detail, 409)
-    step, err = check_totp_any(request)
+    step, err = check_own_code(request)
     if err:
         return err
     mark_otp_verified(request, step)
@@ -238,7 +253,7 @@ def handle_2fa_disable(request, on_done=None):
     u = request.user
     if not user_2fa_active(u):
         return _err('not_enrolled', 'Two-factor is not enabled.')
-    step, err = check_totp_any(request)   # any device's code can authorize disable
+    step, err = check_own_code(request)   # the account's own code authorises this
     if err:
         return err
     u.totp_secret, u.totp_pending = '', ''
@@ -246,7 +261,6 @@ def handle_2fa_disable(request, on_done=None):
     u.totp_added_user_agent, u.totp_last_used_ip = '', ''
     u.save(update_fields=['totp_secret', 'totp_pending', 'totp_added_at',
                           'totp_added_ip', 'totp_added_user_agent', 'totp_last_used_ip'])
-    u.totp_devices.all().delete()
     mark_otp_verified(request, step, keep_verified_at=True)
     if on_done:
         on_done()
@@ -285,74 +299,3 @@ def handle_2fa_rotate_confirm(request, on_done=None):
     if on_done:
         on_done()
     return Response({'enabled': True, 'verified': True})
-
-
-def _devices_remaining(u):
-    return MAX_TOTP_DEVICES - u.totp_devices.count() - (1 if u.totp_secret else 0)
-
-
-def handle_2fa_devices(request):
-    u = request.user
-    devices = list(u.totp_devices.all())
-    primary_detail = (u.totp_added_at and {
-        'added_at': u.totp_added_at,
-        'added_ip': u.totp_added_ip,
-        'added_device': _ua_device(u.totp_added_user_agent),
-        'last_used_ip': u.totp_last_used_ip,
-    }) or None   # None = enrolled before the trail existed
-    return Response({'primary': bool(u.totp_secret),
-                     'primary_detail': primary_detail,
-                     'remaining': _devices_remaining(u),
-                     'devices': [{'id': d.id, 'name': d.name, 'confirmed': d.confirmed,
-                                  'created_at': d.created_at, 'last_used_at': d.last_used_at,
-                                  'added_ip': d.added_ip, 'added_device': _ua_device(d.added_user_agent),
-                                  'last_used_ip': d.last_used_ip}
-                                 for d in devices]})
-
-
-def handle_2fa_device_add(request):
-    from . import totp
-    u = request.user
-    name = request.data.get('name') if hasattr(request.data, 'get') else ''
-    name = name.strip() if isinstance(name, str) else ''
-    if not (1 <= len(name) <= 60):
-        return _err('invalid_name', 'Give the device a name.')
-    if u.totp_devices.filter(confirmed=False).exists():
-        return _err('pending_exists', 'Confirm or remove the pending device first.')
-    if _devices_remaining(u) <= 0:
-        return _err('limit_reached', 'Device limit reached — remove one first (max 3).')
-    device = u.totp_devices.create(name=name, secret=totp.new_secret(), confirmed=False)
-    # QR only: the raw secret is never sent to the client
-    return Response({'id': device.id, 'name': device.name,
-                     'otpauth_uri': totp.otpauth_uri(device.secret, u.email or u.username)},
-                    status=201)
-
-
-def handle_2fa_device_confirm(request, device_id):
-    u = request.user
-    device = u.totp_devices.filter(id=device_id, confirmed=False).first()
-    if not device:
-        return Response(status=404)
-    step, err = check_totp_code(request, device.secret)
-    if err:
-        return err
-    device.confirmed = True
-    # security trail: WHERE this authenticator was enrolled (browser + IP)
-    device.added_ip = _client_ip(request)
-    device.added_user_agent = (request.META.get('HTTP_USER_AGENT', '') or '')[:300]
-    device.save(update_fields=['confirmed', 'added_ip', 'added_user_agent'])
-    mark_otp_verified(request, step)
-    return Response({'ok': True})
-
-
-def handle_2fa_device_remove(request, device_id):
-    u = request.user
-    device = u.totp_devices.filter(id=device_id).first()
-    if not device:
-        return Response(status=404)
-    # pending devices are not a method — only a CONFIRMED one can be "the last"
-    if device.confirmed and not (u.totp_secret
-                                 or u.totp_devices.exclude(pk=device.pk).filter(confirmed=True).exists()):
-        return _err('last_method', 'Add another device before removing the last one.')
-    device.delete()
-    return Response(status=204)

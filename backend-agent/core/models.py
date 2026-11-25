@@ -849,31 +849,14 @@ class WhatsAppMessage(TenantOwned, Timestamped):
 
 
 class PlatformSession(models.Model):
-    """TOTP state of one auth token (platform admins only).  Deleted with the
-    token (logout / expiry / password change) so a new login must re-verify."""
+    """Second-check state of one auth token (platform admins only).  Deleted
+    with the token (logout / expiry / password change) so a new login must
+    pass it again.  It only matters for an admin who has two-factor: one
+    without it has passed with the password (core.authz.otp_satisfied)."""
 
     token = models.OneToOneField('authtoken.Token', on_delete=models.CASCADE, related_name='platform_session')
     otp_verified_at = models.DateTimeField(null=True, blank=True)
     last_otp_step = models.BigIntegerField(default=0)
-
-
-class TotpDevice(models.Model):
-    """An extra authenticator device (own TOTP secret) — a code from any
-    confirmed device satisfies OTP.  Max 3 per user (see authz.MAX_TOTP_DEVICES);
-    pending devices never satisfy sign-in until confirmed.  added_* / last_used_ip
-    record WHERE the device was enrolled and last used from (security trail)."""
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='totp_devices')
-    name = models.CharField(max_length=60)
-    secret = models.CharField(max_length=64)
-    confirmed = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-    last_used_at = models.DateTimeField(null=True, blank=True)
-    added_ip = models.CharField(max_length=45, blank=True)
-    added_user_agent = models.CharField(max_length=300, blank=True)
-    last_used_ip = models.CharField(max_length=45, blank=True)
-
-    class Meta:
-        ordering = ['id']
 
 
 class LoginAttempt(models.Model):

@@ -168,9 +168,22 @@ export interface TotpSetup {
   provisioning_uri?: string;
 }
 
-export async function getPlatform2faStatus(): Promise<{ enabled: boolean }> {
-  if (await inDemo()) return { enabled: false };
-  return request<{ enabled: boolean }>('/platform/2fa/status/');
+/** The account's one authenticator and its security trail (snake_case wire).
+ *  `enrolled_at` null = 2FA is off, or it was set up before the trail
+ *  existed; an empty string = the server does not know that part. */
+export interface TwoFactorStatus {
+  enabled: boolean;
+  enrolled_at: string | null;
+  enrolled_ip: string;
+  enrolled_device: string;
+  last_used_ip: string;
+}
+
+export async function getPlatform2faStatus(): Promise<TwoFactorStatus> {
+  if (await inDemo()) {
+    return { enabled: false, enrolled_at: null, enrolled_ip: '', enrolled_device: '', last_used_ip: '' };
+  }
+  return request<TwoFactorStatus>('/platform/2fa/status/');
 }
 
 export const totpSetup = async () =>
@@ -193,62 +206,6 @@ export const totpRotateConfirm = async (code: string) =>
   (await inDemo())
     ? demoFail<unknown>()
     : attempt(() => request<unknown>('/platform/2fa/rotate/confirm/', post({ code })));
-
-/** One extra authenticator device (the primary is managed via rotate/disable).
- *  added_* / last_used_ip are the security trail — the browser + IP that
- *  enrolled the device and the IP its code was last accepted from. */
-export interface TotpDevice {
-  id: number;
-  name: string;
-  confirmed: boolean;
-  created_at: string;
-  last_used_at: string | null;
-  added_ip: string;
-  added_device: string;
-  last_used_ip: string;
-}
-
-/** The primary authenticator's own trail (null = enrolled before trails existed). */
-export interface PrimaryDetail {
-  added_at: string;
-  added_ip: string;
-  added_device: string;
-  last_used_ip: string;
-}
-
-export interface TotpDeviceList {
-  primary: boolean;
-  primary_detail: PrimaryDetail | null;
-  remaining: number;
-  devices: TotpDevice[];
-}
-
-/** QR-only setup payload for a new device — the raw secret never leaves the server. */
-export interface TotpDeviceSetup {
-  id: number;
-  name: string;
-  otpauth_uri: string;
-}
-
-export async function listTotpDevices(): Promise<TotpDeviceList> {
-  if (await inDemo()) return { primary: false, primary_detail: null, remaining: 3, devices: [] };
-  return request<TotpDeviceList>('/platform/2fa/devices/');
-}
-
-export const addTotpDevice = async (name: string) =>
-  (await inDemo())
-    ? demoFail<TotpDeviceSetup>()
-    : attempt(() => request<TotpDeviceSetup>('/platform/2fa/devices/', post({ name })));
-
-export const confirmTotpDevice = async (id: number, code: string) =>
-  (await inDemo())
-    ? demoFail<{ ok: boolean }>()
-    : attempt(() => request<{ ok: boolean }>(`/platform/2fa/devices/${id}/confirm/`, post({ code })));
-
-export const removeTotpDevice = async (id: number) =>
-  (await inDemo())
-    ? demoFail<unknown>()
-    : attempt(() => request<unknown>(`/platform/2fa/devices/${id}/`, { method: 'DELETE' }));
 
 /** Settings → Account: change the signed-in account's username. */
 export async function changeUsername(username: string): Promise<Result<{ username: string }>> {

@@ -292,7 +292,6 @@ function RoleGate({ demo, onSignOut }: { demo: boolean; onSignOut: () => void })
       <>
         <TotpScreen
           isAdmin={!!me.platform_admin}
-          enrolled={!!me.totp_enabled}
           onVerified={load}
           onSignOut={onSignOut}
         />

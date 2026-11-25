@@ -10,9 +10,6 @@ shut: the button, the chat command, autopilot and the scheduler.
 
 from unittest import mock
 
-from django.core.management import call_command
-from django.db import connection
-from django.db.migrations.executor import MigrationExecutor
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
@@ -23,8 +20,7 @@ from core.management.commands import pipeline_loop, run_worker
 from core.models import AppSettings, PipelineRun, SearchProfile, User
 from core.pipeline import run_pipeline, start_pipeline_async
 from core.tenancy import workspace_context
-from core.tests.base import TenantTestCase
-from django.test import TransactionTestCase
+from core.tests.base import MigrationCase, TenantTestCase
 
 ALL_THREE = ['company_name', 'services', 'who']
 
@@ -373,21 +369,16 @@ class WizardTests(OwnerTestCase):
         self.assertIn('off', reply.lower())
 
 
-class AutopilotMigrationTests(TransactionTestCase):
+class AutopilotMigrationTests(MigrationCase):
     """What is already stored: a workspace saved with autopilot on but
     without proper data is switched off once, so "autopilot on" always means
     "may find leads". Drives the real migrations, as Django's docs recommend."""
 
-    app = 'core'
     before = '0044_responder_is_the_assistant'
     after = '0045_autopilot_needs_proper_data'
 
-    def _state(self, name):
-        call_command('migrate', self.app, name, verbosity=0)
-        return MigrationExecutor(connection).loader.project_state([(self.app, name)]).apps
-
     def test_autopilot_goes_off_exactly_where_the_data_is_missing(self):
-        apps = self._state(self.before)
+        apps = self.state(self.before)
         Workspace = apps.get_model('core', 'Workspace')
         AppSettings = apps.get_model('core', 'AppSettings')
         cases = {                                  # slug -> (name, services, industries, mode)
@@ -404,7 +395,7 @@ class AutopilotMigrationTests(TransactionTestCase):
                                       target_industries=industries, icp_mode=mode,
                                       runs_enabled=True)
 
-        apps = self._state(self.after)
+        apps = self.state(self.after)
         AppSettings = apps.get_model('core', 'AppSettings')
         on = {row.workspace.slug for row in AppSettings.objects.filter(runs_enabled=True)}
         self.assertEqual(on, {'ready', 'agency-choice'})

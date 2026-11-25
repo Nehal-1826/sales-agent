@@ -9,7 +9,10 @@ migrations seeded (profiles from 0015/0020), for tests that rely on those rows."
 import os
 from unittest import mock
 
-from django.test import TestCase
+from django.core.management import call_command
+from django.db import connection
+from django.db.migrations.executor import MigrationExecutor
+from django.test import TestCase, TransactionTestCase
 
 from core.models import AppSettings, Workspace
 from billing.services import ensure_manual_subscription
@@ -50,3 +53,27 @@ class TenantTestCase(TestCase):
         env = mock.patch.dict(os.environ, {'DEFAULT_TENANT_SLUG': self.workspace_slug})
         env.start()
         self.addCleanup(env.stop)
+
+
+class MigrationCase(TransactionTestCase):
+    """A test that drives the REAL migrations. `state(name)` takes the schema
+    to one migration and returns that migration's app registry.
+
+    When the test is over the schema is back at the newest migration, whatever
+    the test did. Test classes do not run in migration order: a test that
+    stops at an old migration leaves every class that runs after it on that
+    old schema — unnoticed until one of them needs a newer column (the day
+    `Workspace.deleted_at` arrived, three thread tests broke)."""
+
+    app = 'core'
+
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(self.to_newest)
+
+    def to_newest(self):
+        call_command('migrate', self.app, verbosity=0)
+
+    def state(self, name):
+        call_command('migrate', self.app, name, verbosity=0)
+        return MigrationExecutor(connection).loader.project_state([(self.app, name)]).apps

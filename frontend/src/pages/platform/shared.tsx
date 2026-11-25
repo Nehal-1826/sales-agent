@@ -84,13 +84,14 @@ export function Pager({
 }
 
 /** Confirm dialog with a required reason. Closes only on a real server success; errors stay visible. */
-export function ReasonDialog({
+export function ReasonDialog<T = unknown>({
   title,
   confirmLabel,
   danger = false,
   demo,
   children,
   extraValid = true,
+  quiet = false,
   run,
   onClose,
   onDone,
@@ -101,9 +102,12 @@ export function ReasonDialog({
   demo: boolean;
   children?: ReactNode;
   extraValid?: boolean;
-  run: (reason: string) => Promise<Result<unknown>>;
+  /** No "<title>: done" toast — `onDone` says what was done in its own words. */
+  quiet?: boolean;
+  run: (reason: string) => Promise<Result<T>>;
   onClose: () => void;
-  onDone: () => void;
+  /** Called with the server's answer once it worked. */
+  onDone: (data: T) => void;
 }) {
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
@@ -116,8 +120,8 @@ export function ReasonDialog({
     const r = await run(reason.trim());
     setBusy(false);
     if (!r.ok) return setError(r.error);
-    toast.success(`${title}: done`);
-    onDone();
+    if (!quiet) toast.success(`${title}: done`);
+    onDone(r.data);
   }
 
   return (

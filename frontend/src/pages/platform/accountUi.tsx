@@ -16,8 +16,9 @@ export const STATUS_LABELS: Record<AccountStatus, string> = {
   deleted: 'Deleted',
 };
 
-/** The status buttons of the filter row, in order. */
-export const STATUS_FILTERS: AccountStatus[] = ['active', 'suspended', 'pending'];
+/** The status buttons of the filter row, in order. "Deleted" comes last: a
+ *  deleted account is listed only under it, never among the others. */
+export const STATUS_FILTERS: AccountStatus[] = ['active', 'suspended', 'pending', 'deleted'];
 
 export const ROLE_LABELS: Record<AccountRole, string> = {
   owner: 'Owner',

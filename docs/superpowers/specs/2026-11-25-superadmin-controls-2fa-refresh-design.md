@@ -274,7 +274,11 @@ workspace's own history (runs, approvals, sent mail).
 
 Each real workspace on live has exactly one user. Deleting only the login
 would leave a workspace nobody can enter while lead finding and email
-sending keep running. So the workspace stops with its last owner/admin.
+sending keep running. So the workspace stops with its last owner/admin —
+and the accounts still in it at that moment (members) are deleted with it:
+they could never sign in to a stopped workspace, and the workspace could
+never be removed for good while they waited. Each of them can be brought
+back on its own. The dialog says how many.
 
 ### Server
 
@@ -297,19 +301,28 @@ Delete (platform admin, OTP-satisfied):
    (no sign-in from this moment).
 3. If no owner or admin who is neither deleted nor switched off is left in
    the workspace (other than the target): the workspace stops —
-   `deleted_at = now`, `is_active = False`. Otherwise the workspace stays.
-4. Warmup side: if a warmup copy exists (looked up by email), its mailboxes
-   are paused at once (server-to-server with a bridge token minted for the
-   acting admin). If that call fails the whole deletion is refused — a
-   deleted account must never keep warming. No copy → nothing to do.
-5. Audit `platform.user.delete` with the target, the workspace and whether
-   the workspace stopped.
+   `deleted_at = now`, `is_active = False` — and every other account in it
+   is deleted in the same moment, the same way (each with its warmup
+   mailboxes paused first). Otherwise the workspace stays. A workspace an
+   admin had already stopped by hand (Tenants) is left as they left it: only
+   the deletion's own stop is stamped, so a restore never undoes their decision.
+4. Warmup side: for every account that goes — if a warmup copy exists
+   (looked up by e-mail), its mailboxes are paused at once (server-to-server
+   with a bridge token minted for the acting admin). If that call fails the
+   whole deletion is refused — a deleted account must never keep warming. No
+   copy → nothing to do. (The copy is not "suspended": that only blocks
+   sign-in on the warmup side, the engine keeps warming.)
+5. Audit `platform.user.delete` with the target, the workspace, whether the
+   workspace stopped and every account that went.
 
-Sign-in answers "This account was deleted." for a deleted user.
+Sign-in answers "This account was deleted." for a deleted user — only when
+the password is right, so the answer never tells which names were deleted.
 
-Restore: clears the target's `deleted_at`, `is_active = True`; if the
-workspace was stopped by that deletion, it starts again; the warmup
-mailboxes resume; audit `platform.user.restore`.
+Restore: clears the target's `deleted_at`, `is_active = True`; the warmup
+mailboxes resume; a workspace stopped by a deletion starts again as soon as
+it has an owner or admin again (the mirror of the rule that stops it — with
+two deleted owners, bringing the first back must give them a running
+workspace); audit `platform.user.restore`.
 
 Tenants page: workspaces with `deleted_at` are not listed (they are managed
 from Users).
@@ -319,10 +332,15 @@ from Users).
 `manage.py purge_deleted [--days 30] [--dry-run]`, also run once a day by
 the agent worker.
 
-- A deleted account is purged once it has been deleted for 30 days.
-- A stopped workspace (`deleted_at` set) is purged when none of its
-  accounts can still be restored — every one of them is past its 30 days
-  (or it has no accounts left). Purging it removes: every row of the 17
+- A deleted account is purged once it has been deleted for 30 days — unless
+  its workspace was stopped by a deletion: those go together with it, when
+  the last one passes its 30 days (nobody is then restored into a workspace
+  that could never start again).
+- A stopped workspace — stopped by the deletion or by hand — is purged when
+  none of its accounts can still be restored: every one of them is past its
+  30 days, or it has none left. Only while something of it is still here: one
+  that was removed already is never touched again (no repeated audit rows).
+  Purging it removes: every row of the 17
   workspace-owned models (`Lead`, `EmailDraft`, `Mailbox`, `EmailTemplate`,
   `Potential`, `Reply`, `Suppression`, `AgentConfig`, `AppSettings`,
   `SearchProfile`, `ChatMessage`, `PipelineRun`, `Sequence`, `SequenceStep`,
@@ -334,7 +352,11 @@ the agent worker.
   gateway call (the owner's own cancel refunds money and is not reused); a
   gateway-managed renewal must be cancelled in the gateway by hand.
 - Warmup side: the copy and its mailboxes are deleted (same server-to-server
-  call; skipped and logged if the deleting admin no longer exists).
+  call; skipped and logged, with its e-mail, if the deleting admin no longer
+  exists). The copy goes BEFORE the rows: when the warmup service cannot be
+  reached, that account waits for the next day.
+- A workspace is touched only while it still has accounts or rows — one that
+  was removed for good is never touched again (no repeated audit rows).
 - Audit `platform.user.purge`.
 
 ### App

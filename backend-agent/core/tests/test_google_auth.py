@@ -94,3 +94,10 @@ class FirebaseVerifyTests(TestCase):
         r = self.post_token(email='owner@example.com', verified=False)
         self.assertEqual(r.status_code, 400)
         self.assertIn('not verified', r.json()['detail'])
+
+    def test_a_deleted_account_cannot_come_back_through_google(self):
+        from django.utils import timezone
+        User.objects.filter(pk=self.user.pk).update(deleted_at=timezone.now(), is_active=False)
+        r = self.post_token(email='owner@example.com')
+        self.assertEqual((r.status_code, r.json()['detail']), (403, 'This account was deleted.'))
+        self.assertFalse(Token.objects.filter(user=self.user).exists())

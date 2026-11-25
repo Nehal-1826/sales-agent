@@ -31,6 +31,10 @@ class Workspace(models.Model):
     signup_referrer = models.CharField(max_length=200, blank=True)
     country = models.CharField(max_length=2, blank=True)
     billing_email = models.EmailField(blank=True)
+    # set when a deletion stopped this workspace (core.accounts): it is then
+    # managed from the console's Users page, not Tenants, and is removed for
+    # good once none of its accounts can be brought back
+    deleted_at = models.DateTimeField(null=True, blank=True)
 
     objects = models.Manager()
     # same name as the tenant models' unscoped manager, so callers can grep
@@ -70,6 +74,13 @@ class User(AbstractUser):
     # — a short note about every message up to id `through`; later ones are
     # sent word for word while they fit the model's memory window
     chat_memory = models.JSONField(default=dict, blank=True)
+    # a deleted account (core.accounts): kept for 30 days so it can be brought
+    # back, then removed for good. is_active is False from the deletion on.
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    # the platform admin who deleted it — the one the warmup copy is removed
+    # for; null again once that admin is gone
+    deleted_by = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL,
+                                   related_name='+')
     # null only for platform operators (superusers: Django admin / manage.py)
     workspace = models.ForeignKey(Workspace, null=True, blank=True,
                                   on_delete=models.CASCADE, related_name='users')

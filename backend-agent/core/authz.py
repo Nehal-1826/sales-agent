@@ -34,6 +34,9 @@ def note_sign_in(user):
     User.objects.filter(pk=user.pk).update(last_login=timezone.now())
 
 
+DELETED_DETAIL = 'This account was deleted.'
+
+
 def user_2fa_active(user):
     """2FA is on when the account's one authenticator is set up.
 

@@ -18,9 +18,8 @@ import os
 from unittest import mock
 
 from django.core.cache import cache
-from django.core.management import call_command
 from django.db import connection
-from django.test import TestCase, TransactionTestCase
+from django.test import TestCase
 from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
@@ -31,6 +30,7 @@ from billing.tests.test_entitlements import make_ws
 from billing.tests.test_platform_base import SECRET, code_now, make_admin
 from core import totp
 from core.models import PlatformSession, User
+from core.tests.base import MigrationCase
 
 
 def admin_client(token):
@@ -226,12 +226,12 @@ class OneAuthenticatorTests(QuietCase):
                                  'enrolled_device': '', 'last_used_ip': ''})
 
 
-class OneAuthenticatorMigrationTests(TransactionTestCase):
+class OneAuthenticatorMigrationTests(MigrationCase):
     """The extra-authenticator table is removed by migration 0046."""
 
     def test_the_extra_devices_table_is_gone(self):
-        call_command('migrate', 'core', '0045_autopilot_needs_proper_data', verbosity=0)
+        self.state('0045_autopilot_needs_proper_data')
         self.assertIn('core_totpdevice', connection.introspection.table_names())
-        call_command('migrate', 'core', '0046_one_authenticator', verbosity=0)
+        self.state('0046_one_authenticator')
         self.assertNotIn('core_totpdevice', connection.introspection.table_names())
         self.assertFalse(hasattr(__import__('core.models', fromlist=['User']), 'TotpDevice'))

@@ -11,7 +11,10 @@
  * no mailbox count and cannot be ticked.
  *
  * "Enter workspace as this user" acts on the account itself: UserDrawer →
- * EnterWorkspaceDialog.
+ * EnterWorkspaceDialog. So do "Delete account" (UserDrawer →
+ * DeleteAccountDialog) and "Restore account". A deleted account is listed
+ * only under the "Deleted" status button, so after either the panel closes
+ * and the lists are read again: the row has left the list it was opened from.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Chip, PageHeader } from '../../components/ui';
@@ -159,9 +162,10 @@ export function AdminUsersPage({ demo = false }: { demo?: boolean }) {
     return { active, suspended, pending };
   }, [rows]);
 
-  // bulk selection — only accounts that have a warmup copy; platform admins are left out everywhere
+  // bulk selection — only accounts that have a warmup copy; platform admins are left out everywhere,
+  // and so are deleted ones: their mailboxes are paused by the deletion, and "Resume all" would undo that
   const selectable = useMemo(
-    () => joined.flatMap((j) => (j.warmup && !isPlatformAdmin(j.account) ? [{ account: j.account, warmup: j.warmup }] : [])),
+    () => joined.flatMap((j) => (j.warmup && !isPlatformAdmin(j.account) && j.account.status !== 'deleted' ? [{ account: j.account, warmup: j.warmup }] : [])),
     [joined],
   );
   // "select all" covers the open page; ticks kept from other pages stay ticked
@@ -362,7 +366,7 @@ export function AdminUsersPage({ demo = false }: { demo?: boolean }) {
               {joined.map(({ account: r, warmup }) => (
                 <tr key={r.id} onClick={() => setOpen(r)}>
                   <td onClick={(e) => e.stopPropagation()}>
-                    {warmup && !isPlatformAdmin(r) && (
+                    {warmup && !isPlatformAdmin(r) && r.status !== 'deleted' && (
                       <input
                         type="checkbox"
                         checked={selectedIds.has(warmup.id)}

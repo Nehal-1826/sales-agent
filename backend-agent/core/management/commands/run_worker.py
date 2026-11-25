@@ -15,15 +15,19 @@ This is the container command on the VPS (and can be used locally instead of
   4. Liveness heartbeats — a thread beats('worker') every 30 s (even while a
      cycle is mid-run) so GET /api/health/ can prove the worker is alive. The
      report thread beats as 'report'.
+  5. Daily purge thread — removes for good what was deleted 30 days ago
+     (core.accounts, `manage.py purge_deleted`): at start and then every 24 h.
 
 A cycle holds the shared run lock (core.runlock): if the API or chat already
 started one, the worker skips quietly; after a failed cycle it waits before
 retrying so a broken API key doesn't get hammered every 30 s.
 """
 
+import logging
 import threading
 import time
 
+from django.core.management import call_command
 from django.core.management.base import BaseCommand
 from django.db import close_old_connections
 
@@ -82,9 +86,26 @@ def _inbox_forever():
         time.sleep(POLL_EVERY)
 
 
+def purge_once():
+    """Remove for good what was deleted 30 days ago (core.accounts)."""
+    close_old_connections()
+    try:
+        call_command('purge_deleted')
+    except Exception as exc:  # noqa: BLE001  — again tomorrow; never let the thread die
+        logging.getLogger(__name__).warning('Purge failed, again tomorrow: %s', exc)
+
+
+def _purge_forever():
+    """At start too: the worker is restarted with every deploy, and the job
+    changes nothing that is not 30 days deleted."""
+    while True:
+        purge_once()
+        time.sleep(24 * 60 * 60)
+
+
 class Command(BaseCommand):
     help = ('Agent worker: pipeline cycles on the FREQUENT RUNS schedule, the '
-            'daily 8 PM IST report thread, and /api/health/ heartbeats.')
+            'daily 8 PM IST report thread, the daily purge, and /api/health/ heartbeats.')
 
     def handle(self, *args, **options):
         self.stdout.write('Agent worker started — pipeline scheduler + daily report thread.')
@@ -93,6 +114,7 @@ class Command(BaseCommand):
                          daemon=True).start()
         threading.Thread(target=_drain_forever, name='worker-outbox', daemon=True).start()
         threading.Thread(target=_inbox_forever, name='worker-inbox', daemon=True).start()
+        threading.Thread(target=_purge_forever, name='daily-purge', daemon=True).start()
 
         # failure backoff is tracked per workspace: one tenant's broken API key
         # must never delay another tenant's cycle

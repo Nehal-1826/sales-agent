@@ -334,6 +334,8 @@ export interface AccountRow {
   workspace: { id: number; name: string; slug: string } | null;
   /** owners+admins that are neither deleted nor switched off, this one included */
   workspace_admins: number;
+  /** the accounts of its workspace that are not deleted, this one included (0 with no workspace) */
+  workspace_accounts: number;
   /** plan name */
   plan: string | null;
   plan_code: string | null;
@@ -394,3 +396,43 @@ export async function getSignedInAccountId(): Promise<number | null> {
     return null;
   }
 }
+
+/* ---------------- delete an account, bring it back ---------------- */
+
+/**
+ * What `POST /platform/users/<id>/delete/` answers: whether the workspace
+ * stopped with the account, and the usernames of every account that went,
+ * this one first.
+ */
+export interface DeletedAccount {
+  deleted: boolean;
+  workspace_stopped: boolean;
+  deleted_accounts: string[];
+}
+
+/** What `POST /platform/users/<id>/restore/` answers. */
+export interface RestoredAccount {
+  restored: boolean;
+  workspace_started: boolean;
+}
+
+/**
+ * Delete the account. It can be brought back for 30 days, after that it is
+ * removed for good. The reason is recorded under the admin's name, and the
+ * typed e-mail address is what the server checks.
+ *
+ * 30 s, not the usual 10: the server pauses the warmup mailboxes of every
+ * account that goes before it touches one row, and while it may still be
+ * changing something the call must not be given up from here.
+ */
+export const deletePlatformUser = async (userId: number, body: { reason: string; confirmEmail: string }): Promise<Result<DeletedAccount>> =>
+  (await inDemo())
+    ? demoFail<DeletedAccount>()
+    : attempt(() => request<DeletedAccount>(`/platform/users/${userId}/delete/`, post(body), 30_000));
+
+/** Bring a deleted account back (30 s for the same reason). The reason is
+ *  recorded under the admin's name. */
+export const restorePlatformUser = async (userId: number, reason: string): Promise<Result<RestoredAccount>> =>
+  (await inDemo())
+    ? demoFail<RestoredAccount>()
+    : attempt(() => request<RestoredAccount>(`/platform/users/${userId}/restore/`, post({ reason }), 30_000));

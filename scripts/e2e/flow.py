@@ -250,6 +250,57 @@ def impersonation_recorded_code() -> str:
     )
 
 
+# ── Delete walk: a throwaway ACCOUNT (owner of its own workspace), deleted
+# and restored for real. Never the operator: that account signs in earlier
+# in this gate and is needed by the next run.
+DELETE_USER = "e2e-delete-me"
+DELETE_EMAIL = "e2e-delete-me@example.invalid"
+DELETE_SLUG = "e2e-delete-ws"
+DELETE_PW = "e2e-delete-pw-2026"
+
+
+def delete_walk_account_code(action: str) -> str:
+    """Django shell code that makes / removes the throwaway account."""
+    if action == "create":
+        return (
+            "from django.contrib.auth import get_user_model\n"
+            "from django.utils import timezone\n"
+            "from core.models import Workspace\n"
+            "from core.workspaces import provision_workspace\n"
+            "from billing.services import ensure_manual_subscription\n"
+            "U = get_user_model()\n"
+            f"Workspace.all_tenants.filter(slug='{DELETE_SLUG}').delete()\n"
+            f"ws = Workspace.all_tenants.create(slug='{DELETE_SLUG}', name='E2E Delete Co')\n"
+            "provision_workspace(ws)\n"
+            "ensure_manual_subscription(ws)\n"
+            f"u = U.objects.create_user(username='{DELETE_USER}', password='{DELETE_PW}',\n"
+            f"                           email='{DELETE_EMAIL}', workspace=ws, role='owner', first_name='Deleteme')\n"
+            "U.objects.filter(pk=u.pk).update(email_verified_at=timezone.now())\n"
+            "print('E2E_SHELL_OK created', u.pk)\n"
+        )
+    return (
+        "from django.contrib.auth import get_user_model\n"
+        "from core.models import Workspace\n"
+        "U = get_user_model()\n"
+        f"Workspace.all_tenants.filter(slug='{DELETE_SLUG}').delete()      # takes the account and its rows with it\n"
+        f"left = U.objects.filter(username='{DELETE_USER}').count() + Workspace.all_tenants.filter(slug='{DELETE_SLUG}').count()\n"
+        "print('E2E_SHELL_OK left', left)\n"
+    )
+
+
+def delete_walk_state() -> tuple[bool, str]:
+    """The throwaway account on the server: 'deleted <0|1> active <0|1> ws_active <0|1>'."""
+    return django_shell(
+        "from django.contrib.auth import get_user_model\n"
+        "from core.models import Workspace\n"
+        "U = get_user_model()\n"
+        f"u = U.objects.filter(username='{DELETE_USER}').first()\n"
+        f"ws = Workspace.all_tenants.filter(slug='{DELETE_SLUG}').first()\n"
+        "print('E2E_SHELL_OK deleted', int(bool(u and u.deleted_at)), 'active', int(bool(u and u.is_active)),\n"
+        "      'ws_active', int(bool(ws and ws.is_active)))\n"
+    )
+
+
 def forget_warmup_copy(email: str) -> tuple[bool, str]:
     """The warmup side keeps a passwordless copy of anyone who signs in
     through the bridge (backend/app/api/deps.py, keyed on the email). Remove
@@ -1304,6 +1355,152 @@ with sync_playwright() as p:
                 return page.locator('.drawer[role="dialog"]').count() == 0, "the operator's panel is shut"
             look("console users: the operator's panel closes again", panel_closed)
 
+            # ── Delete an account and bring it back (25 Nov), on a throwaway
+            # account made for this walk — never the operator, who signs in
+            # earlier in this gate. A wrong e-mail keeps the button locked;
+            # the right one and a reason delete it; it is listed only under
+            # "Deleted", with the day it goes for good; "Restore account"
+            # brings it back. The server is asked too: what it says about the
+            # account and its workspace must follow the clicks.
+            made, detail = django_shell(delete_walk_account_code("create"))
+            check("console delete: a throwaway account to delete is made in the e2e DB", made, detail)
+            PANEL = '.drawer[role="dialog"]'
+            DELETE_DIALOG = '.modal-card[role="dialog"][aria-label="Delete this account?"]'
+            RESTORE_DIALOG = '.modal-card[role="dialog"][aria-label="Restore this account?"]'
+
+            def rows():
+                return page.locator("table.leads-table tbody tr")
+
+            def its_row():
+                return page.locator("table.leads-table tbody tr", has_text=DELETE_EMAIL).first
+
+            def wait_rows(count):
+                for _ in range(40):                  # the search and the lists wait for the server
+                    page.wait_for_timeout(250)
+                    if rows().count() == count:
+                        return True
+                return False
+
+            def sign_in_attempt():
+                r = page.request.post(f"{BASE}/api/auth/login/", data={"username": DELETE_USER, "password": DELETE_PW})
+                try:
+                    return r.status, r.json().get("detail")
+                except Exception:  # noqa: BLE001
+                    return r.status, r.text()[:60]
+
+            if not WP_UP:
+                skip("console delete: delete and restore",
+                     "warmup service down — a deletion is refused on purpose then (nothing was clicked)")
+
+            def delete_offered():
+                page.get_by_placeholder("Search email, name or company…").fill(DELETE_EMAIL)
+                found = wait_rows(1)
+                its_row().locator("button.row-link").first.click()
+                button = page.locator(f'{PANEL} .drawer-body button.btn-danger', has_text="Delete account").first
+                button.wait_for(state="visible", timeout=8_000)
+                return (found and button.is_enabled()
+                        and one_line(its_row().locator("td").nth(5).inner_text()) == "Active"), \
+                    one_line(its_row().inner_text())
+            look("console delete: an account's panel offers 'Delete account'", delete_offered)
+
+            def delete_dialog():
+                page.locator(f'{PANEL} .drawer-body button.btn-danger', has_text="Delete account").first.click()
+                dialog = page.locator(DELETE_DIALOG)
+                dialog.wait_for(state="visible", timeout=8_000)
+                text = " ".join(dialog.inner_text().split())      # the WHOLE dialog: one_line() cuts at 200 characters
+                warning = one_line(dialog.locator(".banner-warn").inner_text())
+                return ("is the last owner or admin of E2E Delete Co, so the whole workspace stops" in warning
+                        and "brought back for 30 days" in text and DELETE_EMAIL in text
+                        and dialog.get_by_role("button", name="Delete account").is_disabled()), \
+                    f"{text[:170]} | {warning[:150]}"
+            look("console delete: the dialog says in plain words what will happen, and starts locked", delete_dialog)
+            page.wait_for_timeout(600)                # let the dialog finish opening, for the picture
+            page.screenshot(path=str(SHOTS / "09g-console-delete-dialog.png"))
+
+            def wrong_email():
+                dialog = page.locator(DELETE_DIALOG)
+                confirm = dialog.get_by_role("button", name="Delete account")
+                dialog.get_by_label("Why are you deleting it? (recorded)").fill("E2E gate: deleting a throwaway account")
+                dialog.get_by_label("Type their e-mail address to confirm").fill("nope@example.invalid")
+                page.wait_for_timeout(200)
+                locked = confirm.is_disabled()
+                dialog.get_by_label("Type their e-mail address to confirm").fill(DELETE_EMAIL)
+                page.wait_for_timeout(200)
+                ok, state = delete_walk_state()
+                return (locked and confirm.is_enabled() and ok and "deleted 0 active 1" in state), \
+                    f"locked-with-wrong={locked} right-enables={confirm.is_enabled()} {state}"
+            look("console delete: the button stays locked until the right e-mail is typed", wrong_email)
+
+            def do_delete():
+                dialog = page.locator(DELETE_DIALOG)
+                dialog.get_by_role("button", name="Delete account").click()
+                dialog.wait_for(state="hidden", timeout=30_000)
+                ok, state = delete_walk_state()
+                status, said = sign_in_attempt()
+                return (ok and "deleted 1" in state and "ws_active 0" in state
+                        and status == 403 and said == "This account was deleted."), f"{state} | sign-in {status} {said}"
+            look("console delete: the account is deleted, its workspace stops, and sign-in says so", do_delete)
+
+            def under_deleted():
+                plain_gone = wait_rows(0)            # the list behind reads itself again: the account left it
+                page.get_by_role("button", name="Deleted", exact=True).click()
+                listed = False
+                for _ in range(40):
+                    page.wait_for_timeout(250)
+                    if page.locator("table.leads-table tbody tr", has_text=DELETE_EMAIL).count() == 1:
+                        listed = True
+                        break
+                chip = one_line(its_row().locator("td").nth(5).inner_text()) if listed else ""
+                its_row().locator("button.row-link").first.click()
+                page.locator(PANEL).get_by_text("Removed for good on").wait_for(state="visible", timeout=8_000)
+                restore = page.locator(f'{PANEL} .drawer-body button', has_text="Restore account").first
+                enter = page.locator(f'{PANEL} .drawer-body button', has_text="Enter workspace as this user").first
+                return (plain_gone and listed and chip == "Deleted"
+                        and restore.is_enabled() and enter.is_disabled()), \
+                    f"left-the-plain-list={plain_gone} listed-under-Deleted={listed} chip='{chip}'"
+            look("console delete: it is listed only under 'Deleted', with the day it goes for good", under_deleted)
+            page.screenshot(path=str(SHOTS / "09h-console-deleted.png"))
+
+            def do_restore():
+                page.locator(f'{PANEL} .drawer-body button', has_text="Restore account").first.click()
+                dialog = page.locator(RESTORE_DIALOG)
+                dialog.wait_for(state="visible", timeout=8_000)
+                text = " ".join(dialog.inner_text().split())      # the WHOLE dialog: one_line() cuts at 200 characters
+                dialog.get_by_label("Reason (required, saved to the audit log)").fill("E2E gate: bringing it back")
+                dialog.get_by_role("button", name="Restore account").click()
+                dialog.wait_for(state="hidden", timeout=30_000)
+                ok, state = delete_walk_state()
+                status, _ = sign_in_attempt()
+                return (ok and "deleted 0 active 1" in state and "ws_active 1" in state and status == 200), \
+                    f"{text[:120]} | {state} | sign-in {status}"
+            look("console delete: 'Restore account' brings it back — sign-in works again and the workspace runs", do_restore)
+
+            def back_in_the_list():
+                page.get_by_role("button", name="Deleted", exact=True).click()      # the filter off again
+                back = False
+                for _ in range(40):
+                    page.wait_for_timeout(250)
+                    if page.locator("table.leads-table tbody tr", has_text=DELETE_EMAIL).count() == 1:
+                        back = True
+                        break
+                chip = one_line(its_row().locator("td").nth(5).inner_text()) if back else ""
+                return back and chip == "Active", f"back={back} chip='{chip}'"
+            look("console delete: the account is back in the list as Active", back_in_the_list)
+
+            def nothing_left_open():
+                # whatever went wrong above, the sign-out below needs a free page
+                for _ in range(4):
+                    if page.locator(".modal-card, .drawer").count() == 0:
+                        break
+                    page.keyboard.press("Escape")
+                    page.wait_for_timeout(300)
+                left = page.locator(".modal-card, .drawer").count()
+                if left:
+                    page.locator(".modal-card, .drawer").first.get_by_role("button", name="Close").first.click()
+                    page.wait_for_timeout(300)
+                return page.locator(".modal-card, .drawer").count() == 0, f"left open: {left}"
+            look("console delete: no dialog or panel is left open", nothing_left_open)
+
             # ── A superadmin WITHOUT two-factor: the password alone opens the
             # console (no code screen), and Settings says it is optional.
             # Same page, no reload (the admin-URL check is rate-limited).
@@ -1356,6 +1553,10 @@ with sync_playwright() as p:
             check("console: the entering is recorded under the admin's name (ticket ended; issue, start, end)",
                   recorded and "tickets 1 ended 1" in detail
                   and all(f"'platform.impersonate.{a}'" in detail for a in ("issue", "start", "end")), detail)
+        # the delete walk's throwaway account and its workspace go, whatever happened above
+        swept, detail = django_shell(delete_walk_account_code("delete"))
+        check("console: the throwaway account to delete is removed again, with its workspace",
+              swept and "left 0" in detail, detail)
         removed, detail = django_shell(console_admin_code("delete"))
     check("console: throwaway platform admins removed again",
           removed and "left 0" in detail and "tickets 0" in detail, detail)

@@ -1,0 +1,144 @@
+"""The warmup service's copies of an account, reached by e-mail (core.warmup_accounts).
+
+The service is never asked for real here: every HTTP call goes through a
+replaced `requests.request`. One rule above all: "could not look" must never
+read as "nothing there" — an account whose copy cannot be checked is not
+deleted (core.accounts)."""
+
+import os
+from unittest import mock
+
+import requests
+from django.core.cache import cache
+from django.test import TestCase
+
+from billing.tests.helpers import no_template_capture, quiet_logs
+from billing.tests.test_platform_base import make_admin
+from core import warmup_accounts
+
+SECRET = 'unit-test-bridge-secret-0123456789abcdef'      # 32+ characters, like the real one
+
+
+def answer(status=200, body=None):
+    r = mock.Mock(status_code=status)
+    r.json.return_value = body if body is not None else {}
+    return r
+
+
+def copies(*ids):
+    return answer(200, {'items': [{'id': i, 'email': 'ada@acme.test'} for i in ids]})
+
+
+class Base(TestCase):
+    def setUp(self):
+        no_template_capture(self)
+        quiet_logs(self)
+        cache.clear()
+        os.environ['WARMUP_JWT_SECRET'] = SECRET
+        self.addCleanup(os.environ.pop, 'WARMUP_JWT_SECRET', None)
+        _, self.admin, _ = make_admin()      # the admin USER: the bridge token is minted for them
+
+
+class CopiesTests(Base):
+    def test_only_an_exact_e_mail_match_counts(self):
+        body = answer(200, {'items': [{'id': 'a', 'email': 'ada@acme.test'},
+                                      {'id': 'b', 'email': 'xada@acme.test'},
+                                      {'id': 'c', 'email': 'Ada@Acme.Test '}]})
+        with mock.patch.object(warmup_accounts.requests, 'request', return_value=body) as http:
+            found = warmup_accounts.copies_for(' Ada@acme.test ', self.admin)
+        self.assertEqual([c['id'] for c in found], ['a', 'c'])
+        self.assertEqual(http.call_args.args, ('GET', f'{warmup_accounts.warmup_api_base()}/api/admin/users'))
+        self.assertEqual(http.call_args.kwargs['params'], {'search': 'Ada@acme.test', 'page_size': 200})
+        self.assertTrue(http.call_args.kwargs['headers']['Authorization'].startswith('Bearer '))
+
+    def test_no_copy_is_an_empty_list(self):
+        with mock.patch.object(warmup_accounts.requests, 'request', return_value=copies()):
+            self.assertEqual(warmup_accounts.copies_for('ada@acme.test', self.admin), [])
+
+    def test_an_address_with_nothing_in_it_is_not_even_asked_for(self):
+        with mock.patch.object(warmup_accounts.requests, 'request') as http:
+            self.assertEqual(warmup_accounts.copies_for('   ', self.admin), [])
+        self.assertEqual(http.call_count, 0)
+
+    def test_a_service_that_cannot_be_reached_is_an_error_never_no_copy(self):
+        for failure in (requests.ConnectionError('down'), requests.Timeout('slow')):
+            with mock.patch.object(warmup_accounts.requests, 'request', side_effect=failure):
+                with self.assertRaises(warmup_accounts.WarmupAccountsError) as caught:
+                    warmup_accounts.copies_for('ada@acme.test', self.admin)
+            self.assertEqual(caught.exception.status_code, 502)
+
+    def test_a_service_that_answers_oddly_is_an_error(self):
+        bad_json = mock.Mock(status_code=200)
+        bad_json.json.side_effect = ValueError('not json')
+        shape = answer(200, {'items': 'no list here'})
+        for body in (answer(500), bad_json, shape):
+            with mock.patch.object(warmup_accounts.requests, 'request', return_value=body):
+                with self.assertRaises(warmup_accounts.WarmupAccountsError):
+                    warmup_accounts.copies_for('ada@acme.test', self.admin)
+
+    def test_a_service_that_does_not_accept_our_sign_in_is_our_side(self):
+        with mock.patch.object(warmup_accounts.requests, 'request', return_value=answer(401)):
+            with self.assertRaises(warmup_accounts.WarmupAccountsError) as caught:
+                warmup_accounts.copies_for('ada@acme.test', self.admin)
+        self.assertEqual(caught.exception.status_code, 503)
+
+    def test_an_unconfigured_bridge_is_an_error(self):
+        os.environ.pop('WARMUP_JWT_SECRET')
+        with mock.patch.object(warmup_accounts.requests, 'request') as http:
+            with self.assertRaises(warmup_accounts.WarmupAccountsError) as caught:
+                warmup_accounts.copies_for('ada@acme.test', self.admin)
+        self.assertEqual(caught.exception.status_code, 503)
+        self.assertEqual(http.call_count, 0)
+
+
+class PausingTests(Base):
+    def test_with_no_copy_nothing_further_is_asked(self):
+        with mock.patch.object(warmup_accounts.requests, 'request', return_value=copies()) as http:
+            self.assertEqual(warmup_accounts.set_paused('ada@acme.test', self.admin, True), 0)
+        self.assertEqual(http.call_count, 1)          # the look-up only
+
+    def test_every_copy_is_paused_in_one_call(self):
+        done = answer(200, {'mailboxes_updated': 3, 'users_affected': 2, 'skipped_super_admin': 0})
+        with mock.patch.object(warmup_accounts.requests, 'request',
+                               side_effect=[copies('a', 'b'), done]) as http:
+            self.assertEqual(warmup_accounts.set_paused('ada@acme.test', self.admin, True), 3)
+        args, kwargs = http.call_args_list[1]
+        self.assertEqual(args, ('POST', f'{warmup_accounts.warmup_api_base()}/api/admin/users/bulk-pause-mailboxes'))
+        self.assertEqual(kwargs['json'], {'user_ids': ['a', 'b'], 'action': 'pause'})
+
+    def test_letting_them_run_again_asks_for_resume(self):
+        with mock.patch.object(warmup_accounts.requests, 'request',
+                               side_effect=[copies('a'), answer(200, {'mailboxes_updated': 1})]) as http:
+            self.assertEqual(warmup_accounts.set_paused('ada@acme.test', self.admin, False), 1)
+        self.assertEqual(http.call_args.kwargs['json'], {'user_ids': ['a'], 'action': 'resume'})
+
+    def test_a_refusal_is_an_error(self):
+        for status in (500, 403, 404):
+            with mock.patch.object(warmup_accounts.requests, 'request',
+                                   side_effect=[copies('a'), answer(status)]):
+                with self.assertRaises(warmup_accounts.WarmupAccountsError):
+                    warmup_accounts.set_paused('ada@acme.test', self.admin, True)
+
+
+class RemovingTests(Base):
+    def test_every_copy_is_deleted_and_counted(self):
+        with mock.patch.object(warmup_accounts.requests, 'request',
+                               side_effect=[copies('a', 'b'), answer(204), answer(204)]) as http:
+            self.assertEqual(warmup_accounts.remove('ada@acme.test', self.admin), 2)
+        self.assertEqual([c.args for c in http.call_args_list[1:]],
+                         [('DELETE', f'{warmup_accounts.warmup_api_base()}/api/admin/users/a'),
+                          ('DELETE', f'{warmup_accounts.warmup_api_base()}/api/admin/users/b')])
+
+    def test_a_copy_that_is_already_gone_counts_as_removed(self):
+        with mock.patch.object(warmup_accounts.requests, 'request', side_effect=[copies('a'), answer(404)]):
+            self.assertEqual(warmup_accounts.remove('ada@acme.test', self.admin), 1)
+
+    def test_anything_else_is_an_error(self):
+        with mock.patch.object(warmup_accounts.requests, 'request', side_effect=[copies('a'), answer(500)]):
+            with self.assertRaises(warmup_accounts.WarmupAccountsError):
+                warmup_accounts.remove('ada@acme.test', self.admin)
+
+    def test_no_copy_deletes_nothing(self):
+        with mock.patch.object(warmup_accounts.requests, 'request', return_value=copies()) as http:
+            self.assertEqual(warmup_accounts.remove('ada@acme.test', self.admin), 0)
+        self.assertEqual(http.call_count, 1)

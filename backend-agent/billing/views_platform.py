@@ -19,7 +19,7 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 
-from core import impersonation, lockout
+from core import accounts, impersonation, lockout
 from core.authz import (
     handle_2fa_confirm,
     handle_2fa_disable,
@@ -34,6 +34,7 @@ from core.models import ImpersonationTicket, User, Workspace
 from core.permissions import IsPlatformAdmin, IsPlatformAdminWithOTP
 from core.tenancy import workspace_context
 from core.throttles import OtpThrottle
+from core.warmup_accounts import WarmupAccountsError
 
 from . import metrics, payments
 from .entitlements import METERS, get_entitlement
@@ -153,12 +154,13 @@ _ACCOUNT_STATUS_Q = {
                & (Q(workspace__isnull=True) | Q(workspace__is_active=True))),
 }
 _ACCOUNT_STATUS_Q['suspended'] = _ACCOUNT_STATUS_Q['suspended'] & ~_UNVERIFIED_Q
+_ACCOUNT_STATUS_Q['deleted'] = Q(deleted_at__isnull=False)      # listed only when asked for
 
 
 def _account_status(u):
     """"pending" = the email was not verified yet. A platform admin is never
     pending (the owner creates those accounts by hand)."""
-    if getattr(u, 'deleted_at', None) is not None:
+    if u.deleted_at is not None:
         return 'deleted'
     if u.email_verified_at is None and not is_platform_admin(u):
         return 'pending'
@@ -170,15 +172,17 @@ def _account_status(u):
 def _account_row(u, sub=None):
     ws = u.workspace
     name = f'{u.first_name} {u.last_name}'.strip()
-    deleted_by = getattr(u, 'deleted_by', None)
     return {
         'id': u.pk, 'email': u.email, 'username': u.username, 'name': name,
         'role': 'platform_admin' if is_platform_admin(u) else u.role,
         'is_platform_admin': is_platform_admin(u),
         'workspace': {'id': ws.pk, 'name': ws.name, 'slug': ws.slug} if ws else None,
-        # owners + admins that could take over, this account included
-        'workspace_admins': (User.objects.filter(workspace=ws, role__in=('owner', 'admin'),
-                                                 is_active=True).count() if ws else 0),
+        # owners + admins that could take over, this account included: 1 means
+        # "the workspace stops with this one"
+        'workspace_admins': (User.objects.filter(workspace=ws, role__in=accounts.RUNS_IT,
+                                                 is_active=True, deleted_at__isnull=True).count() if ws else 0),
+        # the accounts of the workspace that are not deleted, this one included
+        'workspace_accounts': (User.objects.filter(workspace=ws, deleted_at__isnull=True).count() if ws else 0),
         'plan': sub.plan.name if sub else None,
         'plan_code': sub.plan.code if sub else None,
         'plan_status': sub.status if sub else None,
@@ -186,15 +190,15 @@ def _account_row(u, sub=None):
         'two_factor': bool(u.totp_secret),
         'last_login': u.last_login,
         'joined': u.date_joined,
-        'deleted_at': getattr(u, 'deleted_at', None),
-        'deleted_by': deleted_by.username if deleted_by else None,
-        'purges_at': getattr(u, 'purges_at', None),
+        'deleted_at': u.deleted_at,
+        'deleted_by': u.deleted_by.username if u.deleted_by_id else None,
+        'purges_at': accounts.purge_date(u.deleted_at),
     }
 
 
 @platform_api('GET')
 def users(request):
-    qs = User.objects.select_related('workspace').order_by('-id')
+    qs = User.objects.select_related('workspace', 'deleted_by').order_by('-id')
     for word in (request.query_params.get('q') or '').split():
         qs = qs.filter(Q(email__icontains=word) | Q(username__icontains=word)
                        | Q(first_name__icontains=word) | Q(last_name__icontains=word)
@@ -208,8 +212,12 @@ def users(request):
     if status and status not in _ACCOUNT_STATUS_Q:
         # never ignored: a filter that matched nothing would quietly list every account
         return _bad('bad_status', 'Unknown status.')
-    if status:
-        qs = qs.filter(_ACCOUNT_STATUS_Q[status])
+    if status == 'deleted':
+        qs = qs.filter(_ACCOUNT_STATUS_Q['deleted'])
+    else:
+        qs = qs.exclude(deleted_at__isnull=False)       # a deleted account is listed only under "Deleted"
+        if status:
+            qs = qs.filter(_ACCOUNT_STATUS_Q[status])
     pg = _Pager()
     items = pg.paginate_queryset(qs, request)
     subs = _subs_for([u.workspace_id for u in items if u.workspace_id])
@@ -225,7 +233,7 @@ def _cannot_enter(admin, target):
         return 'cannot_impersonate', 'Platform admins cannot be entered — not even yourself.', 400
     if target.workspace is None:      # an account nobody gave a company (made by hand)
         return 'cannot_impersonate', 'This account has no workspace to enter.', 400
-    if getattr(target, 'deleted_at', None) is not None:
+    if target.deleted_at is not None:
         return 'cannot_impersonate', 'This account was deleted.', 400
     if not target.is_active:
         return 'cannot_impersonate', 'This account is switched off.', 400
@@ -259,6 +267,52 @@ def user_impersonate(request, user_id):
         'user': {'id': target.pk, 'username': target.username, 'email': target.email},
         'workspace': {'id': ws.pk, 'name': ws.name, 'slug': ws.slug},
     })
+
+
+def _warmup_refused(exc):
+    """The answer when the warmup service could not do its part: the account
+    is exactly as it was, and the admin is told so first."""
+    return _bad('warmup_unavailable', f'Nothing was changed. {exc.detail}', exc.status_code)
+
+
+@platform_api('POST')
+def user_delete(request, user_id):
+    """Delete an account. It can be brought back for 30 days (core.accounts);
+    the typed e-mail address is the confirmation that this is the right one."""
+    reason, err = _reason(request)
+    if err:
+        return err
+    target = User.objects.select_related('workspace').filter(pk=user_id).first()
+    problem = accounts.can_delete(request.user, target)
+    if problem:
+        return _bad(*problem)
+    typed = request.data.get('confirmEmail')
+    typed = typed.strip().lower() if isinstance(typed, str) else ''
+    if not target.email or typed != target.email.strip().lower():
+        return _bad('email_mismatch', "Type the account's e-mail address to confirm.")
+    try:
+        out = accounts.delete_account(request.user, target, reason=reason, ip=_ip(request))
+    except WarmupAccountsError as exc:
+        return _warmup_refused(exc)
+    return Response({'deleted': True, **out})
+
+
+@platform_api('POST')
+def user_restore(request, user_id):
+    """Bring a deleted account back (core.accounts)."""
+    reason, err = _reason(request)
+    if err:
+        return err
+    target = User.objects.select_related('workspace').filter(pk=user_id).first()
+    if target is None:
+        return _bad('not_found', 'No such account.', 404)
+    if target.deleted_at is None:
+        return _bad('not_deleted', 'This account is not deleted.')
+    try:
+        out = accounts.restore_account(request.user, target, reason=reason, ip=_ip(request))
+    except WarmupAccountsError as exc:
+        return _warmup_refused(exc)
+    return Response({'restored': True, **out})
 
 
 # ------------------------------------------------------------------ tenants
@@ -308,7 +362,9 @@ def _subs_for(ids):
 
 @platform_api('GET')
 def tenants(request):
-    qs = Workspace.all_tenants.order_by('-id')
+    # a workspace stopped by a deletion is managed from Users (it is removed
+    # for good with its accounts), not from here
+    qs = Workspace.all_tenants.exclude(deleted_at__isnull=False).order_by('-id')
     q = (request.query_params.get('q') or '').strip()
     if q:
         owners = User.objects.filter(role='owner', email__icontains=q).values('workspace_id')

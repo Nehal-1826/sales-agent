@@ -59,6 +59,7 @@ class WorkerPerWorkspaceTests(TwoTenantBase):
                 mock.patch(f'{WORKER}._heartbeat_forever'), \
                 mock.patch(f'{WORKER}._drain_forever'), \
                 mock.patch(f'{WORKER}._inbox_forever'), \
+                mock.patch(f'{WORKER}._purge_forever'), \
                 mock.patch(f'{WORKER}.close_old_connections'), \
                 mock.patch(f'{WORKER}.run_pipeline', fake_run), \
                 mock.patch(f'{WORKER}.time.sleep', side_effect=[None, None, Stop()]):
@@ -84,6 +85,7 @@ class WorkerPerWorkspaceTests(TwoTenantBase):
                 mock.patch(f'{WORKER}._heartbeat_forever'), \
                 mock.patch(f'{WORKER}._drain_forever'), \
                 mock.patch(f'{WORKER}._inbox_forever'), \
+                mock.patch(f'{WORKER}._purge_forever'), \
                 mock.patch(f'{WORKER}.close_old_connections'), \
                 mock.patch.object(WorkerCommand, '_tick_workspace', flaky), \
                 mock.patch(f'{WORKER}.time.sleep', side_effect=[None, Stop()]):

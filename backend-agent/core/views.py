@@ -5,6 +5,7 @@ from datetime import timedelta
 
 from django.contrib.auth import authenticate
 from django.db import connection
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.authtoken.models import Token
@@ -15,6 +16,7 @@ from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 
 from . import impersonation, lockout
 from .authz import (
+    DELETED_DETAIL,
     auth_extras,
     handle_2fa_confirm,
     handle_2fa_disable,
@@ -147,6 +149,29 @@ def _issue_login_token(user, request):
     return Response({'token': token.key, 'user': {**UserSerializer(user).data, **auth_extras(user, request)}})
 
 
+def _deleted_account(uname, password):
+    """The deleted account behind a sign-in attempt whose PASSWORD is right,
+    else None. The password is checked on purpose: "this account was deleted"
+    said to whoever typed the name would tell which names were deleted."""
+    uname = (uname or '').strip()
+    if not uname:
+        return None
+    q = Q(email__iexact=uname) if '@' in uname else Q(username__iexact=uname)
+    for user in User.objects.filter(q, deleted_at__isnull=False)[:5]:
+        if isinstance(password, str) and user.check_password(password):
+            return user
+    return None
+
+
+def _nobody_signed_in(uname, password, ip):
+    """What a door answers when nobody signed in."""
+    if _deleted_account(uname, password) is not None:
+        # the password is right: nothing is counted towards a lockout
+        return Response({'detail': DELETED_DETAIL}, status=403)
+    lockout.record_failure(uname, ip)
+    return Response({'detail': 'invalid credentials'}, status=401)
+
+
 @api_view(['POST'])
 @permission_classes([AllowAny])
 @throttle_classes([AnonRateThrottle, LoginThrottle])
@@ -172,8 +197,7 @@ def login(request):
                 password=request.data.get('password'),
             )
     if user is None:
-        lockout.record_failure(uname, ip)
-        return Response({'detail': 'invalid credentials'}, status=401)
+        return _nobody_signed_in(uname, request.data.get('password'), ip)
     lockout.clear(uname, ip)
     if user.workspace is not None and not user.workspace.is_active:
         return Response({'detail': 'This workspace is suspended.'}, status=403)
@@ -204,8 +228,7 @@ def admin_login(request):
             user = authenticate(request, username=matches[0],
                                 password=request.data.get('password'))
     if user is None:
-        lockout.record_failure(uname, ip)
-        return Response({'detail': 'invalid credentials'}, status=401)
+        return _nobody_signed_in(uname, request.data.get('password'), ip)
     lockout.clear(uname, ip)
     if not is_platform_admin(user):
         return Response({'detail': 'This page is for platform administrators only.'},

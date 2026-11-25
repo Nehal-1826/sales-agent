@@ -29,7 +29,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.authtoken.models import Token
 
-from .authz import auth_extras, note_sign_in
+from .authz import DELETED_DETAIL, auth_extras, note_sign_in
 from .models import PlatformSession, User
 from .serializers import UserSerializer
 
@@ -105,6 +105,9 @@ def google_verify(request):
     if user.is_staff and user.workspace_id is None:
         # two-door rule: platform admins never get a token on this door
         return Response({'detail': ADMIN_ONLY_DETAIL}, status=status.HTTP_403_FORBIDDEN)
+    if user.deleted_at is not None:
+        # a deleted account has no door left, this one included
+        return Response({'detail': DELETED_DETAIL}, status=status.HTTP_403_FORBIDDEN)
 
     drf_token, _ = Token.objects.get_or_create(user=user)
     PlatformSession.objects.filter(token=drf_token).delete()  # fresh OTP gate

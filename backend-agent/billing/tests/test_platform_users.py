@@ -1,9 +1,12 @@
 """GET /api/platform/users/ — the console's Users page lists the REAL accounts
 (everyone who can sign in), not the warmup side's copies."""
 
+from datetime import timedelta
+
 from django.core.cache import cache
 from django.test import TestCase
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
@@ -13,7 +16,7 @@ from billing.tests.test_platform_base import make_admin
 from core.models import User, Workspace
 
 ROW_KEYS = {'id', 'email', 'username', 'name', 'role', 'is_platform_admin', 'workspace',
-            'workspace_admins', 'plan', 'plan_code', 'plan_status', 'status', 'two_factor',
+            'workspace_admins', 'workspace_accounts', 'plan', 'plan_code', 'plan_status', 'status', 'two_factor',
             'last_login', 'joined', 'deleted_at', 'deleted_by', 'purges_at'}
 
 
@@ -171,3 +174,61 @@ class AccountsListTests(AccountsBase):
         c.credentials(HTTP_AUTHORIZATION=f'Token {Token.objects.create(user=u).key}')
         self.assertEqual(c.get('/api/platform/users/').status_code, 403)
         self.assertEqual(APIClient().get('/api/platform/users/').status_code, 401)
+
+
+class DeletedAccountsTests(AccountsBase):
+    """A deleted account is on the page only under "Deleted" — and says when
+    it goes for good. A workspace stopped by a deletion is not on Tenants."""
+
+    def gone(self, ws, username, email, days=3, deleted_by=None):
+        """An account deleted `days` days ago (what core.accounts does to it)."""
+        return person(ws, username, email, is_active=False,
+                      deleted_at=timezone.now() - timedelta(days=days), deleted_by=deleted_by)
+
+    def usernames(self, **params):
+        return sorted(r['username'] for r in self.list(**params)['results'] if r['workspace'])
+
+    def tenant_ids(self):
+        r = self.admin.get('/api/platform/tenants/')
+        self.assertEqual(r.status_code, 200, r.content)
+        return [row['id'] for row in r.json()['results']]
+
+    def test_a_deleted_account_is_listed_only_under_deleted(self):
+        ws = company('del1', 'Acme')
+        self.gone(ws, 'ada', 'ada@acme.test')
+        self.assertEqual(self.usernames(q='ada@acme'), [])
+        self.assertEqual(self.usernames(status='deleted', q='ada@acme'), ['ada'])
+        for status in ('active', 'suspended', 'pending'):
+            self.assertEqual(self.usernames(status=status, q='ada@acme'), [], status)
+
+    def test_the_row_says_when_it_goes_for_good_and_who_deleted_it(self):
+        ws = company('del2', 'Acme')
+        ada = self.gone(ws, 'ada', 'ada@acme.test', days=3, deleted_by=User.objects.get(username='root'))
+        row = next(r for r in self.list(status='deleted')['results'] if r['username'] == 'ada')
+        self.assertEqual(row['status'], 'deleted')
+        self.assertEqual(row['deleted_by'], 'root')
+        self.assertEqual(parse_datetime(row['deleted_at']), ada.deleted_at)
+        self.assertEqual(parse_datetime(row['purges_at']), ada.deleted_at + timedelta(days=30))
+
+    def test_an_account_that_was_not_deleted_has_no_dates(self):
+        ws = company('del3', 'Acme')
+        person(ws, 'ok', 'ok@acme.test')
+        row = self.row('ok@acme.test')
+        self.assertEqual((row['deleted_at'], row['deleted_by'], row['purges_at']), (None, None, None))
+
+    def test_the_row_counts_the_accounts_of_the_workspace(self):
+        ws = company('del4', 'Acme')
+        person(ws, 'a', 'a@acme.test')
+        person(ws, 'b', 'b@acme.test')
+        self.gone(ws, 'c', 'c@acme.test')
+        self.assertEqual(self.row('a@acme.test')['workspace_accounts'], 2)      # the deleted one is not counted
+
+    def test_a_workspace_stopped_by_a_deletion_is_not_on_the_tenants_page(self):
+        ws = company('del5', 'Acme')
+        Workspace.all_tenants.filter(pk=ws.pk).update(is_active=False, deleted_at=timezone.now())
+        self.assertNotIn(ws.pk, self.tenant_ids())
+
+    def test_a_workspace_stopped_by_hand_stays_on_the_tenants_page(self):
+        ws = company('del6', 'Acme')
+        Workspace.all_tenants.filter(pk=ws.pk).update(is_active=False)
+        self.assertIn(ws.pk, self.tenant_ids())

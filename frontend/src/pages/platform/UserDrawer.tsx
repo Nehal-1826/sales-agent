@@ -2,7 +2,9 @@
  * The user panel of the console's Users page — two separate blocks.
  *
  *  · Account — the REAL sign-in account (email, username, company, plan,
- *    status…) and "Enter workspace as this user", which acts on the account.
+ *    status…) and the buttons that act on the account itself: "Enter
+ *    workspace as this user", "Delete account", and for a deleted one
+ *    "Restore account" (it can be brought back for 30 days).
  *  · Warmup account — only when the warmup side keeps a copy of this email.
  *    Its buttons act on that copy only; the person can always still sign in.
  */
@@ -11,11 +13,12 @@ import { Chip, Field } from '../../components/ui';
 import { Drawer } from '../../components/overlay';
 import { EmptyState, Skeleton, toast } from '../../components/feedback';
 import { useAsync } from '../../lib/hooks';
-import { getSignedInAccountId } from '../../lib/platform';
+import { getSignedInAccountId, restorePlatformUser } from '../../lib/platform';
 import type { AccountRow } from '../../lib/platform';
 import { listAdminPayments, listAdminPlans, suspendAdminUser, updateAdminUserPlan } from '../../lib/platformAdmin';
 import type { AdminPayment, AdminUserRow } from '../../lib/platformAdmin';
 import { ROLE_LABELS, StatusChip, displayName, fmtRelative, isPlatformAdmin, when } from './accountUi';
+import { DeleteAccountDialog } from './DeleteAccountDialog';
 import { EnterWorkspaceDialog } from './EnterWorkspaceDialog';
 import { ReasonDialog } from './shared';
 
@@ -63,7 +66,18 @@ const WARMUP_STATUS: Record<AdminUserRow['status'], string> = {
   pending: 'Not set up yet',
 };
 
-function WarmupBlock({ warmup, demo, onChanged }: { warmup: AdminUserRow; demo: boolean; onChanged: () => void }) {
+function WarmupBlock({
+  warmup,
+  deleted,
+  demo,
+  onChanged,
+}: {
+  warmup: AdminUserRow;
+  /** The account is deleted — then it is the deletion, not these buttons, that keeps the person from signing in. */
+  deleted: boolean;
+  demo: boolean;
+  onChanged: () => void;
+}) {
   const { data: plans } = useAsync(() => listAdminPlans(), []);
   const [act, setAct] = useState<WarmupAct | null>(null);
   const [planId, setPlanId] = useState('');
@@ -85,13 +99,14 @@ function WarmupBlock({ warmup, demo, onChanged }: { warmup: AdminUserRow; demo: 
     <section className="drawer-section">
       <h3 className="pf-h2">Warmup account</h3>
       <p className="field-hint" style={{ marginTop: 0, marginBottom: 12 }}>
-        The buttons here change warmup only. The person can still sign in.
+        The buttons here change warmup only.{!deleted && ' The person can still sign in.'}
       </p>
       <dl className="pf-dl">
         <dt>Mailboxes</dt>
         <dd>{warmup.mailbox_count}</dd>
         <dt>Warmup</dt>
-        <dd>{WARMUP_STATUS[warmup.status]}</dd>
+        {/* a deletion pauses the copy's mailboxes; the copy itself still reads "Running" */}
+        <dd>{deleted ? 'Paused — the account is deleted' : WARMUP_STATUS[warmup.status]}</dd>
       </dl>
 
       <Field label="Change plan">
@@ -180,6 +195,8 @@ export function UserDrawer({
   onChanged: () => void;
 }) {
   const [entering, setEntering] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [signedInId, setSignedInId] = useState<number | null>(null);
 
   // asked for only now, when the panel opens; a failed answer just means "not your account"
@@ -210,12 +227,34 @@ export function UserDrawer({
           ? 'This account is turned off, so its workspace cannot be opened.'
           : null;
 
+  const deleted = account.status === 'deleted';
+  const name = displayName(account);
+  const company = account.workspace?.name ?? name;
+  // the server's own rule (core.accounts.can_delete): an account that has a
+  // workspace and is neither a platform admin's nor the signed-in admin's
+  // own. A deleted one is not offered the button at all — it gets "Restore
+  // account" instead.
+  const canDelete = !deleted && !!account.workspace && !isPlatformAdmin(account) && !isOwn;
+  // why the button is greyed out — the first reason that applies. The admin's
+  // own account needs no line: the sentence above the button already says it.
+  // A platform admin never has a workspace, so that is asked first.
+  const deleteHint = isOwn
+    ? null
+    : isPlatformAdmin(account)
+      ? 'Platform admin accounts cannot be deleted here.'
+      : !account.workspace
+        ? 'This account is not in a workspace, so it cannot be deleted here.'
+        : null;
+  // the rule that stops a workspace, read backwards: it runs again once an
+  // owner or admin is back — so this is said while none is left
+  const startsAgain = (account.role === 'owner' || account.role === 'admin') && account.workspace_admins === 0;
+
   // The panel's own Close button is also its LAST control. That matters for
   // the dialogs opened inside it: the panel's focus loop works in page order,
   // so a dialog that came last would let Tab slip out to the panel behind it.
   return (
     <Drawer
-      title={displayName(account)}
+      title={name}
       subtitle={account.email}
       onClose={onClose}
       footer={
@@ -247,19 +286,18 @@ export function UserDrawer({
           <dd>{fmtRelative(account.last_login)}</dd>
           <dt>Signed up</dt>
           <dd>{when(account.joined)}</dd>
-          {account.status === 'deleted' && (
-            <>
-              <dt>Deleted</dt>
-              <dd>
-                {when(account.deleted_at)}
-                {account.deleted_by ? ` by ${account.deleted_by}` : ''}
-              </dd>
-            </>
-          )}
         </dl>
 
+        {deleted && (
+          <p style={{ marginBottom: 14 }}>
+            {`Deleted on ${when(account.deleted_at)}${account.deleted_by ? ` by ${account.deleted_by}` : ''}.`}
+            <br />
+            {`Removed for good on ${when(account.purges_at)}.`}
+          </p>
+        )}
+
         {isOwn ? (
-          <p className="field-hint" style={{ marginTop: 0 }}>
+          <p className="field-hint" style={{ margin: '0 0 14px' }}>
             This is the account you are signed in with.
           </p>
         ) : (
@@ -274,11 +312,60 @@ export function UserDrawer({
             )}
           </div>
         )}
-        {/* "Delete account" — the sign-in itself, not only its warmup copy — comes in a later piece. It goes here. */}
+        {deleted ? (
+          <div style={{ marginBottom: 14 }}>
+            <button className="btn" style={{ width: '100%' }} onClick={() => setRestoring(true)}>
+              Restore account
+            </button>
+          </div>
+        ) : (
+          <div style={{ marginBottom: 14 }}>
+            <button className="btn btn-danger" style={{ width: '100%' }} disabled={!canDelete} onClick={() => setDeleting(true)}>
+              Delete account
+            </button>
+            {deleteHint && (
+              <p className="field-hint" style={{ marginTop: 6, marginBottom: 0 }}>
+                {deleteHint}
+              </p>
+            )}
+          </div>
+        )}
         {entering && <EnterWorkspaceDialog account={account} onClose={() => setEntering(false)} />}
+        {deleting && (
+          <DeleteAccountDialog
+            account={account}
+            onClose={() => setDeleting(false)}
+            onDone={() => {
+              setDeleting(false);
+              onChanged();
+              // the account has left the list this panel was opened from —
+              // nothing true is left to show in it, so it closes as well
+              onClose();
+            }}
+          />
+        )}
+        {restoring && (
+          <ReasonDialog
+            title="Restore this account?"
+            confirmLabel="Restore account"
+            quiet
+            demo={demo}
+            run={(reason) => restorePlatformUser(account.id, reason)}
+            onClose={() => setRestoring(false)}
+            onDone={(data) => {
+              setRestoring(false);
+              toast.success(`Account restored.${data.workspace_started ? ' The workspace is running again.' : ''}`);
+              onChanged();
+              // it has left the "Deleted" list this panel was opened from
+              onClose();
+            }}
+          >
+            <p role="note">{`This brings ${name} back. They can sign in again.${startsAgain ? ` ${company} starts running again.` : ''}`}</p>
+          </ReasonDialog>
+        )}
       </section>
 
-      {warmup && <WarmupBlock warmup={warmup} demo={demo} onChanged={onChanged} />}
+      {warmup && <WarmupBlock warmup={warmup} deleted={deleted} demo={demo} onChanged={onChanged} />}
     </Drawer>
   );
 }

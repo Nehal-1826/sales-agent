@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 from django.utils import timezone
 
 from .mailer import branded_email_html, send_email_message, smtp_configured, text_to_email_html
-from .models import AppSettings, Lead, PipelineRun, Potential, User
+from .models import AppSettings, Lead, PipelineRun, Potential, ReportRound, User
 from .tenancy import current_workspace
 
 log = logging.getLogger(__name__)
@@ -33,13 +33,48 @@ def today_window_ist():
     return start, start + timedelta(days=1)
 
 
+def report_time_ist(day):
+    """20:00 IST on `day`."""
+    return datetime.combine(day, dtime(hour=REPORT_HOUR), tzinfo=IST)
+
+
 def next_report_time_ist(after=None):
     """The next 20:00 IST moment at or after `after` (defaults to now)."""
     now = after or now_ist()
-    candidate = datetime.combine(now.date(), dtime(hour=REPORT_HOUR), tzinfo=IST)
+    candidate = report_time_ist(now.date())
     if now > candidate:
         candidate += timedelta(days=1)
     return candidate
+
+
+def last_report_round():
+    """The IST day of the newest 20:00 round that went out — None when none is recorded."""
+    row = ReportRound.objects.order_by('-day').first()
+    return row.day if row else None
+
+
+def note_report_round(day):
+    """Remember that the 20:00 round for IST day `day` went out."""
+    ReportRound.objects.get_or_create(day=day)
+
+
+def missed_report_round(now=None):
+    """The 20:00 IST round that should have gone out and has not — its IST day, else None.
+
+    The worker may be down at 20:00 (a deploy, a crash) and come back later:
+    that round is sent the moment the report loop starts again. Only the most
+    recent 20:00 that has passed counts — an older one a day late is noise.
+    With no record at all (a first start, or the upgrade from before records
+    existed) only TODAY'S is claimed: a routine first start in the morning
+    sends nothing."""
+    now = now or now_ist()
+    last = last_report_round()
+    passed = next_report_time_ist(now) - timedelta(days=1)      # the most recent 20:00 that has passed
+    if last is not None and last >= passed.date():
+        return None
+    if last is None and passed.date() != now.date():
+        return None
+    return passed.date()
 
 
 def _resolve_recipients():

@@ -3,6 +3,11 @@
     python manage.py daily_report            # build + send immediately (test / cron)
     python manage.py daily_report --workspace acme   # one tenant only (default: all active)
     python manage.py daily_report --loop     # stay running, send daily at 8 PM IST
+
+The loop looks after a missed 20:00 itself: when it starts and the most
+recent 20:00 IST has passed without a round going out (the worker was down —
+a deploy, a crash), that round is sent at once, and once only
+(core.reports.missed_report_round).
 """
 
 import time
@@ -12,7 +17,14 @@ from django.core.management.base import BaseCommand, CommandError
 
 from core.health import beat
 from core.models import Workspace
-from core.reports import next_report_time_ist, now_ist, send_daily_report
+from core.reports import (
+    missed_report_round,
+    next_report_time_ist,
+    note_report_round,
+    now_ist,
+    report_time_ist,
+    send_daily_report,
+)
 from core.tenancy import workspace_context
 
 
@@ -47,22 +59,43 @@ class Command(BaseCommand):
             except Exception as exc:
                 self.stderr.write(f'Daily report failed [{ws.slug}]: {exc}')
 
+    def _round(self, day, slug=''):
+        """One 20:00 round: send it and — when it is the full one — remember the
+        day, so a worker restarted afterwards does not send it twice."""
+        self._send_all(slug=slug)
+        if not slug:
+            note_report_round(day)
+
+    def _catch_up(self, slug=''):
+        """A worker that was down at 20:00 IST and came back later sends the
+        round it missed the moment this loop starts."""
+        day = missed_report_round()
+        if day is None:
+            return
+        self.stdout.write(self.style.WARNING(
+            f'The {day:%d %b} report could not go out at 20:00 IST — sending it now.'))
+        self._round(day, slug)
+
     def handle(self, *args, **options):
         if not options['loop']:
             day = date.fromisoformat(options['day']) if options['day'] else None
             self._send_all(day, options['workspace'])
+            # a full round sent by hand at or after 20:00 IST is the day's round
+            now = now_ist()
+            if day is None and not options['workspace'] and now >= report_time_ist(now.date()):
+                note_report_round(now.date())
             return
 
         self.stdout.write('Daily report loop started — sending at 20:00 IST every day (Ctrl+C to stop).')
         sent_on = None
         while True:
-            now = now_ist()
-            due = next_report_time_ist(now)
+            self._catch_up(options['workspace'])
+            due = next_report_time_ist(now_ist())
             self.stdout.write(f'Next report at {due:%d %b %Y %H:%M} IST')
             # sleep in short slices so Ctrl+C / exit stays responsive
             while (n := now_ist()) < due:
                 beat('report')  # /api/health/ liveness for the report scheduler
                 time.sleep(min(60, max(1, (due - n).total_seconds())))
-            if sent_on != now_ist().date():
-                self._send_all(slug=options['workspace'])
-                sent_on = now_ist().date()
+            if sent_on != due.date():
+                self._round(due.date(), options['workspace'])
+                sent_on = due.date()

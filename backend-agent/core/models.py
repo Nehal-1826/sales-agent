@@ -124,6 +124,18 @@ class HealthBeat(models.Model):
         return f'{self.name} @ {self.updated_at:%H:%M:%S}'
 
 
+class ReportRound(models.Model):
+    """One row per IST day on which the 20:00 daily-report round went out
+    (core.reports). The report loop reads it when it starts: a worker that was
+    down at 20:00 and came back later sends that round at once — once."""
+
+    day = models.DateField(unique=True)
+    sent_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f'report round {self.day}'
+
+
 class Lead(TenantOwned, Timestamped):
     """CRM — LEADS: companies discovered by the Search (Scrape) agent."""
 

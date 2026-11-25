@@ -7,7 +7,8 @@ This is the container command on the VPS (and can be used locally instead of
 
   1. Pipeline cycles — for EACH active workspace, honors its Settings → FREQUENT
      RUNS (enabled + frequency), one orchestrator cycle (Search → Profile → Copywright → Responder) when due.
-  2. Daily report thread — sends the 8 PM IST lead report (core.scheduler).
+  2. Daily report thread — sends the 8 PM IST lead report (core.scheduler);
+     a round missed while the worker was down is sent when it starts again.
   3. Outbox thread — every ~30 s, per workspace, sends due queued cold
      email (core.outbox: caps, sending window, rotation, auto-pause).
   3b. Inbox thread — every ~3 min, per workspace, reads replies + bounces

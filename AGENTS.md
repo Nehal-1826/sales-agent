@@ -404,6 +404,17 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   Rate limits: `AdminSlugThrottle` 5/min per IP + ≥10 wrong hits from one IP
   in 15 min → 429 (DB-backed lockout in `admin_slug_check`).
   Rotate the slug with `manage.py set_admin_slug`.
+- Daily report (`manage.py daily_report --loop`, the worker's report thread;
+  `core/reports.py`): each full 20:00 IST round is remembered per IST day in
+  `ReportRound` (migration 0049). When the loop starts and the most recent
+  20:00 has passed with no round recorded — the worker was down: a deploy, a
+  crash — that round is sent at once, and once only
+  (`missed_report_round`); across midnight it is still the evening's round.
+  With NO record at all (a first start, the upgrade from before records)
+  only today's 20:00 counts, so a routine morning start sends nothing. A full
+  round run by hand at or after 20:00 counts as the day's round; one with
+  `--day` or `--workspace` does not. Note the loop's round is the ALL-TIME
+  summary (`send_daily_report(day=None)`), as it always was.
 
 ## Gotchas
 
@@ -425,14 +436,17 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   take 35 min). Wait for the end line, `docker compose stop django-worker` at
   once (then no new cycle can start), build, switch all three over; the image
   entrypoint runs `migrate` itself at start. From that `stop` to the
-  switch-over the site sends no e-mail, reads no inbox and runs no cycle —
-  and the 20:00 IST daily report is MISSED when it falls inside the window
-  (its loop waits for the NEXT 20:00 and has no catch-up). Keep the window
-  short (the build is about a minute warm), and if the build or the switch
-  fails, `docker compose start django-worker` AT ONCE and sort it out with
-  the site running. On 25 Nov 2026 the worker stood still for 2 h 47 min
-  because the switch-over never actually started (the ssh trap two bullets
-  below); no e-mail was due, but that evening's report was lost. If the model runner is over
+  switch-over the site sends no e-mail, reads no inbox and runs no cycle. A
+  20:00 IST daily report inside the window goes out LATE, not lost: the
+  report loop sends a missed round the moment it starts again
+  (`core.reports.missed_report_round`, the `ReportRound` record, migration
+  0049 — since 25 Nov 2026; before that the round was simply missed). Keep
+  the window short (the build is about a minute warm), and if the build or
+  the switch fails, `docker compose start django-worker` AT ONCE and sort it
+  out with the site running. On 25 Nov 2026 the worker stood still for
+  2 h 47 min because the switch-over never actually started (the ssh trap
+  two bullets below); no e-mail was due, but that evening's report was lost
+  — which is why the catch-up exists. If the model runner is over
   ~3 GB when the cycle ends, `ops/ollama-watchdog.sh` recycles the idle runner
   before the build. Pull with `--ff-only` only — the server tree carries its
   own nginx.conf edits. `ops/deploy/deploy.sh` is the OLD pre-merge path

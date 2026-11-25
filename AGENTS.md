@@ -31,7 +31,7 @@ Brand: **WarmPulse**, accent theme **orange** (`#f97316` family — restored
 - `whatsapp-sidecar/` — WhatsApp runtime service (node). `warmpulse-mobile/` — RN app.
 - `ops/` — gateway nginx (`/api/`→django:8000, `/wp-api/`→fastapi:8001 rewritten
   to its internal `/api/`), db init. Root `docker-compose.yml` = full stack.
-- `scripts/e2e/flow.py` — the Playwright gate (132 checks; run before every push).
+- `scripts/e2e/flow.py` — the Playwright gate (163 checks; run before every push).
 - `docs/superpowers/` — specs + plans (foundation, shell-ux batch, warmup dashboards).
 
 ## Commands (local dev, Windows Git Bash — quote paths, space in "Devesh B")
@@ -60,6 +60,7 @@ cd backend-agent && DATABASE_URL=sqlite:///db-agent-test.sqlite3 .venv/Scripts/p
 cd backend && .venv/Scripts/python -m pytest tests/test_bridge_auth.py tests/test_auth.py tests/test_api_key_auth.py -q
 cd frontend && npm run build            # tsc + vite + SSR + prerender
 python scripts/e2e/flow.py              # full-stack gate (servers must be up)
+cd backend-agent && .venv/Scripts/python manage.py purge_deleted --dry-run   # what the 30-day cleanup WOULD remove (changes nothing)
 cd backend-agent && .venv/Scripts/python manage.py eval_assistant   # real-model regression (needs the local runtime)
 ```
 
@@ -76,7 +77,7 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   unique email (every brand-new admin's or customer's first sign-in); it now
   rolls back and takes the row that won (2026-11-24). Both auth dependencies
   guard foreign `iss` (kill-switch `AGENT_BRIDGE_ENABLED`). Platform admins
-  and 2FA-enabled workspace users need a
+  who have two-factor, and 2FA-enabled workspace users, need a
   satisfied OTP session (`PlatformSession` within 12h) to mint or access protected APIs.
 - Two login doors (login split): `POST /api/auth/admin-login/` is platform
   admins ONLY (staff, no workspace) — workspace users get 403 "This page is
@@ -88,23 +89,81 @@ The shared bridge secret must be **32+ chars** and identical on both backends
 - Unified 2FA (Admin & User): `core/authz.py` provides shared TOTP handlers, lockout
   (10 failures / 15 min), anti-replay (`last_otp_step`), `auth_extras` (`totp_enabled`,
   `otp_required`), and `enforce_otp` / `IsOtpSatisfied` (`403 OTP required` until verified).
-  Platform admins always gate on `TotpScreen` (auto-enrolling QR setup when
-  `totp_enabled` is false); 2FA-enabled users gate on `TotpScreen` → `/api/auth/2fa/verify/`.
   Both `#/settings/twofactor` (`TwoFactorSection.tsx`) and `#/platform/settings`
   (`AdminSettingsPage.tsx`) share `frontend/src/components/TwoFactorPanel.tsx` (`CodeSlots`
   animations, QR + copyable manual secret, enable, 2-step authenticator rotate, disable).
-- Multi-device TOTP (`TotpDevice`, migration 0038): up to 3 authenticators per user
-  (primary `totp_secret` counts as one). `{GET,POST,DELETE} …/2fa/devices/…` on BOTH
-  doors (`/api/auth/2fa/` workspace, `/api/platform/2fa/` console in billing/urls.py);
-  add → QR-only `otpauth_uri` (never the raw secret), confirm with that device's code;
-  any confirmed device satisfies OTP (`check_totp_any` — pending devices never do);
-  add/remove need an OTP-satisfied session (platform GET is otp=False); can't remove
-  the last method; disable 2FA wipes all devices; `warmup_token` gates on
-  `user_2fa_active` too. Panel: "Authenticator devices" card in TwoFactorPanel.
-  Security trail (0039): `added_ip`/`added_user_agent` stamped at confirm,
-  `last_used_ip` on each verify — the list returns a parsed `added_device`
-  ("Chrome · Windows") so the panel shows where each device was enrolled
-  and last used from.
+- Two-factor is ONE authenticator per account and OPTIONAL (owner's order,
+  2026-11-25): the extra devices of migration 0038 are gone
+  (`0046_one_authenticator`, `TotpDevice` deleted), and a platform admin
+  without one signs in with the password alone. `core.authz.otp_satisfied` is
+  the ONE decision point — the second check passes when the code was verified
+  OR the account has no two-factor; `auth_extras` → `otp_required = enrolled
+  and not token_otp_satisfied(request)` (NOT `otp_satisfied`: the login view
+  has no user yet). `TotpScreen` only asks for the code (the auto-enrolling QR
+  step is gone); the console's Settings card says "Off · optional".
+- **Enter as user** (impersonation, 2026-11-25): a platform admin opens a
+  customer's workspace in a NEW tab for 60 minutes. `ImpersonationTicket`
+  (migration 0047) stores only the SHA-256 of a random ticket; it starts once,
+  within 10 minutes (`core/impersonation.py`). `POST /api/platform/users/<id>/impersonate/`
+  `{reason}` issues it, `POST /api/auth/impersonate/start|end/` use it, and the
+  tab signs every request `Authorization: Impersonation <ticket>` —
+  `core.authentication.ImpersonationAuthentication`, FIRST in
+  `DEFAULT_AUTHENTICATION_CLASSES`, which only looks at its own keyword. The
+  ticket lives in the tab's `sessionStorage` (`agentic-ai:impersonation`), so
+  the admin's own tab — whose token every tab shares through localStorage —
+  is never touched: inside that tab `transport.ts` never loads the shared
+  token, a 401 drops only the ticket, and `logout()` only ends it. Hand-off:
+  `/impersonate#t=<ticket>` (a fragment never reaches a server), moved into
+  storage and started once per tab; `App` renders `ImpersonatePage` for the
+  whole life of that tab on every address, so a refresh brings the same
+  workspace back. Refused inside, by the server, in TWO places —
+  `ImpersonationRefusalMiddleware` (before the router) and the authentication
+  class — for `core.impersonation.REFUSED_PREFIXES`: password, username,
+  2FA, the warmup bridge token (so the Warmup page says it is not available)
+  and every `/api/platform/…`. Everything else inside is as that person, with
+  their role — approving and sending e-mail included (the owner's decision).
+  The bar on top (`ImpersonationBanner`) is a
+  normal element above the shell; everything hidden by a negative offset
+  needs the bar's height too (the skip link hung 33px over it). Start and
+  end are audited (`platform.impersonate.issue/start/end`) under the ADMIN's
+  name; the person's two-factor is not asked and `last_login` is not touched.
+- The console's Users page lists the REAL accounts: `GET /api/platform/users/`
+  (Django, 25 per page, word-split search over e-mail/username/name/company,
+  `role` incl. `platform_admin`, `status`) joined in the app with the warmup
+  copies by e-mail. A deleted account appears only with `status=deleted`; an
+  unknown `status` is a 400 (`bad_status`), never ignored. `last_login` is
+  written by `core.authz.note_sign_in` at each of the four places a session
+  starts (both doors, sign-up, Google) — nothing wrote it before, so it said
+  "Never" for everyone.
+- **Delete account** (30-day recycle bin, 2026-11-25; `core/accounts.py`,
+  migration 0048: `User.deleted_at/deleted_by`, `Workspace.deleted_at`):
+  `POST /api/platform/users/<id>/delete/` `{reason, confirmEmail}` and
+  `…/restore/` `{reason}`. The existing `is_active = False` is what stops
+  sign-in and the worker (all of them already skip what is not active). A
+  deletion pauses the warmup mailboxes of every account that goes FIRST
+  (`core/warmup_accounts.py`, server-to-server by e-mail with a bridge token
+  minted for the acting admin): if that fails nothing changes (502
+  `warmup_unavailable`) — a deleted account must never keep warming, and
+  "could not look" is never read as "no copy". The workspace stops with its
+  last owner/admin and the other accounts in it go with it; only the
+  deletion's own stop is stamped (`Workspace.deleted_at`), so a workspace an
+  admin stopped by hand from Tenants is never restarted by a restore. A
+  restore restarts a deletion-stopped workspace as soon as it has an owner or
+  admin again. Sign-in answers "This account was deleted." on both doors and
+  Google — only when the password is right. `manage.py purge_deleted
+  [--days 30] [--dry-run]` (also a daily thread in `run_worker`) removes what
+  is 30 days deleted: an account on its own, a stopped workspace with
+  everything in it once nobody in it can come back (together — never restore
+  someone into a workspace that can never start); billing rows and the audit
+  log stay, the workspace row stays as "Deleted account <id>", an active
+  subscription becomes `canceled` WITHOUT a gateway call. A purge is only
+  complete when the warmup copy went first; a vanished admin leaves the copy,
+  logged with its e-mail. In the app: Users → a panel → "Delete account"
+  (`DeleteAccountDialog.tsx`: says in plain words whether the whole workspace
+  stops; the button unlocks only with the account's e-mail typed and a
+  reason); the "Deleted" filter lists them with "Restore account" and the day
+  they go for good; a deleted row cannot be ticked for the warmup bulk
+  actions ("Resume all" would undo the deletion's pause).
 - Frontend↔backend: Django via `lib/` request helpers; warmup via `lib/warmupApi.ts`
   (Bearer JWT, `/wp-api` base, health probe, 401 re-acquire once). Bridge JWT dies
   with the session (all four token-clear sites purge both keys).
@@ -438,7 +497,34 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   platform admin a `totp_secret` and type the current code. The walk never
   reloads the page — `POST /api/admin-slug/check/` allows 5 a minute per IP
   (each page load sends it twice in dev), a further one answers 429 and the
-  app shows that as its 404 page.
+  app shows that as its 404 page. The same walk enters the operator's
+  workspace for real ("Enter as user": a new page, checked and closed) and
+  deletes and restores a throwaway account (`e2e-delete-me`, owner of the
+  workspace `e2e-delete-ws`, made and removed by `django_shell`); a deletion
+  is refused while the warmup service is down, so those checks are skipped
+  then. The gate also builds-and-serves the BUILT files the way nginx does
+  (`built_like_nginx`) for the refresh-flash checks (sections 1b / 2b): the
+  home file must hide the marketing page for a signed-in browser before the
+  first paint, the other marketing pages must not carry that guard.
+- Test facts worth knowing (`backend-agent`): `billing.tests.helpers.quiet_logs`
+  switches logging OFF for a test (`logging.disable(CRITICAL)`) — `assertLogs`
+  then sees nothing; watch the logger itself (`mock.patch.object(module.log,
+  'warning')`). `make_admin()` returns `(client, user, token)`; a login
+  through either door deletes that admin's `PlatformSession` rows, so a
+  platform call with the SAME client afterwards is a 403. The platform API is
+  rate-limited through the cache: `cache.clear()` in `setUp`. A management
+  command's `handle()` must return nothing — Django prints whatever comes
+  back (`call_command` crashed on a dict). DRF authenticators run only once an
+  address has resolved to a view: a rule that must hold for EVERY request
+  belongs in a middleware. The tests that drive `run_worker`
+  (`core/tests/test_run_worker.py` `run_ticks`, and two places in
+  `core/tests/test_tenant_ops.py`) switch every background thread off BY NAME
+  — a thread added to the worker must be added there too, or it runs inside
+  the test and spends the patched ticks. A test that drives REAL migrations
+  sits on `core.tests.base.MigrationCase`: it rewinds the schema, and classes
+  do not run in migration order, so the base brings it back to the newest
+  migration after each test (a test that stopped at an old one left every
+  later class on that schema).
 - Console shell (`PlatformShell`): NO top bar on a wide screen — it only
   repeated the brand and the open page, and every page has its own title
   (`.pf-topbar` is `display: none` above 900px; below that the rail becomes a

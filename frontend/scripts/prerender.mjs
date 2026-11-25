@@ -40,9 +40,20 @@ const baseTemplate = template
   .replace(/<title>[\s\S]*?<\/title>\s*/, '')
   .replace(/<meta name="description"[^>]*>\s*/, '');
 
+// The loading guard (index.html) belongs to ONE file: the home page, which
+// is also the fallback for every app route. The other marketing pages are
+// public and must keep their instant first paint, so it is stripped from them.
+const stripGuard = (html) =>
+  html
+    .replace(/<!--app-boot-guard-->[\s\S]*?<!--\/app-boot-guard-->\s*/g, '')
+    .replace(/<!--app-boot-mark-->[\s\S]*?<!--\/app-boot-mark-->\s*/g, '');
+// … and the home page keeps it, minus the marker comments themselves
+const keepGuard = (html) => html.replace(/<!--\/?app-boot-(?:guard|mark)-->/g, '');
+
 for (const route of ROUTES) {
   const { html, head } = render(route.path);
-  const page = baseTemplate
+  const shell = route.path === '/' ? keepGuard(baseTemplate) : stripGuard(baseTemplate);
+  const page = shell
     .replace('<!--app-head-->', head)
     .replace('<div id="root"></div>', `<div id="root">${html}</div>`);
   const outFile = route.path === '/' ? join(dist, 'index.html') : join(dist, route.path.slice(1), 'index.html');

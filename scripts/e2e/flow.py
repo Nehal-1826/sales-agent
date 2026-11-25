@@ -42,6 +42,7 @@ import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
 from pathlib import Path
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -92,6 +93,36 @@ def pick_base() -> str:
 
 BASE = pick_base()
 WP_UP = http_ok("http://127.0.0.1:8001/health")
+
+
+def built_like_nginx(pending):
+    """Serve the BUILT files the way nginx does in production: a real file from
+    frontend/dist, anything else the home file (which carries the pre-rendered
+    marketing page — exactly what every app route gets). The API goes to the
+    dev server. `pending` is a list: the app's own JavaScript is left pending
+    there instead of answered, which is the moment the flash used to happen in."""
+    types = {".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css",
+             ".svg": "image/svg+xml", ".png": "image/png", ".mp4": "video/mp4",
+             ".json": "application/json", ".txt": "text/plain", ".xml": "application/xml"}
+    home = (DIST / "index.html").read_text(encoding="utf-8")
+
+    def handler(route):
+        path = urlparse(route.request.url).path
+        if path.startswith("/api/") or path.startswith("/wp-api/"):
+            return route.continue_()
+        if pending is not None and path.startswith("/assets/index-") and path.endswith(".js"):
+            pending.append(route)
+            return
+        file = DIST / path.lstrip("/")
+        if file.is_file() and file.suffix in types:
+            return route.fulfill(status=200, body=file.read_bytes(), content_type=types[file.suffix])
+        return route.fulfill(status=200, content_type=types[".html"], body=home)
+
+    return handler
+
+
+MARKETING_PAINTED = ("() => { const el = document.querySelector('.lp-nav');"
+                     " return !!el && el.checkVisibility({ visibilityProperty: true, opacityProperty: true }); }")
 
 
 def django_python():
@@ -288,6 +319,23 @@ with sync_playwright() as p:
     check("footer: slim — ≤6 links", footer_links <= 6, f"{footer_links} links")
     page.screenshot(path=str(SHOTS / "01-landing.png"))
 
+    # ── 1b. Signed-out visitors must keep the marketing page at once, even
+    # while the app's own code is still loading (the loading guard must not
+    # touch them). Built files, served the way nginx serves them.
+    if (DIST / "index.html").is_file():
+        held = []
+        page.route(f"{BASE}/**", built_like_nginx(held))
+        page.goto(BASE + "/", wait_until="commit")
+        page.wait_for_timeout(1200)
+        check("refresh flash: a signed-out visitor gets the marketing page at once (app code still loading)",
+              held and page.evaluate(MARKETING_PAINTED) is True,
+              f"app-code requests held={len(held)} marketing painted={page.evaluate(MARKETING_PAINTED)}")
+        for r in held:
+            built_like_nginx(None)(r)
+        page.unroute(f"{BASE}/**")
+        page.goto(BASE + "/")
+        page.wait_for_load_state("networkidle")
+
     # ── 2. Sign in -> login page ────────────────────────────────────
     page.locator("a, button", has_text="Sign in").first.click()
     page.wait_for_load_state("networkidle")
@@ -308,6 +356,32 @@ with sync_playwright() as p:
     check("auth: Django token stored", page.evaluate("() => !!localStorage.getItem('agentic-ai:token')"))
     check("auth: app shell reached", page.locator("aside.sidebar").count() == 1,
           page.locator("body").inner_text()[:120].replace("\n", " "))
+
+    # ── 2b. A refresh must not show the marketing page to someone who is
+    # signed in. Same built files, the app's JavaScript left pending — the
+    # moment the landing used to be painted.
+    if (DIST / "index.html").is_file():
+        held = []
+        page.route(f"{BASE}/**", built_like_nginx(held))
+        page.goto(BASE + "/leads", wait_until="commit")
+        page.wait_for_timeout(1200)
+        painted = page.evaluate(MARKETING_PAINTED)
+        check("refresh flash: a signed-in person does not see the marketing page while the app loads",
+              bool(held) and painted is False,
+              f"app-code requests held={len(held)} marketing painted={painted}")
+        check("refresh flash: a plain loading mark is shown meanwhile", page.locator("#boot").is_visible())
+        page.screenshot(path=str(SHOTS / "02b-refresh-loading-mark.png"))
+        for r in held:
+            built_like_nginx(None)(r)
+        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(1500)
+        check("refresh flash: then the app appears and the mark is gone",
+              page.locator("aside.sidebar").is_visible() and page.locator("#boot").count() == 0)
+        page.unroute(f"{BASE}/**")
+        page.goto(BASE + "/")
+        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(800)
+
     # Task A1: sign-out is a full row in the sidebar rail — reachable on desktop
     check("shell: side-logout visible in rail after login",
           page.locator("button.side-logout").is_visible())
@@ -1025,6 +1099,18 @@ if DIST.is_dir():
     route_htmls = sorted(DIST.rglob("index.html"))
     check("dist: route html files found", len(route_htmls) >= 7,
           str([h.relative_to(DIST).as_posix() for h in route_htmls]))
+    # The home file is also the fallback for every app route and carries the
+    # pre-rendered marketing page: it must hide it for a signed-in browser
+    # before the first paint (the refresh flash). The other marketing pages
+    # are public and must not carry that guard.
+    home_html = (DIST / "index.html").read_text(encoding="utf-8", errors="replace")
+    check("dist: the home file hides the marketing page for a signed-in browser before the first paint",
+          "data-session" in home_html and 'id="boot"' in home_html and "app-boot-guard" not in home_html,
+          f"guard={'data-session' in home_html} mark={'id=\"boot\"' in home_html}")
+    pricing_html = DIST / "pricing" / "index.html"
+    pricing_src = pricing_html.read_text(encoding="utf-8", errors="replace") if pricing_html.is_file() else ""
+    check("dist: marketing pages keep their instant first paint (no loading guard)",
+          bool(pricing_src) and "data-session" not in pricing_src and 'id="boot"' not in pricing_src)
     for html in route_htmls:
         rel = html.relative_to(DIST).as_posix()
         src = html.read_text(encoding="utf-8", errors="replace")

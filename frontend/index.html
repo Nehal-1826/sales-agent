@@ -7,6 +7,50 @@
     <title>WarmPulse — Inbox Warmup &amp; AI Outbound</title>
     <meta name="description" content="WarmPulse warms every sender mailbox, finds real businesses by industry and city, audits each website with AI, and drafts cold emails you approve before anything sends." />
     <meta name="theme-color" content="#f97316" />
+    <!--app-boot-guard-->
+    <script>
+      // The home file also serves every app route and carries the pre-rendered
+      // marketing page. Someone who is signed in must not see that page before
+      // the app has loaded: hide it before the first paint and show a plain mark.
+      (function () {
+        try {
+          if (localStorage.getItem('agentic-ai:token')) {
+            document.documentElement.setAttribute('data-session', '1');
+          }
+        } catch (e) {
+          /* storage unavailable: nothing to hide for */
+        }
+      })();
+    </script>
+    <style>
+      html[data-session='1'] #root {
+        visibility: hidden;
+      }
+      #boot {
+        display: none;
+      }
+      html[data-session='1'] #boot {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        background: var(--bg, #07060a);
+        color: var(--text, #f5f2ed);
+        font: 600 15px/1.4 Inter, system-ui, sans-serif;
+      }
+      #boot img {
+        width: 44px;
+        height: 44px;
+      }
+      #boot small {
+        font: 500 13px/1.4 Inter, system-ui, sans-serif;
+        color: var(--text-2, #b9b4c0);
+      }
+    </style>
+    <!--/app-boot-guard-->
     <!--app-head-->
     <link rel="icon" type="image/png" href="/warmpulse-mark.png" />
     <link rel="icon" type="image/svg+xml" href="/warmpulse-mark.svg" />
@@ -19,6 +63,13 @@
   </head>
   <body>
     <div id="root"></div>
+    <!--app-boot-mark-->
+    <div id="boot" role="status" aria-live="polite" aria-busy="true">
+      <img src="/warmpulse-logo.svg" alt="" />
+      <span>WarmPulse</span>
+      <small>Loading…</small>
+    </div>
+    <!--/app-boot-mark-->
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

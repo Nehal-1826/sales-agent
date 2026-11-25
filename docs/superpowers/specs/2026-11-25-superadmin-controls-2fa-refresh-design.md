@@ -44,7 +44,11 @@ loaded. `App.tsx` already keeps a spinner instead of switching to the landing
 ### Fix — a guard that runs before the first paint
 
 In `frontend/index.html` (the template every pre-rendered page is built
-from; the pre-render keeps everything outside `#root`):
+from; the pre-render keeps everything outside `#root`). The pre-render then
+keeps the guard in ONE file only, the home file `dist/index.html` — the one
+that is also the fallback for every app route — and strips it from the
+other marketing pages, so a signed-in visitor of `/pricing` keeps the
+instant marketing page too:
 
 - A tiny inline script in `<head>`: if `localStorage` holds a sign-in
   (`agentic-ai:token`, the key `lib/transport.ts` and `App.tsx` both read),

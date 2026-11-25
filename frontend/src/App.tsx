@@ -37,6 +37,14 @@ type Gate = 'checking' | AuthState;
 /** Public, prerendered marketing pages (/pricing, /privacy …) render without the auth gate. */
 export default function App() {
   const path = window.location.pathname;
+  // The home file also serves every app route and carries the pre-rendered
+  // marketing page; the page template hides it before the first paint when
+  // this browser is signed in (index.html) and shows a plain loading mark.
+  // The app has now drawn its first screen — whatever it is — so let it show.
+  useEffect(() => {
+    document.documentElement.removeAttribute('data-session');
+    document.getElementById('boot')?.remove();
+  }, []);
   if (isMarketingSubpage(path)) return <MarketingPage path={routeMeta(path)!.path} />;
   return <AppGate />;
 }

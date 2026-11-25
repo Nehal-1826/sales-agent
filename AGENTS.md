@@ -413,8 +413,14 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   With NO record at all (a first start, the upgrade from before records)
   only today's 20:00 counts, so a routine morning start sends nothing. A full
   round run by hand at or after 20:00 counts as the day's round; one with
-  `--day` or `--workspace` does not. Note the loop's round is the ALL-TIME
-  summary (`send_daily_report(day=None)`), as it always was.
+  `--day` or `--workspace` does not. A round covers EVERYTHING SINCE THE
+  PREVIOUS ONE — the 24 hours up to its own 20:00 IST, longer after an
+  outage (`core.reports.report_window_ist`; the owner asked for "daily only",
+  25 Nov 2026 — before that the round was the ALL-TIME summary) — and never
+  a calendar day: a lead found at 21:00 would then be in no report at all
+  (that day's went out at 20:00, the next day's starts at midnight). The
+  on-demand reports (the chat command, the API, the Leads & Reports page) are
+  unchanged: all time, or one calendar day.
 
 ## Gotchas
 

@@ -7,7 +7,9 @@
 The loop looks after a missed 20:00 itself: when it starts and the most
 recent 20:00 IST has passed without a round going out (the worker was down —
 a deploy, a crash), that round is sent at once, and once only
-(core.reports.missed_report_round).
+(core.reports.missed_report_round). A round covers everything since the
+previous one — the 24 hours up to its own 20:00, longer after an outage —
+not "all time" (core.reports.report_window_ist).
 """
 
 import time
@@ -18,11 +20,13 @@ from django.core.management.base import BaseCommand, CommandError
 from core.health import beat
 from core.models import Workspace
 from core.reports import (
+    last_report_round,
     missed_report_round,
     next_report_time_ist,
     note_report_round,
     now_ist,
     report_time_ist,
+    report_window_ist,
     send_daily_report,
 )
 from core.tenancy import workspace_context
@@ -40,9 +44,11 @@ class Command(BaseCommand):
         parser.add_argument('--day', type=str, default='',
                             help='Optional YYYY-MM-DD day to report on (single-shot mode).')
 
-    def _send_all(self, day=None, slug=''):
+    def _send_all(self, day=None, slug='', window=None):
         """Each active workspace gets ITS OWN report (data, recipients, SMTP).
-        One tenant failing or having no recipients never blocks the others."""
+        One tenant failing or having no recipients never blocks the others.
+        `window` is what a 20:00 round covers (report_window_ist); `day` is a
+        calendar day asked for by hand."""
         workspaces = Workspace.all_tenants.filter(is_active=True).order_by('id')
         if slug:
             workspaces = workspaces.filter(slug=slug)
@@ -54,15 +60,18 @@ class Command(BaseCommand):
                 continue  # unpaid / expired workspace: no daily report
             try:
                 with workspace_context(ws):
-                    status, subject = send_daily_report(day)
+                    status, subject = send_daily_report(day, window)
                 self.stdout.write(self.style.SUCCESS(f'[{ws.slug}] {status}: {subject}'))
             except Exception as exc:
                 self.stderr.write(f'Daily report failed [{ws.slug}]: {exc}')
 
     def _round(self, day, slug=''):
-        """One 20:00 round: send it and — when it is the full one — remember the
-        day, so a worker restarted afterwards does not send it twice."""
-        self._send_all(slug=slug)
+        """One 20:00 round: send everything since the previous round, and —
+        when it is the full one — remember the day, so a worker restarted
+        afterwards does not send it twice."""
+        previous = last_report_round()
+        window = report_window_ist(day, since=report_time_ist(previous) if previous else None)
+        self._send_all(slug=slug, window=window)
         if not slug:
             note_report_round(day)
 

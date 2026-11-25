@@ -106,21 +106,45 @@ def _value_number(p):
     return int(amount * multiplier.get(suffix, 1))
 
 
-def build_daily_report(day=None):
-    """(subject, body) — brief summary of one IST day: leads scraped, potentials, cycles.
-    day=None → ALL TIME (for on-demand reports from the Leads & Reports page)."""
-    if day:
+def report_window_ist(day, since=None):
+    """The stretch the 20:00 round for IST day `day` covers: from the previous
+    round (`since` — its 20:00) up to its own 20:00, or the 24 hours before it
+    when there was none. Everything since the last report, in one report and
+    in no report twice: a calendar day would leave a lead found at 21:00 out
+    of every report (today's went out at 20:00, tomorrow's starts at midnight)."""
+    end = report_time_ist(day)
+    if since is None or since >= end:        # a wrong clock must not give an empty or backwards window
+        since = end - timedelta(days=1)
+    return since, end
+
+
+def build_daily_report(day=None, window=None):
+    """(subject, body) — brief summary: leads scraped, potentials, cycles.
+    window=(start, end) → that stretch (the 20:00 round: everything since the
+    previous one); day=<date> → that calendar day in IST; neither → ALL TIME
+    (for on-demand reports from the Leads & Reports page)."""
+    if window is not None:
+        start, end = window
+        label = f'{start:%d %b %H:%M} – {end:%d %b %H:%M} IST'
+        heads = ('LEADS FOUND', 'NEW POTENTIALS', 'PIPELINE CYCLES')
+    elif day:
         start = datetime.combine(day, dtime.min, tzinfo=IST)
         end = start + timedelta(days=1)
-        leads = list(Lead.objects.filter(created_at__gte=start, created_at__lt=end).order_by('-score'))
-        potentials = list(Potential.objects.filter(created_at__gte=start, created_at__lt=end))
-        runs = list(PipelineRun.objects.filter(started_at__gte=start, started_at__lt=end))
         label = day.strftime('%d %b %Y')
+        heads = ('LEADS SCRAPED TODAY', 'NEW POTENTIALS TODAY', 'PIPELINE CYCLES TODAY')
     else:
-        leads = list(Lead.objects.order_by('-score'))
-        potentials = list(Potential.objects.all())
-        runs = list(PipelineRun.objects.all())
+        start = end = None
         label = 'all time'
+        heads = ('LEADS IN CRM', 'POTENTIALS', 'PIPELINE CYCLES TOTAL')
+
+    def between(queryset, field):
+        if start is None:
+            return queryset
+        return queryset.filter(**{f'{field}__gte': start, f'{field}__lt': end})
+
+    leads = list(between(Lead.objects.order_by('-score'), 'created_at'))
+    potentials = list(between(Potential.objects.all(), 'created_at'))
+    runs = list(between(PipelineRun.objects.all(), 'started_at'))
     # biggest opportunities first — a report leads with the largest deals
     potentials.sort(key=_value_number, reverse=True)  # numeric, not text
 
@@ -131,7 +155,7 @@ def build_daily_report(day=None):
         f'Lead report — {label}' + (' (IST)' if day else ''),
         '=' * 52,
         '',
-        f'LEADS {"SCRAPED TODAY" if day else "IN CRM"}: {len(leads)}',
+        f'{heads[0]}: {len(leads)}',
     ]
     for l in leads[:15]:
         flag = 'no website' if not l.has_website else f'{len(l.findings)} flaw(s)'
@@ -141,7 +165,7 @@ def build_daily_report(day=None):
     if len(leads) > 15:
         lines.append(f'  … and {len(leads) - 15} more')
 
-    lines += ['', f'{"NEW POTENTIALS TODAY" if day else "POTENTIALS"}: {len(potentials)}']
+    lines += ['', f'{heads[1]}: {len(potentials)}']
     for p in potentials[:10]:
         lines.append(f'  • {p.company} — {p.opportunity} | {p.stage} | {p.value}')
     if len(potentials) > 10:
@@ -149,7 +173,7 @@ def build_daily_report(day=None):
     if not potentials:
         lines.append('  (none crossed the opportunity threshold)')
 
-    lines += ['', f'PIPELINE CYCLES {"TODAY" if day else "TOTAL"}: {len(runs)}']
+    lines += ['', f'{heads[2]}: {len(runs)}']
     for r in runs:
         line = (f'  • Run #{r.id} ({r.triggered_by}): {r.leads_created} lead(s), '
                 f'{r.potentials_created} potential(s)')
@@ -166,9 +190,11 @@ def build_daily_report(day=None):
     return subject, '\n'.join(lines)
 
 
-def send_daily_report(day=None):
-    """Build + deliver the report. Returns (status, subject) — status: smtp|console|skipped."""
-    subject, body = build_daily_report(day)
+def send_daily_report(day=None, window=None):
+    """Build + deliver the report. Returns (status, subject) — status: smtp|console|skipped.
+    `window` is the 20:00 round's stretch (report_window_ist); `day` a calendar day;
+    neither → all time."""
+    subject, body = build_daily_report(day, window)
     recipients = _resolve_recipients()
     if not recipients:
         log.warning('Daily report has no recipient — set Settings.report_email or a '

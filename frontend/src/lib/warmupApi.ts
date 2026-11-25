@@ -5,8 +5,13 @@
  *
  * Dashboard methods return the wire shapes verbatim (see ./warmupTypes) —
  * no adapter layer between here and the ported components.
+ *
+ * The warmup API is closed inside the "enter as user" tab: nothing here
+ * touches the network there, and never localStorage either — the bridge token
+ * belongs to the admin's own tab, which shares that storage.
  */
 import { post, request } from './api';
+import { isImpersonating } from './impersonation';
 import type {
   WarmupActivityFeedResponse,
   WarmupAlertsResponse,
@@ -72,7 +77,13 @@ export type {
 const TOKEN_KEY = 'warmpulse:wp-token';
 let inflight: Promise<{ token: string }> | null = null;
 
+/** What every warmup call answers inside the "enter as user" tab (the server's own words for a refused path). */
+const NOT_INSIDE = 'Not available while you are inside as another user.';
+
 export async function getWarmupToken(): Promise<string> {
+  // the token acquisition is the one door to /wp-api: closed here, and the
+  // cached bridge token (the admin's own, in shared localStorage) is not even read
+  if (isImpersonating()) throw new Error(NOT_INSIDE);
   const cached = localStorage.getItem(TOKEN_KEY);
   if (cached) return cached;
   if (!inflight) {
@@ -87,10 +98,13 @@ export async function getWarmupToken(): Promise<string> {
 }
 
 export function clearWarmupToken(): void {
+  // inside the impersonated tab this is the admin's own bridge token — leave it
+  if (isImpersonating()) return;
   localStorage.removeItem(TOKEN_KEY);
 }
 
 async function wpFetch(path: string, init?: RequestInit, retry = true): Promise<Response> {
+  if (isImpersonating()) throw new Error(NOT_INSIDE);
   const token = await getWarmupToken();
   const res = await fetch(`/wp-api/${path.replace(/^\//, '')}`, {
     ...init,
@@ -374,6 +388,8 @@ export function warmupActivity(limit = 20): Promise<WarmupActivityFeedResponse> 
 }
 
 export async function warmupHealth(): Promise<boolean> {
+  // "not reachable" is the honest answer inside the "enter as user" tab — no probe is sent
+  if (isImpersonating()) return false;
   try {
     const res = await fetch('/wp-api/health');
     return res.ok;

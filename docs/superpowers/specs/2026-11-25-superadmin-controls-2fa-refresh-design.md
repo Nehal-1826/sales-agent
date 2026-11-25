@@ -188,13 +188,14 @@ started it lasts 60 minutes and cannot be extended.
 | Issue | `POST /api/platform/users/<id>/impersonate/` `{reason}` | platform admin, OTP-satisfied | checks (below), creates the ticket, audit `platform.impersonate.issue`, returns the ticket (must be started within 10 minutes) |
 | Start | `POST /api/auth/impersonate/start/` `{ticket}` | the new tab | marks started, `ends_at = now + 60 min`, audit `platform.impersonate.start` |
 | Use | `Authorization: Impersonation <ticket>` on any workspace request | the new tab | authenticated as the target, inside the target's workspace |
-| Show | `GET /api/auth/me/` | the new tab | the target's profile + `impersonation {admin, startedAt, endsAt}` |
+| Show | `GET /api/auth/me/` | the new tab | the target's profile + `impersonation {admin, name, workspace, startedAt, endsAt}` |
 | End | `POST /api/auth/impersonate/end/` | the new tab | `ended_at = now`, audit `platform.impersonate.end` |
 
 Checks when issuing: the target exists, has a workspace (never a platform
-admin, never the admin themself), is not deleted, and the admin gives a
-reason. A target with 2FA on is entered without a code (that is what a
-superadmin entering does; it is recorded).
+admin, never the admin themself), is not deleted, is not switched off, its
+workspace is not stopped, and the admin gives a reason. A target with 2FA on
+is entered without a code (that is what a superadmin entering does; it is
+recorded). The app greys the button out with the reason for each of these.
 
 ### Authentication
 
@@ -208,14 +209,19 @@ close this tab." `last_used_at` is touched at most once a minute.
 
 ### What cannot be done inside (enforced by the server, not by hidden buttons)
 
-A request authenticated by a ticket is refused (403 "Not available while you
-are inside as another user") for: changing the password, the username, or
-2FA (`/api/auth/change-password/`, `/api/auth/change-username/`,
+A request signed with a ticket is refused (403 "Not available while you are
+inside as another user") for: changing the password, the username, or 2FA
+(`/api/auth/password/`, `/api/auth/change-username/`,
 `/api/auth/2fa/…`), the warmup bridge token (`/api/auth/warmup-token/` — the
 Warmup page is not available inside), and every platform-admin API
-(`/api/platform/…` — which is also where account deletion lives).
+(`/api/platform/…` — which is also where account deletion lives). The same
+list (`core.impersonation.REFUSED_PREFIXES`) is enforced in two places: in the
+authentication class and, before the router, in
+`core.middleware.ImpersonationRefusalMiddleware` — so an address with no view
+behind it is refused all the same instead of answering 404.
 `/api/auth/logout/` inside a ticket ends the ticket instead of signing the
-target out.
+target out, and "Enter as user" never counts as the person's own sign-in
+(`lastLogin` is written only where a session really starts).
 
 Everything else is as that person: their role decides what they may do, and
 approving and sending emails is allowed (decision 3).

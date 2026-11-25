@@ -3,6 +3,7 @@ import { PageHeader } from '../components/ui';
 import { EmptyState, LoadError, Skeleton, StaleNotice } from '../components/feedback';
 import LatticeLoader from '../components/reactbits/LatticeLoader';
 import { useAsync } from '../lib/hooks';
+import { isImpersonating } from '../lib/impersonation';
 import {
   warmupActivity,
   warmupAlerts,
@@ -220,6 +221,21 @@ export function WarmupPage() {
           {activity.error && activity.data && <StaleNotice onRetry={() => void activity.reload()} />}
         </section>
       </>
+    );
+  }
+
+  // Inside the "enter as user" tab the warmup side is closed on the server
+  // (the bridge token is one of the refused paths, and lib/warmupApi asks it
+  // for nothing): one plain sentence, and no dashboard and no tabs to click.
+  // After every hook above — this page is never the warmup page in that tab.
+  if (isImpersonating()) {
+    return (
+      <div className="page">
+        <PageHeader title="Warmup" />
+        <section className="panel warmup-status probing" role="status">
+          Warmup is not available while you are inside as another user.
+        </section>
+      </div>
     );
   }
 

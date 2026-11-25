@@ -10,7 +10,9 @@ from datetime import timedelta
 from django.conf import settings
 from django.utils import timezone
 from rest_framework import exceptions
-from rest_framework.authentication import SessionAuthentication, TokenAuthentication
+from rest_framework.authentication import (
+    BaseAuthentication, SessionAuthentication, TokenAuthentication, get_authorization_header,
+)
 
 from .tenancy import set_workspace
 
@@ -48,6 +50,42 @@ class ExpiringTokenAuthentication(TokenAuthentication):
             raise exceptions.AuthenticationFailed('Session expired — sign in again.')
         activate_user_workspace(user)
         return user, token
+
+
+class ImpersonationAuthentication(BaseAuthentication):
+    """"Enter as user": `Authorization: Impersonation <ticket>` runs the request
+    as the ticket's target user, inside the target's workspace.
+
+    Only its own keyword is looked at, so a ticket can never pass as a normal
+    token nor the other way round. An unusable ticket is a 401 at once — it
+    never falls through to another authenticator. The request is marked
+    (`request.impersonation`) and the paths an impersonated tab may never
+    reach are refused HERE, where every request passes: hiding buttons in the
+    app is not a control."""
+
+    keyword = 'Impersonation'
+
+    def authenticate_header(self, request):
+        # DRF answers 401 or 403 to a request nobody authenticated from the
+        # FIRST authenticator's header. This class is first, so it keeps the
+        # value every client saw before it existed (the app treats a 401 as
+        # "sign in again"; a 403 it would show as a permission problem).
+        return 'Token realm="api"'
+
+    def authenticate(self, request):
+        parts = get_authorization_header(request).decode('utf-8').split()
+        if len(parts) != 2 or parts[0].lower() != self.keyword.lower():
+            return None
+        from . import impersonation
+        ticket = impersonation.lookup(parts[1])
+        if ticket is None or not ticket.target.is_active:
+            raise exceptions.AuthenticationFailed(impersonation.ENDED_DETAIL)
+        if impersonation.is_refused(request.path):
+            raise exceptions.PermissionDenied(impersonation.REFUSED_DETAIL)
+        request.impersonation = ticket
+        activate_user_workspace(ticket.target)   # raises if the workspace is stopped
+        impersonation.touch(ticket)
+        return ticket.target, ticket
 
 
 class TenantSessionAuthentication(SessionAuthentication):

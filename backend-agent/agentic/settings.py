@@ -59,6 +59,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'core.middleware.TenantContextMiddleware',  # first: clears the tenant context around every request
+    'core.middleware.ImpersonationRefusalMiddleware',  # then: "enter as user" tickets never reach the refused paths
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',  # serves /static/ in production
@@ -134,6 +135,8 @@ _TEST_RATES = ({'anon': '100000/min', 'user': '100000/min', 'login': '100000/min
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
+        # first: "Enter as user" carries its own keyword and never falls through
+        'core.authentication.ImpersonationAuthentication',
         'core.authentication.ExpiringTokenAuthentication',
         'core.authentication.TenantSessionAuthentication',
     ],

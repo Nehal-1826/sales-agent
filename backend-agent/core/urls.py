@@ -26,6 +26,9 @@ urlpatterns = [
     path('auth/admin-login/', views.admin_login, name='admin-login'),
     path('auth/me/', views.me, name='me'),
     path('auth/logout/', views.logout, name='logout'),
+    # "Enter as user": the new tab starts its ticket here and ends it here
+    path('auth/impersonate/start/', views.impersonate_start, name='impersonate-start'),
+    path('auth/impersonate/end/', views.impersonate_end, name='impersonate-end'),
     path('auth/password/', views.change_password, name='change-password'),
     # Settings → Account: change the signed-in user's username
     path('auth/change-username/', views.change_username, name='change-username'),

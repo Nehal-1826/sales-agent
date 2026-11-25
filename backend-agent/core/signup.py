@@ -26,7 +26,7 @@ from rest_framework.throttling import AnonRateThrottle
 
 from billing.models import Plan, Subscription
 
-from .authz import auth_extras
+from .authz import auth_extras, note_sign_in
 from .models import AppSettings, User, Workspace
 from .permissions import IsOtpSatisfied
 from .serializers import UserSerializer
@@ -180,6 +180,7 @@ def signup(request):
     except IntegrityError:  # lost a race on the global username
         return _fail('email', EMAIL_TAKEN)
 
+    note_sign_in(user)
     send_verification(user)
     return Response({'token': token.key, 'user': {**UserSerializer(user).data, **auth_extras(user, request)}},
                     status=201)

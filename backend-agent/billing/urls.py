@@ -21,6 +21,9 @@ urlpatterns = [
     path('platform/2fa/rotate/confirm/', vp.tfa_rotate_confirm, name='platform-2fa-rotate-confirm'),
     path('platform/overview/', vp.overview, name='platform-overview'),
     path('platform/marketing/', vp.marketing, name='platform-marketing'),
+    # the console's Users page: the real accounts, and "Enter as user"
+    path('platform/users/', vp.users, name='platform-users'),
+    path('platform/users/<int:user_id>/impersonate/', vp.user_impersonate, name='platform-user-impersonate'),
     path('platform/tenants/', vp.tenants, name='platform-tenants'),
     path('platform/tenants/<int:tenant_id>/', vp.tenant_detail, name='platform-tenant'),
     path('platform/tenants/<int:tenant_id>/suspend/', vp.tenant_suspend),

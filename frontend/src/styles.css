@@ -6754,3 +6754,112 @@ img, video, svg { max-width: 100%; }
   font-weight: 500;
   padding: 6px 14px;
 }
+
+/* ================================================================
+   ENTER AS USER — the bar of the impersonated tab
+   (components/ImpersonationBanner.tsx · pages/ImpersonatePage.tsx)
+   ================================================================
+   The bar is a NORMAL element above the workspace shell, sticky so it stays
+   while the page scrolls: it is always the first thing on screen and nothing
+   of the app can start underneath it. While it shows, <body> carries
+   `has-impersonation` and `--impersonation-bar` holds the bar's REAL height —
+   the text wraps on a phone — written by the bar itself before the first
+   paint. The fixed and sticky chrome (which does not sit in that flow) makes
+   room for exactly that below. */
+
+.impersonation-bar {
+  position: sticky;
+  top: 0;
+  z-index: 80; /* above the sidebar rail (40) and the modal / drawer backdrops (70) */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  min-height: 44px;
+  padding: 5px 14px 5px 12px;
+  border-left: 4px solid var(--warn);
+  border-bottom: 1px solid var(--warn-border);
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.34) 0%, var(--warn-soft) 46%);
+  color: var(--warn-ink);
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.impersonation-bar-text {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow-wrap: anywhere; /* a long workspace name wraps — it never pushes Exit away */
+}
+
+.impersonation-bar-time {
+  font-variant-numeric: tabular-nums;
+}
+
+/* the one-line height, until the bar has written its real one */
+body.has-impersonation {
+  --impersonation-bar: 44px;
+}
+
+/* the page starts below the bar (together they are still exactly one screen) */
+body.has-impersonation .app-shell,
+body.has-impersonation .main {
+  min-height: calc(100vh - var(--impersonation-bar));
+}
+
+body.has-impersonation .sidebar {
+  top: calc(12px + var(--impersonation-bar));
+}
+
+body.has-impersonation .topbar {
+  top: calc(12px + var(--impersonation-bar));
+}
+
+body.has-impersonation .settings-nav {
+  top: calc(80px + var(--impersonation-bar));
+}
+
+/* The skip link is hidden by being pushed just above its shell. That shell
+   now starts below the bar, so the link takes the bar's height too — it used
+   to hang 33px over the first words of the bar. On focus it shows below it. */
+body.has-impersonation .skip-link {
+  top: calc(-48px - var(--impersonation-bar));
+}
+
+body.has-impersonation .skip-link:focus {
+  top: calc(12px + var(--impersonation-bar));
+}
+
+/* full-screen layers open BELOW the bar, never over it */
+body.has-impersonation .modal-backdrop,
+body.has-impersonation .drawer-backdrop {
+  top: var(--impersonation-bar);
+}
+
+body.has-impersonation .modal-card {
+  max-height: calc(100vh - 40px - var(--impersonation-bar));
+}
+
+body.has-impersonation .guide-panel {
+  height: min(560px, calc(100vh - 100px - var(--impersonation-bar)));
+}
+
+@media (max-width: 900px) {
+  /* the rail is a full-height drawer here; the mail reading pane a full-screen layer */
+  body.has-impersonation .sidebar,
+  body.has-impersonation .topbar,
+  body.has-impersonation .scrim,
+  body.has-impersonation .wm-read.open {
+    top: var(--impersonation-bar);
+  }
+}
+
+/* the notices of the "enter as user" tab are whole sentences, not a title:
+   the sign-in headline at reading size */
+.login-headline.impersonation-notice {
+  font-family: var(--font);
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.55;
+  text-wrap: balance;
+}

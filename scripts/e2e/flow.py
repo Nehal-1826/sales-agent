@@ -220,18 +220,33 @@ def console_admin_code(action: str) -> str:
     return (
         "from django.contrib.auth import get_user_model\n"
         "from rest_framework.authtoken.models import Token\n"
-        "from core.models import PlatformSession\n"
+        "from billing.models import PlatformAuditLog\n"
+        "from core.models import ImpersonationTicket, PlatformSession\n"
         "U = get_user_model()\n"
+        "gone_audit = PlatformAuditLog.objects.filter(actor__username__startswith='e2e-console-').delete()[0]\n"
         "n = 0\n"
         "gone = 0\n"
         "for u in U.objects.filter(username__startswith='e2e-console-'):\n"
         "    for t in Token.objects.filter(user=u):\n"
         "        n += PlatformSession.objects.filter(token=t).delete()[0]\n"
         "        t.delete()\n"
-        "    u.delete()\n"
+        "    u.delete()          # takes the walk's enter-as-user tickets with it (cascade)\n"
         "    gone += 1\n"
         f"left = U.objects.filter(username__startswith='e2e-console-').count()\n"
-        "print('E2E_SHELL_OK', 'deleted', gone, 'sessions', n, 'left', left)\n"
+        f"tickets = ImpersonationTicket.objects.count()\n"
+        "print('E2E_SHELL_OK', 'deleted', gone, 'audit', gone_audit, 'sessions', n, 'left', left, 'tickets', tickets)\n"
+    )
+
+
+def impersonation_recorded_code() -> str:
+    """Django shell code: the walk's enter-as-user ticket and its audit rows."""
+    return (
+        "from billing.models import PlatformAuditLog\n"
+        "from core.models import ImpersonationTicket\n"
+        "t = list(ImpersonationTicket.objects.all())\n"
+        "a = sorted(PlatformAuditLog.objects.filter(actor__username__startswith='e2e-console-',\n"
+        "        action__startswith='platform.impersonate.').values_list('action', flat=True))\n"
+        "print('E2E_SHELL_OK tickets', len(t), 'ended', sum(1 for x in t if x.ended_at), 'audit', a)\n"
     )
 
 
@@ -875,6 +890,7 @@ with sync_playwright() as p:
     # load checks the admin URL and that check allows 5 a minute.
     created, detail = django_shell(console_admin_code("create"))
     check("console: throwaway platform admin created in the e2e DB", created, detail)
+    entered = {}          # what the enter-as-user walk below learned (ticket, its tab)
     try:
         if created:
             page.locator("input[autocomplete=username]").fill(CONSOLE_ADMIN)
@@ -1090,6 +1106,203 @@ with sync_playwright() as p:
                   "open" in (rail.get_attribute("class") or ""))
             page.screenshot(path=str(SHOTS / "09c-console-phone.png"))
             page.set_viewport_size({"width": 1920, "height": 1080})
+            page.wait_for_timeout(400)
+
+            # ── Enter as user (25 Nov). The Users page lists the REAL accounts
+            # (the main system's), so the operator is on it. "Enter workspace
+            # as this user" opens the operator's workspace in a NEW tab with a
+            # bar on top; a refresh inside keeps that tab; Exit ends it; and
+            # the admin's own tab — whose token lives in a storage every tab
+            # shares — is never touched.
+            OPERATOR_EMAIL = "operator@agentic.local"      # seed_demo
+            BAR = "You are inside Demo as Operator."
+
+            def users_page():
+                rail.locator(".nav-item", has_text="Users").first.click()
+                page.locator("table.leads-table tbody tr").first.wait_for(state="visible", timeout=15_000)
+                page.get_by_placeholder("Search email, name or company…").fill(OPERATOR_EMAIL)
+                # the search waits for a pause in the typing, then asks the server —
+                # until then the old rows stay on screen
+                rows = 0
+                for _ in range(40):
+                    page.wait_for_timeout(250)
+                    rows = page.locator("table.leads-table tbody tr").count()
+                    if rows == 1:
+                        break
+                # the operator signed in for real earlier in this very run: the
+                # page must not say "Never" (nothing wrote the time before 25 Nov)
+                row = page.locator("table.leads-table tbody tr").first
+                last_in = one_line(row.locator("td").nth(8).inner_text())
+                return (page.url.endswith(f"/{ADMIN_SLUG}/users") and rows == 1
+                        and "Operator" in page.locator("table.leads-table").inner_text()
+                        and last_in not in ("", "Never", "—")), \
+                    f"url={page.url} rows={rows} last-sign-in='{last_in}'"
+            look("console users: the page lists the real accounts and finds the operator by email", users_page)
+
+            def enter_as_operator():
+                entered["token"] = page.evaluate("() => localStorage.getItem('agentic-ai:token')")
+                page.locator("table.leads-table tbody tr", has_text=OPERATOR_EMAIL).first.locator("button.row-link").first.click()
+                enter = page.get_by_role("button", name="Enter workspace as this user")
+                enter.wait_for(state="visible", timeout=8_000)
+                enabled = enter.is_enabled()
+                enter.click()
+                dialog = page.locator('.modal-card[role="dialog"][aria-label="Enter workspace as this user"]')
+                dialog.wait_for(state="visible", timeout=8_000)
+                confirm = dialog.get_by_role("button", name="Open the workspace")
+                # nothing opens without a reason — it is recorded under the admin's name
+                locked = confirm.is_disabled()
+                dialog.get_by_label("Why are you entering? (recorded)").fill("E2E gate: checking Enter as user")
+                page.wait_for_timeout(200)
+                with page.context.expect_page(timeout=15_000) as opened:
+                    confirm.click()
+                tab = opened.value
+                entered["tab"] = tab
+                bad = []
+                tab.on("response", lambda r: bad.append(f"{r.status} {urlparse(r.url).path}")
+                       if r.status >= 400 else None)
+                entered["bad"] = bad
+                tab.wait_for_load_state("domcontentloaded")
+                bar = tab.locator(".impersonation-bar")
+                bar.wait_for(state="visible", timeout=30_000)
+                tab.locator("aside.sidebar").wait_for(state="visible", timeout=30_000)
+                tab.wait_for_load_state("networkidle")
+                tab.wait_for_timeout(500)
+                text = one_line(bar.inner_text())
+                # the ticket left the address bar at once (it is in the tab's own storage now)
+                address = tab.evaluate("() => location.pathname + location.hash")
+                return (enabled and locked and address == "/" and text.startswith(BAR)
+                        and f"Opened by {CONSOLE_ADMIN}." in text and text.endswith("Exit")
+                        and not bad), f"enabled={enabled} locked={locked} at={address} bar='{text}' bad={bad[:4]}"
+            look("console users: 'Enter workspace as this user' opens the workspace in a new tab, with the bar on top",
+                 enter_as_operator)
+
+            def inside_is_the_operators():
+                tab = entered.get("tab")
+                if tab is None:
+                    return False, "no tab was opened"
+                entered["ticket"] = tab.evaluate("() => sessionStorage.getItem('agentic-ai:impersonation')")
+                # the bar is a normal element ABOVE the shell: nothing of the app starts underneath it
+                geo = tab.evaluate(
+                    """() => {
+                        const bottom = (sel) => document.querySelector(sel).getBoundingClientRect().bottom;
+                        const top = (sel) => document.querySelector(sel).getBoundingClientRect().top;
+                        return {bar: bottom('.impersonation-bar'), side: top('aside.sidebar'), main: top('.main')};
+                    }"""
+                )
+                asks = tab.evaluate(
+                    """async (ticket) => {
+                        const call = (path) => fetch(path, {headers: {Authorization: 'Impersonation ' + ticket}})
+                          .then(async (r) => ({status: r.status, body: await r.text()}));
+                        const me = JSON.parse((await call('/api/auth/me/')).body);
+                        return {me: me.username, admin: me.impersonation.admin, workspace: me.impersonation.workspace.name,
+                                platform: (await call('/api/platform/users/')).status,
+                                twoFactor: (await call('/api/auth/2fa/')).status,
+                                shared: localStorage.getItem('agentic-ai:token') !== null};
+                    }""", entered["ticket"])
+                return (bool(entered["ticket"]) and min(geo["side"], geo["main"]) >= geo["bar"] - 1
+                        and asks == {"me": USERNAME, "admin": CONSOLE_ADMIN, "workspace": "Demo",
+                                     "platform": 403, "twoFactor": 403, "shared": True}), \
+                    f"ticket={bool(entered['ticket'])} geo={geo} asks={asks}"
+            look("console users: inside the tab every request runs as that person — and the refused doors answer 403",
+                 inside_is_the_operators)
+
+            def nothing_over_the_bar():
+                tab = entered.get("tab")
+                if tab is None:
+                    return False, "no tab was opened"
+                # The skip link is hidden by being pushed just above its shell —
+                # which now starts BELOW the bar, so it takes the bar's height too
+                # (it once hung over the first words of the bar). And Exit is a
+                # live button, not a faded one.
+                geo = tab.evaluate(
+                    """() => {
+                        const box = (sel) => document.querySelector(sel).getBoundingClientRect();
+                        const exit = document.querySelector('.impersonation-bar button');
+                        const style = getComputedStyle(exit);
+                        return {skipTop: Math.round(box('.skip-link').top), skipBottom: Math.round(box('.skip-link').bottom),
+                                barBottom: Math.round(box('.impersonation-bar').bottom), opacity: style.opacity,
+                                disabled: exit.disabled, color: style.color, background: style.backgroundColor};
+                    }"""
+                )
+                return (geo["skipBottom"] <= 0 and geo["opacity"] == "1" and not geo["disabled"]
+                        and geo["barBottom"] <= 46), str(geo)
+            look("console users: nothing sticks out over the bar, and Exit is a live button", nothing_over_the_bar)
+            page.screenshot(path=str(SHOTS / "09e-console-users.png"))
+            if entered.get("tab"):
+                entered["tab"].screenshot(path=str(SHOTS / "09f-entered-tab.png"))
+
+            def inside_after_a_refresh():
+                tab = entered.get("tab")
+                if tab is None:
+                    return False, "no tab was opened"
+                # an in-app address, loaded fresh: the ticket sits in sessionStorage, so
+                # the same tab comes back — never the admin's console, never the landing page
+                tab.goto(f"{BASE}/leads")
+                tab.locator(".impersonation-bar").wait_for(state="visible", timeout=30_000)
+                tab.locator("aside.sidebar").wait_for(state="visible", timeout=30_000)
+                tab.wait_for_load_state("networkidle")
+                text = one_line(tab.locator(".impersonation-bar").inner_text())
+                at = tab.evaluate("() => location.pathname")
+                return (at == "/leads" and text.startswith(BAR)
+                        and tab.evaluate("() => sessionStorage.getItem('agentic-ai:impersonation')") == entered["ticket"]), \
+                    f"at={at} bar='{text}'"
+            look("console users: a refresh inside the tab brings the same workspace back, bar included",
+                 inside_after_a_refresh)
+
+            def warmup_closed_inside():
+                tab = entered.get("tab")
+                if tab is None:
+                    return False, "no tab was opened"
+                tab.locator("button.nav-item", has_text="Warmup").first.click()
+                tab.wait_for_timeout(900)
+                body = one_line(tab.locator(".main").inner_text())
+                return ("Warmup is not available while you are inside as another user." in body
+                        and tab.locator(".main .subtabs").count() == 0), body[:200]
+            look("console users: the Warmup page says it is not available inside", warmup_closed_inside)
+
+            def exit_ends_it():
+                tab = entered.get("tab")
+                if tab is None:
+                    return False, "no tab was opened"
+                tab.locator(".impersonation-bar").get_by_role("button", name="Exit").click()
+                notice = tab.locator(".impersonation-notice")
+                notice.wait_for(state="visible", timeout=8_000)
+                text = one_line(notice.inner_text())
+                left = tab.evaluate(
+                    "() => ({ticket: sessionStorage.getItem('agentic-ai:impersonation'),"
+                    " shell: !!document.querySelector('aside.sidebar')})")
+                return ("You have exited Demo. You can close this tab." in text
+                        and left["ticket"] is None and not left["shell"]), f"'{text}' left={left}"
+            look("console users: Exit ends it — the tab says so and offers nothing else", exit_ends_it)
+
+            def ticket_is_dead():
+                ticket = entered.get("ticket")
+                if not ticket:
+                    return False, "no ticket was read from the tab"
+                header = {"Authorization": f"Impersonation {ticket}"}
+                me = page.request.get(f"{BASE}/api/auth/me/", headers=header)
+                again = page.request.post(f"{BASE}/api/auth/impersonate/start/", data={"ticket": ticket})
+                return (me.status == 401 and again.status == 400
+                        and again.json().get("error") == "ticket_used"), \
+                    f"me={me.status} start-again={again.status} {again.text()[:80]}"
+            look("console users: after Exit the ticket is dead (401) and its link cannot start a second time",
+                 ticket_is_dead)
+
+            def own_tab_untouched():
+                token = page.evaluate("() => localStorage.getItem('agentic-ai:token')")
+                mine = page.evaluate("() => sessionStorage.getItem('agentic-ai:impersonation')")
+                return (bool(token) and token == entered.get("token") and mine is None
+                        and page.url.endswith(f"/{ADMIN_SLUG}/users") and rail.is_visible()), \
+                    f"url={page.url} same-token={token == entered.get('token')} ticket={mine}"
+            look("console users: the admin's own tab is untouched — same sign-in, no ticket, still on the console",
+                 own_tab_untouched)
+
+            # the operator's panel is shut again: it would cover the sign-out button below
+            def panel_closed():
+                page.locator('.drawer[role="dialog"]').get_by_role("button", name="Close").first.click()
+                page.wait_for_timeout(400)
+                return page.locator('.drawer[role="dialog"]').count() == 0, "the operator's panel is shut"
+            look("console users: the operator's panel closes again", panel_closed)
 
             # ── A superadmin WITHOUT two-factor: the password alone opens the
             # console (no code screen), and Settings says it is optional.
@@ -1135,9 +1348,17 @@ with sync_playwright() as p:
     except Exception as exc:  # noqa: BLE001  — reported as a FAIL, never aborts the gate
         check("console: the walk finished", False, f"{type(exc).__name__}: {exc}"[:200])
     finally:
+        if entered.get("tab"):
+            entered["tab"].close()
+        if entered.get("ticket"):
+            # read BEFORE the throwaway admins go: deleting them blanks the actor of their rows
+            recorded, detail = django_shell(impersonation_recorded_code())
+            check("console: the entering is recorded under the admin's name (ticket ended; issue, start, end)",
+                  recorded and "tickets 1 ended 1" in detail
+                  and all(f"'platform.impersonate.{a}'" in detail for a in ("issue", "start", "end")), detail)
         removed, detail = django_shell(console_admin_code("delete"))
     check("console: throwaway platform admins removed again",
-          removed and "left 0" in detail, detail)
+          removed and "left 0" in detail and "tickets 0" in detail, detail)
     for email in (f"{CONSOLE_ADMIN.replace('-admin', '')}@example.invalid",
                   f"{CONSOLE_PLAIN}@example.invalid"):
         copied, detail = forget_warmup_copy(email)

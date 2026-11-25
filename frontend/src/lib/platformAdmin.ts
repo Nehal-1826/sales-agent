@@ -653,15 +653,6 @@ export const suspendAdminUser = async (id: string, suspended: boolean, reason: s
 export const updateAdminUserPlan = async (userId: string, planId: string) =>
   (await inDemo()) ? demoFail<unknown>() : attempt(() => bridgeSend<unknown>(`api/admin/users/${userId}/plan${qs({ plan_id: planId })}`, 'POST', {}));
 
-export const deleteAdminUser = async (id: string, reason: string) =>
-  (await inDemo())
-    ? demoFail<unknown>()
-    : attempt(() => bridgeSend<unknown>(`api/admin/users/${id}`, 'DELETE', { reason }));
-
-/** Issue a short-lived impersonation token for a client user (30 min TTL server-side). */
-export const impersonateAdminUser = async (id: string): Promise<Result<{ access_token: string }>> =>
-  (await inDemo()) ? demoFail<{ access_token: string }>() : attempt(() => bridgeSend<{ access_token: string }>(`api/admin/users/${id}/impersonate`, 'POST', {}));
-
 export const bulkPauseMailboxes = async (payload: BulkPauseMailboxesRequest) =>
   (await inDemo()) ? demoFail<BulkPauseMailboxesResponse>() : attempt(() => bridgeSend<BulkPauseMailboxesResponse>('api/admin/users/bulk-pause-mailboxes', 'POST', payload));
 

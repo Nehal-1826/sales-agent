@@ -19,7 +19,7 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 
-from core import lockout
+from core import impersonation, lockout
 from core.authz import (
     handle_2fa_confirm,
     handle_2fa_disable,
@@ -28,8 +28,9 @@ from core.authz import (
     handle_2fa_setup,
     handle_2fa_status,
     handle_2fa_verify,
+    is_platform_admin,
 )
-from core.models import User, Workspace
+from core.models import ImpersonationTicket, User, Workspace
 from core.permissions import IsPlatformAdmin, IsPlatformAdminWithOTP
 from core.tenancy import workspace_context
 from core.throttles import OtpThrottle
@@ -135,6 +136,129 @@ def overview(request):
 @platform_api('GET')
 def marketing(request):
     return Response(metrics.marketing())
+
+
+# ------------------------------------------------------------------ accounts
+# The console's Users page lists the REAL accounts (everyone who can sign
+# in). The warmup side's copies of people are only joined to them, by email,
+# in the app.
+
+# what core.authz.is_platform_admin decides, as a query
+_PLATFORM_ADMIN_Q = Q(workspace__isnull=True, is_staff=True, is_active=True)
+_UNVERIFIED_Q = Q(email_verified_at__isnull=True) & ~_PLATFORM_ADMIN_Q
+_ACCOUNT_STATUS_Q = {
+    'pending': _UNVERIFIED_Q,
+    'suspended': Q(is_active=False) | Q(workspace__is_active=False),
+    'active': (Q(is_active=True) & (Q(email_verified_at__isnull=False) | _PLATFORM_ADMIN_Q)
+               & (Q(workspace__isnull=True) | Q(workspace__is_active=True))),
+}
+_ACCOUNT_STATUS_Q['suspended'] = _ACCOUNT_STATUS_Q['suspended'] & ~_UNVERIFIED_Q
+
+
+def _account_status(u):
+    """"pending" = the email was not verified yet. A platform admin is never
+    pending (the owner creates those accounts by hand)."""
+    if getattr(u, 'deleted_at', None) is not None:
+        return 'deleted'
+    if u.email_verified_at is None and not is_platform_admin(u):
+        return 'pending'
+    if not u.is_active or (u.workspace is not None and not u.workspace.is_active):
+        return 'suspended'
+    return 'active'
+
+
+def _account_row(u, sub=None):
+    ws = u.workspace
+    name = f'{u.first_name} {u.last_name}'.strip()
+    deleted_by = getattr(u, 'deleted_by', None)
+    return {
+        'id': u.pk, 'email': u.email, 'username': u.username, 'name': name,
+        'role': 'platform_admin' if is_platform_admin(u) else u.role,
+        'is_platform_admin': is_platform_admin(u),
+        'workspace': {'id': ws.pk, 'name': ws.name, 'slug': ws.slug} if ws else None,
+        # owners + admins that could take over, this account included
+        'workspace_admins': (User.objects.filter(workspace=ws, role__in=('owner', 'admin'),
+                                                 is_active=True).count() if ws else 0),
+        'plan': sub.plan.name if sub else None,
+        'plan_code': sub.plan.code if sub else None,
+        'plan_status': sub.status if sub else None,
+        'status': _account_status(u),
+        'two_factor': bool(u.totp_secret),
+        'last_login': u.last_login,
+        'joined': u.date_joined,
+        'deleted_at': getattr(u, 'deleted_at', None),
+        'deleted_by': deleted_by.username if deleted_by else None,
+        'purges_at': getattr(u, 'purges_at', None),
+    }
+
+
+@platform_api('GET')
+def users(request):
+    qs = User.objects.select_related('workspace').order_by('-id')
+    for word in (request.query_params.get('q') or '').split():
+        qs = qs.filter(Q(email__icontains=word) | Q(username__icontains=word)
+                       | Q(first_name__icontains=word) | Q(last_name__icontains=word)
+                       | Q(workspace__name__icontains=word))
+    role = request.query_params.get('role') or ''
+    if role == 'platform_admin':
+        qs = qs.filter(_PLATFORM_ADMIN_Q)
+    elif role:
+        qs = qs.filter(role=role, workspace__isnull=False)
+    status = request.query_params.get('status') or ''
+    if status and status not in _ACCOUNT_STATUS_Q:
+        # never ignored: a filter that matched nothing would quietly list every account
+        return _bad('bad_status', 'Unknown status.')
+    if status:
+        qs = qs.filter(_ACCOUNT_STATUS_Q[status])
+    pg = _Pager()
+    items = pg.paginate_queryset(qs, request)
+    subs = _subs_for([u.workspace_id for u in items if u.workspace_id])
+    return pg.get_paginated_response(
+        [_account_row(u, subs.get(u.workspace_id) if u.workspace_id else None) for u in items])
+
+
+def _cannot_enter(admin, target):
+    """(error, detail, status) when `admin` may not enter as `target`, else None."""
+    if target is None:
+        return 'not_found', 'No such account.', 404
+    if is_platform_admin(target):
+        return 'cannot_impersonate', 'Platform admins cannot be entered — not even yourself.', 400
+    if target.workspace is None:      # an account nobody gave a company (made by hand)
+        return 'cannot_impersonate', 'This account has no workspace to enter.', 400
+    if getattr(target, 'deleted_at', None) is not None:
+        return 'cannot_impersonate', 'This account was deleted.', 400
+    if not target.is_active:
+        return 'cannot_impersonate', 'This account is switched off.', 400
+    if not target.workspace.is_active:
+        return 'cannot_impersonate', 'This workspace is stopped.', 400
+    return None
+
+
+@platform_api('POST')
+def user_impersonate(request, user_id):
+    """Issue an "Enter as user" ticket for one workspace account. The ticket
+    is returned once, raw; only its hash is kept (core.impersonation)."""
+    reason, err = _reason(request)
+    if err:
+        return err
+    target = User.objects.select_related('workspace').filter(pk=user_id).first()
+    problem = _cannot_enter(request.user, target)
+    if problem:
+        return _bad(*problem)
+    ticket = impersonation.new_ticket()
+    ImpersonationTicket.objects.create(
+        key_hash=impersonation.hash_ticket(ticket), admin=request.user, target=target,
+        workspace=target.workspace, reason=reason, admin_ip=_ip(request))
+    _audit(request, 'platform.impersonate.issue', target.workspace, reason=reason,
+           target_user_id=target.pk, target_email=target.email, target_username=target.username)
+    ws = target.workspace
+    return Response({
+        'ticket': ticket,
+        'starts_within_minutes': int(impersonation.START_WITHIN.total_seconds() // 60),
+        'lasts_minutes': int(impersonation.LASTS.total_seconds() // 60),
+        'user': {'id': target.pk, 'username': target.username, 'email': target.email},
+        'workspace': {'id': ws.pk, 'name': ws.name, 'slug': ws.slug},
+    })
 
 
 # ------------------------------------------------------------------ tenants

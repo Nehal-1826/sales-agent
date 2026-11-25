@@ -13,7 +13,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework.decorators import action, api_view, permission_classes, throttle_classes
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 
-from . import lockout
+from . import impersonation, lockout
 from .authz import (
     auth_extras,
     handle_2fa_confirm,
@@ -24,6 +24,7 @@ from .authz import (
     handle_2fa_status,
     handle_2fa_verify,
     is_platform_admin,
+    note_sign_in,
     otp_satisfied,
     token_otp_satisfied,
     user_2fa_active,
@@ -131,6 +132,7 @@ def register(request):
         return Response({'detail': 'username already taken'}, status=409)
     user = User.objects.create_user(username=username, password=password)
     token, _ = Token.objects.get_or_create(user=user)
+    note_sign_in(user)
     return Response({'token': token.key, 'user': UserSerializer(user).data}, status=201)
 
 
@@ -141,6 +143,7 @@ def _issue_login_token(user, request):
         token.delete()
         token = Token.objects.create(user=user)
     PlatformSession.objects.filter(token=token).delete()  # a fresh login must pass TOTP again
+    note_sign_in(user)
     return Response({'token': token.key, 'user': {**UserSerializer(user).data, **auth_extras(user, request)}})
 
 
@@ -214,13 +217,72 @@ def admin_login(request):
 def logout(request):
     """Revoke this user's token server-side — signing out must not leave a
     copied token valid."""
+    ticket = getattr(request, 'impersonation', None)
+    if ticket is not None:
+        # "Sign out" inside "Enter as user" only leaves the customer's
+        # workspace: the person's own sessions must stay signed in
+        _end_impersonation(request, ticket)
+        return Response({'detail': 'impersonation ended'})
     Token.objects.filter(user=request.user).delete()
     return Response({'detail': 'signed out'})
 
 
+def _me_payload(request):
+    data = {**UserSerializer(request.user).data, **auth_extras(request.user, request)}
+    ticket = getattr(request, 'impersonation', None)
+    if ticket is not None:
+        data['impersonation'] = impersonation.info(ticket)
+    return data
+
+
 @api_view(['GET'])
 def me(request):
-    return Response({**UserSerializer(request.user).data, **auth_extras(request.user, request)})
+    return Response(_me_payload(request))
+
+
+def _audit_impersonation(request, ticket, action, **meta):
+    """Start and end of "Enter as user" are recorded under the ADMIN's name,
+    never under the person who was entered."""
+    from billing.payments import audit
+    audit(f'platform.impersonate.{action}', ticket.workspace,
+          {'target_user_id': ticket.target.pk, 'target_email': ticket.target.email, **meta},
+          actor=ticket.admin, ip=lockout.client_ip(request) or None)
+
+
+def _end_impersonation(request, ticket):
+    now = timezone.now()
+    was_running = ticket.ended_at is None
+    duration = int((now - ticket.started_at).total_seconds()) if ticket.started_at else 0
+    impersonation.end(ticket, now=now)
+    if was_running:
+        _audit_impersonation(request, ticket, 'end', duration_seconds=duration)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle, LoginThrottle])
+def impersonate_start(request):
+    """The new tab of "Enter as user" turns its ticket into a 60-minute
+    session. The ticket is in the body, not a header: it is not a session yet."""
+    ticket = request.data.get('ticket') if hasattr(request.data, 'get') else None
+    row, err = impersonation.start(ticket)
+    if err:
+        return Response({'error': err[0], 'detail': err[1]}, status=400)
+    request.impersonation = row
+    request.user = row.target
+    _audit_impersonation(request, row, 'start')
+    return Response({'user': _me_payload(request)})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def impersonate_end(request):
+    """The Exit button of the impersonated tab."""
+    ticket = getattr(request, 'impersonation', None)
+    if ticket is None:          # an ordinary session has nothing to leave
+        return Response({'ended': False})
+    _end_impersonation(request, ticket)
+    return Response({'ended': True})
 
 
 USERNAME_RULE = 'Username must be 3-30 characters — letters, numbers and underscores only.'

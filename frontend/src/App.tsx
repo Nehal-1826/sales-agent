@@ -18,6 +18,7 @@ import { MailPage } from './pages/MailPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { LoginPage } from './pages/LoginPage';
 import { AdminLoginPage } from './pages/AdminLoginPage';
+import { ImpersonatePage } from './pages/ImpersonatePage';
 import { SignupPage } from './pages/SignupPage';
 import { VerifyEmailPage } from './pages/VerifyEmailPage';
 import { LandingPage } from './pages/LandingPage';
@@ -27,6 +28,7 @@ import { PAYMENT_REQUIRED_EVENT, SESSION_EXPIRED_EVENT, checkAuth, getOnboarding
 import type { AuthState, PaymentRequiredInfo } from './lib/api';
 import { navigate, useRoute } from './lib/router';
 import { WorkspaceStatusProvider } from './lib/status';
+import { isImpersonatePath, isImpersonating } from './lib/impersonation';
 import { getMe } from './lib/platform';
 import type { Me } from './lib/platform';
 import { PlatformShell } from './pages/platform/PlatformShell';
@@ -45,6 +47,14 @@ export default function App() {
     document.documentElement.removeAttribute('data-session');
     document.getElementById('boot')?.remove();
   }, []);
+  // The "enter as user" tab — a platform admin inside a customer's workspace —
+  // is this page and nothing else, on every address. The ticket sits in
+  // sessionStorage, so a refresh of any in-app path brings the same tab back:
+  // never the admin's own console, never the landing page. Shell is handed in
+  // as a prop (not imported by the page) so the two files do not import each other.
+  if (isImpersonating() || isImpersonatePath(path)) {
+    return <ImpersonatePage renderShell={(onSignOut) => <Shell demo={false} onSignOut={onSignOut} />} />;
+  }
   if (isMarketingSubpage(path)) return <MarketingPage path={routeMeta(path)!.path} />;
   return <AppGate />;
 }
@@ -339,6 +349,9 @@ function Shell({ demo, onSignOut }: { demo: boolean; onSignOut: () => void }) {
   const { page, sub } = useRoute();
   const [menuOpen, setMenuOpen] = useState(false);
   const [paywalled, setPaywalled] = useState(false);
+  // inside the "enter as user" tab the setup chat and the product tour belong
+  // to the customer: skipping the wizard would switch their autopilot on
+  const inside = isImpersonating();
 
   // HTTP 402 from any call: quota → toast; payment_required → persistent banner
   useEffect(() => {
@@ -360,13 +373,13 @@ function Shell({ demo, onSignOut }: { demo: boolean; onSignOut: () => void }) {
   const pageRef = useRef(page);
   useEffect(() => { pageRef.current = page; }, [page]);
   useEffect(() => {
-    if (demo) return;
+    if (demo || inside) return;
     getOnboarding()
       .then((state) => {
         if (state?.needed && pageRef.current === 'home') navigate('assistant');
       })
       .catch(() => undefined);
-  }, [demo]);
+  }, [demo, inside]);
 
   useEffect(() => setMenuOpen(false), [page]);
 
@@ -408,7 +421,7 @@ function Shell({ demo, onSignOut }: { demo: boolean; onSignOut: () => void }) {
         </main>
       </div>
       {page !== 'assistant' && <GuideWidget />}
-      <Tutor />
+      {!inside && <Tutor />}
       <Toaster />
     </div>
   );

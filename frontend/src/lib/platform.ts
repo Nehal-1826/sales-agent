@@ -318,3 +318,79 @@ export async function viewPlatformInvoice(id: number | string): Promise<Result<t
     return true as const;
   });
 }
+
+/* ---------------- real accounts (console Users page) ---------------- */
+
+/** One sign-in account (the main system people sign in to), as
+ *  `GET /api/platform/users/` lists it. */
+export interface AccountRow {
+  id: number;
+  email: string;
+  username: string;
+  /** first + last name, '' when empty */
+  name: string;
+  role: 'owner' | 'admin' | 'member' | 'platform_admin';
+  is_platform_admin: boolean;
+  workspace: { id: number; name: string; slug: string } | null;
+  /** owners+admins that are neither deleted nor switched off, this one included */
+  workspace_admins: number;
+  /** plan name */
+  plan: string | null;
+  plan_code: string | null;
+  plan_status: string | null;
+  /** pending = the email is not verified yet */
+  status: 'active' | 'suspended' | 'pending' | 'deleted';
+  two_factor: boolean;
+  last_login: string | null;
+  joined: string;
+  deleted_at: string | null;
+  /** username of the admin who deleted it */
+  deleted_by: string | null;
+  purges_at: string | null;
+}
+
+export interface AccountQuery {
+  q?: string;
+  role?: string;
+  status?: string;
+  page?: number;
+}
+
+/** A page of 25 accounts. Deleted ones come back only with `status: 'deleted'`. */
+export async function listPlatformUsers(q: AccountQuery): Promise<Page<AccountRow>> {
+  if (await inDemo()) return emptyPage<AccountRow>([]);
+  return request<Page<AccountRow>>(`/platform/users/${qs({ ...q })}`);
+}
+
+/* ---------------- enter a workspace as this user ---------------- */
+
+/** What `POST /platform/users/<id>/impersonate/` answers: one single-use
+ *  ticket, and the account and workspace it opens. */
+export interface ImpersonationIssued {
+  ticket: string;
+  starts_within_minutes: number;
+  lasts_minutes: number;
+  user: { id: number; username: string; email: string };
+  workspace: { id: number; name: string; slug: string };
+}
+
+/** Ask for the ticket that opens this account's workspace as them. The reason
+ *  (3 characters or more) is recorded under the admin's name. */
+export const issueImpersonation = async (userId: number, reason: string): Promise<Result<ImpersonationIssued>> =>
+  (await inDemo())
+    ? demoFail<ImpersonationIssued>()
+    : attempt(() => request<ImpersonationIssued>(`/platform/users/${userId}/impersonate/`, post({ reason })));
+
+/** The id of the account signed in to THIS tab, or null when it cannot be
+ *  told (demo mode, a failed answer, an answer without an id). `/auth/me/`
+ *  carries no email — only the id and the username — so an account is
+ *  recognised by its id. */
+export async function getSignedInAccountId(): Promise<number | null> {
+  if (await inDemo()) return null;
+  try {
+    const me = await request<{ id?: unknown }>('/auth/me/');
+    return typeof me.id === 'number' ? me.id : null;
+  } catch {
+    return null;
+  }
+}

@@ -24,6 +24,16 @@ def is_platform_admin(user):
                 and user.is_staff and user.is_active)
 
 
+def note_sign_in(user):
+    """Remember that this account just signed in — the console's Users page
+    shows when each account was last in. Called wherever a session starts
+    (both login doors, sign-up, Google); never for "Enter as user", where the
+    person did not sign in. A plain UPDATE: save() would write back fields
+    that need no writing."""
+    from .models import User
+    User.objects.filter(pk=user.pk).update(last_login=timezone.now())
+
+
 def user_2fa_active(user):
     """2FA is on when the account's one authenticator is set up.
 
@@ -33,7 +43,12 @@ def user_2fa_active(user):
 
 
 def token_otp_satisfied(request, now=None):
-    """Authenticated user whose DRF token session passed TOTP within the last 12 h."""
+    """Authenticated user whose session passed the second check within the
+    last 12 h. Inside "Enter as user" the platform admin's own authority
+    stands in for the person's code: the admin is recorded, the person's
+    two-factor is not asked (and cannot be changed inside the tab)."""
+    if getattr(request, 'impersonation', None) is not None:
+        return True
     user = getattr(request, 'user', None)
     token = getattr(request, 'auth', None)
     if (request is None or not (user and user.is_authenticated and user.is_active)

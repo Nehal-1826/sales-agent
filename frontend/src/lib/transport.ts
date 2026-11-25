@@ -9,11 +9,14 @@
  *   - DEMO (backend unreachable at start-up, dev build or VITE_ALLOW_DEMO=1):
  *     everything resolves from src/lib/mockData.ts so the UI can be explored.
  *   - OFFLINE (unreachable in a production build): App shows a Retry screen.
- * A 401 on any call clears the token and fires SESSION_EXPIRED_EVENT.
+ * A 401 on any call clears the token and fires SESSION_EXPIRED_EVENT — except
+ * inside the impersonated tab ("enter as user"), where it only drops the
+ * ticket and fires IMPERSONATION_ENDED_EVENT.
  */
 
 import { clearAll } from './store';
 import { clearWarmupToken } from './warmupApi';
+import type { ImpersonatedMe } from './impersonation';
 
 /** Base URL the Django API is served from (Vite proxies /api in dev). */
 export const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? '/api';
@@ -30,11 +33,70 @@ export type PaymentRequiredInfo =
 /** Bundled demo data is only allowed in dev builds or when explicitly enabled. */
 const DEMO_ALLOWED = import.meta.env.DEV || import.meta.env.VITE_ALLOW_DEMO === '1';
 
-let authToken: string | null = null;
+/* ------------------------------------------------------------------ */
+/* Enter as user — the ticket of the impersonated tab                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A platform admin can open a customer's workspace in a NEW tab, signed in as
+ * that customer for 60 minutes ("enter as user"). The console hands the ticket
+ * over in /impersonate#t=<ticket>; the tab starts it ONCE (startImpersonation)
+ * and from then on signs every request with `Authorization: Impersonation <ticket>`.
+ *
+ * The ticket lives in sessionStorage, which is per tab. localStorage is not:
+ * every tab of this origin shares it, so this tab never writes to or removes
+ * from it — that would sign the admin's own tab out.
+ */
+const IMPERSONATION_KEY = 'agentic-ai:impersonation';
+export const IMPERSONATION_ENDED_EVENT = 'agentic:impersonation-ended';
+const IMPERSONATE_PATH = '/impersonate';
+
+let impersonationTicket: string | null = null;
 try {
-  authToken = localStorage.getItem(TOKEN_KEY);
+  const stored = sessionStorage.getItem(IMPERSONATION_KEY) ?? '';
+  // An earlier console "Enter as user" button parked a JSON object under this
+  // very key. A tab opened back then still holds it — and a new tab copies its
+  // opener's sessionStorage — so a value like that is not read as a ticket.
+  if (stored && !stored.startsWith('{')) impersonationTicket = stored;
 } catch {
   /* storage unavailable */
+}
+
+let authToken: string | null = null;
+try {
+  // The impersonated tab is never the admin's own session. It opens on
+  // /impersonate or comes back from a refresh with its ticket in sessionStorage;
+  // either way it must not carry — or end — the token every tab of this origin shares.
+  if (!impersonationTicket && !isImpersonatePath(window.location.pathname)) {
+    authToken = localStorage.getItem(TOKEN_KEY);
+  }
+} catch {
+  /* storage unavailable */
+}
+
+export function isImpersonating(): boolean {
+  return impersonationTicket !== null;
+}
+
+/** The ticket this tab is signed in with (null in a normal tab). */
+export function getImpersonationTicket(): string | null {
+  return impersonationTicket;
+}
+
+/** Keep the ticket for this tab — sessionStorage only — or forget it (null). */
+export function setImpersonationTicket(ticket: string | null): void {
+  impersonationTicket = ticket || null;
+  try {
+    if (ticket) sessionStorage.setItem(IMPERSONATION_KEY, ticket);
+    else sessionStorage.removeItem(IMPERSONATION_KEY);
+  } catch {
+    /* storage unavailable: the ticket then lives in memory, for this page only */
+  }
+}
+
+/** True for the address the console opens: /impersonate#t=<ticket>. */
+export function isImpersonatePath(pathname: string): boolean {
+  return pathname === IMPERSONATE_PATH || pathname === `${IMPERSONATE_PATH}/`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -84,9 +146,29 @@ function expireSession(): void {
   window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
 }
 
+/** The Authorization header this tab signs a request with: the ticket inside
+ *  the impersonated tab, the session token anywhere else. */
+function authHeaders(): Record<string, string> {
+  if (impersonationTicket) return { Authorization: `Impersonation ${impersonationTicket}` };
+  return authToken ? { Authorization: `Token ${authToken}` } : {};
+}
+
+/** A 401 answer. Inside the impersonated tab only the ticket is dead: it is
+ *  dropped and IMPERSONATION_ENDED_EVENT tells the page — the admin's own
+ *  session, whose token every tab shares, is never touched. A request that
+ *  was already on its way when the ticket dropped answers 401 to a tab that
+ *  holds no token either, so there is nothing left for it to end. */
+function unauthorized(): void {
+  if (impersonationTicket) {
+    setImpersonationTicket(null);
+    window.dispatchEvent(new Event(IMPERSONATION_ENDED_EVENT));
+  } else if (authToken) {
+    expireSession();
+  }
+}
+
 export async function request<T>(path: string, init?: RequestInit, timeoutMs = 10_000): Promise<T> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (authToken) headers.Authorization = `Token ${authToken}`;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...authHeaders() };
   let res: Response;
   try {
     res = await fetch(`${API_BASE_URL}${path}`, {
@@ -104,7 +186,7 @@ export async function request<T>(path: string, init?: RequestInit, timeoutMs = 1
         : "Couldn't reach your workspace. Check your connection and try again.",
     );
   }
-  if (res.status === 401 && authToken) expireSession();
+  if (res.status === 401) unauthorized();
   if (!res.ok) {
     let detail = '';
     try {
@@ -289,6 +371,14 @@ export async function verifyGoogleToken(idToken: string): Promise<Result<true>> 
 
 /** Sign out: drop the token and every cached agentic-ai:* value. */
 export function logout(): void {
+  // Inside the impersonated tab "sign out" only ends the ticket. The admin's
+  // own session — whose token every tab of this origin shares — stays signed in.
+  if (impersonationTicket) {
+    void endImpersonation();
+    setImpersonationTicket(null);
+    window.dispatchEvent(new Event(IMPERSONATION_ENDED_EVENT));
+    return;
+  }
   // revoke on the server first — a token copied from this browser must die too
   if (authToken) {
     void fetch(`${API_BASE_URL}/auth/logout/`, {
@@ -306,10 +396,8 @@ export function logout(): void {
 /** Authenticated download (CSV export) — fetch + blob, token in the header. */
 export async function downloadFile(path: string, filename: string): Promise<Result<true>> {
   return attempt(async () => {
-    const headers: Record<string, string> = {};
-    if (authToken) headers.Authorization = `Token ${authToken}`;
-    const res = await fetch(`${API_BASE_URL}${path}`, { headers, signal: AbortSignal.timeout(30_000) });
-    if (res.status === 401 && authToken) expireSession();
+    const res = await fetch(`${API_BASE_URL}${path}`, { headers: authHeaders(), signal: AbortSignal.timeout(30_000) });
+    if (res.status === 401) unauthorized();
     if (!res.ok) throw new ApiError(res.status, friendlyStatus(res.status));
     const url = URL.createObjectURL(await res.blob());
     const a = document.createElement('a');
@@ -367,10 +455,48 @@ export async function openPost<T>(
 
 /** Authenticated GET returning raw text (HTML invoices). */
 export async function requestText(path: string): Promise<string> {
-  const headers: Record<string, string> = {};
-  if (authToken) headers.Authorization = `Token ${authToken}`;
-  const res = await fetch(`${API_BASE_URL}${path}`, { headers, signal: AbortSignal.timeout(20_000) });
-  if (res.status === 401 && authToken) expireSession();
+  const res = await fetch(`${API_BASE_URL}${path}`, { headers: authHeaders(), signal: AbortSignal.timeout(20_000) });
+  if (res.status === 401) unauthorized();
   if (!res.ok) throw new ApiError(res.status, friendlyStatus(res.status));
   return res.text();
+}
+
+/* ------------------------------------------------------------------ */
+/* Enter as user                                                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Start the ticket the console handed over. The answer is `{ user }` — the
+ * customer's profile, the same shape as GET /auth/me/ plus `impersonation` —
+ * and from then on the ticket can start no second time.
+ *
+ * A bare fetch on purpose — the same reason login() uses one: the ticket is
+ * not a session yet, and the token every tab of this origin shares must never
+ * ride along. A refused start answers 400 with the server's own word for it
+ * in `code` (bad_ticket / ticket_used / ticket_expired); no `status` at all
+ * means the server was not reached, and the ticket is still good.
+ */
+export async function startImpersonation(ticket: string): Promise<Result<ImpersonatedMe> & { code?: string }> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/auth/impersonate/start/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticket }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { detail?: string; error?: string };
+      return { ok: false, error: body.detail || friendlyStatus(res.status), status: res.status, code: body.error };
+    }
+    const body = (await res.json()) as { user?: ImpersonatedMe };
+    return body.user ? { ok: true, data: body.user } : { ok: false, error: 'Something went wrong.', status: res.status };
+  } catch {
+    return { ok: false, error: "Couldn't reach your workspace. Check your connection and try again." };
+  }
+}
+
+/** End the ticket. A normal request — it carries the ticket, like every other
+ *  call in this tab — so call it BEFORE the ticket is dropped. */
+export function endImpersonation(): Promise<Result<{ ended: boolean }>> {
+  return attempt(() => request<{ ended: boolean }>('/auth/impersonate/end/', post()));
 }

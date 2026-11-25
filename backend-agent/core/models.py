@@ -859,6 +859,30 @@ class PlatformSession(models.Model):
     last_otp_step = models.BigIntegerField(default=0)
 
 
+class ImpersonationTicket(models.Model):
+    """"Enter as user": a platform admin inside a customer's workspace.
+
+    The ticket (random, stored ONLY as its SHA-256) is the credential of one
+    browser tab. It starts exactly once, within 10 minutes of being issued,
+    and lasts 60 minutes once started (core.impersonation). `ended_at` is set
+    by the tab's Exit button or its "Sign out". It is never a normal token."""
+
+    key_hash = models.CharField(max_length=64, unique=True)
+    admin = models.ForeignKey(User, on_delete=models.CASCADE, related_name='impersonations_issued')
+    target = models.ForeignKey(User, on_delete=models.CASCADE, related_name='impersonations_received')
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE)
+    reason = models.CharField(max_length=500)
+    admin_ip = models.GenericIPAddressField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    ends_at = models.DateTimeField(null=True, blank=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+
 class LoginAttempt(models.Model):
     """Failure counter shared by every web process (replaces the per-process
     cache).  key = sha256(name|ip); the window restarts after lockout.WINDOW."""

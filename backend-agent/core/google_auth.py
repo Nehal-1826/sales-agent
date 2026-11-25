@@ -29,7 +29,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.authtoken.models import Token
 
-from .authz import auth_extras
+from .authz import auth_extras, note_sign_in
 from .models import PlatformSession, User
 from .serializers import UserSerializer
 
@@ -108,5 +108,6 @@ def google_verify(request):
 
     drf_token, _ = Token.objects.get_or_create(user=user)
     PlatformSession.objects.filter(token=drf_token).delete()  # fresh OTP gate
+    note_sign_in(user)
     return Response({'token': drf_token.key,
                      'user': {**UserSerializer(user).data, **auth_extras(user, request)}})

@@ -31,7 +31,7 @@ Brand: **WarmPulse**, accent theme **orange** (`#f97316` family — restored
 - `whatsapp-sidecar/` — WhatsApp runtime service (node). `warmpulse-mobile/` — RN app.
 - `ops/` — gateway nginx (`/api/`→django:8000, `/wp-api/`→fastapi:8001 rewritten
   to its internal `/api/`), db init. Root `docker-compose.yml` = full stack.
-- `scripts/e2e/flow.py` — the Playwright gate (183 checks; run before every push).
+- `scripts/e2e/flow.py` — the Playwright gate (185 checks; run before every push).
 - `docs/superpowers/` — specs + plans (foundation, shell-ux batch, warmup dashboards).
 
 ## Commands (local dev, Windows Git Bash — quote paths, space in "Devesh B")
@@ -144,7 +144,13 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   (`core/warmup_accounts.py`, server-to-server by e-mail with a bridge token
   minted for the acting admin): if that fails nothing changes (502
   `warmup_unavailable`) — a deleted account must never keep warming, and
-  "could not look" is never read as "no copy". The workspace stops with its
+  "could not look" is never read as "no copy". When it fails on a LATER
+  account, what was already paused runs again (`warmup_accounts.undo`), or
+  the admin is told whose mailboxes stayed paused. An account whose e-mail
+  address another switched-on account has too is not deleted at all
+  (`shared_email`): its copy on the warmup side is that other account's
+  copy too, and those mailboxes would stop with it (see Changing roles).
+  The workspace stops with its
   last owner/admin and the other accounts in it go with it; only the
   deletion's own stop is stamped (`Workspace.deleted_at`), so a workspace an
   admin stopped by hand from Tenants is never restarted by a restore. A
@@ -175,12 +181,26 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   limit applies). `roles.can_change` is the ONE rule: never your own account,
   never a deleted one, never the role it has, a company always keeps an
   owner (the only owner can be neither lowered nor made a Super admin), the
-  console always keeps a Super admin. Warmup FIRST, then the account: a
+  console always keeps a Super admin — and never an account whose e-mail
+  address another switched-on account has too (`shared_email`), when the
+  change crosses the Super admin line: the warmup service tells people apart
+  by e-mail, so two accounts with one address are ONE person there (one
+  copy), and the role would change for both. A change inside a company never
+  asks that service, so it is allowed. (Live, 26 Nov 2026: `admin` and
+  `superadmin` both carry `superadmin@warmpulse.tech`; the warmup side's plain
+  "You cannot change your own role" reached the owner as a 502.)
+  Warmup FIRST, then the account: a
   promotion pauses the person's warmup mailboxes while their copy is still a
   client and then sets the copy's role (`POST /api/admin/users/{id}/role` —
   the warmup side's one door for it; signing in still never flips an existing
   copy); a demotion sets the copy back to `client` and lets the mailboxes run
-  again; a service that cannot be reached changes nothing. A person made
+  again; a service that cannot be reached changes nothing — and when it fails
+  on the SECOND step, the first is taken back (`warmup_accounts.undo`), or
+  the admin is told what stayed done: the answer says "Nothing was changed"
+  only when it is true. What that service says when it refuses ON PURPOSE (a
+  4xx with a reason) is passed on in its words and with its status
+  (`warmup_refused`); `warmup_unavailable` / 502 is only for a service that is
+  down or fails (`warmup_accounts._refused`). A person made
   Owner/Admin in a company that is already set up gets `onboarding.done`, so
   the setup wizard does not catch them (its finish flips the company's
   autopilot). Always `QuerySet.update()` — and for a change INSIDE a company
@@ -654,7 +674,12 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   workspace `e2e-delete-ws`, made and removed by `django_shell`) and, on the
   same company with a second account (`e2e-mate-me`, a Member), changes roles
   end to end (Member → Admin → Owner, a lowered owner, a refusal in the
-  server's words, a Super admin made and put back into the company); a deletion
+  server's words, a Super admin made and put back into the company, and two
+  accounts with one e-mail address refused — a twin `e2e-twin-me` is made
+  for that one look and removed at once; while it exists two rows carry the
+  address, so that look finds the first account by its NAME, and it empties
+  the search afterwards, because the list on screen still holds the twin's
+  row after it is gone); a deletion
   is refused while the warmup service is down, so those checks are skipped
   then. Two rules for that walk: the first account of a company is always made
   its owner (create the owner BEFORE the member a look is about), and a check

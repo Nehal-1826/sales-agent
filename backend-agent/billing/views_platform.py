@@ -270,9 +270,13 @@ def user_impersonate(request, user_id):
 
 
 def _warmup_refused(exc):
-    """The answer when the warmup service could not do its part: the account
-    is exactly as it was, and the admin is told so first."""
-    return _bad('warmup_unavailable', f'Nothing was changed. {exc.detail}', exc.status_code)
+    """The answer when the warmup service could not do its part: that nothing
+    was changed (it always is, unless a step stayed done), and then why. A
+    service that refused ON PURPOSE keeps its own words and its own status —
+    'unavailable' is for one that is down."""
+    head = 'Nothing was changed. ' if exc.unchanged else ''
+    code = 'warmup_refused' if exc.status_code < 500 else 'warmup_unavailable'
+    return _bad(code, f'{head}{exc.detail}', exc.status_code)
 
 
 @platform_api('POST')

@@ -16,6 +16,7 @@ from django.utils import timezone
 from . import warmup_accounts
 from .authz import is_platform_admin
 from .models import ImpersonationTicket, User
+from .warmup_accounts import WarmupAccountsError
 
 SUPER_ADMIN = 'super_admin'
 WORKSPACE_ROLES = ('member', 'admin', 'owner')
@@ -73,6 +74,13 @@ def can_change(admin, target, role, workspace=None):
     was, company = role_of(target), target.workspace
     if role == was:
         return 'already_has_role', f'This account is already {label(role).lower()}.', 400
+    if SUPER_ADMIN in (role, was):
+        # the role of its copy changes on the warmup side too — and two accounts
+        # with one e-mail address are ONE person there, so it would change both
+        twin = warmup_accounts.twin_of(target)
+        if twin is not None:
+            return 'shared_email', warmup_accounts.shared_email(
+                target, twin, admin, 'this role cannot be changed for one of them alone.'), 400
 
     if role == SUPER_ADMIN:
         if not (target.email or '').strip():
@@ -125,13 +133,29 @@ def change_role(admin, target, role, reason=None, workspace=None, ip=None):
     email = target.email or ''
     now = timezone.now()
 
-    # 1. the warmup service first: when it cannot answer, nothing below runs
+    # 1. the warmup service first: when it cannot answer, nothing below runs.
+    #    Each way is two steps there; when the second fails the first is taken
+    #    back (warmup_accounts.undo), so that "Nothing was changed" is true.
     if role == SUPER_ADMIN:
         warmup_accounts.set_paused(email, admin, True)        # while its copy is still a client
-        warmup_accounts.set_role(email, admin, 'super_admin')
+        try:
+            warmup_accounts.set_role(email, admin, 'super_admin')
+        except WarmupAccountsError:
+            warmup_accounts.undo(
+                warmup_accounts.set_paused, (email, admin, False),
+                "The role was not changed, but the warmup service could not finish its part: "
+                "this account's warmup mailboxes are paused. Try again in a moment.")
+            raise
     elif was == SUPER_ADMIN:
         warmup_accounts.set_role(email, admin, 'client')
-        warmup_accounts.set_paused(email, admin, False)      # what the promotion paused runs again
+        try:
+            warmup_accounts.set_paused(email, admin, False)  # what the promotion paused runs again
+        except WarmupAccountsError:
+            warmup_accounts.undo(
+                warmup_accounts.set_role, (email, admin, 'super_admin'),
+                'The role was not changed, but the warmup service could not finish its part: '
+                'on the warmup side this account is no longer a super admin. Try again in a moment.')
+            raise
 
     # 2. the account — plain UPDATEs: save() would re-attach the active workspace
     if role == SUPER_ADMIN:

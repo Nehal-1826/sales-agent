@@ -3,7 +3,6 @@ against the model, reports, and leaves nothing behind. The model here is a
 stand-in; on the server the same run talks to the real one."""
 
 import os
-import time
 from io import StringIO
 from unittest import mock
 
@@ -95,7 +94,10 @@ class EvalAssistantTests(TenantTestCase):
         the live server (2026-11-23). The next run removes old leftovers -
         and never one that may belong to a run still going."""
         stale = 'eval-20000101-000000'                           # long ago
-        fresh = 'eval-' + time.strftime('%Y%m%d-%H%M%S')        # could be running right now
+        # not old yet: a run that could still be going. Not "now": the command
+        # makes its own workspace from the clock's second, and when both fell
+        # in one the test died on the slug's UNIQUE constraint (26 Nov 2026).
+        fresh = 'eval-20991231-235959'
         for slug in (stale, fresh):
             workspace = Workspace.all_tenants.create(slug=slug, name=slug)
             with workspace_context(workspace):

@@ -47,6 +47,14 @@ def can_delete(admin, target):
         return 'cannot_delete', 'This account has no workspace.', 400
     if target.deleted_at is not None:
         return 'already_deleted', 'This account is already deleted.', 400
+    # what stops its warmup mailboxes is its COPY on the warmup side, and two
+    # accounts with one e-mail address have the same copy: the other one's
+    # mailboxes would stop too
+    twin = warmup_accounts.twin_of(target)
+    if twin is not None:
+        return 'shared_email', warmup_accounts.shared_email(
+            target, twin, admin,
+            "deleting this account would stop the other one's warmup mailboxes too."), 400
     return None
 
 
@@ -82,8 +90,27 @@ def delete_account(admin, target, reason=None, ip=None):
     # 1. the warmup mailboxes first: a deleted account must never keep warming,
     #    so a service that cannot pause them stops the whole deletion here,
     #    before one row is touched
-    for user in going:
-        warmup_accounts.set_paused(user.email, admin, True)
+    paused = []
+    try:
+        for user in going:
+            warmup_accounts.set_paused(user.email, admin, True)
+            paused.append(user)
+    except WarmupAccountsError:
+        # nothing is deleted, so what was paused runs again. Every one of them
+        # is tried; those that cannot are named to the admin — never "Nothing
+        # was changed" while some mailboxes stayed paused.
+        stayed = []
+        for user in paused:
+            try:
+                warmup_accounts.set_paused(user.email, admin, False)
+            except WarmupAccountsError:
+                stayed.append(user.username)
+        if stayed:
+            log.error('a deletion was refused and the warmup mailboxes of %s stayed paused', ', '.join(stayed))
+            raise WarmupAccountsError(
+                'No account was deleted, but the warmup service could not finish its part: the warmup '
+                f'mailboxes of {", ".join(stayed)} are paused. Try again in a moment.', 502, unchanged=False)
+        raise
     # 2. the accounts — and the workspace with its last owner or admin
     now = timezone.now()
     with transaction.atomic():

@@ -18,7 +18,7 @@ from billing.models import Plan, PlatformAuditLog
 from billing.tests.helpers import no_template_capture, quiet_logs
 from billing.tests.test_entitlements import make_ws
 from billing.tests.test_platform_base import make_admin
-from core import roles
+from core import roles, warmup_accounts
 from core.models import AppSettings, ImpersonationTicket, User, Workspace
 from core.warmup_accounts import WarmupAccountsError
 
@@ -75,6 +75,12 @@ class Base(TestCase):
 
     def fresh(self, target):
         return User.objects.get(pk=target.pk)
+
+    def twin(self, email, username='twin'):
+        """Another switched-on account with this e-mail address (no company, not a super admin)."""
+        u = User.objects.create_user(username=username, password=PW, email=email)
+        User.objects.filter(pk=u.pk).update(workspace=None)
+        return User.objects.get(pk=u.pk)
 
     def sign_in(self, door, username, password):
         return APIClient().post(f'/api/auth/{door}/', {'username': username, 'password': password}, format='json')
@@ -164,6 +170,64 @@ class RefusedTests(Base):
         ada = self.person(ws, 'ada', '')
         r = self.change(ada, 'super_admin')
         self.assertEqual((r.status_code, r.json()['error']), (400, 'no_email'))
+
+    # ── two accounts with one e-mail address. The warmup service tells people
+    #    apart by e-mail, so it keeps ONE copy of them: a role that would
+    #    change that copy cannot be changed for one of them alone. (Live,
+    #    26 Nov 2026: two super admins shared an address, and the warmup
+    #    service's "your own role" came back as a 502 "could not do it".)
+    def test_an_account_that_shares_its_e_mail_cannot_become_a_super_admin(self):
+        ws = self.company_with_owner()
+        max_ = self.person(ws, 'max', 'max@acme.test')
+        self.twin('MAX@acme.test')                       # the same address, written differently
+        r = self.change(max_, 'super_admin')
+        self.assertEqual((r.status_code, r.json()['error']), (400, 'shared_email'), r.content)
+        self.assertIn('max has the same e-mail address as another account (twin) (max@acme.test)', r.json()['detail'])
+        self.assertIn('Give one of the two accounts a different e-mail address first.', r.json()['detail'])
+        self.assertEqual((self.fresh(max_).workspace_id, self.fresh(max_).is_staff), (ws.pk, False))
+        self.assertEqual(self.calls.mock_calls, [])
+
+    def test_a_super_admin_whose_e_mail_is_shared_cannot_join_a_company(self):
+        ws = self.company()
+        _, leaver, _ = make_admin('leaver')
+        self.twin(leaver.email)
+        r = self.change(leaver, 'member', workspace=ws)
+        self.assertEqual((r.status_code, r.json()['error']), (400, 'shared_email'), r.content)
+        self.assertIn('another account (twin)', r.json()['detail'])
+        self.assertIsNone(self.fresh(leaver).workspace_id)
+        self.assertEqual(self.calls.mock_calls, [])
+
+    def test_it_says_so_when_the_shared_address_is_the_signed_in_admin_s(self):
+        ws = self.company_with_owner()
+        max_ = self.person(ws, 'max', self.admin_u.email)       # the acting admin's own address
+        r = self.change(max_, 'super_admin')
+        self.assertEqual(r.json()['error'], 'shared_email')
+        self.assertIn(f'max has the same e-mail address as your account ({self.admin_u.email})', r.json()['detail'])
+
+    def test_a_change_inside_a_company_asks_the_warmup_service_nothing(self):
+        ws = self.company_with_owner()
+        max_ = self.person(ws, 'max', 'max@acme.test')
+        self.twin('max@acme.test')
+        r = self.change(max_, 'admin')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual((self.fresh(max_).role, self.fresh(max_).workspace_id), ('admin', ws.pk))
+        self.assertEqual(self.calls.mock_calls, [])
+
+    def test_a_twin_that_is_deleted_does_not_count(self):
+        ws = self.company_with_owner()
+        max_ = self.person(ws, 'max', 'max@acme.test')
+        gone = self.twin('max@acme.test', username='gone')
+        User.objects.filter(pk=gone.pk).update(deleted_at=timezone.now(), is_active=False)
+        r = self.change(max_, 'super_admin')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(self.fresh(max_).is_staff)
+
+    def test_two_accounts_with_no_address_at_all_are_not_twins(self):
+        ws = self.company()
+        self.person(ws, 'ada', '', role='owner')
+        bea = self.person(ws, 'bea', '')
+        r = self.change(bea, 'super_admin')
+        self.assertEqual(r.json()['error'], 'no_email')          # the rule for no address, not for a shared one
 
     def test_nothing_changes_on_a_refusal(self):
         ws = self.company('keep', 'Keep Co')
@@ -285,6 +349,39 @@ class SuperAdminTests(Base):
         ada = self.fresh(ada)
         self.assertEqual((ada.workspace_id, ada.is_staff, ada.role), (ws.pk, False, 'owner'))
 
+    # …and "Nothing was changed" has to be TRUE when the warmup service is
+    #    reached and then fails halfway: the step that was done is undone.
+    def test_when_the_role_cannot_be_told_its_mailboxes_run_again(self):
+        ws, ada = self.two_owner_company()
+        self.mirrored.side_effect = WarmupAccountsError('The warmup service refused: not allowed')
+        r = self.change(ada, 'super_admin')
+        self.assertEqual((r.status_code, r.json()['error']), (502, 'warmup_unavailable'), r.content)
+        self.assertEqual([c.args for c in self.calls.mock_calls],
+                         [('ada@acme.test', self.admin_u, True),          # paused while its copy is still a client
+                          ('ada@acme.test', self.admin_u, 'super_admin'),  # refused
+                          ('ada@acme.test', self.admin_u, False)])         # so they run again
+        self.assertEqual((self.fresh(ada).workspace_id, self.fresh(ada).is_staff), (ws.pk, False))
+
+    def test_when_its_mailboxes_cannot_run_again_the_role_is_put_back(self):
+        ws = self.company()
+        _, leaver, _ = make_admin('leaver')
+        self.paused.side_effect = WarmupAccountsError('Could not reach the warmup service.')
+        r = self.change(leaver, 'member', workspace=ws)
+        self.assertEqual(r.status_code, 502, r.content)
+        self.assertEqual([c.args[2] for c in self.calls.mock_calls], ['client', False, 'super_admin'])
+        self.assertIsNone(self.fresh(leaver).workspace_id)
+
+    def test_when_the_first_step_cannot_be_undone_it_says_so(self):
+        ws, ada = self.two_owner_company()
+        self.mirrored.side_effect = WarmupAccountsError('The warmup service refused: not allowed')
+        self.paused.side_effect = [0, WarmupAccountsError('Could not reach the warmup service.')]   # paused, and could not run again
+        with mock.patch.object(warmup_accounts.log, 'error') as logged:
+            r = self.change(ada, 'super_admin')
+        self.assertEqual(r.status_code, 502, r.content)
+        self.assertNotIn('Nothing was changed', r.json()['detail'])       # it would not be true
+        self.assertIn('could not finish', r.json()['detail'])
+        self.assertTrue(logged.called)
+
     def test_a_super_admin_back_into_a_company(self):
         ws = self.company()
         _, leaver, _ = make_admin('leaver')
@@ -325,3 +422,69 @@ class SuperAdminTests(Base):
         self.assertEqual((r.status_code, r.json()['error']), (400, 'seat_limit'))
         self.assertIsNone(self.fresh(leaver).workspace_id)
         self.assertEqual(self.calls.mock_calls, [])
+
+
+class WarmupWordsTests(TestCase):
+    """What the warmup service says when it refuses ON PURPOSE (a 4xx with a
+    reason) is passed on as it said it, with its own status. "Could not be
+    reached" (502) is for a service that is down: said for a refusal, it sent
+    the owner looking for an outage that was not there (26 Nov 2026). The
+    service itself is never asked: warmup_accounts._call is answered by hand."""
+
+    def setUp(self):
+        no_template_capture(self)
+        quiet_logs(self)
+        cache.clear()
+        self.admin, self.admin_u, _ = make_admin()
+
+    @staticmethod
+    def answer(status, body):
+        resp = mock.Mock(status_code=status)
+        resp.json.return_value = body
+        return resp
+
+    def member(self):
+        ws = make_ws('acme', plan='enterprise')
+        self.person(ws, 'bo', 'bo@acme.test', role='owner')          # the first account is always made the owner
+        return self.person(ws, 'max', 'max@acme.test')
+
+    @staticmethod
+    def person(ws, username, email, role='member'):
+        return User.objects.create_user(username=username, password=PW, workspace=ws, role=role, email=email)
+
+    def answers(self, last):
+        """The six answers of a promotion that fails on its 4th call (the role), by hand:
+        look, pause — look, `last` — look, let run again."""
+        found = self.answer(200, {'items': [{'id': 'u-1', 'email': 'max@acme.test'}]})
+        paused = self.answer(200, {'mailboxes_updated': 0})
+        return [found, paused, found, last, found, paused]
+
+    def ask(self, max_, last):
+        with mock.patch.object(warmup_accounts, '_call', side_effect=self.answers(last)) as asked:
+            r = self.admin.post(f'/api/platform/users/{max_.pk}/role/',
+                                {'role': 'super_admin', 'reason': 'x'}, format='json')
+        self.assertEqual(asked.call_count, 6)          # the pause was undone: the account is as it was
+        return r
+
+    def test_its_refusal_keeps_its_words_and_its_status(self):
+        max_ = self.member()
+        r = self.ask(max_, self.answer(400, {'detail': 'You cannot change your own role'}))
+        self.assertEqual((r.status_code, r.json()['error']), (400, 'warmup_refused'), r.content)
+        self.assertEqual(r.json()['detail'],
+                         'Nothing was changed. The warmup service refused: You cannot change your own role')
+        self.assertEqual(User.objects.get(pk=max_.pk).is_staff, False)
+
+    def test_a_refusal_with_no_reason_keeps_our_words(self):
+        max_ = self.member()
+        r = self.ask(max_, self.answer(403, {'detail': ''}))
+        self.assertEqual((r.status_code, r.json()['error']), (403, 'warmup_refused'), r.content)
+        self.assertEqual(r.json()['detail'],
+                         'Nothing was changed. The warmup service did not change the account role.')
+
+    def test_a_service_that_fails_is_still_unreachable(self):
+        max_ = self.member()
+        r = self.ask(max_, self.answer(500, {'detail': 'boom'}))
+        self.assertEqual((r.status_code, r.json()['error']), (502, 'warmup_unavailable'), r.content)
+        self.assertEqual(r.json()['detail'],
+                         'Nothing was changed. The warmup service did not change the account role.')
+

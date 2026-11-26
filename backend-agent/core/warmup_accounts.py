@@ -26,12 +26,44 @@ PAGE_SIZE = 200      # the service's largest page
 
 
 class WarmupAccountsError(Exception):
-    """The warmup service could not do it — `detail` for the admin, `status_code` for the API."""
+    """The warmup service could not do it — `detail` for the admin, `status_code` for the API.
+    `unchanged` says whether nothing was done on that side: when a sequence
+    failed halfway and its first step could not be undone, it is False, and
+    the answer must not say "Nothing was changed"."""
 
-    def __init__(self, detail, status_code=502):
+    def __init__(self, detail, status_code=502, unchanged=True):
         super().__init__(detail)
         self.detail = detail
         self.status_code = status_code
+        self.unchanged = unchanged
+
+
+def _refused(resp, fallback):
+    """Why the warmup service did not do it. A refusal ON PURPOSE (a 4xx with
+    its reason) is passed on in its own words and with its own status; anything
+    else — it is down, it failed — is `fallback`, "could not be reached" (502).
+    (Live, 26 Nov 2026: its plain "You cannot change your own role" came to
+    the admin as a 502, and they went looking for an outage.)"""
+    if 400 <= resp.status_code < 500:
+        try:
+            detail = resp.json().get('detail')
+        except (ValueError, AttributeError):
+            detail = None
+        words = (f'The warmup service refused: {detail.strip()}'
+                 if isinstance(detail, str) and detail.strip() else fallback)
+        return WarmupAccountsError(words, resp.status_code)
+    return WarmupAccountsError(fallback)
+
+
+def undo(call, args, message):
+    """A step that WAS done on the warmup side, taken back when the next one
+    failed — so that "Nothing was changed" stays true. When even this fails,
+    the error says what stayed done (`message`), never "nothing was changed"."""
+    try:
+        call(*args)
+    except WarmupAccountsError:
+        log.error('the warmup service failed halfway and one step stayed done: %s', message)
+        raise WarmupAccountsError(message, 502, unchanged=False)
 
 
 def _call(admin, method, path, **kwargs):
@@ -83,8 +115,8 @@ def set_paused(email, admin, paused):
                  json={'user_ids': [c.get('id') for c in copies],
                        'action': 'pause' if paused else 'resume'})
     if resp.status_code != 200:
-        raise WarmupAccountsError('The warmup service did not pause the mailboxes.' if paused
-                                  else 'The warmup service did not let the mailboxes run again.')
+        raise _refused(resp, 'The warmup service did not pause the mailboxes.' if paused
+                       else 'The warmup service did not let the mailboxes run again.')
     try:
         return int(resp.json().get('mailboxes_updated', 0))
     except (ValueError, AttributeError, TypeError):
@@ -97,7 +129,7 @@ def remove(email, admin):
     for copy in copies:
         resp = _call(admin, 'DELETE', f"/api/admin/users/{copy.get('id')}")
         if resp.status_code not in (204, 404):       # 404: gone already
-            raise WarmupAccountsError('The warmup service did not delete the account.')
+            raise _refused(resp, 'The warmup service did not delete the account.')
     return len(copies)
 
 
@@ -109,5 +141,30 @@ def set_role(email, admin, role):
     for copy in copies:
         resp = _call(admin, 'POST', f"/api/admin/users/{copy.get('id')}/role", json={'role': role})
         if resp.status_code != 204:
-            raise WarmupAccountsError('The warmup service did not change the account role.')
+            raise _refused(resp, 'The warmup service did not change the account role.')
     return len(copies)
+
+
+def twin_of(user):
+    """Another account that is switched on, not deleted, and has this account's
+    e-mail address — else None. The warmup service tells people apart by e-mail
+    address, so two such accounts have ONE copy there: what is done to one of
+    them on that side is done to both. (Live, 26 Nov 2026: two super admins
+    shared one address.)"""
+    email = (user.email or '').strip()
+    if not email:
+        return None
+    from django.contrib.auth import get_user_model
+    return get_user_model().objects.filter(email__iexact=email, is_active=True, deleted_at__isnull=True) \
+        .exclude(pk=user.pk).order_by('pk').first()
+
+
+def shared_email(user, twin, admin, what):
+    """The refusal, in plain words, for an account whose e-mail address another
+    account has too. `what` says what could not be done on the warmup side."""
+    other = 'your account' if twin.pk == admin.pk else f'another account ({twin.username})'
+    name = user.get_full_name() or user.username
+    return (f'{name} has the same e-mail address as {other} ({(user.email or "").strip()}). '
+            f'The warmup service tells people apart by e-mail address, so it counts them as '
+            f'one person and {what} '
+            f'Give one of the two accounts a different e-mail address first.')

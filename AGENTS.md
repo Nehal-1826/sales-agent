@@ -504,28 +504,45 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   `ERR_CONNECTION_REFUSED` at some random check (26 Nov 2026, twice). Start it
   as `CI=true npm run dev`, and when the gate says the connection is refused
   look at `netstat -ano | grep :5173` first — it is the server, not the code.
-- Deploy rule: after `git pull`, rebuild AND recreate `django`, `django-worker`
-  and (for UI work) `frontend` TOGETHER —
-  `docker compose build django django-worker frontend && docker compose up -d --force-recreate django django-worker frontend`.
-  Recreating only `django` leaves the worker on stale code. When `backend/`
-  (the warmup API) changed too, rebuild and recreate `fastapi` in the same
-  step (`docker compose build fastapi && docker compose up -d --force-recreate fastapi`).
+- Deploy rule: after `git pull`, rebuild AND recreate EVERY service that
+  carries the release TOGETHER —
+  `docker compose build <services> && docker compose up -d --force-recreate <services>`.
+  Always `django django-worker`; `frontend` for UI work; and when `backend/`
+  changed, all THREE images built from `./backend`: `fastapi celery-worker
+  celery-beat` (their Celery tasks send the payment mails and run the
+  renewals — a worker left on the old image keeps writing the old way. Until
+  26 Nov 2026 only `fastapi` was recreated, and the two Celery containers ran
+  code from 9 days before). Recreating only `django` leaves the worker on
+  stale code.
+- Deploy ORDER (since 26 Nov 2026): **build first**, then wait, stop, switch.
+  The build runs while the old containers keep running, so a build that fails
+  switches nothing and stops nothing (the first order stopped the worker
+  BEFORE building — a failed build would have left it stopped). Build
+  first is also what makes the window short: on 26 Nov 2026 the worker stood
+  still 30 s (13:19:27Z → 13:19:57Z) while the build took 1 min 53 s outside
+  it. Arrive with a cycle running? Wait for its end line read-only first (a
+  poll loop that also checks the worker is still `running`), THEN build, so
+  the build's load never lands on a running cycle — cycles are due about
+  hourly per workspace. Before the build free memory for it:
+  `ops/ollama-watchdog.sh 2500` recycles an IDLE runner over 2.5 GB (it
+  was 3.1 GB and 1.7 GB was free; 4.5 GB after — the model reloads on the
+  next request).
 - Deploying while autopilot is on: the restart cuts a running cycle in half
   (the worker is also the email sender). A cycle writes its `PipelineRun` only
   when it FINISHES, so an "unfinished runs" query cannot show a running cycle
   — read the worker log: `[slug] Cycle due — running pipeline…` starts one,
   `[slug] Run #N: …` or `Pipeline cycle failed [slug]` ends it (a cycle may
   take 35 min). Wait for the end line, `docker compose stop django-worker` at
-  once (then no new cycle can start), build, switch all three over; the image
-  entrypoint runs `migrate` itself at start. From that `stop` to the
+  once (then no new cycle can start), switch everything over together; the
+  image entrypoint runs `migrate` itself at start. From that `stop` to the
   switch-over the site sends no e-mail, reads no inbox and runs no cycle. A
   20:00 IST daily report inside the window goes out LATE, not lost: the
   report loop sends a missed round the moment it starts again
   (`core.reports.missed_report_round`, the `ReportRound` record, migration
   0049 — since 25 Nov 2026; before that the round was simply missed). Keep
-  the window short (the build is about a minute warm), and if the build or
-  the switch fails, `docker compose start django-worker` AT ONCE and sort it
-  out with the site running. On 25 Nov 2026 the worker stood still for
+  the window short, and if the switch fails, `docker compose start
+  django-worker` AT ONCE and sort it out with the site running. On 25 Nov
+  2026 the worker stood still for
   2 h 47 min because the switch-over never actually started (the ssh trap
   two bullets below); no e-mail was due, but that evening's report was lost
   — which is why the catch-up exists. If the model runner is over
@@ -533,6 +550,19 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   before the build. Pull with `--ff-only` only — the server tree carries its
   own nginx.conf edits. `ops/deploy/deploy.sh` is the OLD pre-merge path
   (systemd, `git reset --hard`): never run it on this stack.
+- After a switch, look — read-only, never a test sign-in on live:
+  `docker compose exec -T django python manage.py showmigrations core | tail -3`;
+  each new container's first log lines (the Django one says `Applying
+  core.00NN… OK`); `grep -cE "Traceback|ImportError"` over all services since
+  the switch (0); signed-out probes from OUTSIDE — a new route answers 401
+  where a made-up path on the same router answers 404 (that difference IS
+  the proof the route is served); the live bundle's name equals the local
+  build's (`frontend/dist/assets/index-*.js` — the hash is of the content)
+  and carries the new screens' words; and `.superpowers/sdd/live-smoke.py`
+  (14 public checks through a headless browser; nothing is signed in to).
+  In this FastAPI version `app.routes` holds `_IncludedRouter` objects with
+  no `.path`: to list a router's paths read the module's `router.routes` with
+  `getattr(r, "path", "")`.
 - Public traffic enters through the HOST nginx
   (`/etc/nginx/sites-available/warmpulse.conf`, :443, Let's Encrypt — a file
   on the server, not in the repo) in front of the compose gateway
@@ -564,7 +594,16 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   in one command and look at it (`wc -l`, its last lines), start the job in
   another, and read its FIRST log line before waiting on it. A wait loop must
   also check that the job is still alive (`pgrep -f job.sh`) — one that only
-  greps the log spins forever on a log that stays empty.
+  greps the log spins forever on a log that stays empty. The deploy job that
+  worked on 26 Nov 2026 is four small scripts kept on this machine
+  (gitignored, `.superpowers/sdd/deploy-run.sh` = `deploy-build.sh` →
+  `deploy-wait-and-stop.sh` → `deploy-switch.sh`): scp them to the server's
+  `/tmp` as `warmpulse-*.sh` in a command that backgrounds nothing, compare
+  `sha256sum` with the local files, `bash -n` each, and only then start the
+  ONE detached job
+  (`nohup bash /tmp/warmpulse-run-deploy.sh > /tmp/warmpulse-deploy.log 2>&1 < /dev/null &`).
+  The first line of its log is `START <time> tree <commit>` — the tree must be
+  the commit that was pushed.
 - The model runner grows the whole time it stays loaded (`llama-server`
   inside `warmpulse-ollama`): 2.1 GB fresh → 3.3 GB after a day → 5.6 GB on
   2026-11-23, when the 8 GB box ran out (load average 60, swap full, every AI

@@ -3,6 +3,7 @@ import { toast } from '../../components/feedback';
 import { Field, Toggle } from '../../components/ui';
 import { QRCodeSVG } from 'qrcode.react';
 import { getWhatsAppQr, getWhatsAppStatus, putSettings, testWhatsApp } from '../../lib/api';
+import { fmtDateTime } from '../../lib/format';
 import type { SettingsState, WhatsAppConfig, WhatsAppStatus } from '../../lib/types';
 import { SaveBar, useSectionForm } from './useSectionForm';
 
@@ -119,7 +120,7 @@ export function WhatsAppSection({ settings, onSaved }: { settings: SettingsState
                 {' +'}
                 {status.phone}
                 {status.connectedAt &&
-                  ` · linked ${new Date(status.connectedAt).toLocaleString()}`}
+                  ` · linked ${fmtDateTime(status.connectedAt)}`}
                 {` · sent today: ${status.sentToday} of ${status.dailyCap}`}
               </small>
             )}

@@ -16,6 +16,7 @@ import { ChatPage } from './pages/ChatPage';
 import { WarmupPage } from './pages/WarmupPage';
 import { MailPage } from './pages/MailPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { FormatScope } from './components/FormatScope';
 import { LoginPage } from './pages/LoginPage';
 import { AdminLoginPage } from './pages/AdminLoginPage';
 import { ImpersonatePage } from './pages/ImpersonatePage';
@@ -408,16 +409,23 @@ function Shell({ demo, onSignOut }: { demo: boolean; onSignOut: () => void }) {
           </Banner>
         )}
         <main className="content" id="main" tabIndex={-1}>
-          {page === 'home' && <HomePage />}
-          {page === 'approvals' && <ApprovalsPage />}
-          {page === 'replies' && <RepliesPage />}
-          {page === 'tasks' && <TasksPage />}
-          {page === 'leads' && <LeadsPage tab={sub} />}
-          {page === 'activity' && <ActivityPage />}
-          {page === 'assistant' && <ChatPage />}
-          {page === 'warmup' && <WarmupPage />}
-          {page === 'mail' && <MailPage />}
-          {page === 'settings' && <SettingsPage section={sub} />}
+          {/* every page draws again the moment the person changes their format */}
+          <FormatScope>
+            {() => (
+              <>
+                {page === 'home' && <HomePage />}
+                {page === 'approvals' && <ApprovalsPage />}
+                {page === 'replies' && <RepliesPage />}
+                {page === 'tasks' && <TasksPage />}
+                {page === 'leads' && <LeadsPage tab={sub} />}
+                {page === 'activity' && <ActivityPage />}
+                {page === 'assistant' && <ChatPage />}
+                {page === 'warmup' && <WarmupPage />}
+                {page === 'mail' && <MailPage />}
+                {page === 'settings' && <SettingsPage section={sub} />}
+              </>
+            )}
+          </FormatScope>
         </main>
       </div>
       {page !== 'assistant' && <GuideWidget />}

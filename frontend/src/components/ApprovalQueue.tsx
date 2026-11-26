@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { approveDraft, getDrafts, isDemo, rejectDraft, sendDraft } from '../lib/api';
+import { fmtNumber } from '../lib/format';
 import { useAsync } from '../lib/hooks';
 import { navigate } from '../lib/router';
 import { useWorkspaceStatus } from '../lib/status';
@@ -100,10 +101,11 @@ export function ApprovalQueue({ limit }: { limit?: number }) {
     setBulk(null);
     setSelected(new Set());
     afterChange();
-    const parts = [`${queued} queued${queued && last ? ` — the last one sends at ${sendTimeLabel(last)}` : ''}`];
-    if (notDelivered) parts.push(`${notDelivered} approved but not delivered (email isn't connected)`);
-    if (failed.length) parts.push(`${failed.length} failed (${failed.slice(0, 3).join(', ')})`);
-    if (skipped > 0) parts.push(`${skipped} skipped: no email address`);
+    // a queue nobody clears for a day on a 15-minute autopilot runs into the thousands: the counts are grouped
+    const parts = [`${fmtNumber(queued)} queued${queued && last ? ` — the last one sends at ${sendTimeLabel(last)}` : ''}`];
+    if (notDelivered) parts.push(`${fmtNumber(notDelivered)} approved but not delivered (email isn't connected)`);
+    if (failed.length) parts.push(`${fmtNumber(failed.length)} failed (${failed.slice(0, 3).join(', ')})`);
+    if (skipped > 0) parts.push(`${fmtNumber(skipped)} skipped: no email address`);
     (failed.length ? toast.error : notDelivered ? toast.warn : toast.success)(parts.join(' · ') + '.');
   };
 
@@ -136,7 +138,7 @@ export function ApprovalQueue({ limit }: { limit?: number }) {
         </Banner>
       )}
       {!smtpMissing && !preview && (status.outreach?.queued ?? 0) > 0 && (
-        <Banner tone="info" title={`${status.outreach?.queued} approved email(s) waiting to go out`}>
+        <Banner tone="info" title={`${fmtNumber(status.outreach?.queued)} approved email(s) waiting to go out`}>
           They leave a few minutes apart during sending hours, within each mailbox's daily limit
           {status.outreach?.nextSendAt ? ` — next one at ${sendTimeLabel(status.outreach.nextSendAt)}` : ''}.
         </Banner>
@@ -156,16 +158,16 @@ export function ApprovalQueue({ limit }: { limit?: number }) {
                   checked={allSelected}
                   onChange={() => setSelected(allSelected ? new Set() : new Set(pending.map((d) => d.id)))}
                 />
-                Select all ({pending.length})
+                Select all ({fmtNumber(pending.length)})
               </label>
               <span className="queue-toolbar-spacer" />
               {bulk ? (
                 <span className="inline-progress" role="status">
-                  Sending {bulk.done} of {bulk.total}…
+                  Sending {fmtNumber(bulk.done)} of {fmtNumber(bulk.total)}…
                 </span>
               ) : (
                 <button className="btn btn-primary btn-sm" disabled={sendable.length === 0} onClick={() => void approveSelected()}>
-                  Approve & send {sendable.length || ''}
+                  Approve &amp; send {sendable.length ? fmtNumber(sendable.length) : ''}
                 </button>
               )}
             </div>
@@ -237,7 +239,7 @@ export function ApprovalQueue({ limit }: { limit?: number }) {
           />
           {preview && pending.length > shown.length && (
             <button className="link-btn" onClick={() => navigate('approvals')}>
-              See all {pending.length} waiting →
+              See all {fmtNumber(pending.length)} waiting →
             </button>
           )}
         </>

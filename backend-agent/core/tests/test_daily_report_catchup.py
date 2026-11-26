@@ -190,13 +190,14 @@ class WindowTests(TenantTestCase):
         self.assertIn('Before', body)
 
     def test_the_title_says_what_is_covered(self):
+        # a document is always Indian: day first, 12-hour clock, Indian time
         subject, body = build_daily_report(window=report_window_ist(TODAY))
-        self.assertTrue(subject.endswith('Lead report — 24 Nov 20:00 – 25 Nov 20:00 IST'), subject)
-        self.assertEqual(body.splitlines()[0], 'Lead report — 24 Nov 20:00 – 25 Nov 20:00 IST')
+        self.assertTrue(subject.endswith('Lead report — 24/11/2026, 8:00 PM IST – 25/11/2026, 8:00 PM IST'), subject)
+        self.assertEqual(body.splitlines()[0], 'Lead report — 24/11/2026, 8:00 PM IST – 25/11/2026, 8:00 PM IST')
 
     def test_a_longer_catch_up_says_so(self):
         window = report_window_ist(TODAY, since=datetime(2026, 11, 22, 20, tzinfo=IST))
-        self.assertIn('22 Nov 20:00 – 25 Nov 20:00 IST', self.body(window=window).splitlines()[0])
+        self.assertIn('22/11/2026, 8:00 PM IST – 25/11/2026, 8:00 PM IST', self.body(window=window).splitlines()[0])
 
     def test_a_quiet_day_says_so(self):
         body = self.body(window=report_window_ist(TODAY))
@@ -208,7 +209,7 @@ class WindowTests(TenantTestCase):
         # went out — and in no later day: the gap the 20:00 window closes
         self.assertIn('Evening', self.body(day=TODAY))
         self.assertNotIn('Evening', self.body(day=date(2026, 11, 26)))
-        self.assertIn('Lead report — 25 Nov 2026 (IST)', self.body(day=TODAY))
+        self.assertIn('Lead report — 25/11/2026 (IST)', self.body(day=TODAY))
         self.assertIn('LEADS SCRAPED TODAY: 1', self.body(day=TODAY))
 
     def test_an_all_time_report_is_unchanged(self):

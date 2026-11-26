@@ -9,7 +9,7 @@ import { EmptyState, LoadError, Skeleton, StaleNotice } from '../components/feed
 import { IconBuilding, IconCheck } from '../components/icons';
 import { PageHeader } from '../components/ui';
 import { getDrafts, getLeads, getSettings, getTemplates, isDemo } from '../lib/api';
-import { greeting, plural, timeAgo } from '../lib/format';
+import { fmtNumber, greeting, plural, timeAgo } from '../lib/format';
 import { useAsync } from '../lib/hooks';
 import { navigate } from '../lib/router';
 import { leadFetchBlock, leadFetchFixSection, useWorkspaceStatus } from '../lib/status';
@@ -251,7 +251,7 @@ function StatBody({
 }) {
   return (
     <div className="stat-bento-body">
-      <span className="stat-value">{value ?? '–'}</span>
+      <span className="stat-value">{fmtNumber(value) || '–'}</span>
       <span className="stat-label">{label}</span>
       {note && <small className="stat-note">{note}</small>}
     </div>

@@ -30,6 +30,7 @@ from email.utils import getaddresses, parseaddr, parsedate_to_datetime
 from django.db import transaction
 from django.utils import timezone
 
+from . import formatting
 from .models import AppSettings, EmailDraft, Lead, Mailbox, Potential, Reply, Suppression
 
 log = logging.getLogger(__name__)
@@ -677,7 +678,7 @@ def replies_digest(limit=5):
     lines = [f'{waiting} repl{"y" if waiting == 1 else "ies"} need your attention.' if waiting
              else 'No replies waiting on you.']
     for r in rows:
-        when = timezone.localtime(r.received_at).strftime('%d %b') if r.received_at else ''
+        when = formatting.day_month(r.received_at) if r.received_at else ''     # 26/11, in Indian time
         state = 'handled' if r.handled else 'needs you'
         lines.append(f'- {r.company} ({r.from_email}, {when}): {r.get_classification_display()}'
                      f' — {r.summary[:120]} [{state}]')

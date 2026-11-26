@@ -4,6 +4,7 @@ import type { ApexOptions } from 'apexcharts';
 import { PageHeader } from '../../components/ui';
 import { EmptyState, LoadError, Skeleton } from '../../components/feedback';
 import { useAsync } from '../../lib/hooks';
+import { fmtDayTick, fmtMoneyMajor, fmtNumber, fmtPercent } from '../../lib/format';
 import {
   downloadCsv,
   getPlanMix,
@@ -14,7 +15,7 @@ import {
   getWarmthBins,
 } from '../../lib/platformAdmin';
 import type { SignupRatePoint, VolumePoint } from '../../lib/platformAdmin';
-import { useChartTheme, formatDayTick } from '../warmup/chartTheme';
+import { useChartTheme } from '../warmup/chartTheme';
 import type { ChartTheme } from '../warmup/chartTheme';
 
 /**
@@ -32,10 +33,6 @@ import type { ChartTheme } from '../warmup/chartTheme';
 
 type RangeId = '7d' | '30d' | '90d';
 const RANGE_DAYS: Record<RangeId, 7 | 30 | 90> = { '7d': 7, '30d': 30, '90d': 90 };
-
-const nf = new Intl.NumberFormat();
-const usd = (n: number): string =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
 
 /** Warm palette for plan slices — accent ramp, no purple/blue (brand rule). */
 function planColor(i: number, t: ChartTheme): string {
@@ -66,7 +63,7 @@ function TrendChart({
     xaxis: {
       categories,
       tickAmount: Math.min(8, categories.length),
-      labels: { formatter: (v: string) => formatDayTick(v), style: { colors: [theme.text2], fontSize: '11px' }, hideOverlappingLabels: true },
+      labels: { formatter: (v: string) => fmtDayTick(v), style: { colors: [theme.text2], fontSize: '11px' }, hideOverlappingLabels: true },
       axisBorder: { color: theme.border },
       axisTicks: { show: false },
       tooltip: { enabled: false },
@@ -75,7 +72,7 @@ function TrendChart({
       { title: { text: 'Sends', style: { color: theme.text2 } }, labels: { style: { colors: [theme.text2], fontSize: '11px' } } },
       { opposite: true, title: { text: 'Signups', style: { color: theme.text2 } }, labels: { style: { colors: [theme.text2], fontSize: '11px' } } },
     ],
-    tooltip: { x: { formatter: (v: number) => formatDayTick(String(v)) } },
+    tooltip: { x: { formatter: (v: number) => fmtDayTick(String(v)) } },
     legend: { labels: { colors: theme.text2 } },
     states: { active: { filter: { type: 'none' } }, hover: { filter: { type: 'none' } } },
   };
@@ -95,7 +92,7 @@ function PlanDonut({ rows, theme }: { rows: Array<{ plan: string; count: number 
     stroke: { colors: [theme.panel] },
     plotOptions: { pie: { donut: { size: '62%' } } },
     dataLabels: { enabled: false },
-    tooltip: { y: { formatter: (v: number) => `${nf.format(v)} workspaces` } },
+    tooltip: { y: { formatter: (v: number) => `${fmtNumber(v)} workspaces` } },
   };
   return <Chart options={options} series={rows.map((r) => r.count)} type="donut" height={200} width="100%" />;
 }
@@ -112,7 +109,7 @@ function WarmthHistogram({ bins, theme }: { bins: Array<{ bin: string; count: nu
     grid: { borderColor: theme.border, strokeDashArray: 3 },
     xaxis: { categories: bins.map((b) => b.bin), labels: { style: { colors: [theme.text2], fontSize: '10px' } }, axisTicks: { show: false } },
     yaxis: { labels: { style: { colors: [theme.text2], fontSize: '11px' } } },
-    tooltip: { y: { formatter: (v: number) => `${nf.format(v)} mailboxes` } },
+    tooltip: { y: { formatter: (v: number) => `${fmtNumber(v)} mailboxes` } },
     states: { active: { filter: { type: 'none' } }, hover: { filter: { type: 'none' } } },
   };
   const series: ApexOptions['series'] = [{ name: 'Mailboxes', data: bins.map((b) => b.count) }];
@@ -128,8 +125,9 @@ function MrrBars({ rows, theme }: { rows: Array<{ plan: string; mrr: number }>; 
     legend: { show: false },
     grid: { borderColor: theme.border, strokeDashArray: 3 },
     xaxis: { categories: rows.map((r) => r.plan), labels: { style: { colors: [theme.text2], fontSize: '11px' } }, axisTicks: { show: false } },
-    yaxis: { labels: { formatter: (v: number) => usd(v), style: { colors: [theme.text2], fontSize: '11px' } } },
-    tooltip: { y: { formatter: (v: number) => usd(v) } },
+    // whole dollars on purpose: cents would crowd the axis
+    yaxis: { labels: { formatter: (v: number) => fmtMoneyMajor(v, 'USD', 0), style: { colors: [theme.text2], fontSize: '11px' } } },
+    tooltip: { y: { formatter: (v: number) => fmtMoneyMajor(v, 'USD', 0) } },
     states: { active: { filter: { type: 'none' } }, hover: { filter: { type: 'none' } } },
   };
   const series: ApexOptions['series'] = [{ name: 'MRR', data: rows.map((r) => r.mrr) }];
@@ -237,11 +235,11 @@ export function PlatformAnalyticsPage() {
       {overview.loading && !overview.data && <Skeleton rows={4} />}
       {overview.data && (
         <div className="pf-kpis">
-          <div className="panel pf-kpi"><small>Sends today</small><strong>{nf.format(overview.data.sends_today)}</strong><small>{nf.format(overview.data.sends_7d)} last 7 days</small></div>
-          <div className="panel pf-kpi"><small>Active mailboxes</small><strong>{nf.format(overview.data.active_mailboxes)}</strong><small>of {nf.format(overview.data.total_mailboxes)} total</small></div>
-          <div className="panel pf-kpi"><small>Signups ({range})</small><strong>{nf.format(totalSignups)}</strong><small>{nf.format(overview.data.total_users)} users total</small></div>
-          <div className="panel pf-kpi"><small>MRR</small><strong>{usd(overview.data.mrr_usd)}</strong><small>subscription run rate</small></div>
-          <div className="panel pf-kpi"><small>Peer pool health</small><strong>{peerHealth}%</strong><small>{overview.data.active_peer_inboxes}/{overview.data.total_peer_inboxes} peers active</small></div>
+          <div className="panel pf-kpi"><small>Sends today</small><strong>{fmtNumber(overview.data.sends_today)}</strong><small>{fmtNumber(overview.data.sends_7d)} last 7 days</small></div>
+          <div className="panel pf-kpi"><small>Active mailboxes</small><strong>{fmtNumber(overview.data.active_mailboxes)}</strong><small>of {fmtNumber(overview.data.total_mailboxes)} total</small></div>
+          <div className="panel pf-kpi"><small>Signups ({range})</small><strong>{fmtNumber(totalSignups)}</strong><small>{fmtNumber(overview.data.total_users)} users total</small></div>
+          <div className="panel pf-kpi"><small>MRR</small><strong>{fmtMoneyMajor(overview.data.mrr_usd, 'USD', 0)}</strong><small>subscription run rate</small></div>
+          <div className="panel pf-kpi"><small>Peer pool health</small><strong>{fmtPercent(peerHealth)}</strong><small>{fmtNumber(overview.data.active_peer_inboxes)}/{fmtNumber(overview.data.total_peer_inboxes)} peers active</small></div>
         </div>
       )}
 
@@ -249,7 +247,7 @@ export function PlatformAnalyticsPage() {
       <section className="panel" style={{ marginBottom: 14 }}>
         <div className="panel-head">
           <h2 className="pf-h2" style={{ margin: 0 }}>Sends &amp; signups over time</h2>
-          <span className="chip chip-accent">{nf.format(totalSends)} sends · {range}</span>
+          <span className="chip chip-accent">{fmtNumber(totalSends)} sends · {range}</span>
         </div>
         {(volume.error || signups.error) && (
           <LoadError message={volume.error ?? signups.error ?? ''} onRetry={() => { void volume.reload(); void signups.reload(); }} />
@@ -276,11 +274,11 @@ export function PlatformAnalyticsPage() {
                   <li key={p.plan}>
                     <span>{p.plan}</span>
                     <span className="pf-hbar-track" aria-hidden><span style={{ width: `${planTotal > 0 ? (p.count / planTotal) * 100 : 0}%` }} /></span>
-                    <strong>{p.count}</strong>
+                    <strong>{fmtNumber(p.count)}</strong>
                   </li>
                 ))}
               </ul>
-              <small style={{ color: 'var(--text-2)' }}>{planTotal} total workspaces</small>
+              <small style={{ color: 'var(--text-2)' }}>{fmtNumber(planTotal)} total workspaces</small>
             </>
           )}
         </section>
@@ -298,7 +296,7 @@ export function PlatformAnalyticsPage() {
         <section className="panel">
           <div className="panel-head">
             <h2 className="pf-h2" style={{ margin: 0 }}>MRR by plan</h2>
-            <span className="chip chip-accent">{usd(overview.data?.mrr_usd ?? 0)}</span>
+            <span className="chip chip-accent">{fmtMoneyMajor(overview.data?.mrr_usd ?? 0, 'USD', 0)}</span>
           </div>
           {planDist.loading && !planDist.data && <Skeleton rows={3} />}
           {planDist.data && planMrr.length === 0 && <EmptyState title="No per-plan MRR data yet" />}
@@ -330,14 +328,14 @@ export function PlatformAnalyticsPage() {
                 />
               </span>
               <div style={{ textAlign: 'center' }}>
-                <strong style={{ fontSize: 40, lineHeight: 1 }}>{Math.round(peerHealth)}%</strong>
+                <strong style={{ fontSize: 40, lineHeight: 1 }}>{fmtPercent(peerHealth)}</strong>
                 <small style={{ display: 'block', color: 'var(--text-2)', marginTop: 6 }}>of peer test accounts healthy</small>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 {[
-                  { label: 'Active peers', value: nf.format(overview.data.active_peer_inboxes) },
-                  { label: 'Total peers', value: nf.format(overview.data.total_peer_inboxes) },
-                  { label: 'Users', value: nf.format(overview.data.total_users) },
+                  { label: 'Active peers', value: fmtNumber(overview.data.active_peer_inboxes) },
+                  { label: 'Total peers', value: fmtNumber(overview.data.total_peer_inboxes) },
+                  { label: 'Users', value: fmtNumber(overview.data.total_users) },
                 ].map((m) => (
                   <div key={m.label} style={{ flex: 1, textAlign: 'center', border: '1px solid var(--border-soft)', borderRadius: 8, padding: '6px 8px' }}>
                     <strong style={{ display: 'block' }}>{m.value}</strong>
@@ -373,8 +371,8 @@ export function PlatformAnalyticsPage() {
                       <td>{i + 1}</td>
                       <td>{row.email}</td>
                       <td>{row.plan}</td>
-                      <td>{nf.format(row.mailbox_count)}</td>
-                      <td>{nf.format(row.send_volume)}</td>
+                      <td>{fmtNumber(row.mailbox_count)}</td>
+                      <td>{fmtNumber(row.send_volume)}</td>
                       <td>{row.avg_warmth.toFixed(1)}</td>
                       <td>
                         <span

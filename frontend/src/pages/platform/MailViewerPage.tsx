@@ -16,6 +16,7 @@ import { Modal } from '../../components/overlay';
 import { PageHeader } from '../../components/ui';
 import { EmptyState, LoadError, Skeleton } from '../../components/feedback';
 import { useAsync } from '../../lib/hooks';
+import { fmtDateTime } from '../../lib/format';
 import {
   getMailViewerMessage,
   listMailViewerAccounts,
@@ -33,19 +34,6 @@ function accountKey(a: Pick<MailViewerAccount, 'source' | 'id'>): string {
 
 function sourceLabel(a: Pick<MailViewerAccount, 'source'>): string {
   return a.source === 'mailbox' ? 'Client' : 'Peer';
-}
-
-function fmtDate(value: string | null | undefined): string {
-  if (!value) return '—';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 }
 
 /* ---------------------------------------------------------------------------
@@ -273,7 +261,8 @@ function MessageDetailDialog({
               </>
             )}
             <dt>Date</dt>
-            <dd style={{ fontFamily: 'monospace' }}>{fmtDate(d.date)}</dd>
+            {/* a date the browser cannot read is shown as the server sent it */}
+            <dd style={{ fontFamily: 'monospace' }}>{fmtDateTime(d.date, 'medium') || d.date || '—'}</dd>
             {d.headers?.message_id && (
               <>
                 <dt>Msg-ID</dt>
@@ -414,7 +403,7 @@ export function MailViewerPage() {
               }}
             >
               <span style={{ width: 144, flex: 'none', fontFamily: 'monospace', fontSize: 11, color: 'var(--text-2)' }}>
-                {fmtDate(m.date)}
+                {fmtDateTime(m.date, 'medium') || m.date || '—'}
               </span>
               <span style={{ minWidth: 0, flex: 1 }}>
                 <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'monospace', fontSize: 11, color: 'var(--text-2)' }}>

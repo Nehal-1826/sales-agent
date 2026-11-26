@@ -5,13 +5,13 @@ import { PageHeader, Field, Chip } from '../../components/ui';
 import { Drawer } from '../../components/overlay';
 import { LoadError, Skeleton, EmptyState } from '../../components/feedback';
 import { useAsync } from '../../lib/hooks';
+import { fmtDate, fmtNumber } from '../../lib/format';
 import { listTenants, getTenant, tenantAction, planCode, usageItems } from '../../lib/platform';
 import type { TenantRow } from '../../lib/platform';
 import { Pager, ReasonDialog } from './shared';
 
 type Act = 'suspend' | 'unsuspend' | 'extend' | 'change_plan';
-const when = (s?: string | null) => (s ? new Date(s).toLocaleDateString() : '—');
-const lim = (n: number) => (n < 0 ? 'unlimited' : String(n));
+const lim = (n: number) => (n < 0 ? 'unlimited' : fmtNumber(n));
 
 function TenantDrawer({ id, demo, onClose, onChanged }: { id: number | string; demo: boolean; onClose: () => void; onChanged: () => void }) {
   const { data: t, error, reload } = useAsync(() => getTenant(id), [id]);
@@ -33,9 +33,9 @@ function TenantDrawer({ id, demo, onClose, onChanged }: { id: number | string; d
           <dl className="pf-dl">
             <dt>Plan</dt><dd>{planCode(t.plan)}</dd>
             <dt>Status</dt><dd>{t.status}</dd>
-            <dt>Period end</dt><dd>{when(t.period_end)}</dd>
-            <dt>Created</dt><dd>{when(t.created)}</dd>
-            <dt>Last activity</dt><dd>{when(t.last_activity)}</dd>
+            <dt>Period end</dt><dd>{fmtDate(t.period_end) || '—'}</dd>
+            <dt>Created</dt><dd>{fmtDate(t.created) || '—'}</dd>
+            <dt>Last activity</dt><dd>{fmtDate(t.last_activity) || '—'}</dd>
             <dt>Country</dt><dd>{t.country || '—'}</dd>
             <dt>Source</dt><dd>{t.signup_source || '—'}</dd>
           </dl>
@@ -43,7 +43,7 @@ function TenantDrawer({ id, demo, onClose, onChanged }: { id: number | string; d
           <ul className="pf-usage">
             {usageItems(t.usage).map((u) => (
               <li key={u.meter}>
-                {u.meter}: {u.used} / {lim(u.limit)}
+                {u.meter}: {fmtNumber(u.used)} / {lim(u.limit)}
               </li>
             ))}
           </ul>
@@ -141,9 +141,9 @@ export function TenantsPage({ demo }: { demo: boolean }) {
                   <td>{t.owner_email}</td>
                   <td>{planCode(t.plan)}</td>
                   <td><Chip tone={t.status === 'active' ? 'success' : t.status === 'past_due' ? 'warn' : 'neutral'}>{t.status}</Chip></td>
-                  <td>{when(t.period_end)}</td>
-                  <td>{usageItems(t.usage).map((u) => `${u.meter} ${u.used}/${lim(u.limit)}`).join(', ') || '—'}</td>
-                  <td>{when(t.last_activity)}</td>
+                  <td>{fmtDate(t.period_end) || '—'}</td>
+                  <td>{usageItems(t.usage).map((u) => `${u.meter} ${fmtNumber(u.used)}/${lim(u.limit)}`).join(', ') || '—'}</td>
+                  <td>{fmtDate(t.last_activity) || '—'}</td>
                 </tr>
               ))}
             </tbody>

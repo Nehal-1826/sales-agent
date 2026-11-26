@@ -28,6 +28,7 @@ from app.schemas.reports import (
     ScheduledReportCreate,
     ScheduledReportUpdate,
 )
+from app.services import formatting
 
 logger = logging.getLogger(__name__)
 
@@ -676,7 +677,7 @@ def _cover_block(rl, st, *, title: str, workspace: str, range_label: str,
         band,
         rl["Spacer"](1, 6),
         rl["Paragraph"](
-            f"<font color='#6b7280'>Generated {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')} "
+            f"<font color='#6b7280'>Generated {formatting.datetime_label(datetime.now(UTC))} "
             f"&nbsp;·&nbsp; {mailbox_count} mailboxes &nbsp;·&nbsp; {day_count} days</font>",
             st["muted"],
         ),

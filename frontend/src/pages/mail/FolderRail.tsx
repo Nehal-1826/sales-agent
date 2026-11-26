@@ -1,4 +1,5 @@
 import { Skeleton } from '../../components/feedback';
+import { fmtNumber } from '../../lib/format';
 import { WEBMAIL_FOLDERS, type WebmailFolder, type WebmailFolderName } from '../../lib/webmail';
 
 /* Folder glyphs — tiny inline strokes, mail-client conventions. */
@@ -94,9 +95,9 @@ export function FolderRail({
                   <FolderIcon name={name} />
                   <span className="wm-folder-name">{name === 'INBOX' ? 'Inbox' : name}</span>
                   {unread > 0 ? (
-                    <span className="wm-folder-count unread">{unread}</span>
+                    <span className="wm-folder-count unread">{fmtNumber(unread)}</span>
                   ) : (
-                    (f?.count ?? 0) > 0 && <span className="wm-folder-count">{f?.count}</span>
+                    (f?.count ?? 0) > 0 && <span className="wm-folder-count">{fmtNumber(f?.count)}</span>
                   )}
                 </button>
               </li>

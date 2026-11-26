@@ -20,6 +20,8 @@ import {
   type IconProps,
 } from '../../components/icons';
 import { Toaster } from '../../components/feedback';
+import { FormatButton } from '../../components/FormatCard';
+import { FormatScope } from '../../components/FormatScope';
 import { OverviewPage } from './OverviewPage';
 import { PlatformAnalyticsPage } from './PlatformAnalyticsPage';
 import { PeerInboxesPage } from './PeerInboxesPage';
@@ -251,6 +253,8 @@ export function PlatformShell({ demo, onSignOut, slug }: { demo: boolean; onSign
               <small>{signedInAs ? 'Super admin' : 'Console'}</small>
             </div>
           </div>
+          {/* how this person reads dates and numbers: the same choice as in Settings */}
+          <FormatButton />
           <button className="nav-item side-logout" onClick={onSignOut} aria-label="Sign out" title="Sign out">
             <IconLogout size={18} />
             <span>Sign out</span>
@@ -271,27 +275,34 @@ export function PlatformShell({ demo, onSignOut, slug }: { demo: boolean; onSign
           </button>
         </header>
         <main className="content" id="main" tabIndex={-1}>
-          {demo && (
-            <p className="pf-demo-note">
-              <span className="chip chip-warn">Demo data (read-only)</span>
-            </p>
-          )}
-          <PageErrorBoundary key={page}>
-          {page === 'overview' && <OverviewPage />}
-          {page === 'analytics' && <PlatformAnalyticsPage />}
-          {page === 'peers' && <PeerInboxesPage demo={demo} />}
-          {page === 'routing' && <PoolRoutingPage demo={demo} />}
-          {page === 'mail' && <MailPage />}
-          {page === 'users' && <AdminUsersPage demo={demo} />}
-          {page === 'tenants' && <TenantsPage demo={demo} />}
-          {page === 'crm' && <CrmManagementPage />}
-          {page === 'plans' && <PlansPage demo={demo} />}
-          {isPayment && <PaymentPage tab={page as PaymentTab} slug={slug} demo={demo} />}
-          {page === 'reports' && <AdminReportsPage />}
-          {page === 'audit' && <AuditPage />}
-          {page === 'settings' && <AdminSettingsPage demo={demo} />}
-          {page === 'marketing' && <MarketingPage />}
-          </PageErrorBoundary>
+          {/* every page draws again the moment the person changes their format */}
+          <FormatScope>
+            {() => (
+              <>
+                {demo && (
+                  <p className="pf-demo-note">
+                    <span className="chip chip-warn">Demo data (read-only)</span>
+                  </p>
+                )}
+                <PageErrorBoundary key={page}>
+                  {page === 'overview' && <OverviewPage />}
+                  {page === 'analytics' && <PlatformAnalyticsPage />}
+                  {page === 'peers' && <PeerInboxesPage demo={demo} />}
+                  {page === 'routing' && <PoolRoutingPage demo={demo} />}
+                  {page === 'mail' && <MailPage />}
+                  {page === 'users' && <AdminUsersPage demo={demo} />}
+                  {page === 'tenants' && <TenantsPage demo={demo} />}
+                  {page === 'crm' && <CrmManagementPage />}
+                  {page === 'plans' && <PlansPage demo={demo} />}
+                  {isPayment && <PaymentPage tab={page as PaymentTab} slug={slug} demo={demo} />}
+                  {page === 'reports' && <AdminReportsPage />}
+                  {page === 'audit' && <AuditPage />}
+                  {page === 'settings' && <AdminSettingsPage demo={demo} />}
+                  {page === 'marketing' && <MarketingPage />}
+                </PageErrorBoundary>
+              </>
+            )}
+          </FormatScope>
         </main>
       </div>
       <Toaster />

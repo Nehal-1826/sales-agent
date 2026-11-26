@@ -15,6 +15,8 @@ import {
   mockResponderReply,
 } from './mockData';
 import { toast } from '../components/feedback';
+import { setPreferences } from './format';
+import type { Preferences } from './format';
 import { attempt, downloadFile, inDemo, post, put, request } from './transport';
 import type { Result } from './transport';
 import type { TwoFactorStatus } from './platform';
@@ -57,7 +59,15 @@ export interface CurrentUser {
 
 export async function getCurrentUser(): Promise<CurrentUser> {
   if (await inDemo()) return { name: 'Demo', role: 'owner', workspace: { name: 'Demo Co', slug: 'demo' } };
-  const me = await request<{ username: string; role: string; workspace?: { name: string; slug: string } | null }>('/auth/me/');
+  const me = await request<{
+    username: string;
+    role: string;
+    workspace?: { name: string; slug: string } | null;
+    preferences?: Partial<Preferences>;
+  }>('/auth/me/');
+  // the profile is read before the first screen draws: dates and numbers on
+  // it already follow this person's choice
+  setPreferences(me.preferences);
   return { name: me.username, role: me.role, workspace: me.workspace ?? null };
 }
 

@@ -2,7 +2,8 @@ import { MagicBento, type MagicBentoItem } from '../../components/MagicBento';
 import { PageHeader } from '../../components/ui';
 import { LoadError, Skeleton } from '../../components/feedback';
 import { useAsync } from '../../lib/hooks';
-import { getOverview, money, pct } from '../../lib/platform';
+import { fmtMoney, fmtMonth, fmtNumber } from '../../lib/format';
+import { getOverview, pct } from '../../lib/platform';
 import { Bars } from './Bars';
 
 /** Read the 6-digit admin slug from the current URL for internal links. */
@@ -25,7 +26,7 @@ function KpiBody({ label, value, sub }: { label: string; value: string; sub?: st
  *  Copy rule: everyday words — "money per month", not "MRR". */
 export function OverviewPage() {
   const { data: o, error, reload } = useAsync(getOverview);
-  const inr = (n: number) => money(n, 'INR');
+  const inr = (n: number) => fmtMoney(n, 'INR');
 
   const items: MagicBentoItem[] = o
     ? [
@@ -36,7 +37,7 @@ export function OverviewPage() {
           className: 'pf-kpi bento-stat',
           href: `${slugPrefix()}/payments`,
           title: 'Money per month',
-          content: <KpiBody label="Money per month" value={inr(o.mrr.inr_equivalent)} sub={`${money(o.mrr.INR, 'INR')} from India + ${money(o.mrr.USD, 'USD')} from abroad`} />,
+          content: <KpiBody label="Money per month" value={inr(o.mrr.inr_equivalent)} sub={`${fmtMoney(o.mrr.INR, 'INR')} from India + ${fmtMoney(o.mrr.USD, 'USD')} from abroad`} />,
         },
         {
           id: 'arr',
@@ -54,7 +55,7 @@ export function OverviewPage() {
           className: 'pf-kpi bento-stat',
           href: `${slugPrefix()}/tenants`,
           title: 'Paying customers',
-          content: <KpiBody label="Paying customers" value={String(o.counts.active)} sub="Workspaces on a paid plan" />,
+          content: <KpiBody label="Paying customers" value={fmtNumber(o.counts.active)} sub="Workspaces on a paid plan" />,
         },
         {
           id: 'pending',
@@ -63,7 +64,7 @@ export function OverviewPage() {
           className: 'pf-kpi bento-stat',
           href: `${slugPrefix()}/tenants`,
           title: "Haven't paid yet",
-          content: <KpiBody label="Haven't paid yet" value={String(o.counts.pending)} sub="Signed up, waiting for first payment" />,
+          content: <KpiBody label="Haven't paid yet" value={fmtNumber(o.counts.pending)} sub="Signed up, waiting for first payment" />,
         },
         {
           id: 'past_due',
@@ -72,7 +73,7 @@ export function OverviewPage() {
           className: `pf-kpi bento-stat${o.counts.past_due > 0 ? ' highlight' : ''}`,
           href: `${slugPrefix()}/tenants`,
           title: 'Payment failed',
-          content: <KpiBody label="Payment failed" value={String(o.counts.past_due)} sub="We're retrying their card" />,
+          content: <KpiBody label="Payment failed" value={fmtNumber(o.counts.past_due)} sub="We're retrying their card" />,
         },
         {
           id: 'churn',
@@ -81,7 +82,7 @@ export function OverviewPage() {
           className: 'pf-kpi bento-stat',
           href: `${slugPrefix()}/tenants`,
           title: 'Customers who left',
-          content: <KpiBody label="Customers who left (30 days)" value={pct(o.churn_30d)} sub={`${o.counts.canceled} canceled in the last 30 days`} />,
+          content: <KpiBody label="Customers who left (30 days)" value={pct(o.churn_30d)} sub={`${fmtNumber(o.counts.canceled)} canceled in the last 30 days`} />,
         },
         {
           id: 'conversion',
@@ -90,7 +91,7 @@ export function OverviewPage() {
           className: 'pf-kpi bento-stat',
           href: `${slugPrefix()}/marketing`,
           title: 'Visitors who signed up',
-          content: <KpiBody label="Visitors who signed up (30 days)" value={pct(o.conversion_30d)} sub={`${o.signups_7d} joined last week · ${o.signups_30d} last month`} />,
+          content: <KpiBody label="Visitors who signed up (30 days)" value={pct(o.conversion_30d)} sub={`${fmtNumber(o.signups_7d)} joined last week · ${fmtNumber(o.signups_30d)} last month`} />,
         },
         {
           id: 'refunds',
@@ -99,7 +100,7 @@ export function OverviewPage() {
           className: 'pf-kpi bento-stat',
           href: `${slugPrefix()}/payments`,
           title: 'Money returned',
-          content: <KpiBody label="Money returned (30 days)" value={inr(o.refunds_30d.amount_inr_equivalent)} sub={`${o.refunds_30d.count} refunds in the last 30 days`} />,
+          content: <KpiBody label="Money returned (30 days)" value={inr(o.refunds_30d.amount_inr_equivalent)} sub={`${fmtNumber(o.refunds_30d.count)} refunds in the last 30 days`} />,
         },
         {
           id: 'revenue-12m',
@@ -111,7 +112,7 @@ export function OverviewPage() {
               <h2 className="pf-h2">Money earned — last 12 months</h2>
               <Bars
                 label="Money earned each month, last 12 months, in rupees"
-                data={o.revenue_12m.map((r) => ({ label: r.month, value: r.inr_equivalent }))}
+                data={o.revenue_12m.map((r) => ({ label: fmtMonth(r.month), value: r.inr_equivalent }))}
                 fmt={inr}
               />
             </>

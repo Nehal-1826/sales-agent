@@ -22,6 +22,7 @@ import { Chip, PageHeader } from '../../components/ui';
 import { Modal } from '../../components/overlay';
 import { EmptyState, LoadError, Skeleton, toast } from '../../components/feedback';
 import { useAsync } from '../../lib/hooks';
+import { fmtDate, fmtNumber, timeAgo } from '../../lib/format';
 import { listPlatformUsers } from '../../lib/platform';
 import type { AccountRow } from '../../lib/platform';
 import { bulkPauseMailboxes, downloadCsv, getAdminSignupRate, listAdminUsers } from '../../lib/platformAdmin';
@@ -33,10 +34,8 @@ import {
   StatusChip,
   displayName,
   emailKey,
-  fmtRelative,
   initials,
   isPlatformAdmin,
-  when,
 } from './accountUi';
 import type { AccountStatus } from './accountUi';
 import { Pager } from './shared';
@@ -201,7 +200,7 @@ export function AdminUsersPage({ demo = false }: { demo?: boolean }) {
     const res = r.data;
     const skipped = res.skipped_super_admin > 0 ? ` (${res.skipped_super_admin} admin${res.skipped_super_admin === 1 ? '' : 's'} skipped)` : '';
     toast.success(
-      `${bulkAction === 'pause' ? 'Paused' : 'Resumed'} ${res.mailboxes_updated} mailbox${res.mailboxes_updated === 1 ? '' : 'es'} across ${res.users_affected} user${res.users_affected === 1 ? '' : 's'}${skipped}.`,
+      `${bulkAction === 'pause' ? 'Paused' : 'Resumed'} ${fmtNumber(res.mailboxes_updated)} mailbox${res.mailboxes_updated === 1 ? '' : 'es'} across ${fmtNumber(res.users_affected)} user${res.users_affected === 1 ? '' : 's'}${skipped}.`,
     );
     setBulkAction(null);
     setSelectedIds(new Set());
@@ -254,7 +253,7 @@ export function AdminUsersPage({ demo = false }: { demo?: boolean }) {
         subtitle={
           loading
             ? 'Fetching accounts…'
-            : `${total.toLocaleString()} account${total === 1 ? '' : 's'} · ${rows.length} on this page · ${signup.data ?? 0} new in 30d`
+            : `${fmtNumber(total)} account${total === 1 ? '' : 's'} · ${rows.length} on this page · ${fmtNumber(signup.data ?? 0)} new in 30d`
         }
         actions={
           <button className="btn" onClick={exportCsv} disabled={joined.length === 0}>
@@ -265,19 +264,19 @@ export function AdminUsersPage({ demo = false }: { demo?: boolean }) {
 
       <div className="pf-kpis">
         <div className="pf-kpi" title="Everyone the search and the buttons match">
-          <strong>{loading ? '…' : total.toLocaleString()}</strong>
+          <strong>{loading ? '…' : fmtNumber(total)}</strong>
           <small>Accounts</small>
         </div>
         <div className="pf-kpi" title="On this page">
-          <strong>{loading ? '…' : counts.active.toLocaleString()}</strong>
+          <strong>{loading ? '…' : fmtNumber(counts.active)}</strong>
           <small>Active</small>
         </div>
         <div className="pf-kpi" title="On this page">
-          <strong>{loading ? '…' : counts.suspended.toLocaleString()}</strong>
+          <strong>{loading ? '…' : fmtNumber(counts.suspended)}</strong>
           <small>Turned off</small>
         </div>
         <div className="pf-kpi" title="On this page">
-          <strong>{loading ? '…' : counts.pending.toLocaleString()}</strong>
+          <strong>{loading ? '…' : fmtNumber(counts.pending)}</strong>
           <small>Not verified yet</small>
         </div>
       </div>
@@ -332,7 +331,7 @@ export function AdminUsersPage({ demo = false }: { demo?: boolean }) {
           />
           Select all ({selectable.length} on this page)
         </label>
-        <small style={{ marginLeft: 'auto' }}>{loading ? '…' : `${rows.length} of ${total}`}</small>
+        <small style={{ marginLeft: 'auto' }}>{loading ? '…' : `${rows.length} of ${fmtNumber(total)}`}</small>
       </div>
 
       {/* the accounts are the page; these two only say when the mailbox side is missing something */}
@@ -340,7 +339,7 @@ export function AdminUsersPage({ demo = false }: { demo?: boolean }) {
         <p className="field-hint">Mailbox counts could not be loaded just now, so the mailbox actions are hidden. The accounts are shown all the same.</p>
       )}
       {!warmupList.error && warmupPage && warmupPage.total > warmupPage.items.length && (
-        <p className="field-hint">Mailbox counts are shown for {warmupPage.items.length} of the {warmupPage.total} warmup accounts.</p>
+        <p className="field-hint">Mailbox counts are shown for {warmupPage.items.length} of the {fmtNumber(warmupPage.total)} warmup accounts.</p>
       )}
 
       {error && <LoadError message={error} onRetry={() => void reload()} />}
@@ -391,9 +390,9 @@ export function AdminUsersPage({ demo = false }: { demo?: boolean }) {
                     <StatusChip status={r.status} />
                   </td>
                   <td>{r.two_factor ? 'On' : 'Off'}</td>
-                  <td>{warmup ? warmup.mailbox_count : '—'}</td>
-                  <td>{fmtRelative(r.last_login)}</td>
-                  <td>{when(r.joined)}</td>
+                  <td>{warmup ? fmtNumber(warmup.mailbox_count) : '—'}</td>
+                  <td>{timeAgo(r.last_login) || 'Never'}</td>
+                  <td>{fmtDate(r.joined) || '—'}</td>
                 </tr>
               ))}
             </tbody>

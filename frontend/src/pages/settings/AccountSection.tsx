@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { toast } from '../../components/feedback';
 import { Field } from '../../components/ui';
+import { FormatCard } from '../../components/FormatCard';
 import { attempt, changePassword, getCurrentUser, inDemo, logout, post, request } from '../../lib/api';
 import type { Result } from '../../lib/api';
 
@@ -16,7 +17,7 @@ async function changeUsername(username: string): Promise<Result<{ username: stri
   return attempt(() => request<{ username: string }>('/auth/change-username/', post({ username })));
 }
 
-/** Account — change your password or username. */
+/** Account — change your password or username, and how dates and numbers read. */
 export function AccountSection() {
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
@@ -135,6 +136,14 @@ export function AccountSection() {
           </button>
         </div>
       </form>
+
+      <section className="panel settings-panel" aria-labelledby="sec-account-format">
+        <h2 id="sec-account-format" className="section-title">
+          Format
+        </h2>
+        <p className="panel-note">How dates, numbers and times look on your screens.</p>
+        <FormatCard />
+      </section>
     </>
   );
 }

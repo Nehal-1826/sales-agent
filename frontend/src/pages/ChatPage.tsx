@@ -6,6 +6,7 @@ import { ThoughtLine, useThoughtProgress } from '../components/ThoughtLine';
 import { VoicePill, useVoiceDictation } from '../components/VoicePill';
 import { clearChat, getChatHistory, getOnboarding, isBareDomain, isDemo, sendChatMessage } from '../lib/api';
 import { useAsync } from '../lib/hooks';
+import { fmtTime } from '../lib/format';
 import { useWorkspaceStatus } from '../lib/status';
 import type { ChatMessage, OnboardingState } from '../lib/types';
 
@@ -36,7 +37,7 @@ interface Bubble extends ChatMessage {
   thoughtSteps?: string[];
 }
 
-const now = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const now = () => fmtTime(new Date());
 
 /**
  * ASSISTANT — chat that can act. On a fresh workspace it IS the setup

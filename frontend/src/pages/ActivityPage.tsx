@@ -7,7 +7,7 @@ import type { IconProps } from '../components/icons';
 import { ThoughtLine } from '../components/ThoughtLine';
 import { PageHeader } from '../components/ui';
 import { getDrafts, getLeads, getPipelineRuns, isDemo } from '../lib/api';
-import { plural, timeAgo } from '../lib/format';
+import { fmtNumber, plural, timeAgo } from '../lib/format';
 import { useAsync } from '../lib/hooks';
 import { navigate } from '../lib/router';
 import { useWorkspaceStatus } from '../lib/status';
@@ -27,32 +27,33 @@ export function ActivityPage() {
   const waiting = (status.outreach?.drafts ?? 0) + (status.outreach?.failed ?? 0);
   const running = !!status.pipeline?.cycleRunning;
 
+  // running totals (companies, emails) — grouped the way the person reads numbers
   const steps: { icon: (p: IconProps) => JSX.Element; title: string; text: string; count: string; onClick?: () => void }[] = [
     {
       icon: IconSearch,
       title: 'Find companies',
       text: 'Searches the web and Google Maps for businesses that match who you sell to.',
-      count: plural(leadList.length, 'company', 'companies'),
+      count: `${fmtNumber(leadList.length)} ${leadList.length === 1 ? 'company' : 'companies'}`,
       onClick: () => navigate('leads'),
     },
     {
       icon: IconBot,
       title: 'Research',
       text: 'Reads each website, finds contact details and scores how good a fit it is.',
-      count: `${researched} researched`,
+      count: `${fmtNumber(researched)} researched`,
       onClick: () => navigate('leads', 'board'),
     },
     {
       icon: IconPen,
       title: 'Write emails',
       text: 'Writes a personal first email from your template for every reachable good fit.',
-      count: plural(written, 'email'),
+      count: `${fmtNumber(written)} ${written === 1 ? 'email' : 'emails'}`,
     },
     {
       icon: IconInbox,
       title: 'You approve',
       text: 'Nothing is sent until you say yes. Approved emails go out from your mailbox.',
-      count: `${waiting} waiting`,
+      count: `${fmtNumber(waiting)} waiting`,
       onClick: () => navigate('approvals'),
     },
   ];

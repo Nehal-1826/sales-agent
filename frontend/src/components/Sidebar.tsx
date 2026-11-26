@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { IconBot, IconBuilding, IconCheck, IconFlame, IconHome, IconInbox, IconMail, IconLogout, IconPulse, IconSettings } from './icons';
 import type { IconProps } from './icons';
+import { FormatButton } from './FormatCard';
 import { getCurrentUser } from '../lib/api';
 import type { CurrentUser } from '../lib/api';
 import { navigate } from '../lib/router';
@@ -104,6 +105,8 @@ export function Sidebar({
             <small>{user ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : ''}</small>
           </div>
         </div>
+        {/* every role can change how dates and numbers read — Members never see Settings */}
+        <FormatButton />
         {/* full-width sign-out row, same conventions as the nav items above */}
         <button className="nav-item side-logout" onClick={onSignOut} aria-label="Sign out" title="Sign out">
           <IconLogout size={18} />

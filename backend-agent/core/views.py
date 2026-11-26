@@ -255,12 +255,36 @@ def _me_payload(request):
     ticket = getattr(request, 'impersonation', None)
     if ticket is not None:
         data['impersonation'] = impersonation.info(ticket)
+    # how this person reads dates, numbers and times on screen (the app's
+    # lib/format.ts): inside "Enter as user" it is the person's own, with their screens
+    data['preferences'] = {'format': request.user.format, 'clock': request.user.clock}
     return data
 
 
 @api_view(['GET'])
 def me(request):
     return Response(_me_payload(request))
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated, IsOtpSatisfied])
+def preferences(request):
+    """How this person reads dates, numbers and times on screen (the app's
+    lib/format.ts). Their own setting: only the keys sent change, and an
+    unknown value is refused."""
+    body = request.data if hasattr(request.data, 'get') else {}
+    changes = {}
+    for field, allowed in (('format', set(User.Formats.values)), ('clock', set(User.Clocks.values))):
+        value = body.get(field)
+        if value is None:
+            continue
+        if not isinstance(value, str) or value not in allowed:
+            return Response({'detail': f'Unknown {field}.'}, status=400)
+        changes[field] = value
+    if changes:
+        User.objects.filter(pk=request.user.pk).update(**changes)   # the request's user object is stale after this
+    fresh = User.objects.get(pk=request.user.pk)
+    return Response({'format': fresh.format, 'clock': fresh.clock})
 
 
 def _audit_impersonation(request, ticket, action, **meta):

@@ -3,6 +3,7 @@ import { PageHeader } from '../components/ui';
 import { EmptyState, LoadError, Skeleton, StaleNotice } from '../components/feedback';
 import LatticeLoader from '../components/reactbits/LatticeLoader';
 import { useAsync } from '../lib/hooks';
+import { fmtNumber } from '../lib/format';
 import { isImpersonating } from '../lib/impersonation';
 import {
   warmupActivity,
@@ -162,7 +163,7 @@ export function WarmupPage() {
                 <p className="panel-note">Issues to resolve for best deliverability.</p>
               </div>
               {alerts.data && alerts.data.unread > 0 && (
-                <span className="chip chip-warmup-unread">{alerts.data.unread} unread</span>
+                <span className="chip chip-warmup-unread">{fmtNumber(alerts.data.unread)} unread</span>
               )}
             </div>
             {alerts.loading && !alerts.data ? (
@@ -182,7 +183,7 @@ export function WarmupPage() {
             <div>
               <h2 className="section-title">Mailboxes</h2>
               <p className="panel-note">
-                {mailboxes.data ? `${mailboxes.data.total} in this workspace` : 'Warmth per mailbox, latest day.'}
+                {mailboxes.data ? `${fmtNumber(mailboxes.data.total)} in this workspace` : 'Warmth per mailbox, latest day.'}
               </p>
             </div>
             <button className="btn btn-sm" onClick={() => setEnrollOpen(true)}>

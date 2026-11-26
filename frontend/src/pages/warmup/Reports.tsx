@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { EmptyState, LoadError, Skeleton, StaleNotice, toast } from '../../components/feedback';
 import { useAsync } from '../../lib/hooks';
+import { fmtDate, fmtNumber, fmtPercent } from '../../lib/format';
 import {
   warmupDailyMetrics,
   warmupDashboardSummary,
@@ -60,6 +61,11 @@ export function Reports() {
   const [rangeKey, setRangeKey] = useState('30d');
   const preset = RANGES.find((r) => r.key === rangeKey) ?? RANGES[1];
   const range = useMemo(() => rangeFor(preset.days), [preset.days]);
+  // The days the API was asked for ("2026-11-12") are shown as that calendar
+  // day: a bare day is midnight UTC to `new Date` — the day before, west of
+  // London — so each is read as a local day first.
+  const rangeFrom = new Date(`${range.from}T00:00:00`);
+  const rangeTo = new Date(`${range.to}T00:00:00`);
 
   // not range-scoped (live counters + warmth) — loads once, like the Overview tab
   const summary = useAsync(warmupDashboardSummary, []);
@@ -116,32 +122,32 @@ export function Reports() {
   const cards = [
     {
       label: 'Mean warmth',
-      value: summary.data ? String(Math.round(summary.data.mean_warmth_score)) : '—',
+      value: summary.data ? fmtNumber(summary.data.mean_warmth_score, 0) : '—',
       note: delta === null ? preset.label : `${delta >= 0 ? '+' : ''}${delta} vs yesterday`,
       highlight: true,
     },
-    { label: 'Sent', value: totals ? totals.sent.toLocaleString() : '—', note: preset.label },
+    { label: 'Sent', value: totals ? fmtNumber(totals.sent) : '—', note: preset.label },
     {
       label: 'Opens',
-      value: totals ? totals.opens.toLocaleString() : '—',
-      note: openRate === null ? 'no sends in range' : `${openRate}% of sent`,
+      value: totals ? fmtNumber(totals.opens) : '—',
+      note: openRate === null ? 'no sends in range' : `${fmtPercent(openRate)} of sent`,
     },
     {
       label: 'Replies',
-      value: totals ? totals.replies.toLocaleString() : '—',
-      note: replyRate === null ? 'no sends in range' : `${replyRate}% of sent`,
+      value: totals ? fmtNumber(totals.replies) : '—',
+      note: replyRate === null ? 'no sends in range' : `${fmtPercent(replyRate)} of sent`,
     },
     {
       label: 'Inbox placement',
-      value: hasInbox ? `${placement?.inbox}%` : '—',
+      value: hasInbox ? fmtPercent(placement?.inbox) : '—',
       note: hasInbox
-        ? `promotions ${placement?.promotions}% · spam ${placement?.spam}%`
+        ? `promotions ${fmtPercent(placement?.promotions)} · spam ${fmtPercent(placement?.spam)}`
         : 'no placement signal in range',
     },
     {
       label: 'Mailboxes',
-      value: summary.data ? String(summary.data.total_mailboxes) : '—',
-      note: summary.data ? `${summary.data.active_mailboxes} active` : preset.label,
+      value: summary.data ? fmtNumber(summary.data.total_mailboxes) : '—',
+      note: summary.data ? `${fmtNumber(summary.data.active_mailboxes)} active` : preset.label,
     },
   ];
 
@@ -152,7 +158,8 @@ export function Reports() {
           <div>
             <h2 className="section-title">Warmup report</h2>
             <p className="panel-note">
-              Volume, engagement and placement — {preset.label.toLowerCase()} ({range.from} → {range.to}).
+              Volume, engagement and placement — {preset.label.toLowerCase()} ({fmtDate(rangeFrom)} →{' '}
+              {fmtDate(rangeTo)}).
             </p>
           </div>
           <div className="warmup-report-actions">
@@ -234,28 +241,30 @@ export function Reports() {
                       className="num warmup-report-warmth"
                       style={theme ? { color: warmthColor(r.warmth_score, theme) } : undefined}
                     >
-                      {Math.round(r.warmth_score)}
+                      {fmtNumber(r.warmth_score, 0)}
                     </td>
-                    <td className="num">{r.sent.toLocaleString()}</td>
-                    <td className="num">{r.opens.toLocaleString()}</td>
-                    <td className="num">{r.replies.toLocaleString()}</td>
-                    <td className="num">{r.inbox_pct === null ? '—' : `${r.inbox_pct}%`}</td>
+                    <td className="num">{fmtNumber(r.sent)}</td>
+                    <td className="num">{fmtNumber(r.opens)}</td>
+                    <td className="num">{fmtNumber(r.replies)}</td>
+                    <td className="num">{r.inbox_pct === null ? '—' : fmtPercent(r.inbox_pct)}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
                 <tr>
-                  <th scope="row">Total — {rows.data.length} mailboxes</th>
+                  <th scope="row">Total — {fmtNumber(rows.data.length)} mailboxes</th>
                   <td className="num">—</td>
-                  <td className="num">{rows.data.reduce((a, r) => a + r.sent, 0).toLocaleString()}</td>
-                  <td className="num">{rows.data.reduce((a, r) => a + r.opens, 0).toLocaleString()}</td>
-                  <td className="num">{rows.data.reduce((a, r) => a + r.replies, 0).toLocaleString()}</td>
+                  <td className="num">{fmtNumber(rows.data.reduce((a, r) => a + r.sent, 0))}</td>
+                  <td className="num">{fmtNumber(rows.data.reduce((a, r) => a + r.opens, 0))}</td>
+                  <td className="num">{fmtNumber(rows.data.reduce((a, r) => a + r.replies, 0))}</td>
                   <td className="num">
                     {(() => {
                       const withPct = rows.data!.filter((r) => r.inbox_pct !== null);
                       return withPct.length === 0
                         ? '—'
-                        : `${Math.round(withPct.reduce((a, r) => a + (r.inbox_pct ?? 0), 0) / withPct.length)}%`;
+                        : fmtPercent(
+                            withPct.reduce((a, r) => a + (r.inbox_pct ?? 0), 0) / withPct.length,
+                          );
                     })()}
                   </td>
                 </tr>

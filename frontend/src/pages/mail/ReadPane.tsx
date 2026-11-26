@@ -1,6 +1,6 @@
 import { Banner, EmptyState, Skeleton } from '../../components/feedback';
+import { fmtDateTime } from '../../lib/format';
 import type { WebmailMessageDetail } from '../../lib/webmail';
-import { fullDate } from './helpers';
 
 /** The reading pane — rendered HTML goes through a sandboxed iframe (same
  *  approach as ReportPanel: sandbox="" kills scripts and app-origin access).
@@ -75,7 +75,7 @@ export function ReadPane({
             <div className="wm-read-title">
               <h2>{detail.subject || '(no subject)'}</h2>
               <p>
-                <strong>{detail.from}</strong> → {detail.to.join(', ')} · {fullDate(detail.date)}
+                <strong>{detail.from}</strong> → {detail.to.join(', ')} · {fmtDateTime(detail.date, 'medium')}
               </p>
             </div>
             <div className="wm-read-actions">

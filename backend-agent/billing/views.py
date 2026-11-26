@@ -18,6 +18,7 @@ from .entitlements import UNLIMITED, get_entitlement
 from .gateways import GatewayError, GatewayNotConfigured, gateway_by_name, gateway_for_currency
 from .models import Invoice, Plan, Subscription
 from . import payments
+from core import formatting
 
 GSTIN_RE = re.compile(r'^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$')
 CURRENCIES = ('INR', 'USD')
@@ -302,19 +303,21 @@ def invoices(request):
     return Response([invoice_row(i) for i in Invoice.objects.all()[:200]])
 
 
-def money(minor, currency):
-    sym = {'INR': 'Rs. ', 'USD': 'USD '}.get(currency, currency + ' ')
-    return f'{sym}{minor // 100:,}.{minor % 100:02d}'
-
-
 def invoice_context(inv):
+    """What the invoice template shows. A document is always in Indian format
+    whoever reads it (core.formatting): ₹ with lakh grouping and day-first dates
+    in Indian time — so the dates arrive as text, not as template filters
+    (which would print them in UTC)."""
     env = os.environ.get
     return {'inv': inv, 'seller_name': env('BILLING_LEGAL_NAME', 'Shailog Technologies'),
             'seller_gstin': env('BILLING_GSTIN', ''), 'seller_address': env('BILLING_ADDRESS', ''),
             'sac': '998314', 'gst_pct': inv.tax_rate_bp / 100,
-            'subtotal': money(inv.subtotal, inv.currency), 'tax': money(inv.tax_amount, inv.currency),
-            'total': money(inv.total, inv.currency),
-            'refunded': money(inv.amount_refunded, inv.currency)}
+            'issued': formatting.date(inv.issued_at or inv.paid_at or inv.created_at),
+            'period_start': formatting.date(inv.period_start), 'period_end': formatting.date(inv.period_end),
+            'subtotal': formatting.money(inv.subtotal, inv.currency),
+            'tax': formatting.money(inv.tax_amount, inv.currency),
+            'total': formatting.money(inv.total, inv.currency),
+            'refunded': formatting.money(inv.amount_refunded, inv.currency)}
 
 
 @billing_api('GET')

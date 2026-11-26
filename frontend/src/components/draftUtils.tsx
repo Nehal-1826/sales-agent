@@ -1,4 +1,5 @@
 import type { EmailDraft } from '../lib/types';
+import { fmtDayTick, fmtTime } from '../lib/format';
 import { Chip } from './ui';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -12,14 +13,13 @@ export function isUnsent(d: EmailDraft): boolean {
   return d.status === 'Draft' || d.status === 'Failed';
 }
 
-/** "~14:32", or "~Thu 09:04" when not today — local time of a queued send. */
+/** "~14:32", or "~26 Nov, 14:32" when not today — local time of a queued send, in the person's format. */
 export function sendTimeLabel(iso: string | null | undefined): string {
   if (!iso) return '';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
-  const hm = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const today = new Date().toDateString() === d.toDateString();
-  return today ? `~${hm}` : `~${d.toLocaleDateString([], { weekday: 'short' })} ${hm}`;
+  return today ? `~${fmtTime(d)}` : `~${fmtDayTick(d)}, ${fmtTime(d)}`;
 }
 
 /** What to tell the user after approve: queued (normal), sent, or not

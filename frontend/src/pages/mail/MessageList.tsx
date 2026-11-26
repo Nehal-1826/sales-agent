@@ -1,4 +1,5 @@
 import { EmptyState, LoadError, Skeleton } from '../../components/feedback';
+import { fmtNumber } from '../../lib/format';
 import type { WebmailFolderName, WebmailMessageList, WebmailMessageSummary } from '../../lib/webmail';
 import { initials, shortDate } from './helpers';
 
@@ -95,7 +96,7 @@ export function MessageList({
           </button>
         ) : null}
         <span className="wm-list-count">
-          {loading && data ? 'refreshing…' : `${total} message${total === 1 ? '' : 's'}`}
+          {loading && data ? 'refreshing…' : `${fmtNumber(total)} message${total === 1 ? '' : 's'}`}
         </span>
       </header>
       {error && !data ? (

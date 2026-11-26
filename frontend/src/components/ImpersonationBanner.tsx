@@ -1,13 +1,6 @@
 import { useLayoutEffect, useRef } from 'react';
+import { fmtTime } from '../lib/format';
 import type { ImpersonatedMe } from '../lib/impersonation';
-
-/** "14:32" — the end time on the clock of the computer the admin is using. */
-function clock(iso: string): string {
-  const at = new Date(iso);
-  if (Number.isNaN(at.getTime())) return iso;
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(at.getHours())}:${pad(at.getMinutes())}`;
-}
 
 /**
  * The bar at the very top of the "enter as user" tab: whose workspace this is,
@@ -25,7 +18,8 @@ export function ImpersonationBanner({ me, onExit }: { me: ImpersonatedMe; onExit
   const { admin, workspace, ends_at } = me.impersonation;
   // the person's own name when they gave one (else the server sends the username)
   const person = me.impersonation.name || me.username || '';
-  const ends = clock(ends_at);
+  // the end time in the time zone of the computer the admin is using
+  const ends = fmtTime(ends_at);
 
   useLayoutEffect(() => {
     const el = bar.current;

@@ -23,13 +23,15 @@ LASTS = timedelta(minutes=60)
 ENDED_DETAIL = 'This session has ended — close this tab.'
 REFUSED_DETAIL = 'Not available while you are inside as another user.'
 
-# The person's own sign-in and security (password, username, two-factor),
-# the warmup bridge token, and every platform-admin API (which is also where
-# account deletion lives).
+# The person's own sign-in, security and screen format (password, username,
+# two-factor, how dates and numbers read on their screens), the warmup bridge
+# token, and every platform-admin API (which is also where account deletion
+# lives).
 REFUSED_PREFIXES = (
     '/api/auth/password/',
     '/api/auth/change-username/',
     '/api/auth/2fa/',
+    '/api/auth/preferences/',
     '/api/auth/warmup-token/',
     '/api/platform/',
 )

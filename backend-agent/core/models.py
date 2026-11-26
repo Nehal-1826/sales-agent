@@ -53,6 +53,16 @@ class User(AbstractUser):
         ADMIN = 'admin', 'Admin'
         MEMBER = 'member', 'Member'
 
+    class Formats(models.TextChoices):
+        INDIA = 'IN', 'India'
+        US = 'US', 'United States'
+        UK = 'GB', 'UK'
+        DEVICE = 'device', 'Match my device'
+
+    class Clocks(models.TextChoices):
+        H12 = '12h', '12-hour'
+        H24 = '24h', '24-hour'
+
     role = models.CharField(max_length=10, choices=Roles.choices, default=Roles.MEMBER)
     email_verified_at = models.DateTimeField(null=True, blank=True)
     # platform-admin TOTP secret (base32); never serialized
@@ -81,6 +91,10 @@ class User(AbstractUser):
     # for; null again once that admin is gone
     deleted_by = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL,
                                    related_name='+')
+    # how this person reads dates, numbers and times ON SCREEN (the app's
+    # lib/format.ts reads them). Documents are always Indian (core.formatting).
+    format = models.CharField(max_length=8, choices=Formats.choices, default=Formats.INDIA)
+    clock = models.CharField(max_length=4, choices=Clocks.choices, default=Clocks.H12)
     # null only for platform operators (superusers: Django admin / manage.py)
     workspace = models.ForeignKey(Workspace, null=True, blank=True,
                                   on_delete=models.CASCADE, related_name='users')

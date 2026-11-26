@@ -1,3 +1,4 @@
+import { fmtNumber } from '../../lib/format';
 import type { WarmupTodayStats } from '../../lib/warmupApi';
 
 /** Today's counters — the four tiles the source dashboard showed. */
@@ -15,7 +16,7 @@ export function TodayStats({ stats }: { stats: WarmupTodayStats }) {
       {TILES.map((tile) => (
         <div key={tile.key} className="warmup-tile">
           <span className="warmup-tile-label">{tile.label}</span>
-          <span className="warmup-tile-value">{stats[tile.key]}</span>
+          <span className="warmup-tile-value">{fmtNumber(stats[tile.key])}</span>
         </div>
       ))}
     </div>

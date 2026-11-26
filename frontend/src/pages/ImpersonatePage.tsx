@@ -13,6 +13,7 @@ import {
   startImpersonation,
 } from '../lib/impersonation';
 import type { ImpersonatedMe } from '../lib/impersonation';
+import { setPreferences } from '../lib/format';
 import { getMe } from '../lib/platform';
 import { WorkspaceStatusProvider } from '../lib/status';
 
@@ -48,6 +49,9 @@ export function ImpersonatePage({ renderShell }: { renderShell: (onSignOut: () =
   const goLive = useCallback((me: ImpersonatedMe) => {
     // from here on the tab's address is the workspace home
     if (isImpersonatePath(window.location.pathname)) window.history.replaceState(null, '', '/');
+    // these are the customer's screens: they read dates and numbers the way
+    // the customer does (the admin's own tab is not affected — different tab)
+    setPreferences(me.preferences);
     setPhase({ kind: 'live', me });
   }, []);
 

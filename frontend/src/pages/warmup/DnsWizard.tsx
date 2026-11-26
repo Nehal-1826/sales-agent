@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { EmptyState, LoadError, Skeleton } from '../../components/feedback';
 import { Chip } from '../../components/ui';
+import { fmtDateTime, fmtTime } from '../../lib/format';
 import {
   checkWarmupDns,
   WarmupApiError,
@@ -215,8 +216,8 @@ export function DnsWizard() {
                 {result.summary.overall_pass ? 'All good' : 'Needs records'}
               </Chip>
               {checkedAt && (
-                <span className="dns-checked-at" title={checkedAt.toLocaleString()}>
-                  checked {checkedAt.toLocaleTimeString()}
+                <span className="dns-checked-at" title={fmtDateTime(checkedAt)}>
+                  checked {fmtTime(checkedAt)}
                 </span>
               )}
             </div>

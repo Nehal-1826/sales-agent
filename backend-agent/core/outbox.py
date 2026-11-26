@@ -37,6 +37,7 @@ from django.utils import timezone
 
 from .mailer import (STUCK_AFTER, SUPPRESSED_ERROR, claim_draft_for_send, open_mailbox_connection,
                      send_draft, smtp_configured, upsert_mailbox)
+from . import formatting
 from .models import AppSettings, EmailDraft, Mailbox, Suppression
 
 log = logging.getLogger(__name__)
@@ -522,5 +523,6 @@ def queued_phrase(draft):
         return 'it is queued and goes out at the next free sending slot'
     when = local(draft.scheduled_for)
     today = local(timezone.now()).date()
-    day = '' if when.date() == today else f' on {when:%a %d %b}'
-    return f'it is queued and goes out at about {when:%H:%M}{day} (IST)'
+    # a document, in Indian format (core.formatting): 2:05 PM on Thu, 26/11/2026
+    day = '' if when.date() == today else f' on {when:%a}, {when:%d/%m/%Y}'
+    return f'it is queued and goes out at about {formatting.clock(when)}{day} (IST)'

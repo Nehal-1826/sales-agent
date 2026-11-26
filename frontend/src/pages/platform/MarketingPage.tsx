@@ -2,6 +2,7 @@ import { MagicBento, type MagicBentoItem } from '../../components/MagicBento';
 import { PageHeader } from '../../components/ui';
 import { LoadError, Skeleton } from '../../components/feedback';
 import { useAsync } from '../../lib/hooks';
+import { fmtDayTick, fmtNumber } from '../../lib/format';
 import { getMarketing } from '../../lib/platform';
 import type { CountRow } from '../../lib/platform';
 import { Bars, HBars } from './Bars';
@@ -17,8 +18,8 @@ function BreakdownBody({ title, rows, keyName }: { title: string; rows: CountRow
           {rows.map((r, i) => (
             <tr key={i}>
               <td>{String(r[keyName] ?? Object.values(r).find((v) => typeof v === 'string') ?? '(none)')}</td>
-              <td>{r.count}</td>
-              <td>{r.paid ?? '—'}</td>
+              <td>{fmtNumber(r.count)}</td>
+              <td>{r.paid === undefined ? '—' : fmtNumber(r.paid)}</td>
             </tr>
           ))}
         </tbody>
@@ -41,7 +42,7 @@ export function MarketingPage() {
           content: (
             <>
               <h2 className="pf-h2">Signups by day</h2>
-              <Bars label="Signups per day" data={m.signups_by_day.map((d) => ({ label: d.date, value: d.count }))} />
+              <Bars label="Signups per day" data={m.signups_by_day.map((d) => ({ label: fmtDayTick(d.date), value: d.count }))} />
             </>
           ),
         },

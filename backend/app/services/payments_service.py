@@ -89,6 +89,7 @@ from app.schemas.payments import (
     AddPaymentMethodRequest,
     PaymentMethodOut,
 )
+from app.services import formatting
 
 logger = logging.getLogger(__name__)
 
@@ -1125,8 +1126,9 @@ async def build_invoice_pdf(
 
     flowables: list[object] = []
     flowables.append(Paragraph(f"<b>WarmPulse</b> — Invoice {inv}", title))
+    # a document, always in Indian format (app.services.formatting)
     flowables.append(Paragraph(
-        f"Issued {payment.created_at.strftime('%d %b %Y')} · Status {payment.status.value if hasattr(payment.status, 'value') else str(payment.status)}",
+        f"Issued {formatting.date(payment.created_at)} · Status {payment.status.value if hasattr(payment.status, 'value') else str(payment.status)}",
         sub,
     ))
     flowables.append(Spacer(1, 8 * mm))
@@ -1138,10 +1140,10 @@ async def build_invoice_pdf(
         ["Description", "Amount (INR)"],
         [
             f"{plan_name} plan — monthly subscription",
-            f"₹{amount / 100:,.2f}",
+            formatting.money(amount, "INR"),
         ],
-        ["Tax", "₹0.00"],
-        ["Total", f"₹{amount / 100:,.2f}"],
+        ["Tax", formatting.money(0, "INR")],
+        ["Total", formatting.money(amount, "INR")],
     ]
     table = Table(rows, colWidths=[120 * mm, 50 * mm])
     table.setStyle(

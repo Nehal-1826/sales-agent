@@ -20,6 +20,7 @@ import { Chip, PageHeader } from '../../components/ui';
 import { Drawer } from '../../components/overlay';
 import { EmptyState, LoadError, Skeleton, toast } from '../../components/feedback';
 import { useAsync } from '../../lib/hooks';
+import { fmtDate, fmtDateTime, fmtMoneyMajor, fmtNumber } from '../../lib/format';
 import {
   downloadCsv,
   exportPaymentsCsv,
@@ -62,8 +63,6 @@ function deriveStatus(lastPayment: AdminPayment | null, planName: string): SubSt
   return 'canceled'; // refunded
 }
 
-const when = (s?: string | null): string => (s ? new Date(s).toLocaleDateString() : '—');
-
 function payChip(s: AdminPayment['status']): 'success' | 'warn' | 'neutral' {
   if (s === 'succeeded') return 'success';
   if (s === 'refunded') return 'neutral';
@@ -81,11 +80,11 @@ function SubDrawer({ sub, demo, onClose }: { sub: SubRow; demo: boolean; onClose
       </div>
       <dl className="pf-dl">
         <dt>MRR</dt>
-        <dd>${sub.mrr.toFixed(2)}</dd>
+        <dd>{fmtMoneyMajor(sub.mrr, 'USD')}</dd>
         <dt>Started</dt>
-        <dd>{when(sub.startedAt)}</dd>
+        <dd>{fmtDate(sub.startedAt) || '—'}</dd>
         <dt>Last payment</dt>
-        <dd>{sub.lastPayment ? `$${sub.lastPayment.amount_usd.toFixed(2)} · ${when(sub.lastPayment.created_at)}` : '—'}</dd>
+        <dd>{sub.lastPayment ? `${fmtMoneyMajor(sub.lastPayment.amount_usd, 'USD')} · ${fmtDate(sub.lastPayment.created_at) || '—'}` : '—'}</dd>
         <dt>Payments</dt>
         <dd>{sub.history.length}</dd>
       </dl>
@@ -107,9 +106,9 @@ function SubDrawer({ sub, demo, onClose }: { sub: SubRow; demo: boolean; onClose
             <tbody>
               {sub.history.map((p) => (
                 <tr key={p.id}>
-                  <td>{new Date(p.created_at).toLocaleString()}</td>
+                  <td>{fmtDateTime(p.created_at)}</td>
                   <td>{p.plan || 'Payment'}</td>
-                  <td>${p.amount_usd.toFixed(2)}</td>
+                  <td>{fmtMoneyMajor(p.amount_usd, 'USD')}</td>
                   <td>
                     <Chip tone={payChip(p.status)}>{p.status}</Chip>
                   </td>
@@ -276,19 +275,19 @@ export function AdminBillingPage({ demo = false, embedded = false }: { demo?: bo
 
       <div className="pf-kpis">
         <div className="pf-kpi">
-          <strong>{loading ? '…' : activeSubs.toLocaleString()}</strong>
+          <strong>{loading ? '…' : fmtNumber(activeSubs)}</strong>
           <small>Paying customers · workspaces on a paid plan</small>
         </div>
         <div className="pf-kpi">
-          <strong>{loading ? '…' : `$${totalMrr.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}</strong>
+          <strong>{loading ? '…' : fmtMoneyMajor(totalMrr, 'USD')}</strong>
           <small>Money per month · what customers pay each month</small>
         </div>
         <div className="pf-kpi">
-          <strong>{loading ? '…' : pastDue.toLocaleString()}</strong>
+          <strong>{loading ? '…' : fmtNumber(pastDue)}</strong>
           <small>Payment failed · we&apos;re retrying their card</small>
         </div>
         <div className="pf-kpi">
-          <strong>{loading ? '…' : trials.toLocaleString()}</strong>
+          <strong>{loading ? '…' : fmtNumber(trials)}</strong>
           <small>Trying for free · trial period active</small>
         </div>
       </div>
@@ -300,8 +299,8 @@ export function AdminBillingPage({ demo = false, embedded = false }: { demo?: bo
           {(planDistQ.data ?? []).map((row) => (
             <span key={row.plan} style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
               <Chip tone="accent">{row.plan}</Chip>
-              <strong>{row.count}</strong>
-              {row.mrr != null && row.mrr > 0 && <small>· ${row.mrr.toLocaleString()}</small>}
+              <strong>{fmtNumber(row.count)}</strong>
+              {row.mrr != null && row.mrr > 0 && <small>· {fmtMoneyMajor(row.mrr, 'USD', 0)}</small>}
             </span>
           ))}
         </div>
@@ -362,8 +361,8 @@ export function AdminBillingPage({ demo = false, embedded = false }: { demo?: bo
                   <td>
                     <Chip tone={statusChip(sub.status)}>{statusLabel(sub.status)}</Chip>
                   </td>
-                  <td>{sub.mrr === 0 ? '—' : `$${sub.mrr.toFixed(2)}`}</td>
-                  <td>{when(sub.startedAt)}</td>
+                  <td>{sub.mrr === 0 ? '—' : fmtMoneyMajor(sub.mrr, 'USD')}</td>
+                  <td>{fmtDate(sub.startedAt) || '—'}</td>
                 </tr>
               ))}
               {visible.length === 0 && (

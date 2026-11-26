@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { PageHeader } from '../../components/ui';
 import { LoadError, Skeleton, EmptyState } from '../../components/feedback';
 import { useAsync } from '../../lib/hooks';
+import { fmtDateTime } from '../../lib/format';
 import { listAudit } from '../../lib/platform';
 import { Pager } from './shared';
 
@@ -21,7 +22,7 @@ export function AuditPage() {
             <tbody>
               {data.results.map((a) => (
                 <tr key={a.id}>
-                  <td>{new Date(a.created_at).toLocaleString()}</td>
+                  <td>{fmtDateTime(a.created_at)}</td>
                   <td>{a.actor ?? '—'}</td>
                   <td>{a.action}</td>
                   <td>{a.target ?? '—'}</td>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AnimatedList } from '../../components/AnimatedList';
 import { Chip } from '../../components/ui';
 import { warmthColor, type ChartTheme } from './chartTheme';
+import { fmtNumber } from '../../lib/format';
 import type { WarmupMailbox, WarmupMailboxStatus } from '../../lib/warmupApi';
 import { MailboxDetailDrawer, RowActions, type SettlePhase } from './MailboxActions';
 
@@ -120,12 +121,12 @@ export function MailboxRows({
               <div className="warmup-mailbox-id">
                 <span className="warmup-mailbox-email" title={m.email_address}>{m.email_address}</span>
                 <span className="warmup-mailbox-meta">
-                  {m.provider} · day {m.current_day} · {m.sent_today} sent today
+                  {m.provider} · day {m.current_day} · {fmtNumber(m.sent_today)} sent today
                 </span>
               </div>
               <Sparkline values={sparkPoints(m.warmth_score)} color={color} />
               <span className="warmup-mailbox-warmth" style={{ color }}>
-                {Math.round(m.warmth_score)}
+                {fmtNumber(m.warmth_score, 0)}
               </span>
               <Chip tone={statusTone(m.warmup_status, m.is_paused)}>{statusLabel(m.warmup_status, m.is_paused)}</Chip>
               <RowActions

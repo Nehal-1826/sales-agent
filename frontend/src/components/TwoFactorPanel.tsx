@@ -4,6 +4,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { CodeSlots, type CodeSlotsStatus } from './CodeSlots';
 import { toast } from './feedback';
 import { Chip } from './ui';
+import { fmtDate } from '../lib/format';
 import type { TotpSetup, TwoFactorStatus } from '../lib/platform';
 import type { Result } from '../lib/transport';
 
@@ -27,15 +28,12 @@ function formatSecret(raw: string): string {
     .trim();
 }
 
-/** "12 Nov 2026" — the date alone, in the same order for everyone. */
-const trailDate = (iso: string): string =>
-  new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-
-/** "Set up on 12 Nov 2026 from Chrome · Windows · IP 1.2.3.4" — the parts the
- *  server does not know are left out. Null = set up before the trail existed. */
+/** "Set up on 26 Nov 2026 from Chrome · Windows · IP 1.2.3.4" — the date in the
+ *  person's format; the parts the server does not know are left out. Null =
+ *  set up before the trail existed. */
 function enrolledLine(status: TwoFactorStatus): string | null {
   if (!status.enrolled_at) return null;
-  let line = `Set up on ${trailDate(status.enrolled_at)}`;
+  let line = `Set up on ${fmtDate(status.enrolled_at, 'medium')}`;
   if (status.enrolled_device) line += ` from ${status.enrolled_device}`;
   if (status.enrolled_ip) line += ` · IP ${status.enrolled_ip}`;
   return line;

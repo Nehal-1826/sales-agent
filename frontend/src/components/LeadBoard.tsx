@@ -1,4 +1,5 @@
 import type { EmailDraft, Lead } from '../lib/types';
+import { fmtNumber } from '../lib/format';
 import { AnimatedList } from './AnimatedList';
 import { FitChip } from './LeadDrawer';
 
@@ -46,7 +47,7 @@ export function LeadBoard({
           <section className="board-col" key={stage} aria-label={STAGE_LABEL[stage]}>
             <header className="board-col-head">
               <strong>{STAGE_LABEL[stage]}</strong>
-              <span className="board-count">{items.length}</span>
+              <span className="board-count">{fmtNumber(items.length)}</span>
             </header>
             <p className="board-hint">{hint}</p>
             {items.length === 0 ? (
@@ -77,7 +78,7 @@ export function LeadBoard({
                     </div>
                   )}
                 />
-                {items.length > 50 && <p className="board-empty">+{items.length - 50} more in All leads</p>}
+                {items.length > 50 && <p className="board-empty">+{fmtNumber(items.length - 50)} more in All leads</p>}
               </>
             )}
           </section>

@@ -1,6 +1,7 @@
 import Chart from 'react-apexcharts';
 import type { ApexOptions } from 'apexcharts';
 import { formatDayTick, type ChartTheme } from './chartTheme';
+import { fmtNumber } from '../../lib/format';
 import type { WarmupWarmthPoint } from '../../lib/warmupApi';
 
 /**
@@ -34,7 +35,7 @@ export function WarmthChart({ points, theme }: { points: WarmupWarmthPoint[]; th
       enabled: true,
       formatter: (_value, opts) => {
         const show = opts.dataPointIndex === 0 || opts.dataPointIndex === last || opts.dataPointIndex % 4 === 0;
-        return show ? String(Math.round(points[opts.dataPointIndex]?.score ?? 0)) : '';
+        return show ? fmtNumber(points[opts.dataPointIndex]?.score ?? 0, 0) : '';
       },
       style: {
         colors: [theme.text2],
@@ -89,7 +90,7 @@ export function WarmthChart({ points, theme }: { points: WarmupWarmthPoint[]; th
     tooltip: {
       theme: undefined,
       cssClass: 'warmup-chart-tooltip',
-      y: { formatter: (v: number) => `${Math.round(v)} / 100` },
+      y: { formatter: (v: number) => `${fmtNumber(v, 0)} / 100` },
       x: { formatter: (value: number, opts?: { dataPointIndex?: number }) => {
         const p = points[opts?.dataPointIndex ?? value]?.date;
         return p ? formatDayTick(p) : String(value);

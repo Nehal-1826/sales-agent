@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 
 from django.utils import timezone
 
+from . import formatting
 from .mailer import branded_email_html, send_email_message, smtp_configured, text_to_email_html
 from .models import AppSettings, Lead, PipelineRun, Potential, ReportRound, User
 from .tenancy import current_workspace
@@ -123,14 +124,15 @@ def build_daily_report(day=None, window=None):
     window=(start, end) → that stretch (the 20:00 round: everything since the
     previous one); day=<date> → that calendar day in IST; neither → ALL TIME
     (for on-demand reports from the Leads & Reports page)."""
+    # a report is a document: always in Indian format (core.formatting)
     if window is not None:
         start, end = window
-        label = f'{start:%d %b %H:%M} – {end:%d %b %H:%M} IST'
+        label = f'{formatting.datetime_label(start)} – {formatting.datetime_label(end)}'
         heads = ('LEADS FOUND', 'NEW POTENTIALS', 'PIPELINE CYCLES')
     elif day:
         start = datetime.combine(day, dtime.min, tzinfo=IST)
         end = start + timedelta(days=1)
-        label = day.strftime('%d %b %Y')
+        label = formatting.date(day)
         heads = ('LEADS SCRAPED TODAY', 'NEW POTENTIALS TODAY', 'PIPELINE CYCLES TODAY')
     else:
         start = end = None

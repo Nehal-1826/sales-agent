@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { draftLeadEmail, getEnrollments, optOutWhatsApp, stopEnrollment } from '../lib/api';
 import { useAsync } from '../lib/hooks';
+import { fmtDate } from '../lib/format';
 import { navigate } from '../lib/router';
 import type { EmailDraft, Enrollment, Lead } from '../lib/types';
 import { AnimatedList } from './AnimatedList';
@@ -221,7 +222,7 @@ function FollowupProgress({ leadId }: { leadId: number }) {
           Step {enr.currentStep} of {enr.totalSteps}
         </span>
         {live && enr.nextDueAt && (
-          <small className="dim">next on {new Date(enr.nextDueAt).toLocaleDateString()}</small>
+          <small className="dim">next on {fmtDate(enr.nextDueAt)}</small>
         )}
       </div>
       {enr.stopReason && <small className="dim">{enr.stopReason}</small>}

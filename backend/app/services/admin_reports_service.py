@@ -57,6 +57,7 @@ from app.schemas.admin_reports import (
     ReportTypeItem,
     SummaryItem,
 )
+from app.services import formatting
 
 logger = logging.getLogger(__name__)
 
@@ -291,7 +292,7 @@ def _build_revenue_summary_items(
     items = [
         SummaryItem(
             label="Total Revenue",
-            value=f"₹{current['total_inr']:,.2f}",
+            value=formatting.money_major(current["total_inr"], "INR"),
             delta_pct=_delta(current["total_inr"], prev["total_inr"] if prev else None),
         ),
         SummaryItem(
@@ -580,8 +581,8 @@ async def _assemble_llm_cost(
         columns=effective_cols,
         rows=[_filter_cols(r, effective_cols) for r in rows],
         summary=[
-            SummaryItem(label="Total Cost (MTD)", value=f"₹{total_cost:,.2f}"),
-            SummaryItem(label="Total Tokens (MTD)", value=f"{total_tokens:,}"),
+            SummaryItem(label="Total Cost (MTD)", value=formatting.money_major(total_cost, "INR")),
+            SummaryItem(label="Total Tokens (MTD)", value=formatting.number(total_tokens)),
         ],
         estimated_rows=len(rows),
     )

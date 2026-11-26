@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { PageHeader } from '../../components/ui';
 import { LoadError, Skeleton, EmptyState, toast } from '../../components/feedback';
 import { useAsync } from '../../lib/hooks';
-import { listInvoices, viewPlatformInvoice, money } from '../../lib/platform';
+import { fmtDate, fmtMoney } from '../../lib/format';
+import { listInvoices, viewPlatformInvoice } from '../../lib/platform';
 import { Pager } from './shared';
 
 export function InvoicesPage({ embedded = false }: { embedded?: boolean }) {
@@ -32,8 +33,8 @@ export function InvoicesPage({ embedded = false }: { embedded?: boolean }) {
                 <tr key={i.id}>
                   <td>{i.number}</td>
                   <td>{i.workspace ?? i.tenant ?? '—'}</td>
-                  <td>{new Date(i.issued_at).toLocaleDateString()}</td>
-                  <td>{money(i.total, i.currency)}</td>
+                  <td>{fmtDate(i.issued_at)}</td>
+                  <td>{fmtMoney(i.total, i.currency)}</td>
                   <td>{i.status}</td>
                   <td><button className="btn btn-sm" onClick={() => void view(i.id)}>View</button></td>
                 </tr>

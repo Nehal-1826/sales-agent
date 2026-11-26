@@ -1,6 +1,7 @@
 import Chart from 'react-apexcharts';
 import type { ApexOptions } from 'apexcharts';
 import { formatDayTick, type ChartTheme } from './chartTheme';
+import { fmtPercent } from '../../lib/format';
 import type { WarmupPlacementTrendPoint } from '../../lib/warmupApi';
 
 /**
@@ -59,7 +60,7 @@ export function PlacementTrendChart({
       max: 100,
       tickAmount: 5,
       labels: {
-        formatter: (v: number) => `${Math.round(v)}%`,
+        formatter: (v: number) => fmtPercent(v),
         style: { colors: [theme.text2], fontSize: '11px' },
       },
     },

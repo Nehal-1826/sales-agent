@@ -5,7 +5,7 @@ from django.core.cache import cache
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from billing.models import Plan, Subscription
+from billing.models import Invoice, Plan, Subscription
 from billing.tests.helpers import (client_for, env_patch, no_template_capture, pending_ws, rzp_charged,
                                    rzp_post)
 from billing.tests.test_refunds import fake_response
@@ -43,10 +43,29 @@ class InvoiceApiTests(TestCase):
             r = self.ca.get(f'/api/billing/invoices/{inv_id}/')
         self.assertEqual(r.status_code, 200)
         html = r.content.decode()
-        for needle in ('998314', '33ABCDE1234F1Z5', 'GST @ 18.0%', 'Rs. 3,538.82'):
+        for needle in ('998314', '33ABCDE1234F1Z5', 'GST @ 18.0%', '₹3,538.82'):
             self.assertIn(needle, html)
         self.assertEqual(self.cb.get(f'/api/billing/invoices/{inv_id}/').status_code, 404)
         self.assertEqual(APIClient().get(f'/api/billing/invoices/{inv_id}/').status_code, 401)
+
+    def test_the_invoice_is_in_indian_format(self):
+        """A document is always Indian, whoever reads it: ₹ with lakh grouping,
+        day-first dates, and never 'Rs.' (core.formatting)."""
+        inv_id = self.ca.get('/api/billing/invoices/').json()[0]['id']
+        html = self.ca.get(f'/api/billing/invoices/{inv_id}/').content.decode()
+        self.assertIn('₹3,538.82', html)
+        self.assertNotIn('Rs.', html)
+        self.assertRegex(html, r'Issued \d{2}/\d{2}/\d{4}')                        # the day comes first
+        self.assertRegex(html, r'\d{2}/\d{2}/\d{4} to \d{2}/\d{2}/\d{4}')          # and the period too
+        self.assertIn('Total (INR)', html)
+
+    def test_a_large_amount_is_grouped_in_lakhs(self):
+        # 1,00,00,000 paise = ₹1,00,000.00 — a lakh, grouped the Indian way
+        row = self.ca.get('/api/billing/invoices/').json()[0]
+        Invoice.all_tenants.filter(pk=row['id']).update(subtotal=10000000, tax_amount=0, total=10000000, tax_rate_bp=0)
+        html = self.ca.get(f"/api/billing/invoices/{row['id']}/").content.decode()
+        self.assertIn('₹1,00,000.00', html)
+        self.assertNotIn('₹100,000.00', html)
 
     def test_html_is_autoescaped(self):
         Subscription.all_tenants.filter(workspace=self.a).update(billing_name='<script>x</script>')

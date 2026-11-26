@@ -9,6 +9,7 @@ import { VoicePill, useVoiceDictation } from '../components/VoicePill';
 import { EmptyState, LoadError, Skeleton, StaleNotice, toast } from '../components/feedback';
 import { PageHeader } from '../components/ui';
 import { downloadLeadsCsv, getDrafts, getLeads, isDemo } from '../lib/api';
+import { fmtNumber } from '../lib/format';
 import { useAsync } from '../lib/hooks';
 import { navigate } from '../lib/router';
 import { useWorkspaceStatus } from '../lib/status';
@@ -222,7 +223,7 @@ function LeadTable({
           ]}
         />
         <span className="toolbar-count">
-          {rows.length} of {leads.length}
+          {fmtNumber(rows.length)} of {fmtNumber(leads.length)}
         </span>
       </div>
 

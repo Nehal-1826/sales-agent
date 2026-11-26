@@ -17,6 +17,7 @@ from django.core.management.base import BaseCommand
 from django.db.models import Count
 from django.utils import timezone
 
+from core import formatting
 from core.models import AppSettings, SlugAttempt, User
 
 
@@ -71,7 +72,7 @@ class Command(BaseCommand):
                 lines.append('')
             lines.append('Most recent hits:')
             for a in latest:
-                ts = timezone.localtime(a.created_at).strftime('%d %b %Y %H:%M')
+                ts = formatting.datetime_label(a.created_at)           # 26/11/2026, 2:05 PM IST
                 lines.append(f'  {ts}  /{a.slug}  from {a.ip or "unknown"}')
             lines.append('')
             lines.append('If you do not recognize this activity, rotate the slug:')

@@ -1,4 +1,5 @@
 import { warmthColor, type ChartTheme } from './chartTheme';
+import { fmtNumber } from '../../lib/format';
 import type { WarmupDashboardSummary } from '../../lib/warmupApi';
 
 /**
@@ -22,7 +23,7 @@ export function WarmthHero({ summary, theme }: { summary: WarmupDashboardSummary
 
   return (
     <div className="warmup-hero">
-      <div className="warmup-gauge" role="img" aria-label={`Warmth score ${pct} of 100`}>
+      <div className="warmup-gauge" role="img" aria-label={`Warmth score ${fmtNumber(pct)} of 100`}>
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
           <defs>
             <linearGradient id="warmup-warmth-grad" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -51,7 +52,7 @@ export function WarmthHero({ summary, theme }: { summary: WarmupDashboardSummary
             transform={`rotate(-90 ${size / 2} ${size / 2})`}
           />
           <text x="50%" y="47%" textAnchor="middle" className="warmup-gauge-value" fill="var(--text)">
-            {pct}
+            {fmtNumber(pct)}
           </text>
           <text x="50%" y="61%" textAnchor="middle" className="warmup-gauge-label" fill="var(--text-3)">
             WARMTH
@@ -62,7 +63,7 @@ export function WarmthHero({ summary, theme }: { summary: WarmupDashboardSummary
         <p className="warmup-hero-eyebrow">Workspace warmth</p>
         <h2>{label}</h2>
         <p className="warmup-hero-sub">
-          Mean warmth across {summary.total_mailboxes} mailbox{summary.total_mailboxes === 1 ? '' : 'es'} ({summary.active_mailboxes} active). We target 70+ sustained for optimal deliverability.
+          Mean warmth across {fmtNumber(summary.total_mailboxes)} mailbox{summary.total_mailboxes === 1 ? '' : 'es'} ({fmtNumber(summary.active_mailboxes)} active). We target 70+ sustained for optimal deliverability.
         </p>
         <p className={`warmup-hero-delta ${delta > 0 ? 'up' : delta < 0 ? 'down' : ''}`}>
           <span aria-hidden>{delta > 0 ? '▲' : delta < 0 ? '▼' : '•'}</span>{' '}

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { AnimatedList } from '../components/AnimatedList';
 import { approveReplySuggestion, getReplies, markReplyHandled, pollInbox } from '../lib/api';
 import { useAsync } from '../lib/hooks';
+import { fmtDateTime, fmtNumber } from '../lib/format';
 import { useWorkspaceStatus } from '../lib/status';
 import type { Reply, ReplyClassification } from '../lib/types';
 import { Chip, PageHeader } from '../components/ui';
@@ -19,17 +20,11 @@ const TONE: Record<ReplyClassification, 'neutral' | 'accent' | 'success' | 'warn
   '': 'neutral',
 };
 
-function when(iso: string | null): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-}
-
 function answerLine(r: Reply): string | null {
   const a = r.answer;
   if (!a) return null;
-  if (a.status === 'Sent') return a.sentVia === 'console' ? 'Your answer was logged — not delivered (no mailbox set up).' : `Your answer was sent ${when(a.sentAt)}.`;
-  if (a.status === 'Queued') return `Your answer is queued — sends at ~${when(a.scheduledFor)}.`;
+  if (a.status === 'Sent') return a.sentVia === 'console' ? 'Your answer was logged — not delivered (no mailbox set up).' : `Your answer was sent ${fmtDateTime(a.sentAt, 'medium')}.`;
+  if (a.status === 'Queued') return `Your answer is queued — sends at ~${fmtDateTime(a.scheduledFor, 'medium')}.`;
   if (a.status === 'Failed') return `Your answer could not be sent: ${a.error || 'unknown problem'}.`;
   if (a.status === 'Rejected') return `Your answer was stopped: ${a.error || 'not sent'}.`;
   return 'Your answer is being sent.';
@@ -66,7 +61,7 @@ function ReplyCard({ reply, onChange }: { reply: Reply; onChange: () => void }) 
           <strong>{reply.company}</strong>
           <small>
             {reply.fromEmail || reply.contact}
-            {reply.receivedAt ? ` · ${when(reply.receivedAt)}` : reply.lastActivity ? ` · ${reply.lastActivity}` : ''}
+            {reply.receivedAt ? ` · ${fmtDateTime(reply.receivedAt, 'medium')}` : reply.lastActivity ? ` · ${reply.lastActivity}` : ''}
           </small>
         </div>
         <div className="reply-chips">
@@ -140,7 +135,7 @@ export function RepliesPage() {
           {(['needs', 'all'] as const).map((f) => (
             <label key={f} className={filter === f ? 'active' : ''}>
               <input type="radio" name="reply-filter" checked={filter === f} onChange={() => setFilter(f)} />
-              {f === 'needs' ? `Needs you (${all.filter((r) => r.needsAttention).length})` : `All (${all.length})`}
+              {f === 'needs' ? `Needs you (${fmtNumber(all.filter((r) => r.needsAttention).length)})` : `All (${fmtNumber(all.length)})`}
             </label>
           ))}
         </fieldset>

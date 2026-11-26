@@ -9,6 +9,7 @@
  * flows into exported PDFs without a code change.
  */
 import { jsPDF } from 'jspdf';
+import { fmtDate, fmtNumber, fmtPercent } from './format';
 import type {
   WarmupAnalyticsRange,
   WarmupMailboxReportRow,
@@ -138,8 +139,17 @@ export function warmupReportPdfFilename(range: WarmupAnalyticsRange): string {
   return `warmpulse-warmup-report-${range.from}_to_${range.to}.pdf`;
 }
 
-const fmtInt = (n: number): string => Math.round(n).toLocaleString();
-const pct = (n: number | null): string => (n === null ? '—' : `${Math.round(n)}%`);
+/**
+ * A count for the page, in the person's format: the PDF is made in their
+ * browser for them, so it follows their choice — unlike the documents the
+ * server writes, which are always Indian. Helvetica, the PDF's only font,
+ * has no narrow no-break space, which some device locales group digits with
+ * ("1 000"): jsPDF would print a slash there, so it becomes a plain space.
+ */
+const pageCount = (n: number): string => fmtNumber(n, 0).replace(/\u202f/g, ' ');
+
+/** A percentage for the page — "—" when there was no signal. */
+const pct = (n: number | null): string => (n === null ? '—' : fmtPercent(n));
 
 /** Clip `s` with an ellipsis so it fits `maxW` at the current font size. */
 function fitText(doc: jsPDF, s: string, maxW: number): string {
@@ -160,11 +170,13 @@ export function buildWarmupReportPdf(input: WarmupReportPdfInput): jsPDF {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
   const accent = (c: Rgb): [number, number, number] => [c.r, c.g, c.b];
 
-  const generatedAt = new Date().toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
+  const generatedAt = fmtDate(new Date(), 'medium');
+  // The days the API was asked for ("2026-11-12") are shown as that calendar
+  // day: a bare day is midnight UTC to `new Date` — the day before, west of
+  // London — so each is read as a local day first.
+  const rangeDays = `${fmtDate(new Date(`${input.range.from}T00:00:00`))} to ${fmtDate(
+    new Date(`${input.range.to}T00:00:00`),
+  )}`;
 
   // ---- header band: accent fill + WarmPulse wordmark ----
   doc.setFillColor(...accent(p.accent));
@@ -190,9 +202,9 @@ export function buildWarmupReportPdf(input: WarmupReportPdfInput): jsPDF {
   doc.setFontSize(9.5);
   doc.setTextColor(...accent(p.text2));
   doc.text(
-    `${input.rangeLabel} · ${input.range.from} to ${input.range.to} · ${fmtInt(
-      input.mailboxes,
-    )} mailboxes (${fmtInt(input.activeMailboxes)} active)`,
+    `${input.rangeLabel} · ${rangeDays} · ${pageCount(input.mailboxes)} mailboxes (${pageCount(
+      input.activeMailboxes,
+    )} active)`,
     MARGIN,
     y,
   );
@@ -200,14 +212,16 @@ export function buildWarmupReportPdf(input: WarmupReportPdfInput): jsPDF {
 
   // ---- summary KPI band (6 cells, bordered, values in accent-strong) ----
   const kpis: Array<{ label: string; value: string }> = [
-    { label: 'MEAN WARMTH', value: `${Math.round(input.meanWarmth)}` },
+    { label: 'MEAN WARMTH', value: fmtNumber(input.meanWarmth, 0) },
     {
-      label: 'WARMTH Δ 24H',
+      // plain words: the PDF's built-in font has no Greek delta, and the old
+      // "WARMTH Δ 24H" printed as junk
+      label: '24H CHANGE',
       value: `${input.warmthDelta >= 0 ? '+' : ''}${input.warmthDelta.toFixed(1)}`,
     },
-    { label: 'SENT', value: fmtInt(input.sent) },
-    { label: 'OPENS', value: fmtInt(input.opens) },
-    { label: 'REPLIES', value: fmtInt(input.replies) },
+    { label: 'SENT', value: pageCount(input.sent) },
+    { label: 'OPENS', value: pageCount(input.opens) },
+    { label: 'REPLIES', value: pageCount(input.replies) },
     { label: 'INBOX PLACEMENT', value: pct(input.inboxPct) },
   ];
   const bandH = 52;
@@ -285,10 +299,10 @@ export function buildWarmupReportPdf(input: WarmupReportPdfInput): jsPDF {
     const warmth = Math.round(row.warmth_score);
     const cells: Record<string, string> = {
       mailbox: fitText(doc, row.email_address, COLS[0].w - 16),
-      warmth: String(warmth),
-      sent: fmtInt(row.sent),
-      opens: fmtInt(row.opens),
-      replies: fmtInt(row.replies),
+      warmth: fmtNumber(warmth),
+      sent: pageCount(row.sent),
+      opens: pageCount(row.opens),
+      replies: pageCount(row.replies),
       inbox: pct(row.inbox_pct),
     };
     let x = tableX;
@@ -330,15 +344,15 @@ export function buildWarmupReportPdf(input: WarmupReportPdfInput): jsPDF {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
     doc.setTextColor(...accent(p.text));
-    doc.text(`Total — ${input.rows.length} mailboxes`, tableX + 8, y + 13);
-    doc.text(fmtInt(totalSent), tableX + COLS[0].w + COLS[1].w + COLS[2].w - 8, y + 13, {
+    doc.text(`Total — ${pageCount(input.rows.length)} mailboxes`, tableX + 8, y + 13);
+    doc.text(pageCount(totalSent), tableX + COLS[0].w + COLS[1].w + COLS[2].w - 8, y + 13, {
       align: 'right',
     });
-    doc.text(fmtInt(totalOpens), tableX + COLS[0].w + COLS[1].w + COLS[2].w + COLS[3].w - 8, y + 13, {
+    doc.text(pageCount(totalOpens), tableX + COLS[0].w + COLS[1].w + COLS[2].w + COLS[3].w - 8, y + 13, {
       align: 'right',
     });
     doc.text(
-      fmtInt(totalReplies),
+      pageCount(totalReplies),
       tableX + COLS[0].w + COLS[1].w + COLS[2].w + COLS[3].w + COLS[4].w - 8,
       y + 13,
       { align: 'right' },
@@ -356,11 +370,7 @@ export function buildWarmupReportPdf(input: WarmupReportPdfInput): jsPDF {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(...accent(p.text2));
-    doc.text(
-      `WarmPulse · Warmup Report · ${input.range.from} to ${input.range.to}`,
-      MARGIN,
-      PAGE_H - 30,
-    );
+    doc.text(`WarmPulse · Warmup Report · ${rangeDays}`, MARGIN, PAGE_H - 30);
     doc.text(`Page ${i} of ${pages}`, PAGE_W - MARGIN, PAGE_H - 30, { align: 'right' });
   }
 

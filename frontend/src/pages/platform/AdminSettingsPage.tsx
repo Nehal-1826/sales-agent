@@ -14,9 +14,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { TwoFactorPanel, type TwoFactorApi } from '../../components/TwoFactorPanel';
+import { FormatCard } from '../../components/FormatCard';
 import { Chip, Field, PageHeader, SectionLabel, Toggle } from '../../components/ui';
 import { LoadError, Skeleton, toast } from '../../components/feedback';
 import { useAsync } from '../../lib/hooks';
+import { fmtMoneyMajor, fmtNumber } from '../../lib/format';
 import {
   changeUsername,
   getMe,
@@ -396,6 +398,12 @@ export function AdminSettingsPage({ demo = false }: { demo?: boolean }) {
         />
       </SettingsCard>
 
+      {/* this person's own choice, like two-factor above: no Save row of the
+          card's own — FormatCard saves on its own button */}
+      <SettingsCard title="Format" summary="How dates, numbers and times look on your screens" defaultOpen>
+        <FormatCard />
+      </SettingsCard>
+
       {/* ── account: change username ── */}
       <SettingsCard
         title="Change username"
@@ -477,7 +485,7 @@ export function AdminSettingsPage({ demo = false }: { demo?: boolean }) {
             {/* ── AI provider ── */}
             <SettingsCard
               title="AI provider"
-              summary={s.llm.configured ? `Key: ${s.llm.api_key_masked || '…'} · cap ${llmCap.toLocaleString()} tokens/mo` : 'API key not configured'}
+              summary={s.llm.configured ? `Key: ${s.llm.api_key_masked || '…'} · cap ${fmtNumber(llmCap)} tokens/mo` : 'API key not configured'}
               tag={<Chip tone={s.llm.configured ? 'success' : 'warn'}>{s.llm.configured ? 'Connected' : 'Missing key'}</Chip>}
               dirty={llmDirty}
               savePending={llmBusy}
@@ -490,7 +498,7 @@ export function AdminSettingsPage({ demo = false }: { demo?: boolean }) {
                 <input type="number" min={1000} step={1000} value={llmCap} onChange={(e) => setLlmCap(Number(e.target.value))} />
               </Field>
               <div className="pf-kpi">
-                <strong>${(s.llm.spend_mtd_usd ?? 0).toFixed(2)}</strong>
+                <strong>{fmtMoneyMajor(s.llm.spend_mtd_usd ?? 0, 'USD')}</strong>
                 <small>Month-to-date AI spend</small>
               </div>
               <TestResult result={llmTest.result} />

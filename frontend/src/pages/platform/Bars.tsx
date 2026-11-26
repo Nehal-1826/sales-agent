@@ -1,8 +1,10 @@
+import { fmtNumber } from '../../lib/format';
+
 /** Plain SVG bar chart with accessible labels (no chart dependency). */
 export function Bars({
   data,
   label,
-  fmt = (n) => String(n),
+  fmt = fmtNumber,
   height = 160,
 }: {
   data: { label: string; value: number }[];
@@ -54,7 +56,7 @@ export function HBars({ rows, label }: { rows: { label: string; value: number }[
           <span className="pf-hbar-track" aria-hidden>
             <span style={{ width: `${(r.value / max) * 100}%` }} />
           </span>
-          <strong>{r.value}</strong>
+          <strong>{fmtNumber(r.value)}</strong>
         </li>
       ))}
     </ul>

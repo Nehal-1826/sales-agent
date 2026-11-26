@@ -30,6 +30,7 @@ import aiosmtplib
 from sqlalchemy import select
 
 from app.config import get_settings
+from app.services import formatting
 from app.services.mail_templates import render
 
 logger = logging.getLogger(__name__)
@@ -502,7 +503,7 @@ async def send_payment_reminder(
     Copy differs for auto-pay (heads-up that we'll charge) vs manual
     (action needed to renew). Dry-run when SMTP is unconfigured.
     """
-    amount = f"₹{amount_cents / 100:.0f}"
+    amount = formatting.money_major(amount_cents / 100, "INR", 0)     # a document: always Indian
     if auto_pay:
         intro = (
             f"Your {plan_name} plan renews on {due_date}. We'll automatically "
@@ -548,7 +549,7 @@ async def send_invoice_email(
     Caller builds the invoice bytes (payments_service.build_invoice_pdf/csv).
     Dry-run when SMTP is unconfigured.
     """
-    amount = f"₹{amount_cents / 100:.0f}"
+    amount = formatting.money_major(amount_cents / 100, "INR", 0)     # a document: always Indian
     text, html = render(
         headline="Payment received — thank you.",
         intro=(

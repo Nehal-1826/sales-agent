@@ -4,7 +4,7 @@ import { Field } from '../../components/ui';
 import { getBillingDetails, getInvoices, saveBillingDetails, usageList, viewInvoice } from '../../lib/api';
 import type { BillingDetails, SubscriptionInfo } from '../../lib/api';
 import { useAsync } from '../../lib/hooks';
-import { formatMoney } from '../../marketing/pricing';
+import { fmtDate, fmtMoney, fmtNumber } from '../../lib/format';
 
 const METER_LABELS: Record<string, string> = {
   leads: 'New leads this period',
@@ -32,7 +32,7 @@ export function UsageMeters({ usage }: { usage: SubscriptionInfo['usage'] }) {
             <div className="billing-meter-head">
               <span>{METER_LABELS[m.meter] ?? m.meter}</span>
               <strong>
-                {m.used.toLocaleString()} / {unlimited ? 'Unlimited' : m.limit.toLocaleString()}
+                {fmtNumber(m.used)} / {unlimited ? 'Unlimited' : fmtNumber(m.limit)}
               </strong>
             </div>
             <div
@@ -72,9 +72,9 @@ export function InvoicesTable() {
         {inv.data.map((i) => (
           <tr key={i.id}>
             <td>{i.number}</td>
-            <td>{new Date(i.issued_at).toLocaleDateString()}</td>
+            <td>{fmtDate(i.issued_at)}</td>
             <td>{i.status}</td>
-            <td>{formatMoney(i.total / 100, i.currency)}</td>
+            <td>{fmtMoney(i.total, i.currency)}</td>
             <td>
               <button
                 className="btn btn-sm"

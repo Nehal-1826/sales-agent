@@ -18,6 +18,7 @@ import type { KeyboardEvent } from 'react';
 import { Chip, Field, PageHeader, SectionLabel, Toggle } from '../../components/ui';
 import { EmptyState, LoadError, Skeleton, toast } from '../../components/feedback';
 import { useAsync } from '../../lib/hooks';
+import { fmtDateTime, fmtNumber, fmtTime } from '../../lib/format';
 import {
   createReportSchedule,
   deleteReportSchedule,
@@ -112,7 +113,7 @@ function LivePreview({
         {groupBy !== 'none' && <Chip tone="warn">Grouped by {groupBy}</Chip>}
         <Chip tone="neutral">{presetLabel}</Chip>
         <span className="field-hint">
-          Est. output: <strong>{result.estimated_rows.toLocaleString()}</strong> rows · {result.columns.length} cols
+          Est. output: <strong>{fmtNumber(result.estimated_rows)}</strong> rows · {result.columns.length} cols
         </span>
       </div>
 
@@ -160,7 +161,7 @@ function LivePreview({
               <span className="pf-hbar-track">
                 <span style={{ width: `${b.pct}%` }} />
               </span>
-              <span>{b.value.toLocaleString()}</span>
+              <span>{fmtNumber(b.value)}</span>
             </li>
           ))}
         </ul>
@@ -168,7 +169,7 @@ function LivePreview({
         <EmptyState title="No numeric column to chart — switch to Table" />
       )}
       <p className="field-hint" style={{ marginTop: 8 }}>
-        Live preview of the first rows — the actual export includes all {result.estimated_rows.toLocaleString()} rows.
+        Live preview of the first rows — the actual export includes all {fmtNumber(result.estimated_rows)} rows.
       </p>
     </>
   );
@@ -200,7 +201,7 @@ function ScheduleRow({
       </td>
       <td>{CADENCE_LABELS[schedule.cadence] ?? schedule.cadence}</td>
       <td title={schedule.recipients.join(', ')}>{schedule.recipients.length} recipient{schedule.recipients.length === 1 ? '' : 's'}</td>
-      <td>{schedule.next_run_at ? new Date(schedule.next_run_at).toLocaleString() : '—'}</td>
+      <td>{schedule.next_run_at ? fmtDateTime(schedule.next_run_at) : '—'}</td>
       <td>
         <Chip tone={schedule.enabled ? 'success' : 'neutral'}>{schedule.enabled ? 'Active' : 'Paused'}</Chip>
       </td>
@@ -692,7 +693,7 @@ export function AdminReportsPage({ demo = false }: { demo?: boolean }) {
                     <td>
                       <Chip tone="accent">{FORMAT_LABELS[row.format] ?? row.format}</Chip>
                     </td>
-                    <td>{new Date(row.createdAt).toLocaleTimeString()}</td>
+                    <td>{fmtTime(row.createdAt)}</td>
                     <td>
                       <button className="btn btn-sm" onClick={() => setSessionExports((prev) => prev.filter((e) => e.id !== row.id))}>
                         Remove

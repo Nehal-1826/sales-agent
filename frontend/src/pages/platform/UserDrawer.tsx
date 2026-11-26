@@ -13,11 +13,12 @@ import { Chip, Field } from '../../components/ui';
 import { Drawer } from '../../components/overlay';
 import { EmptyState, Skeleton, toast } from '../../components/feedback';
 import { useAsync } from '../../lib/hooks';
+import { fmtDate, fmtMoneyMajor, fmtNumber, timeAgo } from '../../lib/format';
 import { getSignedInAccountId, listPlatformUsers, restorePlatformUser } from '../../lib/platform';
 import type { AccountRow, RoleChanged } from '../../lib/platform';
 import { listAdminPayments, listAdminPlans, suspendAdminUser, updateAdminUserPlan } from '../../lib/platformAdmin';
 import type { AdminPayment, AdminUserRow } from '../../lib/platformAdmin';
-import { ROLE_LABELS, StatusChip, displayName, fmtRelative, isPlatformAdmin, when } from './accountUi';
+import { ROLE_LABELS, StatusChip, displayName, isPlatformAdmin } from './accountUi';
 import { ChangeRoleDialog } from './ChangeRoleDialog';
 import { DeleteAccountDialog } from './DeleteAccountDialog';
 import { EnterWorkspaceDialog } from './EnterWorkspaceDialog';
@@ -76,9 +77,9 @@ function UserPayments({ row }: { row: AdminUserRow }) {
       {payments.map((p) => (
         <div key={p.id} className="pf-grid" style={{ gridTemplateColumns: '1fr auto', marginBottom: 6 }}>
           <div>
-            <strong>${p.amount_usd.toFixed(2)}</strong> <small>{p.plan || 'Payment'}</small>
+            <strong>{fmtMoneyMajor(p.amount_usd, 'USD')}</strong> <small>{p.plan || 'Payment'}</small>
             <div>
-              <small>{when(p.created_at)}</small>
+              <small>{fmtDate(p.created_at) || '—'}</small>
             </div>
           </div>
           <Chip tone={payStatusTone(p.status)}>{p.status}</Chip>
@@ -135,7 +136,7 @@ function WarmupBlock({
       </p>
       <dl className="pf-dl">
         <dt>Mailboxes</dt>
-        <dd>{warmup.mailbox_count}</dd>
+        <dd>{fmtNumber(warmup.mailbox_count)}</dd>
         <dt>Warmup</dt>
         {/* a deletion pauses the copy's mailboxes; the copy itself still reads "Running" */}
         <dd>{deleted ? 'Paused — the account is deleted' : WARMUP_STATUS[warmup.status]}</dd>
@@ -352,16 +353,16 @@ export function UserDrawer({
           <dt>Two-factor</dt>
           <dd>{account.two_factor ? 'On' : 'Off'}</dd>
           <dt>Last sign-in</dt>
-          <dd>{fmtRelative(account.last_login)}</dd>
+          <dd>{timeAgo(account.last_login) || 'Never'}</dd>
           <dt>Signed up</dt>
-          <dd>{when(account.joined)}</dd>
+          <dd>{fmtDate(account.joined) || '—'}</dd>
         </dl>
 
         {deleted && (
           <p style={{ marginBottom: 14 }}>
-            {`Deleted on ${when(account.deleted_at)}${account.deleted_by ? ` by ${account.deleted_by}` : ''}.`}
+            {`Deleted on ${fmtDate(account.deleted_at) || '—'}${account.deleted_by ? ` by ${account.deleted_by}` : ''}.`}
             <br />
-            {`Removed for good on ${when(account.purges_at)}.`}
+            {`Removed for good on ${fmtDate(account.purges_at) || '—'}.`}
           </p>
         )}
 

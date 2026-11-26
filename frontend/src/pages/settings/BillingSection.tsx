@@ -5,7 +5,8 @@ import { cancelSubscription, changePlan, getSubscription, startCheckout } from '
 import type { BillingCurrency, BillingInterval, SubscriptionInfo } from '../../lib/api';
 import { runCheckout } from '../../lib/checkout';
 import { useAsync } from '../../lib/hooks';
-import { TIERS, detectCurrency, formatMoney } from '../../marketing/pricing';
+import { fmtDate, fmtMoney, fmtMoneyMajor } from '../../lib/format';
+import { TIERS, detectCurrency } from '../../marketing/pricing';
 import { BillingDetailsForm, InvoicesTable, UsageMeters } from './BillingParts';
 
 const STATUS_TEXT: Record<string, string> = {
@@ -16,10 +17,6 @@ const STATUS_TEXT: Record<string, string> = {
   expired: 'Expired',
 };
 
-function fmtDate(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
-}
-
 function CancelModal({ sub, onClose, onDone }: { sub: SubscriptionInfo; onClose: () => void; onDone: () => void }) {
   const [busy, setBusy] = useState(false);
   const refundable = !!sub.can_refund_until && new Date(sub.can_refund_until).getTime() > Date.now();
@@ -29,8 +26,8 @@ function CancelModal({ sub, onClose, onDone }: { sub: SubscriptionInfo; onClose:
     setBusy(false);
     if (!r.ok) return toast.error(r.error);
     const d = r.data;
-    if (d.refunded && d.currency) toast.success(`Canceled. Refund of ${formatMoney(d.refunded / 100, d.currency)} is on its way.`);
-    else if (d.cancel_at_period_end) toast.success(`Canceled. You keep access until ${fmtDate(sub.current_period_end)}.`);
+    if (d.refunded && d.currency) toast.success(`Canceled. Refund of ${fmtMoney(d.refunded, d.currency)} is on its way.`);
+    else if (d.cancel_at_period_end) toast.success(`Canceled. You keep access until ${fmtDate(sub.current_period_end, 'medium') || '—'}.`);
     else toast.success('Subscription canceled.');
     onDone();
     onClose();
@@ -52,13 +49,13 @@ function CancelModal({ sub, onClose, onDone }: { sub: SubscriptionInfo; onClose:
     >
       {refundable ? (
         <p>
-          You are within the 10-day window (until {fmtDate(sub.can_refund_until)}). Canceling now ends access
+          You are within the 10-day window (until {fmtDate(sub.can_refund_until, 'medium')}). Canceling now ends access
           immediately and refunds the unused part of the period you paid for, minus a small non-refundable fee.
         </p>
       ) : (
         <p>
           The 10-day refund window has passed, so there is no refund. You keep access until{' '}
-          {fmtDate(sub.current_period_end)}, then the plan stops renewing.
+          {fmtDate(sub.current_period_end, 'medium') || '—'}, then the plan stops renewing.
         </p>
       )}
     </Modal>
@@ -113,7 +110,7 @@ export function BillingSection() {
           </div>
           {paid && (
             <small>
-              {s.cancel_at_period_end ? 'Ends' : 'Renews'} on {fmtDate(s.current_period_end)}
+              {s.cancel_at_period_end ? 'Ends' : 'Renews'} on {fmtDate(s.current_period_end, 'medium') || '—'}
             </small>
           )}
         </div>
@@ -144,7 +141,8 @@ export function BillingSection() {
                 return (
                   <div key={t.id} className="billing-plan-opt">
                     <strong>{t.name}</strong>
-                    <span>{formatMoney(amt, currency)} / {interval === 'month' ? 'month' : 'year'}</span>
+                    {/* plan prices are whole rupees or dollars: nothing after the decimal to show */}
+                    <span>{fmtMoneyMajor(amt, currency, 0)} / {interval === 'month' ? 'month' : 'year'}</span>
                     <button className="btn btn-sm btn-primary" disabled={!!busy || (paid && s.plan?.code === t.id && s.interval === interval)} onClick={() => void pick(t.id)}>
                       {busy === t.id ? 'Opening…' : paid ? 'Switch' : 'Pay'}
                     </button>

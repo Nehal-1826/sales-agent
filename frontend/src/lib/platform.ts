@@ -3,6 +3,8 @@
  * Snake_case wire format; money = integer minor units + currency.
  * Live mode never fakes success; demo mode returns read-only sample data.
  */
+import { setPreferences } from './format';
+import type { Preferences } from './format';
 import { attempt, inDemo, post, put, request, requestText } from './transport';
 import type { Result } from './transport';
 
@@ -14,6 +16,8 @@ export interface Me {
   totp_enabled?: boolean;
   email_verified?: boolean;
   username?: string;
+  /** How this person reads dates, numbers and times on screen (lib/format.ts). */
+  preferences?: Preferences;
 }
 
 export interface Page<T> {
@@ -128,12 +132,6 @@ export interface TenantQuery {
 const DEMO_ONLY = 'Demo data is read-only. Connect to the live server to do that.';
 const demoFail = <T,>(): Result<T> => ({ ok: false, error: DEMO_ONLY });
 
-/** Intl money from integer minor units. */
-export function money(minor: number, currency: Cur): string {
-  const locale = currency === 'INR' ? 'en-IN' : 'en-US';
-  return new Intl.NumberFormat(locale, { style: 'currency', currency, maximumFractionDigits: 2 }).format(minor / 100);
-}
-
 export const pct = (v: number): string => `${(v <= 1 ? v * 100 : v).toFixed(1)}%`;
 
 export const planCode = (p: TenantRow['plan']): string => (typeof p === 'string' ? p : p?.code ?? '—');
@@ -158,7 +156,9 @@ export async function getMe(): Promise<Me> {
   if (await inDemo()) {
     return { platform_admin: window.location.pathname.startsWith('/platform'), otp_required: false, totp_enabled: false };
   }
-  return request<Me>('/auth/me/');
+  const me = await request<Me>('/auth/me/');
+  setPreferences(me.preferences);      // dates and numbers follow this person's choice (lib/format.ts)
+  return me;
 }
 
 export interface TotpSetup {

@@ -319,6 +319,43 @@ def delete_walk_state() -> tuple[bool, str]:
     )
 
 
+# ── Format walk (8d): a throwaway MEMBER in a throwaway company. Members never
+# see Settings, so their way into the Format choice is the sidebar's button.
+FORMAT_USER = "e2e-format-me"
+FORMAT_EMAIL = "e2e-format-me@example.invalid"
+FORMAT_SLUG = "e2e-format-ws"
+FORMAT_PW = "e2e-format-pw-2026"
+FORMAT_DIALOG = '.modal-card[role="dialog"][aria-label="Format"]'
+
+
+def format_walk_account_code(action: str) -> str:
+    """Django shell code that makes / removes the throwaway Member and its company."""
+    if action == "create":
+        return (
+            "from django.contrib.auth import get_user_model\n"
+            "from django.utils import timezone\n"
+            "from core.models import Workspace\n"
+            "from core.workspaces import provision_workspace\n"
+            "from billing.services import ensure_manual_subscription\n"
+            "U = get_user_model()\n"
+            f"Workspace.all_tenants.filter(slug='{FORMAT_SLUG}').delete()\n"
+            f"ws = Workspace.all_tenants.create(slug='{FORMAT_SLUG}', name='E2E Format Co')\n"
+            "provision_workspace(ws)\n"
+            "ensure_manual_subscription(ws)\n"
+            "owner = U.objects.create_user(username='e2e-format-owner', password='x-not-used', workspace=ws, role='owner')\n"
+            f"m = U.objects.create_user(username='{FORMAT_USER}', password='{FORMAT_PW}',\n"                 # the second account stays a Member
+            f"                           email='{FORMAT_EMAIL}', workspace=ws, role='member', first_name='Formatme')\n"
+            "U.objects.filter(pk=m.pk).update(email_verified_at=timezone.now())\n"
+            "print('E2E_SHELL_OK created role', m.role)\n"
+        )
+    return (
+        "from core.models import Workspace\n"
+        f"Workspace.all_tenants.filter(slug='{FORMAT_SLUG}').delete()      # takes both accounts with it\n"
+        f"left = Workspace.all_tenants.filter(slug='{FORMAT_SLUG}').count()\n"
+        "print('E2E_SHELL_OK left', left)\n"
+    )
+
+
 def forget_warmup_copy(email: str) -> tuple[bool, str]:
     """The warmup side keeps a passwordless copy of anyone who signs in
     through the bridge (backend/app/api/deps.py, keyed on the email). Remove
@@ -553,6 +590,22 @@ with sync_playwright() as p:
     settings_api("PUT", {"targeting": original_targeting})
     check("settings targeting: the operator's own list is put back",
           settings_api("GET")["data"]["targeting"] == original_targeting)
+
+    # ── 2c. Format (26 Nov): Settings → Account carries the Format card — the
+    # owner's way into how dates, numbers and times read. (Looking only: the
+    # operator's own choice is not changed here.)
+    page.goto(f"{BASE}/settings/account")
+    page.wait_for_load_state("networkidle")
+    try:
+        page.locator(".content select[aria-label='Format']").first.wait_for(state="visible", timeout=15_000)
+        format_card = (page.locator(".content select[aria-label='Format']").count() == 1
+                      and page.locator(".content select[aria-label='Clock']").count() == 1
+                      and page.get_by_role("button", name="Save format").count() == 1)
+    except Exception:  # noqa: BLE001  — read below as a FAIL
+        format_card = False
+    check("format: Settings → Account offers the Format card (two choices and Save format)", format_card)
+    page.goto(f"{BASE}/settings/targeting")
+    page.wait_for_load_state("networkidle")
 
     # ── 3d. Lead finding is OFF until the setup has proper data ───────────
     # The owner's rule: a workspace nobody set up must never fetch leads
@@ -850,10 +903,17 @@ with sync_playwright() as p:
         page.locator(".drawer button[aria-label='Close']").first.click()
         page.wait_for_timeout(500)
 
-        # Settings → Mailboxes & speed: warmup enroll toggle + chip
+        # Settings → Mailboxes & speed: warmup enroll toggle + chip. The list
+        # is asked of the server: wait for the thing that is checked, not a
+        # fixed pause (under a loaded machine 1.8 s was not enough).
         page.goto(BASE + "/settings/mailboxes")
-        page.wait_for_timeout(1800)
-        n_tog = page.locator("button.toggle[role=switch][aria-label='Enroll this mailbox in warmup']").count()
+        enroll_toggle = page.locator("button.toggle[role=switch][aria-label='Enroll this mailbox in warmup']")
+        try:
+            enroll_toggle.first.wait_for(state="visible", timeout=20_000)
+        except Exception:  # noqa: BLE001  — the count below tells
+            pass
+        page.wait_for_timeout(300)
+        n_tog = enroll_toggle.count()
         check("settings mailboxes: warmup enroll toggle present", n_tog >= 1, f"{n_tog} toggles")
         n_chip = page.locator(".chip", has_text="Warmup").count()
         check("settings mailboxes: warmup status chip present", n_chip >= 1, f"{n_chip} chips")
@@ -1217,6 +1277,44 @@ with sync_playwright() as p:
                         and last_in not in ("", "Never", "—")), \
                     f"url={page.url} rows={rows} last-sign-in='{last_in}'"
             look("console users: the page lists the real accounts and finds the operator by email", users_page)
+
+            # ── Format (26 Nov): every date on screen follows the signed-in
+            # person's choice. India is the default — the day comes first. The
+            # rail's Format button, then the United States: the "Signed up" date
+            # on this very page turns month-first at once, and back again.
+            def pick_format(label):
+                page.locator("aside.sidebar button.side-format").click()
+                dialog = page.locator(FORMAT_DIALOG)
+                dialog.wait_for(state="visible", timeout=8_000)
+                dialog.get_by_label("Format").select_option(label=label)
+                page.wait_for_timeout(200)
+                sample = one_line(dialog.locator("small strong").inner_text())      # what it will read
+                dialog.get_by_role("button", name="Save format").click()
+                try:
+                    page.locator(".toast-text", has_text="Format saved.").first.wait_for(state="visible", timeout=15_000)
+                except Exception:  # noqa: BLE001  — the date check below tells
+                    pass
+                page.wait_for_timeout(300)
+                dialog.locator(".modal-actions button", has_text="Close").click()      # the footer's, not the ×
+                dialog.wait_for(state="hidden", timeout=8_000)
+                return sample
+
+            def the_date_follows_the_person():
+                cell = page.locator("table.leads-table tbody tr").first.locator("td").nth(9)    # "Signed up"
+                india = one_line(cell.inner_text())
+                m = re.fullmatch(r"(\d{2})/(\d{2})/(\d{4})", india)                   # India: day first
+                if not m or m.group(1) == m.group(2):
+                    return False, f"expected a day-first date with two different numbers, got '{india}'"
+                day, month, year = m.groups()
+                us_sample = pick_format("United States")
+                us = one_line(cell.inner_text())
+                india_sample = pick_format("India")
+                return (us == f"{month}/{day}/{year}"                                  # the same date, month first
+                        and "11/26/2026, 2:05 PM · 100,000" in us_sample
+                        and "26/11/2026, 2:05 PM · 1,00,000" in india_sample
+                        and one_line(cell.inner_text()) == india), \
+                    f"india='{india}' us='{us}' samples='{us_sample}' / '{india_sample}'"
+            look("console format: a date follows the person's choice — India (day first) by default, the United States on request, at once", the_date_follows_the_person)
 
             def enter_as_operator():
                 entered["token"] = page.evaluate("() => localStorage.getItem('agentic-ai:token')")
@@ -1736,6 +1834,14 @@ with sync_playwright() as p:
                 page.screenshot(path=str(SHOTS / "09d-console-2fa-optional.png"))
             finally:
                 page.unroute("**/api/admin-slug/check/", slug_ok)
+
+            def settings_offers_format():
+                picks = page.locator(".content select[aria-label='Format']").count()
+                clocks = page.locator(".content select[aria-label='Clock']").count()
+                saves = page.locator(".content").get_by_role("button", name="Save format").count()
+                return picks == 1 and clocks == 1 and saves == 1, f"format={picks} clock={clocks} save={saves}"
+            look("console: Settings offers the Format card", settings_offers_format)
+            page.screenshot(path=str(SHOTS / "09j-console-settings-format.png"))
     except Exception as exc:  # noqa: BLE001  — reported as a FAIL, never aborts the gate
         check("console: the walk finished", False, f"{type(exc).__name__}: {exc}"[:200])
     finally:
@@ -1759,6 +1865,90 @@ with sync_playwright() as p:
         copied, detail = forget_warmup_copy(email)
         check(f"console: the walk's copy on the warmup side is removed too ({email.split('@')[0]})",
               copied, detail)
+
+    # ── 8d. Format in the workspace app, as a MEMBER (26 Nov). Members never
+    # see Settings, so their way in is the sidebar's Format button. India and
+    # the 12-hour clock are what a new account starts on; a change is saved on
+    # the account, shows at once, and survives a reload. A throwaway company
+    # and member are made for it and removed again.
+    made, detail = django_shell(format_walk_account_code("create"))
+    check("format: a throwaway Member is made in the e2e DB", made and "created role member" in detail, detail)
+    try:
+        if made:
+            member_ctx = browser.new_context(viewport={"width": 1366, "height": 800})
+            m = member_ctx.new_page()
+
+            def m_one_line(loc) -> str:
+                return " ".join(safe_text(loc).split())
+
+            def member_look(name, probe):
+                try:
+                    ok, detail = probe()
+                except Exception as exc:  # noqa: BLE001  — a FAIL with the reason, never a stop
+                    ok, detail = False, f"{type(exc).__name__}: {exc}"[:200]
+                check(name, ok, detail if isinstance(detail, str) else str(detail)[:200])
+
+            def member_pick(label):
+                """Choose a clock in the sidebar's Format dialog and save; (the sample shown, the dialog's box)."""
+                m.locator("aside.sidebar button.side-format").click()
+                dialog = m.locator(FORMAT_DIALOG)
+                dialog.wait_for(state="visible", timeout=8_000)
+                box = dialog.bounding_box() or {}
+                dialog.get_by_label("Clock").select_option(label=label)
+                m.wait_for_timeout(200)
+                sample = m_one_line(dialog.locator("small strong"))
+                dialog.get_by_role("button", name="Save format").click()
+                m.locator(".toast-text", has_text="Format saved.").first.wait_for(state="visible", timeout=15_000)
+                m.wait_for_timeout(300)
+                dialog.locator(".modal-actions button", has_text="Close").click()      # the footer's, not the ×
+                dialog.wait_for(state="hidden", timeout=8_000)
+                return sample, box
+
+            m.goto(BASE)
+            m.wait_for_load_state("networkidle")
+            m.locator("a, button", has_text="Sign in").first.click()
+            m.locator("input[autocomplete=username]").fill(FORMAT_USER)
+            m.locator("input[type=password]").fill(FORMAT_PW)
+            m.locator("input[type=password]").press("Enter")
+            m.locator("aside.sidebar").wait_for(state="visible", timeout=30_000)
+            m.wait_for_load_state("networkidle")
+            m.wait_for_timeout(800)
+
+            def a_member_reaches_format():
+                said = m_one_line(m.locator("aside.sidebar button.side-format"))
+                settings = m.locator("aside.sidebar button.nav-item, aside.sidebar a.nav-item", has_text="Settings").count()
+                return said == "India · 12-hour" and settings == 0, f"button='{said}' settings entries={settings}"
+            member_look("format: a Member starts on India and the 12-hour clock, and reaches Format from the sidebar",
+                        a_member_reaches_format)
+
+            def a_member_changes_the_clock():
+                sample, box = member_pick("24-hour (14:05)")
+                token = m.evaluate("() => localStorage.getItem('agentic-ai:token')")
+                me = m.request.get(f"{BASE}/api/auth/me/", headers={"Authorization": f"Token {token}"}).json()
+                said = m_one_line(m.locator("aside.sidebar button.side-format"))
+                return (sample == "26/11/2026, 14:05 · 1,00,000 · ₹2,999.00"
+                        and box.get("width", 0) >= 400
+                        and me.get("preferences") == {"format": "IN", "clock": "24h"}
+                        and said == "India · 24-hour"), \
+                    f"sample='{sample}' dialog width={box.get('width')} server={me.get('preferences')} button='{said}'"
+            member_look("format: the change saves on the account, shows at once, and the dialog covers the window",
+                        a_member_changes_the_clock)
+
+            def it_survives_a_reload():
+                m.reload()
+                m.locator("aside.sidebar").wait_for(state="visible", timeout=30_000)
+                m.wait_for_load_state("networkidle")
+                m.wait_for_timeout(800)
+                said = m_one_line(m.locator("aside.sidebar button.side-format"))
+                return said == "India · 24-hour", f"button='{said}' after reload"
+            member_look("format: the choice survives a reload", it_survives_a_reload)
+            m.screenshot(path=str(SHOTS / "09k-format-member.png"))
+            member_ctx.close()
+    finally:
+        gone, detail = django_shell(format_walk_account_code("delete"))
+    check("format: the throwaway Member and its company are removed again", gone and "left 0" in detail, detail)
+    copied, detail = forget_warmup_copy(FORMAT_EMAIL)
+    check("format: the Member's copy on the warmup side is removed too", copied, detail)
 
     browser.close()
 
@@ -1790,6 +1980,29 @@ if DIST.is_dir():
         check(f"dist {rel}: PNG favicon link", bool(png_favicon))
 else:
     skip("dist: prerendered routes checked", "no frontend/dist — run `npm run build` first")
+
+# ── 10. Format guard (no browser) ──────────────────────────────────
+# Nothing formats a date, a time, a number or an amount on its own: every
+# screen goes through frontend/src/lib/format.ts, so the one saved choice
+# (India and the 12-hour clock by default) changes all of them at once. The
+# public pricing page is left out on purpose: it already leads with ₹ and
+# does not follow a person's choice.
+SRC = ROOT / "frontend" / "src"
+FORMAT_CALL = re.compile(
+    r"toLocaleDateString\(|toLocaleTimeString\(|\.toLocaleString\(|new Intl\.NumberFormat\(|new Intl\.DateTimeFormat\(")
+if SRC.is_dir():
+    offenders = []
+    for file in sorted(SRC.rglob("*.ts*")):
+        rel = file.relative_to(SRC).as_posix()
+        if rel == "lib/format.ts" or rel.startswith("marketing/") or rel.endswith(".d.ts"):
+            continue
+        for n, line in enumerate(file.read_text(encoding="utf-8").splitlines(), 1):
+            if FORMAT_CALL.search(line) and "resolvedOptions" not in line:
+                offenders.append(f"{rel}:{n}")
+    check("format: every date, number and amount on screen goes through the one formatter (lib/format.ts)",
+          not offenders, f"{len(offenders)} place(s) format on their own: " + ", ".join(offenders[:10]))
+else:
+    skip("format: one formatter for every screen", "no frontend/src")
 
 passed = sum(1 for _, ok in results if ok is True)
 failed = sum(1 for _, ok in results if ok is False)

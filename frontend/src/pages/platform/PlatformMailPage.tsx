@@ -19,7 +19,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal } from '../../components/overlay';
 import { EmptyState, LoadError, Skeleton, toast } from '../../components/feedback';
 import { useAsync } from '../../lib/hooks';
-import { fullDate, initials, plainToHtml, shortDate } from '../mail/helpers';
+import { initials, plainToHtml, shortDate } from '../mail/helpers';
+import { fmtDateTime } from '../../lib/format';
 import {
   deletePlatformMail,
   describePlatformMailError,
@@ -353,7 +354,7 @@ function ReadPane({
               <h2>{d.subject || '(no subject)'}</h2>
               <p>
                 <strong>{senderName(d.from)}</strong> &lt;{d.from}&gt; → {d.to}
-                {d.cc ? ` · cc ${d.cc}` : ''} · {fullDate(d.date)}
+                {d.cc ? ` · cc ${d.cc}` : ''} · {fmtDateTime(d.date, 'medium')}
                 {d.headers?.message_id ? <> · <small>{d.headers.message_id}</small></> : null}
               </p>
             </>

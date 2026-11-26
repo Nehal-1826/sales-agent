@@ -19,6 +19,7 @@ import { Chip, Field, PageHeader } from '../../components/ui';
 import { Drawer, Modal } from '../../components/overlay';
 import { EmptyState, LoadError, Skeleton, toast } from '../../components/feedback';
 import { useAsync } from '../../lib/hooks';
+import { fmtDate, fmtNumber, fmtPercent, timeAgo } from '../../lib/format';
 import {
   addPeerPoolMembers,
   bulkImportPeerInboxes,
@@ -68,17 +69,6 @@ function providerLabel(provider: string): string {
 function poolNames(p: PeerInboxRow): string[] {
   if (p.pool_memberships?.length) return p.pool_memberships.map((m) => m.pool_name);
   return p.pool_ids ?? [];
-}
-
-function fmtLastUsed(iso: string | null | undefined): string {
-  if (!iso) return 'never';
-  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins} min ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs} hr ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days} day${days === 1 ? '' : 's'} ago`;
 }
 
 const statusTone = (s: PeerStatus): 'success' | 'warn' | 'neutral' => (s === 'active' ? 'success' : s === 'degraded' ? 'warn' : 'neutral');
@@ -258,8 +248,8 @@ function BulkImportModal({ demo, onClose, onDone }: { demo: boolean; onClose: ()
       {result && (
         <div>
           <div className="pf-actions" style={{ marginTop: 4 }}>
-            <Chip tone="success">Created {result.succeeded}</Chip>
-            <Chip tone={result.failed.length ? 'warn' : 'neutral'}>Failed {result.failed.length}</Chip>
+            <Chip tone="success">Created {fmtNumber(result.succeeded)}</Chip>
+            <Chip tone={result.failed.length ? 'warn' : 'neutral'}>Failed {fmtNumber(result.failed.length)}</Chip>
           </div>
           {result.failed.length > 0 && (
             <ul style={{ maxHeight: 180, overflowY: 'auto', margin: '10px 0 0', paddingLeft: 18 }}>
@@ -347,11 +337,11 @@ function PeerDrawer({
 
       <dl className="pf-dl">
         <dt>Trust score</dt><dd>{rep.toFixed(2)}{peer.reputation_score > 1 ? ' (normalized)' : ''}</dd>
-        <dt>Daily limit</dt><dd>{peer.sends_today} / {peer.daily_capacity} ({pct}%)</dd>
-        <dt>Sends today</dt><dd>{peer.sends_today}</dd>
+        <dt>Daily limit</dt><dd>{fmtNumber(peer.sends_today)} / {fmtNumber(peer.daily_capacity)} ({fmtPercent(pct)})</dd>
+        <dt>Sends today</dt><dd>{fmtNumber(peer.sends_today)}</dd>
         <dt>Days in network</dt><dd>{days > 0 ? `${days}d` : '—'}</dd>
-        <dt>Last used</dt><dd>{fmtLastUsed(peer.last_used_at)}</dd>
-        <dt>Created</dt><dd>{new Date(peer.created_at).toLocaleDateString()}</dd>
+        <dt>Last used</dt><dd>{timeAgo(peer.last_used_at) || 'never'}</dd>
+        <dt>Created</dt><dd>{fmtDate(peer.created_at)}</dd>
       </dl>
 
       <h3 className="pf-h2">Account groups · a helper can be in several</h3>
@@ -393,7 +383,7 @@ function PeerDrawer({
       <h3 className="pf-h2">Actions</h3>
       <div className="pf-actions">
         <button className="btn" disabled={busy || demo} onClick={() => void run(() => resetPeerCapacity(peer.id), 'Daily limit reset.')}>
-          Reset daily limit (used {peer.sends_today})
+          Reset daily limit (used {fmtNumber(peer.sends_today)})
         </button>
         <button className="btn" disabled={busy} onClick={() => setEditing(true)}>Edit daily limit…</button>
         <button className="btn btn-primary" disabled={testing} onClick={() => void doTest()}>
@@ -546,7 +536,7 @@ export function PeerInboxesPage({ demo = false }: { demo?: boolean }) {
     const r = await resetAllPeerCapacity();
     setResetBusy(false);
     if (!r.ok) return toast.error(r.error);
-    toast.success(`Daily limit reset for ${r.data.peers_reset} helper${r.data.peers_reset === 1 ? '' : 's'}.`);
+    toast.success(`Daily limit reset for ${fmtNumber(r.data.peers_reset)} helper${r.data.peers_reset === 1 ? '' : 's'}.`);
     setResettingAll(false);
     void list.reload();
     void stats.reload();
@@ -570,7 +560,7 @@ export function PeerInboxesPage({ demo = false }: { demo?: boolean }) {
     <>
       <PageHeader
         title="Peer inboxes"
-        subtitle={list.loading ? 'Fetching helpers…' : `${peers.length} helper${peers.length === 1 ? '' : 's'} in the warmup network · ${s?.active ?? 0} active`}
+        subtitle={list.loading ? 'Fetching helpers…' : `${peers.length} helper${peers.length === 1 ? '' : 's'} in the warmup network · ${fmtNumber(s?.active ?? 0)} active`}
         actions={
           <>
             <button className="btn" onClick={exportCsv} disabled={peers.length === 0}>
@@ -584,11 +574,11 @@ export function PeerInboxesPage({ demo = false }: { demo?: boolean }) {
       />
 
       <div className="pf-kpis">
-        <div className="pf-kpi"><strong>{stats.loading ? '…' : (s?.total ?? peers.length).toLocaleString()}</strong><small>Total helpers</small></div>
-        <div className="pf-kpi"><strong>{stats.loading ? '…' : (s?.active ?? 0).toLocaleString()}</strong><small>Active</small></div>
+        <div className="pf-kpi"><strong>{stats.loading ? '…' : fmtNumber(s?.total ?? peers.length)}</strong><small>Total helpers</small></div>
+        <div className="pf-kpi"><strong>{stats.loading ? '…' : fmtNumber(s?.active ?? 0)}</strong><small>Active</small></div>
         <div className="pf-kpi"><strong>{stats.loading ? '…' : (s ? normRep(s.avg_reputation).toFixed(2) : '—')}</strong><small>Avg trust score</small></div>
-        <div className="pf-kpi"><strong>{stats.loading ? '…' : `${capPctVal}%`}</strong><small>Daily limit used ({s?.used_capacity_today ?? 0}/{s?.total_capacity ?? 0})</small></div>
-        <div className="pf-kpi"><strong>{stats.loading ? '…' : (s?.inactive ?? counts.inactive).toLocaleString()}</strong><small>Inactive helpers</small></div>
+        <div className="pf-kpi"><strong>{stats.loading ? '…' : fmtPercent(capPctVal)}</strong><small>Daily limit used ({fmtNumber(s?.used_capacity_today ?? 0)}/{fmtNumber(s?.total_capacity ?? 0)})</small></div>
+        <div className="pf-kpi"><strong>{stats.loading ? '…' : fmtNumber(s?.inactive ?? counts.inactive)}</strong><small>Inactive helpers</small></div>
       </div>
 
       {peers.length > 0 && (
@@ -651,7 +641,6 @@ export function PeerInboxesPage({ demo = false }: { demo?: boolean }) {
             <tbody>
               {visible.map((p) => {
                 const rep = normRep(p.reputation_score);
-                const pct = Math.round(capPct(p) * 100);
                 return (
                   <tr key={p.id} onClick={() => setOpenId(p.id)}>
                     <td onClick={(e) => e.stopPropagation()}>
@@ -675,9 +664,9 @@ export function PeerInboxesPage({ demo = false }: { demo?: boolean }) {
                         {rep.toFixed(2)}
                       </span>
                     </td>
-                    <td>{p.sends_today} / {p.daily_capacity} ({pct}%)</td>
+                    <td>{fmtNumber(p.sends_today)} / {fmtNumber(p.daily_capacity)} ({fmtPercent(capPct(p) * 100)})</td>
                     <td><Chip tone={statusTone(derivedStatus(p))}>{derivedStatus(p)}</Chip></td>
-                    <td>{fmtLastUsed(p.last_used_at)}</td>
+                    <td>{timeAgo(p.last_used_at) || 'never'}</td>
                   </tr>
                 );
               })}

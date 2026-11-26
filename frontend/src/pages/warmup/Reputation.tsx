@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { EmptyState, LoadError, Skeleton, StaleNotice, toast } from '../../components/feedback';
 import { Chip } from '../../components/ui';
 import { useAsync } from '../../lib/hooks';
+import { fmtNumber, fmtPercent } from '../../lib/format';
 import {
   warmupBlacklistCheck,
   warmupBounceSpam,
@@ -78,7 +79,7 @@ export function Reputation() {
       setLiveHits((prev) => ({ ...prev, [result.domain]: result.hits }));
       toast.success(
         result.hits.length === 0
-          ? `${domain}: clean on ${result.checked_against.length} blocklists`
+          ? `${domain}: clean on ${fmtNumber(result.checked_against.length)} blocklists`
           : `${domain}: listed on ${result.hits.join(', ')}`,
       );
     } catch (e) {
@@ -129,15 +130,15 @@ export function Reputation() {
     },
     {
       label: 'Inbox placement',
-      value: lastPlacement ? `${Math.round(lastPlacement.inbox_pct)}%` : '—',
+      value: lastPlacement ? fmtPercent(lastPlacement.inbox_pct) : '—',
       note: lastPlacement
-        ? `promotions ${Math.round(lastPlacement.promotions_pct)}% · spam ${Math.round(lastPlacement.spam_pct)}%`
+        ? `promotions ${fmtPercent(lastPlacement.promotions_pct)} · spam ${fmtPercent(lastPlacement.spam_pct)}`
         : 'no placement signal yet',
     },
     {
       label: 'Warm mailboxes',
-      value: mailboxes.data ? `${warmCount}` : '—',
-      note: mailboxes.data ? `of ${mailboxes.data.total} at 70+ warmth` : '—',
+      value: mailboxes.data ? fmtNumber(warmCount) : '—',
+      note: mailboxes.data ? `of ${fmtNumber(mailboxes.data.total)} at 70+ warmth` : '—',
     },
   ];
 
@@ -161,7 +162,7 @@ export function Reputation() {
               {score !== null && theme ? (
                 <>
                   <span className="warmup-rep-score" style={{ color: warmthColor(score, theme) }}>
-                    {score}
+                    {fmtNumber(score)}
                   </span>
                   <div className="warmup-rep-copy">
                     <span
@@ -174,7 +175,7 @@ export function Reputation() {
                       {statusLabel}
                     </span>
                     <p>
-                      Mean reputation across {overview.data?.domains.length ?? 0} sending
+                      Mean reputation across {fmtNumber(overview.data?.domains.length ?? 0)} sending
                       {overview.data?.domains.length === 1 ? ' domain' : ' domains'}. We target 70+
                       sustained for optimal deliverability.
                     </p>
@@ -267,7 +268,7 @@ export function Reputation() {
               <ul className="warmup-rep-provider-note">
                 {providers.map((r) => (
                   <li key={r.provider}>
-                    {providerLabel(r.provider)} — {r.count} mailbox{r.count === 1 ? '' : 'es'}
+                    {providerLabel(r.provider)} — {fmtNumber(r.count)} mailbox{r.count === 1 ? '' : 'es'}
                   </li>
                 ))}
               </ul>
@@ -314,10 +315,10 @@ export function Reputation() {
                             '—'
                           ) : theme ? (
                             <span style={{ color: warmthColor(d.reputation_score, theme) }}>
-                              {d.reputation_score}
+                              {fmtNumber(d.reputation_score)}
                             </span>
                           ) : (
-                            d.reputation_score
+                            fmtNumber(d.reputation_score)
                           )}
                         </td>
                         <td>
@@ -332,7 +333,7 @@ export function Reputation() {
                             <span className="warmup-rep-clean">Clean</span>
                           ) : (
                             <span className="warmup-rep-hits" title={hits.join(', ')}>
-                              {hits.length} listed
+                              {fmtNumber(hits.length)} listed
                             </span>
                           )}
                         </td>

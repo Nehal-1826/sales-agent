@@ -19,6 +19,7 @@ import { Chip, Field, PageHeader } from '../../components/ui';
 import { Drawer, Modal } from '../../components/overlay';
 import { EmptyState, LoadError, Skeleton, toast } from '../../components/feedback';
 import { useAsync } from '../../lib/hooks';
+import { fmtNumber, fmtPercent } from '../../lib/format';
 import {
   createPeerPool,
   downloadCsv,
@@ -206,17 +207,17 @@ function PoolCard({
       </div>
       {pool.description && <p className="field-hint">{pool.description}</p>}
 
-      <div className="pf-hbar-track" style={{ height: 10, margin: '10px 0 4px' }} role="img" aria-label={`${Math.round(pct * 100)}% of 30-day capacity used`}>
+      <div className="pf-hbar-track" style={{ height: 10, margin: '10px 0 4px' }} role="img" aria-label={`${fmtPercent(pct * 100)} of 30-day capacity used`}>
         <span style={{ width: `${pct * 100}%`, background: tone === 'danger' ? 'var(--danger-ink)' : tone === 'warn' ? 'var(--warn-ink)' : 'var(--accent)' }} />
       </div>
       <small style={{ color: 'var(--text-2)' }}>
-        {used.toLocaleString()} / {capacity.toLocaleString()} sends/30d · {Math.round(pct * 100)}%
-        {pool.daily_send_limit != null && <> · limit {pool.daily_send_limit.toLocaleString()}/day</>}
+        {fmtNumber(used)} / {fmtNumber(capacity)} sends/30d · {fmtPercent(pct * 100)}
+        {pool.daily_send_limit != null && <> · limit {fmtNumber(pool.daily_send_limit)}/day</>}
       </small>
 
       <div className="pf-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 8, margin: '10px 0' }}>
         <div className="pf-kpi" style={{ padding: '8px 10px' }}>
-          <strong>{pool.member_count}</strong>
+          <strong>{fmtNumber(pool.member_count)}</strong>
           <small>Helpers</small>
         </div>
         <div className="pf-kpi" style={{ padding: '8px 10px' }}>
@@ -270,7 +271,7 @@ function MailboxRoutingRow({
         <small style={{ color: 'var(--text-3)' }}>
           {MAILBOX_PROVIDER_LABELS[mailbox.provider] ?? mailbox.provider.toUpperCase()}
           {cannotSend && <> · {mailbox.is_oauth ? 'OAuth · not sending' : 'no credentials'}</>}
-          {oauthOk && ' · OAuth'} · {mailbox.sends_last_30d.toLocaleString()} sends/30d
+          {oauthOk && ' · OAuth'} · {fmtNumber(mailbox.sends_last_30d)} sends/30d
         </small>
       </div>
       <select
@@ -323,10 +324,10 @@ function PoolDrawer({
   const pct = Math.min(1, used / capacity);
 
   return (
-    <Drawer title={pool.name} subtitle={`${pool.member_count} helper${pool.member_count === 1 ? '' : 's'}${pool.description ? ` · ${pool.description}` : ''}`} onClose={onClose}>
+    <Drawer title={pool.name} subtitle={`${fmtNumber(pool.member_count)} helper${pool.member_count === 1 ? '' : 's'}${pool.description ? ` · ${pool.description}` : ''}`} onClose={onClose}>
       <div className="pf-kpi">
-        <strong>{Math.round(pct * 100)}%</strong>
-        <small>{used.toLocaleString()} / {capacity.toLocaleString()} sends/30d used · {fillLabel(pct)}</small>
+        <strong>{fmtPercent(pct * 100)}</strong>
+        <small>{fmtNumber(used)} / {fmtNumber(capacity)} sends/30d used · {fillLabel(pct)}</small>
       </div>
 
       <h3 className="pf-h2">{mine.length} workspace{mine.length === 1 ? '' : 's'} assigned</h3>
@@ -342,7 +343,7 @@ function PoolDrawer({
               </button>
               <span>
                 {c.plan && <Chip tone="accent">{c.plan}</Chip>}{' '}
-                <small style={{ color: 'var(--text-3)' }}>{c.sends_last_30d.toLocaleString()} sends/30d</small>
+                <small style={{ color: 'var(--text-3)' }}>{fmtNumber(c.sends_last_30d)} sends/30d</small>
               </span>
             </div>
             {isOpen && (
@@ -413,7 +414,7 @@ function AssignWorkspaceModal({
               <div style={{ minWidth: 0 }}>
                 <strong style={{ fontSize: 13, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.email}</strong>
                 <small style={{ color: 'var(--text-3)' }}>
-                  {c.pool_id ? `Pinned → ${c.pool_name}` : 'Unpinned · default routing'} · {c.sends_last_30d.toLocaleString()} sends/30d
+                  {c.pool_id ? `Pinned → ${c.pool_name}` : 'Unpinned · default routing'} · {fmtNumber(c.sends_last_30d)} sends/30d
                 </small>
               </div>
               <select
@@ -541,10 +542,10 @@ export function PoolRoutingPage({ demo = false }: { demo?: boolean }) {
       />
 
       <div className="pf-kpis">
-        <div className="pf-kpi"><strong>{stats.loading ? '…' : (s?.total_capacity ?? 0).toLocaleString()}</strong><small>Platform daily limit /day</small></div>
-        <div className="pf-kpi"><strong>{stats.loading ? '…' : (s?.used_capacity_today ?? 0).toLocaleString()}</strong><small>Active today /day</small></div>
+        <div className="pf-kpi"><strong>{stats.loading ? '…' : fmtNumber(s?.total_capacity ?? 0)}</strong><small>Platform daily limit /day</small></div>
+        <div className="pf-kpi"><strong>{stats.loading ? '…' : fmtNumber(s?.used_capacity_today ?? 0)}</strong><small>Active today /day</small></div>
         <div className="pf-kpi"><strong>{pools.loading ? '…' : `${(avgUtil * 100).toFixed(1)}%`}</strong><small>Avg 30-day fill across groups</small></div>
-        <div className="pf-kpi"><strong>{pools.loading ? '…' : overloaded.toLocaleString()}</strong><small>Overloaded account groups (≥85%)</small></div>
+        <div className="pf-kpi"><strong>{pools.loading ? '…' : fmtNumber(overloaded)}</strong><small>Overloaded account groups (≥85%)</small></div>
       </div>
 
       {pools.error && <LoadError message={pools.error} onRetry={() => void pools.reload()} />}

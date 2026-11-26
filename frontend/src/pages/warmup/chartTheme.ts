@@ -7,6 +7,7 @@
  * on the next mount/refresh without a code change.
  */
 import { useState, useLayoutEffect } from 'react';
+import { fmtDayTick, toDate } from '../../lib/format';
 
 export interface ChartTheme {
   /** brand accent (orange) — primary series color */
@@ -76,15 +77,15 @@ export function warmthColor(score: number, t: ChartTheme): string {
   return t.accent;
 }
 
-/** "Nov 12" / "Nov 12, 2025" style axis ticks (year only when it differs from today).
- * Apex can call label formatters with undefined for skipped ticks — guard. */
+/**
+ * A chart-axis day in the person's format ("12 Nov" / "Nov 12"), with the
+ * year only when it is not this one's — for the warmup charts that take it
+ * from here. Apex can call label formatters with undefined for skipped
+ * ticks — guard.
+ */
 export function formatDayTick(date: string | number | undefined | null): string {
-  if (date === undefined || date === null || date === '') return '';
-  const raw = String(date);
-  const d = new Date(raw.length === 10 ? `${raw}T00:00:00` : raw);
-  if (Number.isNaN(d.getTime())) return raw;
-  const sameYear = d.getFullYear() === new Date().getFullYear();
-  return d.toLocaleDateString(undefined, sameYear ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' });
+  const d = toDate(date);
+  return d ? fmtDayTick(d, d.getFullYear() !== new Date().getFullYear()) : String(date ?? '');
 }
 
 /**

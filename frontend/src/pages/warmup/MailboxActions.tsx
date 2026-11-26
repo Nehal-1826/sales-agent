@@ -4,6 +4,7 @@ import { LoadError, toast } from '../../components/feedback';
 import { ConfirmButton, Drawer } from '../../components/overlay';
 import { useAsync } from '../../lib/hooks';
 import { errorMessage } from '../../lib/api';
+import { fmtDate, fmtNumber, fmtTime } from '../../lib/format';
 import {
   deleteWarmupMailbox,
   getWarmupMailbox,
@@ -85,11 +86,15 @@ function weekdayLabel(mask: number): string {
   return days.join(' · ');
 }
 
-const hourLabel = (h: number) => `${String(h).padStart(2, '0')}:00`;
+/** An hour of a stored schedule window, in the person's clock (9:00 AM, or
+ *  09:00 on a 24-hour one). The window's end is exclusive and may be 24 — the
+ *  day's last moment — so that one reads "midnight". The day of the Date is
+ *  never shown: it only carries the hour, in the window's own time zone. */
+const hourLabel = (h: number) => (h === 24 ? 'midnight' : fmtTime(new Date(2000, 0, 1, h)));
 
 function when(iso: string): string {
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString([], { dateStyle: 'medium' });
+  return Number.isNaN(d.getTime()) ? '—' : fmtDate(d, 'medium');
 }
 
 function dnsTone(ok: boolean | null): 'success' | 'warn' | 'neutral' {
@@ -175,7 +180,7 @@ export function MailboxDetailDrawer({
       <div className="lead-facts">
         <div className="lead-fact">
           <span className="field-label">Warmth score</span>
-          <span className="warmup-drawer-warmth" style={{ color }}>{Math.round(m.warmth_score)} / 100</span>
+          <span className="warmup-drawer-warmth" style={{ color }}>{fmtNumber(m.warmth_score, 0)} / 100</span>
         </div>
         <div className="lead-fact">
           <span className="field-label">Connected</span>
@@ -196,11 +201,11 @@ export function MailboxDetailDrawer({
         </div>
         <div className="lead-fact">
           <span className="field-label">Sent today</span>
-          <span>{m.sent_today}</span>
+          <span>{fmtNumber(m.sent_today)}</span>
         </div>
         <div className="lead-fact">
           <span className="field-label">Opens / replies today</span>
-          <span>{m.opens_today} / {m.replies_today}</span>
+          <span>{fmtNumber(m.opens_today)} / {fmtNumber(m.replies_today)}</span>
         </div>
         <div className="lead-fact">
           <span className="field-label">Schedule window</span>

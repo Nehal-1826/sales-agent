@@ -3,13 +3,14 @@ import { PageHeader, Chip } from '../../components/ui';
 import { EmptyState, LoadError, Skeleton, toast } from '../../components/feedback';
 import { Drawer } from '../../components/overlay';
 import { useAsync } from '../../lib/hooks';
+import { fmtNumber, timeAgo } from '../../lib/format';
 import {
   downloadCsv,
   getAdminCrmOverview,
   getAdminCrmWorkspace,
   setCrmSequenceStatus,
 } from '../../lib/platformAdmin';
-import type { AdminCrmRecentActivity, AdminCrmWorkspaceRow } from '../../lib/platformAdmin';
+import type { AdminCrmWorkspaceRow } from '../../lib/platformAdmin';
 
 /**
  * Platform admin · CRM management (H2 port of the WarmPulse "Workspace CRM
@@ -38,17 +39,6 @@ function deriveEngagementTier(ws: AdminCrmWorkspaceRow): EngagementTier {
   if (ws.open_rate >= 55) return 'high';
   if (ws.open_rate < 30) return 'low';
   return 'medium';
-}
-
-function relativeTime(isoStr: string | null): string {
-  if (!isoStr) return 'never';
-  const s = Math.floor((Date.now() - new Date(isoStr).getTime()) / 1000);
-  if (s < 60) return `${Math.max(s, 0)}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
 }
 
 /** Chip tones have no 'error' variant — critical shares warn; the label text distinguishes. */
@@ -100,22 +90,18 @@ function WorkspaceDrawer({
     onChanged();
   }
 
-  function actAt(act: AdminCrmRecentActivity): string {
-    return relativeTime(act.at);
-  }
-
   return (
     <Drawer title={ws.name} subtitle={ws.owner_email} onClose={onClose}>
       <div className="pf-actions" style={{ marginTop: 0, marginBottom: 12 }}>
         <Chip tone={HEALTH_TONE[health]}>{health}</Chip>
         <Chip tone="accent">{ws.plan ?? 'Free'}</Chip>
-        <small style={{ color: 'var(--text-2)' }}>Last activity {relativeTime(ws.last_activity_at)}</small>
+        <small style={{ color: 'var(--text-2)' }}>Last activity {timeAgo(ws.last_activity_at) || 'never'}</small>
       </div>
       <dl className="pf-dl">
-        <dt>Campaigns</dt><dd>{ws.campaigns}</dd>
-        <dt>Leads</dt><dd>{ws.leads}</dd>
-        <dt>Sequences</dt><dd>{ws.sequences_active} active · {ws.sequences_paused} paused</dd>
-        <dt>Enrollments</dt><dd>{ws.active_enrollments}</dd>
+        <dt>Campaigns</dt><dd>{fmtNumber(ws.campaigns)}</dd>
+        <dt>Leads</dt><dd>{fmtNumber(ws.leads)}</dd>
+        <dt>Sequences</dt><dd>{fmtNumber(ws.sequences_active)} active · {fmtNumber(ws.sequences_paused)} paused</dd>
+        <dt>Enrollments</dt><dd>{fmtNumber(ws.active_enrollments)}</dd>
         <dt>Open rate</dt><dd>{ws.open_rate.toFixed(1)}%</dd>
         <dt>Reply rate</dt><dd>{ws.reply_rate.toFixed(1)}%</dd>
       </dl>
@@ -139,7 +125,7 @@ function WorkspaceDrawer({
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <strong style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{seq.name}</strong>
                   <small style={{ color: 'var(--text-2)' }}>
-                    {seq.enrolled} enrolled · {seq.open_rate.toFixed(1)}% open · {seq.reply_rate.toFixed(1)}% reply
+                    {fmtNumber(seq.enrolled)} enrolled · {seq.open_rate.toFixed(1)}% open · {seq.reply_rate.toFixed(1)}% reply
                   </small>
                 </div>
                 <button
@@ -162,7 +148,7 @@ function WorkspaceDrawer({
               <li key={camp.id} className="panel" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <strong style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{camp.name}</strong>
-                  <small style={{ color: 'var(--text-2)' }}>{camp.leads} leads</small>
+                  <small style={{ color: 'var(--text-2)' }}>{fmtNumber(camp.leads)} leads</small>
                 </div>
                 <Chip tone={camp.status.toLowerCase() === 'active' ? 'success' : 'neutral'}>{camp.status}</Chip>
               </li>
@@ -180,7 +166,7 @@ function WorkspaceDrawer({
                   <strong>{act.lead_label}</strong>
                   <small style={{ color: 'var(--text-2)', display: 'block' }}>{act.kind}</small>
                 </div>
-                <small style={{ color: 'var(--text-2)', flexShrink: 0 }}>{actAt(act)}</small>
+                <small style={{ color: 'var(--text-2)', flexShrink: 0 }}>{timeAgo(act.at) || 'never'}</small>
               </li>
             ))}
           </ul>
@@ -205,14 +191,14 @@ function WorkspaceCard({ ws, onOpen }: { ws: AdminCrmWorkspaceRow; onOpen: () =>
       </div>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         <Chip tone="accent">{ws.plan ?? 'Free'}</Chip>
-        {ws.sequences_active > 0 && <Chip tone="success">{ws.sequences_active} active</Chip>}
-        {ws.sequences_paused > 0 && <Chip tone="warn">{ws.sequences_paused} paused</Chip>}
+        {ws.sequences_active > 0 && <Chip tone="success">{fmtNumber(ws.sequences_active)} active</Chip>}
+        {ws.sequences_paused > 0 && <Chip tone="warn">{fmtNumber(ws.sequences_paused)} paused</Chip>}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
         {[
-          { label: 'Campaigns', value: String(ws.campaigns) },
-          { label: 'Leads', value: ws.leads >= 1000 ? `${(ws.leads / 1000).toFixed(1)}k` : String(ws.leads) },
-          { label: 'Enrolled', value: String(ws.active_enrollments) },
+          { label: 'Campaigns', value: fmtNumber(ws.campaigns) },
+          { label: 'Leads', value: fmtNumber(ws.leads) },
+          { label: 'Enrolled', value: fmtNumber(ws.active_enrollments) },
         ].map((k) => (
           <div key={k.label} style={{ background: 'var(--panel-2, transparent)', border: '1px solid var(--border-soft)', borderRadius: 8, padding: '6px 8px' }}>
             <small style={{ color: 'var(--text-2)', display: 'block' }}>{k.label}</small>
@@ -233,7 +219,7 @@ function WorkspaceCard({ ws, onOpen }: { ws: AdminCrmWorkspaceRow; onOpen: () =>
         <RateBar value={ws.reply_rate} tone="var(--accent)" />
       </div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <small style={{ color: 'var(--text-2)' }}>{relativeTime(ws.last_activity_at)}</small>
+        <small style={{ color: 'var(--text-2)' }}>{timeAgo(ws.last_activity_at) || 'never'}</small>
         <button className="btn btn-sm" onClick={onOpen}>Manage…</button>
       </div>
     </div>
@@ -302,15 +288,15 @@ export function CrmManagementPage() {
         <>
           <div className="pf-kpis">
             <div className="panel pf-kpi"><small>Workspaces w/ CRM</small><strong>{workspaces.length}</strong></div>
-            <div className="panel pf-kpi"><small>Total campaigns</small><strong>{overview.data.total_campaigns}</strong></div>
-            <div className="panel pf-kpi"><small>Total leads</small><strong>{overview.data.total_leads}</strong></div>
+            <div className="panel pf-kpi"><small>Total campaigns</small><strong>{fmtNumber(overview.data.total_campaigns)}</strong></div>
+            <div className="panel pf-kpi"><small>Total leads</small><strong>{fmtNumber(overview.data.total_leads)}</strong></div>
             <div className="panel pf-kpi">
               <small>Sequences</small>
-              <strong>{overview.data.sequences_active + overview.data.sequences_paused}</strong>
-              <small>{overview.data.sequences_active} active · {overview.data.sequences_paused} paused</small>
+              <strong>{fmtNumber(overview.data.sequences_active + overview.data.sequences_paused)}</strong>
+              <small>{fmtNumber(overview.data.sequences_active)} active · {fmtNumber(overview.data.sequences_paused)} paused</small>
             </div>
             <div className="panel pf-kpi"><small>Avg open rate</small><strong>{overview.data.open_rate.toFixed(1)}%</strong></div>
-            <div className="panel pf-kpi"><small>Emails sent 30d</small><strong>{overview.data.emails_sent_30d}</strong></div>
+            <div className="panel pf-kpi"><small>Emails sent 30d</small><strong>{fmtNumber(overview.data.emails_sent_30d)}</strong></div>
           </div>
 
           <div className="pf-filters">

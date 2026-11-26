@@ -1,7 +1,7 @@
 /**
  * Small pieces shared by the console's Users page (AdminUsersPage) and its
- * user panel (UserDrawer): the plain-word labels of a real account, its
- * status chip and the date helpers.
+ * user panel (UserDrawer): the plain-word labels of a real account and its
+ * status chip.
  */
 import { Chip } from '../../components/ui';
 import type { AccountRow } from '../../lib/platform';
@@ -48,22 +48,6 @@ export function initials(s: string): string {
       .join('') || '?'
   );
 }
-
-export function fmtRelative(iso: string | null | undefined): string {
-  if (!iso) return 'Never';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  const secs = Math.floor((Date.now() - d.getTime()) / 1000);
-  if (secs < 120) return 'just now';
-  if (secs < 3600) return `${Math.floor(secs / 60)} min ago`;
-  if (secs < 86400) return `${Math.floor(secs / 3600)} hr ago`;
-  const days = Math.floor(secs / 86400);
-  if (days < 30) return `${days} day${days === 1 ? '' : 's'} ago`;
-  const mos = Math.floor(days / 30);
-  return `${mos} mo${mos === 1 ? '' : 's'} ago`;
-}
-
-export const when = (s?: string | null): string => (s ? new Date(s).toLocaleDateString() : '—');
 
 /**
  * The status chip. `Chip` has no danger tone and its stylesheet is shared

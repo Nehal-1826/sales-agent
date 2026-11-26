@@ -16,6 +16,7 @@ import {
   updateMailbox,
 } from '../../lib/api';
 import { useAsync } from '../../lib/hooks';
+import { fmtDateTime, fmtNumber } from '../../lib/format';
 import type {
   DnsCheckItem,
   Mailbox,
@@ -35,13 +36,10 @@ const DNS_LABELS: { key: 'spf' | 'dkim' | 'dmarc' | 'mx'; label: string; what: s
 ];
 
 const HOURS = Array.from({ length: 25 }, (_, h) => h);
+// These label the hours a person PICKS for their sending window, so they stay
+// written 24-hour like "09:00" — the value of a choice, not a stored schedule
+// on show (that one goes through fmtTime).
 const hourLabel = (h: number) => (h === 24 ? 'midnight' : `${String(h).padStart(2, '0')}:00`);
-
-function when(iso: string | null | undefined) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
-}
 
 function DnsChecklist({ mailbox }: { mailbox: Mailbox }) {
   const dns = mailbox.dns || {};
@@ -67,7 +65,7 @@ function DnsChecklist({ mailbox }: { mailbox: Mailbox }) {
           );
         })}
       </ul>
-      <small className="mailbox-muted">Checked {when(mailbox.dnsCheckedAt)} for {dns.domain || 'your domain'}.</small>
+      <small className="mailbox-muted">Checked {fmtDateTime(mailbox.dnsCheckedAt, 'medium')} for {dns.domain || 'your domain'}.</small>
     </div>
   );
 }
@@ -111,7 +109,7 @@ function MailboxCard({ mb, onChanged, onEdit }: { mb: Mailbox; onChanged: () => 
 
       {mb.paused && (
         <p className="mailbox-paused">
-          Paused until {when(mb.pausedUntil)}: {mb.pausedReason || 'stopped to protect your mailbox.'} Emails waiting
+          Paused until {fmtDateTime(mb.pausedUntil, 'medium')}: {mb.pausedReason || 'stopped to protect your mailbox.'} Emails waiting
           for it move to another mailbox, or wait.
         </p>
       )}
@@ -121,7 +119,7 @@ function MailboxCard({ mb, onChanged, onEdit }: { mb: Mailbox; onChanged: () => 
         <small>
           Sent today: <strong>{mb.sentToday}</strong> of {mb.effectiveCap}
           {mb.effectiveCap < mb.dailyCap && ` (warming up — grows to ${mb.dailyCap} a day)`}
-          {mb.queued > 0 && ` · ${mb.queued} waiting to send`}
+          {mb.queued > 0 && ` · ${fmtNumber(mb.queued)} waiting to send`}
         </small>
       </div>
 

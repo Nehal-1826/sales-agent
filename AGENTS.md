@@ -31,7 +31,7 @@ Brand: **WarmPulse**, accent theme **orange** (`#f97316` family — restored
 - `whatsapp-sidecar/` — WhatsApp runtime service (node). `warmpulse-mobile/` — RN app.
 - `ops/` — gateway nginx (`/api/`→django:8000, `/wp-api/`→fastapi:8001 rewritten
   to its internal `/api/`), db init. Root `docker-compose.yml` = full stack.
-- `scripts/e2e/flow.py` — the Playwright gate (173 checks; run before every push).
+- `scripts/e2e/flow.py` — the Playwright gate (183 checks; run before every push).
 - `docs/superpowers/` — specs + plans (foundation, shell-ux batch, warmup dashboards).
 
 ## Commands (local dev, Windows Git Bash — quote paths, space in "Devesh B")
@@ -57,7 +57,7 @@ cd frontend && npm run dev
 
 # Gates
 cd backend-agent && DATABASE_URL=sqlite:///db-agent-test.sqlite3 .venv/Scripts/python manage.py test
-cd backend && .venv/Scripts/python -m pytest tests/test_bridge_auth.py tests/test_auth.py tests/test_api_key_auth.py -q
+cd backend && .venv/Scripts/python -m pytest tests/test_bridge_auth.py tests/test_auth.py tests/test_api_key_auth.py tests/test_admin_role.py tests/test_admin_users.py tests/test_formatting.py -q
 cd frontend && npm run build            # tsc + vite + SSR + prerender
 python scripts/e2e/flow.py              # full-stack gate (servers must be up)
 cd backend-agent && .venv/Scripts/python manage.py purge_deleted --dry-run   # what the 30-day cleanup WOULD remove (changes nothing)
@@ -188,6 +188,51 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   (the first version detached it; the tests caught it). Audit
   `platform.user.role`. The console says "Super admin", never "Platform
   admin", and the rail's foot names the account that is signed in.
+- **Formats** (2026-11-26; owner's order: Indian by default, changeable at any
+  time, for every role in both apps): `User.format` (`IN` · `US` · `GB` ·
+  `device`) and `User.clock` (`12h` · `24h`), migration 0050, every account
+  starts on India + 12-hour. `GET /api/auth/me/` carries `preferences
+  {format, clock}`; `PUT /api/auth/preferences/` (signed in + OTP satisfied;
+  only the keys sent change; an unknown value is a 400) saves them. Refused
+  inside "Enter as user" (`REFUSED_PREFIXES`): those are the customer's
+  screens, and that tab follows the CUSTOMER's choice (it comes with their
+  profile) — the admin's own tab is never touched.
+- The app has ONE formatter, `frontend/src/lib/format.ts` (`fmtDate`,
+  `fmtTime`, `fmtDateTime`, `fmtDayTick`, `fmtMonth`, `fmtNumber`, `fmtMoney`,
+  `fmtMoneyMajor`, `fmtPercent`, `timeAgo`, `plural`). Nothing else under
+  `frontend/src` may call `toLocaleDateString` / `toLocaleTimeString` /
+  `.toLocaleString` / `new Intl.NumberFormat` / `new Intl.DateTimeFormat` —
+  the browser gate's last section reads the source for it (the public
+  marketing pages are the one exception). The choice lives in that module
+  (`setPreferences`, fed by `getCurrentUser` / `getMe` / the impersonation
+  profile; `usePreferences()` through `useSyncExternalStore`); the app waits
+  for the profile before the first screen, so nothing flashes in the wrong
+  format. A saved change re-draws every open screen at once through
+  `FormatScope` (inside `<main>` in `App`'s Shell and in `PlatformShell`;
+  render-prop — nothing remounts, no page has to subscribe). Ways in:
+  Settings → Account (`AccountSection`), console Settings (after two-factor,
+  `AdminSettingsPage`), and the **Format button at the foot of both sidebars**
+  (`FormatButton` → `FormatDialog`), because Members never see Settings.
+  Rules of the formatter: a bare day (`"2026-11-26"`) or month (`"2026-11"`)
+  is a calendar label and reads as THAT day wherever the device is — `new
+  Date` reads it as UTC midnight, the day before west of Greenwich; an instant
+  (with `Z` or an offset) is shown in the device's zone; the 24-hour clock
+  writes its leading zero in every format (09:04); a money sign follows the
+  money, only the grouping follows the format; `toFixed(1)` scores, typed
+  inputs (hours as 24-hour text), CSV cells and small bounded counts (steps,
+  pagers) stay as they are.
+- `FormatDialog` is drawn through a portal at the root of the page
+  (`createPortal(…, document.body)`): the sidebar is a `backdrop-filter`
+  panel, and such a panel is the box its fixed-position children are placed
+  against — a dialog rendered inside the rail is squeezed into it.
+- Documents that leave the app — invoices, the daily report, the slug digest,
+  the digest line in chat, the WhatsApp approval line — are ALWAYS Indian,
+  whoever reads them, and are written by the server: `core/formatting.py`
+  (Django) and `app/services/formatting.py` (the warmup service; the same
+  helpers without Django): lakhs and crores by hand, `26/11/2026`,
+  `26/11/2026, 2:05 PM IST` in Indian time, `₹2,999.00` rounded half-up.
+  Portable code only — no `%-d` in `strftime` (it does not exist on Windows).
+  The warmup invoice PDF's built-in font has no rupee sign (pre-existing).
 - Frontend↔backend: Django via `lib/` request helpers; warmup via `lib/warmupApi.ts`
   (Bearer JWT, `/wp-api` base, health probe, 401 re-acquire once). Bridge JWT dies
   with the session (all four token-clear sites purge both keys).
@@ -452,6 +497,13 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   `netstat -ano | grep :5173` + `taskkill //F //PID` before restarts; port
   assignment is ready-order, not start-order.
 - Background servers die with the session — see Commands to bring the stack back.
+- Vite's dev server CLOSES ITSELF when its standard input ends (Vite
+  registers `process.stdin.on("end", …)`, skipped only when `CI=true`): started
+  as a background task whose input is later closed, it exits silently — no
+  error in its log, the task reports exit 127, and the gate dies on
+  `ERR_CONNECTION_REFUSED` at some random check (26 Nov 2026, twice). Start it
+  as `CI=true npm run dev`, and when the gate says the connection is refused
+  look at `netstat -ano | grep :5173` first — it is the server, not the code.
 - Deploy rule: after `git pull`, rebuild AND recreate `django`, `django-worker`
   and (for UI work) `frontend` TOGETHER —
   `docker compose build django django-worker frontend && docker compose up -d --force-recreate django django-worker frontend`.
@@ -568,11 +620,29 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   then. Two rules for that walk: the first account of a company is always made
   its owner (create the owner BEFORE the member a look is about), and a check
   that asks the server for a REFUSAL must look at the state first — in another
-  state the same request is a real change. The gate also builds-and-serves the BUILT files the way nginx does
+  state the same request is a real change. The same walk flips a date for real:
+  with the throwaway admin's own choice (never the operator's) the Users
+  table's "Signed up" cell reads day-first under India, turns month-first
+  after the United States is chosen in the rail's Format dialog, and is put
+  back. Formats have their own walk after it (section 8d): a throwaway
+  MEMBER (`e2e-format-me` of the company `e2e-format-ws`, owner first, made
+  and removed by `django_shell`, its warmup copy forgotten afterwards) signs
+  in in a NEW browser context, starts on "India · 12-hour", reaches Format
+  from the sidebar (a Member has no Settings entry), changes to 24-hour —
+  the sample line, the account (`/api/auth/me/`), the rail's label — and
+  keeps it over a reload. And the gate's last check reads the source for
+  formatting outside `lib/format.ts` (see Formats above). The gate also builds-and-serves the BUILT files the way nginx does
   (`built_like_nginx`) for the refresh-flash checks (sections 1b / 2b): the
   home file must hide the marketing page for a signed-in browser before the
-  first paint, the other marketing pages must not carry that guard.
-- Test facts worth knowing (`backend-agent`): `billing.tests.helpers.quiet_logs`
+  first paint, the other marketing pages must not carry that guard. A check
+  that waits for a server answer waits for the THING it checks (up to 20 s),
+  never a fixed pause — 1.8 s was not enough for the mailbox list on a
+  loaded machine and read as "0 toggles".
+- Test facts worth knowing (`backend-agent`): the formats are pinned by
+  `core.tests.test_preferences` (the two fields, the profile, the endpoint,
+  the refusal inside "Enter as user"), `core.tests.test_formatting` (the
+  document helpers) and `backend/tests/test_formatting.py` (the warmup
+  copy of them). `billing.tests.helpers.quiet_logs`
   switches logging OFF for a test (`logging.disable(CRITICAL)`) — `assertLogs`
   then sees nothing; watch the logger itself (`mock.patch.object(module.log,
   'warning')`). `make_admin()` returns `(client, user, token)`; a login
@@ -630,8 +700,11 @@ The shared bridge secret must be **32+ chars** and identical on both backends
 - Python env note on Windows: `backend-agent/.venv` and `backend/.venv` are currently
   absent/incomplete — the working venvs live in the sibling checkout
   `../Email-Warmup/` (`backend-agent/.venv` for Django incl. PyJWT;
-  `backend/.venv` for FastAPI/uvicorn). `../.superpowers/sdd/dev-secret.txt`
-  (gitignored) may need regenerating (32+ chars) before bring-up.
+  `backend/.venv` for FastAPI, uvicorn AND pytest). `../.superpowers/sdd/dev-secret.txt`
+  (gitignored) may need regenerating (32+ chars) before bring-up. This shell
+  does not pass `TZ` to a child process: to try a time zone in Node, set
+  `process.env.TZ` at the top of the script (verified with
+  `Intl.DateTimeFormat().resolvedOptions().timeZone`).
 - Local admin setup: after `seed_demo`, manually set the admin user's role:
   `manage.py shell -c "from django.contrib.auth import get_user_model; u=get_user_model().objects.get(username='admin'); u.role='admin'; u.is_superuser=True; u.save()"` —
   otherwise `IsWorkspaceAdmin` returns 403 ("Only the workspace owner…").

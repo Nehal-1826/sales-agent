@@ -1,6 +1,7 @@
 import Chart from 'react-apexcharts';
 import type { ApexOptions } from 'apexcharts';
 import { warmthColor, type ChartTheme } from './chartTheme';
+import { fmtNumber } from '../../lib/format';
 
 /** One provider bar — mean warmth across that provider's mailboxes. */
 export interface ProviderWarmthRow {
@@ -57,7 +58,7 @@ export function ProviderBarChart({ rows, theme }: { rows: ProviderWarmthRow[]; t
       enabled: true,
       offsetY: -18,
       style: { colors: [theme.text2], fontSize: '11px', fontWeight: 600 },
-      formatter: (v: number) => String(Math.round(v)),
+      formatter: (v: number) => fmtNumber(v, 0),
     },
     grid: {
       borderColor: theme.border,
@@ -82,7 +83,7 @@ export function ProviderBarChart({ rows, theme }: { rows: ProviderWarmthRow[]; t
     legend: { show: false },
     tooltip: {
       cssClass: 'warmup-chart-tooltip',
-      y: { formatter: (v: number) => `${Math.round(v)} / 100 mean warmth` },
+      y: { formatter: (v: number) => `${fmtNumber(v, 0)} / 100 mean warmth` },
     },
     states: { active: { filter: { type: 'none' } }, hover: { filter: { type: 'none' } } },
   };

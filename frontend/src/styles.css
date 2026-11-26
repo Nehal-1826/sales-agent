@@ -6863,3 +6863,33 @@ body.has-impersonation .guide-panel {
   line-height: 1.55;
   text-wrap: balance;
 }
+
+/* ================================================================
+   FORMAT — the card that chooses how dates, numbers and times read
+   (components/FormatCard.tsx). The two selectors reuse the settings
+   grid and row (two columns, one on a narrow screen).
+   ================================================================ */
+.format-card .settings-row {
+  margin-bottom: 0;
+}
+
+/* in the dialog (components/FormatDialog) a sentence sits above the card */
+.modal-body > .format-card {
+  margin-top: 14px;
+}
+
+.format-card .settings-row small strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* the sidebar's way in (both apps): a plain nav row — inside "Enter as user"
+   it is switched off, because those are the customer's screens */
+.nav-item.side-format:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.nav-item.side-format:disabled:hover {
+  background: transparent;
+}

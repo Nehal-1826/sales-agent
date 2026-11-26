@@ -2,11 +2,10 @@ import { useState } from 'react';
 import { PageHeader, Field, Chip } from '../../components/ui';
 import { LoadError, Skeleton, EmptyState } from '../../components/feedback';
 import { useAsync } from '../../lib/hooks';
-import { listPayments, refundPayment, money } from '../../lib/platform';
+import { fmtDateTime, fmtMoney, fmtMoneyMajor } from '../../lib/format';
+import { listPayments, refundPayment } from '../../lib/platform';
 import type { PaymentRow } from '../../lib/platform';
 import { Pager, ReasonDialog } from './shared';
-
-const when = (s?: string) => (s ? new Date(s).toLocaleString() : '—');
 
 function refundable(p: PaymentRow): number {
   return Math.max(0, p.refundable ?? p.amount - (p.refunded_amount ?? 0));
@@ -62,10 +61,10 @@ export function PaymentsPage({ demo, embedded = false }: { demo: boolean; embedd
             <tbody>
               {data.results.map((p) => (
                 <tr key={p.id}>
-                  <td>{when(p.created_at)}</td>
+                  <td>{fmtDateTime(p.created_at) || '—'}</td>
                   <td>{p.workspace ?? p.tenant ?? '—'}</td>
-                  <td>{money(p.amount, p.currency)}</td>
-                  <td>{money(p.refunded_amount ?? 0, p.currency)}</td>
+                  <td>{fmtMoney(p.amount, p.currency)}</td>
+                  <td>{fmtMoney(p.refunded_amount ?? 0, p.currency)}</td>
                   <td><StatusChip status={p.status} /></td>
                   <td>{p.gateway ?? '—'}</td>
                   <td>
@@ -91,7 +90,8 @@ export function PaymentsPage({ demo, embedded = false }: { demo: boolean; embedd
           onClose={() => { setTarget(null); setAmount(''); }}
           onDone={() => { setTarget(null); setAmount(''); void reload(); }}
         >
-          <Field label={`How much? (in ${target.currency}, most you can send is ${maxMajor})`}>
+          {/* the sentence says the limit as money; the box itself keeps the plain number (its value and max) */}
+          <Field label={`How much? (in ${target.currency}, most you can send is ${fmtMoneyMajor(maxMajor, target.currency)})`}>
             <input type="number" min={0.01} max={maxMajor} step={0.01} value={amount} onChange={(e) => setAmount(e.target.value)} />
           </Field>
         </ReasonDialog>

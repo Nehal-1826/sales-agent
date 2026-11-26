@@ -28,7 +28,7 @@ const SECTIONS: { key: SettingsSection; label: string; hint: string }[] = [
   { key: 'followups', label: 'Follow-ups', hint: 'Reminders after the first email' },
   { key: 'whatsapp', label: 'WhatsApp', hint: 'Optional, off by default' },
   { key: 'schedule', label: 'Schedule & reports', hint: 'Autopilot and daily report' },
-  { key: 'account', label: 'Account', hint: 'Password' },
+  { key: 'account', label: 'Account', hint: 'Password, username and format' },
   { key: 'twofactor', label: 'Two-factor', hint: 'Secure your account with an authenticator' },
   { key: 'billing', label: 'Plan & billing', hint: 'Plan, usage, invoices' },
   { key: 'advanced', label: 'Advanced', hint: 'AI key, mail server, AI instructions' },

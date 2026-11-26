@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { Modal } from '../../components/overlay';
 import { Field } from '../../components/ui';
 import { toast } from '../../components/feedback';
+import { fmtNumber } from '../../lib/format';
 import type { Result } from '../../lib/transport';
 
 /**
@@ -67,7 +68,7 @@ export function Pager({
 }) {
   return (
     <div className="pf-pager">
-      <small>{count} total</small>
+      <small>{fmtNumber(count)} total</small>
       <div className="pf-pager-btns">
         <button className="btn btn-sm" disabled={!previous} onClick={() => onPage(page - 1)}>
           Previous

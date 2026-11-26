@@ -10,7 +10,7 @@ export function AuditPage() {
   const { data, error, reload } = useAsync(() => listAudit(page), [page], { keepStale: true });
   return (
     <>
-      <PageHeader title="Audit log" subtitle="Every platform admin action." />
+      <PageHeader title="Audit log" subtitle="Every super admin action." />
       {error && <LoadError message={error} onRetry={() => void reload()} />}
       {!data && !error && <Skeleton rows={5} />}
       {data && data.results.length === 0 && <EmptyState title="No audit entries yet" />}

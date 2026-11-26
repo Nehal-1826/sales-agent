@@ -26,6 +26,9 @@ urlpatterns = [
     path('platform/users/<int:user_id>/impersonate/', vp.user_impersonate, name='platform-user-impersonate'),
     path('platform/users/<int:user_id>/delete/', vp.user_delete, name='platform-user-delete'),
     path('platform/users/<int:user_id>/restore/', vp.user_restore, name='platform-user-restore'),
+    path('platform/users/<int:user_id>/role/', vp.user_role, name='platform-user-role'),
+    # the companies an account can be put into (the console's role picker)
+    path('platform/workspaces/', vp.running_companies, name='platform-running-workspaces'),
     path('platform/tenants/', vp.tenants, name='platform-tenants'),
     path('platform/tenants/<int:tenant_id>/', vp.tenant_detail, name='platform-tenant'),
     path('platform/tenants/<int:tenant_id>/suspend/', vp.tenant_suspend),

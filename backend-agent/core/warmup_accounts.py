@@ -99,3 +99,15 @@ def remove(email, admin):
         if resp.status_code not in (204, 404):       # 404: gone already
             raise WarmupAccountsError('The warmup service did not delete the account.')
     return len(copies)
+
+
+def set_role(email, admin, role):
+    """Give every copy of this e-mail address `role` ('client' or 'super_admin')
+    on the warmup side. Returns how many were told. The warmup side reads a
+    role only when it creates a copy, so a role changed here must be told."""
+    copies = copies_for(email, admin)
+    for copy in copies:
+        resp = _call(admin, 'POST', f"/api/admin/users/{copy.get('id')}/role", json={'role': role})
+        if resp.status_code != 204:
+            raise WarmupAccountsError('The warmup service did not change the account role.')
+    return len(copies)

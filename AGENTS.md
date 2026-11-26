@@ -31,7 +31,7 @@ Brand: **WarmPulse**, accent theme **orange** (`#f97316` family — restored
 - `whatsapp-sidecar/` — WhatsApp runtime service (node). `warmpulse-mobile/` — RN app.
 - `ops/` — gateway nginx (`/api/`→django:8000, `/wp-api/`→fastapi:8001 rewritten
   to its internal `/api/`), db init. Root `docker-compose.yml` = full stack.
-- `scripts/e2e/flow.py` — the Playwright gate (163 checks; run before every push).
+- `scripts/e2e/flow.py` — the Playwright gate (173 checks; run before every push).
 - `docs/superpowers/` — specs + plans (foundation, shell-ux batch, warmup dashboards).
 
 ## Commands (local dev, Windows Git Bash — quote paths, space in "Devesh B")
@@ -164,6 +164,30 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   reason); the "Deleted" filter lists them with "Restore account" and the day
   they go for good; a deleted row cannot be ticked for the warmup bulk
   actions ("Resume all" would undo the deletion's pause).
+- **Changing roles** (2026-11-26; `core/roles.py`, no migration): console →
+  Users → a panel → **Role** (Member · Admin · Owner · Super admin) →
+  **Change role** with a reason: `POST /api/platform/users/<id>/role/`
+  `{role, reason, workspace?}`. "Super admin" is STILL not a role value — it
+  is an account with no workspace and `is_staff` — so picking it takes the
+  account OUT of its company and picking a company role for a Super admin
+  puts it INTO one (`workspace` = the company id; `GET
+  /api/platform/workspaces/` lists the running companies; the plan's seat
+  limit applies). `roles.can_change` is the ONE rule: never your own account,
+  never a deleted one, never the role it has, a company always keeps an
+  owner (the only owner can be neither lowered nor made a Super admin), the
+  console always keeps a Super admin. Warmup FIRST, then the account: a
+  promotion pauses the person's warmup mailboxes while their copy is still a
+  client and then sets the copy's role (`POST /api/admin/users/{id}/role` —
+  the warmup side's one door for it; signing in still never flips an existing
+  copy); a demotion sets the copy back to `client` and lets the mailboxes run
+  again; a service that cannot be reached changes nothing. A person made
+  Owner/Admin in a company that is already set up gets `onboarding.done`, so
+  the setup wizard does not catch them (its finish flips the company's
+  autopilot). Always `QuerySet.update()` — and for a change INSIDE a company
+  the request's `workspace` is empty: the account must keep its own company
+  (the first version detached it; the tests caught it). Audit
+  `platform.user.role`. The console says "Super admin", never "Platform
+  admin", and the rail's foot names the account that is signed in.
 - Frontend↔backend: Django via `lib/` request helpers; warmup via `lib/warmupApi.ts`
   (Bearer JWT, `/wp-api` base, health probe, 401 re-acquire once). Bridge JWT dies
   with the session (all four token-clear sites purge both keys).
@@ -536,9 +560,15 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   app shows that as its 404 page. The same walk enters the operator's
   workspace for real ("Enter as user": a new page, checked and closed) and
   deletes and restores a throwaway account (`e2e-delete-me`, owner of the
-  workspace `e2e-delete-ws`, made and removed by `django_shell`); a deletion
+  workspace `e2e-delete-ws`, made and removed by `django_shell`) and, on the
+  same company with a second account (`e2e-mate-me`, a Member), changes roles
+  end to end (Member → Admin → Owner, a lowered owner, a refusal in the
+  server's words, a Super admin made and put back into the company); a deletion
   is refused while the warmup service is down, so those checks are skipped
-  then. The gate also builds-and-serves the BUILT files the way nginx does
+  then. Two rules for that walk: the first account of a company is always made
+  its owner (create the owner BEFORE the member a look is about), and a check
+  that asks the server for a REFUSAL must look at the state first — in another
+  state the same request is a real change. The gate also builds-and-serves the BUILT files the way nginx does
   (`built_like_nginx`) for the refresh-flash checks (sections 1b / 2b): the
   home file must hide the marketing page for a signed-in browser before the
   first paint, the other marketing pages must not carry that guard.

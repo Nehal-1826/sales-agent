@@ -293,7 +293,7 @@ export async function login(username: string, password: string): Promise<Result<
     if (res.status === 403) {
       // platform-admin creds on the workspace door → point them at the admin page
       const data = (await res.json().catch(() => ({}))) as { admin_only?: boolean };
-      if (data.admin_only) return { ok: false, error: 'This account signs in from the platform admin page.' };
+      if (data.admin_only) return { ok: false, error: 'This account signs in from the super admin page.' };
     }
     if (!res.ok) return { ok: false, error: friendlyStatus(res.status) };
     const data = (await res.json()) as { token: string };

@@ -24,7 +24,7 @@ export const ROLE_LABELS: Record<AccountRole, string> = {
   owner: 'Owner',
   admin: 'Admin',
   member: 'Member',
-  platform_admin: 'Platform admin',
+  platform_admin: 'Super admin',
 };
 
 /** An account and its warmup copy are the same person when their emails match this way. */

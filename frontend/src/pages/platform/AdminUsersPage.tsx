@@ -11,10 +11,11 @@
  * no mailbox count and cannot be ticked.
  *
  * "Enter workspace as this user" acts on the account itself: UserDrawer →
- * EnterWorkspaceDialog. So do "Delete account" (UserDrawer →
- * DeleteAccountDialog) and "Restore account". A deleted account is listed
- * only under the "Deleted" status button, so after either the panel closes
- * and the lists are read again: the row has left the list it was opened from.
+ * EnterWorkspaceDialog. So do "Change role" (UserDrawer → ChangeRoleDialog),
+ * "Delete account" (UserDrawer → DeleteAccountDialog) and "Restore account".
+ * A deleted account is listed only under the "Deleted" status button, so
+ * after the last two the panel closes and the lists are read again: the row
+ * has left the list it was opened from.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Chip, PageHeader } from '../../components/ui';
@@ -41,12 +42,12 @@ import type { AccountStatus } from './accountUi';
 import { Pager } from './shared';
 import { UserDrawer } from './UserDrawer';
 
-/** The role buttons of the filter row — "Platform admins" is a group, not one role. */
+/** The role buttons of the filter row — "Super admins" is a group, not one role. */
 const ROLE_FILTERS: { value: string; label: string }[] = [
   { value: 'owner', label: ROLE_LABELS.owner },
   { value: 'admin', label: ROLE_LABELS.admin },
   { value: 'member', label: ROLE_LABELS.member },
-  { value: 'platform_admin', label: 'Platform admins' },
+  { value: 'platform_admin', label: 'Super admins' },
 ];
 
 /* ---------------- bulk pause/resume confirm ---------------- */
@@ -84,7 +85,7 @@ function BulkPauseDialog({
       }
     >
       <p>
-        {verb} warmup for all mailboxes of the {selectedCount} selected user{selectedCount === 1 ? '' : 's'}? Platform
+        {verb} warmup for all mailboxes of the {selectedCount} selected user{selectedCount === 1 ? '' : 's'}? Super
         admins are left out, and everyone keeps their ramp progress.
       </p>
     </Modal>

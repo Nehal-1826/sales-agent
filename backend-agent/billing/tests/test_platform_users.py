@@ -232,3 +232,28 @@ class DeletedAccountsTests(AccountsBase):
         ws = company('del6', 'Acme')
         Workspace.all_tenants.filter(pk=ws.pk).update(is_active=False)
         self.assertIn(ws.pk, self.tenant_ids())
+
+
+class RunningCompaniesTests(AccountsBase):
+    """GET /api/platform/workspaces/ — what the console's role picker offers."""
+
+    def test_the_running_companies_by_name(self):
+        company('join-b', 'Zebra Co')
+        company('join-a', 'Acme Co')
+        stopped = company('join-c', 'Stopped Co')
+        Workspace.all_tenants.filter(pk=stopped.pk).update(is_active=False)
+        r = self.admin.get('/api/platform/workspaces/')
+        self.assertEqual(r.status_code, 200, r.content)
+        rows = r.json()
+        a = Workspace.all_tenants.get(slug='join-a').pk
+        b = Workspace.all_tenants.get(slug='join-b').pk
+        # the seeded companies are on the list too: look at these three only
+        mine = [x for x in rows if x['id'] in (a, b, stopped.pk)]
+        self.assertEqual(mine, [{'id': a, 'name': 'Acme Co'}, {'id': b, 'name': 'Zebra Co'}])
+        self.assertEqual(rows, sorted(rows, key=lambda x: x['name']))       # by name, the whole list
+
+    def test_only_a_platform_admin_may_list_them(self):
+        ws = company('join-d', 'Acme Co')
+        c = APIClient()
+        c.credentials(HTTP_AUTHORIZATION=f'Token {Token.objects.create(user=person(ws, 'o', 'o@acme.test', role="owner")).key}')
+        self.assertEqual(c.get('/api/platform/workspaces/').status_code, 403)

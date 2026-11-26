@@ -3,8 +3,8 @@
  *
  *  · Account — the REAL sign-in account (email, username, company, plan,
  *    status…) and the buttons that act on the account itself: "Enter
- *    workspace as this user", "Delete account", and for a deleted one
- *    "Restore account" (it can be brought back for 30 days).
+ *    workspace as this user", "Change role", "Delete account", and for a
+ *    deleted one "Restore account" (it can be brought back for 30 days).
  *  · Warmup account — only when the warmup side keeps a copy of this email.
  *    Its buttons act on that copy only; the person can always still sign in.
  */
@@ -13,14 +13,46 @@ import { Chip, Field } from '../../components/ui';
 import { Drawer } from '../../components/overlay';
 import { EmptyState, Skeleton, toast } from '../../components/feedback';
 import { useAsync } from '../../lib/hooks';
-import { getSignedInAccountId, restorePlatformUser } from '../../lib/platform';
-import type { AccountRow } from '../../lib/platform';
+import { getSignedInAccountId, listPlatformUsers, restorePlatformUser } from '../../lib/platform';
+import type { AccountRow, RoleChanged } from '../../lib/platform';
 import { listAdminPayments, listAdminPlans, suspendAdminUser, updateAdminUserPlan } from '../../lib/platformAdmin';
 import type { AdminPayment, AdminUserRow } from '../../lib/platformAdmin';
 import { ROLE_LABELS, StatusChip, displayName, fmtRelative, isPlatformAdmin, when } from './accountUi';
+import { ChangeRoleDialog } from './ChangeRoleDialog';
 import { DeleteAccountDialog } from './DeleteAccountDialog';
 import { EnterWorkspaceDialog } from './EnterWorkspaceDialog';
 import { ReasonDialog } from './shared';
+
+/* ---------------- role ---------------- */
+
+/** The Role selector's choices, lowest first. "Super admin" is the account rows' `platform_admin`. */
+const ROLE_CHOICES: AccountRow['role'][] = ['member', 'admin', 'owner', 'platform_admin'];
+
+/**
+ * The account with the server's answer applied — true at once for the role
+ * and the company, while the account is read again in full.
+ */
+function withAnswer(account: AccountRow, answer: RoleChanged): AccountRow {
+  if (answer.to === 'super_admin') {
+    // out of its company: a Super admin has no plan and nobody to count
+    return {
+      ...account,
+      role: 'platform_admin',
+      is_platform_admin: true,
+      workspace: null,
+      plan: null,
+      plan_code: null,
+      plan_status: null,
+      workspace_admins: 0,
+      workspace_accounts: 0,
+    };
+  }
+  // a company joined brings its own plan and head-count, which only a fresh read knows
+  return { ...account, role: answer.to, is_platform_admin: false, workspace: answer.workspace_joined ?? account.workspace };
+}
+
+/** Whether two rows tell the same story about the account: its role and its company. */
+const samePlace = (a: AccountRow, b: AccountRow): boolean => a.role === b.role && a.workspace?.id === b.workspace?.id;
 
 /* ---------------- warmup payments (Warmup account block) ---------------- */
 
@@ -180,12 +212,13 @@ function WarmupBlock({
 /* ---------------- user panel ---------------- */
 
 export function UserDrawer({
-  account,
+  account: listed,
   warmup,
   demo,
   onClose,
   onChanged,
 }: {
+  /** The account as the page lists it (see `own` below for after a role change). */
   account: AccountRow;
   /** The warmup side's copy of this email — null when it has none. */
   warmup: AdminUserRow | null;
@@ -197,7 +230,38 @@ export function UserDrawer({
   const [entering, setEntering] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [changing, setChanging] = useState(false);
   const [signedInId, setSignedInId] = useState<number | null>(null);
+  /** The role picked in the selector — the one the account has, until another is picked. */
+  const [rolePick, setRolePick] = useState(listed.role);
+  /** The account as read on its own: from the first role change that worked in this panel on, else null. */
+  const [own, setOwn] = useState<AccountRow | null>(null);
+  const hasOwn = own !== null;
+
+  // After a role change the page reads its lists again, but only the one page
+  // of them it is showing. An account that left that page — it no longer
+  // matches the role buttons, or the search was on the company it just left —
+  // is handed over as it was BEFORE the change: the page falls back to the row
+  // the panel was opened from. So the server's answer is applied at once, the
+  // account is read again in full, and the page's row is shown only when it
+  // tells the same story (then it is as new, and complete).
+  const account = own && !samePlace(listed, own) ? own : listed;
+
+  useEffect(() => {
+    if (!own || samePlace(listed, own)) return;
+    let reading = true;
+    listPlatformUsers({ q: own.email })
+      .then((page) => {
+        if (reading) setOwn(page.results.find((r) => r.id === own.id) ?? own);
+      })
+      .catch(() => {
+        /* not read this time: what is on screen stays, and the next change reads it again */
+      });
+    return () => {
+      reading = false;
+    };
+    // `listed` is the row the page hands over; `hasOwn` only says whether there is an answer to keep true
+  }, [listed, hasOwn]);
 
   // asked for only now, when the panel opens; a failed answer just means "not your account"
   useEffect(() => {
@@ -220,7 +284,7 @@ export function UserDrawer({
   const enterHint = !account.workspace
     ? 'This account is not in a workspace, so there is nothing to open.'
     : isPlatformAdmin(account)
-      ? 'Platform admin accounts cannot be opened this way.'
+      ? 'Super admin accounts cannot be opened this way.'
       : account.status === 'deleted'
         ? 'This account was deleted, so its workspace cannot be opened.'
         : account.status === 'suspended'
@@ -241,13 +305,18 @@ export function UserDrawer({
   const deleteHint = isOwn
     ? null
     : isPlatformAdmin(account)
-      ? 'Platform admin accounts cannot be deleted here.'
+      ? 'Super admin accounts cannot be deleted here.'
       : !account.workspace
         ? 'This account is not in a workspace, so it cannot be deleted here.'
         : null;
   // the rule that stops a workspace, read backwards: it runs again once an
   // owner or admin is back — so this is said while none is left
   const startsAgain = (account.role === 'owner' || account.role === 'admin') && account.workspace_admins === 0;
+  // the server's own rule (core.roles.can_change): nobody changes their own
+  // role, and a deleted account waits for its restore — the selector is greyed
+  // out with the reason, instead of an error after the reason was typed
+  const canChangeRole = !isOwn && !deleted;
+  const roleHint = isOwn ? 'You cannot change your own role.' : deleted ? 'Restore this account first.' : undefined;
 
   // The panel's own Close button is also its LAST control. That matters for
   // the dialogs opened inside it: the panel's focus loop works in page order,
@@ -296,6 +365,26 @@ export function UserDrawer({
           </p>
         )}
 
+        <div style={{ marginBottom: 14 }}>
+          <Field label="Role" hint={roleHint}>
+            <select
+              aria-label="Role"
+              value={rolePick}
+              disabled={!canChangeRole}
+              onChange={(e) => setRolePick(e.target.value as AccountRow['role'])}
+            >
+              {ROLE_CHOICES.map((r) => (
+                <option key={r} value={r}>
+                  {ROLE_LABELS[r]}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <button className="btn" style={{ width: '100%' }} disabled={!canChangeRole || rolePick === account.role} onClick={() => setChanging(true)}>
+            Change role
+          </button>
+        </div>
+
         {isOwn ? (
           <p className="field-hint" style={{ margin: '0 0 14px' }}>
             This is the account you are signed in with.
@@ -331,6 +420,19 @@ export function UserDrawer({
           </div>
         )}
         {entering && <EnterWorkspaceDialog account={account} onClose={() => setEntering(false)} />}
+        {changing && (
+          <ChangeRoleDialog
+            account={account}
+            role={rolePick}
+            onClose={() => setChanging(false)}
+            onDone={(answer) => {
+              setChanging(false);
+              // true at once from the server's answer; `own` (above) keeps it so
+              setOwn(withAnswer(account, answer));
+              onChanged();
+            }}
+          />
+        )}
         {deleting && (
           <DeleteAccountDialog
             account={account}

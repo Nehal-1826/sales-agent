@@ -41,7 +41,7 @@ CERT_TTL = 3600  # Google rotates the signing certs; refresh hourly
 
 NOT_FOUND_DETAIL = ('No account exists for that Google email — ask the '
                     'workspace owner to create one, then try again.')
-ADMIN_ONLY_DETAIL = ('That account is a platform admin — sign in from the '
+ADMIN_ONLY_DETAIL = ('That account is a super admin — sign in from the '
                      'admin login page instead.')
 
 

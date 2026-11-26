@@ -117,7 +117,7 @@ export function AdminLoginPage({ slug, onLoggedIn, onHome }: { slug: string; onL
         <button className="btn btn-primary login-submit" type="submit" disabled={busy || !username.trim() || !password}>
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
-        <small className="login-footnote">Forgot your password? Ask another platform admin to reset it.</small>
+        <small className="login-footnote">Forgot your password? Ask another super admin to reset it.</small>
       </form>
     </div>
   );

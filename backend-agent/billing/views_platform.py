@@ -19,7 +19,7 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 
-from core import accounts, impersonation, lockout
+from core import accounts, impersonation, lockout, roles
 from core.authz import (
     handle_2fa_confirm,
     handle_2fa_disable,
@@ -230,7 +230,7 @@ def _cannot_enter(admin, target):
     if target is None:
         return 'not_found', 'No such account.', 404
     if is_platform_admin(target):
-        return 'cannot_impersonate', 'Platform admins cannot be entered — not even yourself.', 400
+        return 'cannot_impersonate', 'Super admin accounts cannot be entered — not even yourself.', 400
     if target.workspace is None:      # an account nobody gave a company (made by hand)
         return 'cannot_impersonate', 'This account has no workspace to enter.', 400
     if target.deleted_at is not None:
@@ -313,6 +313,37 @@ def user_restore(request, user_id):
     except WarmupAccountsError as exc:
         return _warmup_refused(exc)
     return Response({'restored': True, **out})
+
+
+@platform_api('POST')
+def user_role(request, user_id):
+    """Change an account's role — Member, Admin, Owner or Super admin
+    (core.roles). `workspace` is the company joined, when the account has none."""
+    reason, err = _reason(request)
+    if err:
+        return err
+    target = User.objects.select_related('workspace').filter(pk=user_id).first()
+    role = request.data.get('role') if hasattr(request.data, 'get') else None
+    workspace, ws_id = None, request.data.get('workspace')
+    if ws_id not in (None, ''):
+        workspace = Workspace.all_tenants.filter(pk=ws_id).first() if str(ws_id).isdigit() else None
+        if workspace is None:
+            return _bad('not_found', 'No such company.', 404)
+    problem = roles.can_change(request.user, target, role, workspace)
+    if problem:
+        return _bad(*problem)
+    try:
+        out = roles.change_role(request.user, target, role, reason=reason, workspace=workspace, ip=_ip(request))
+    except WarmupAccountsError as exc:
+        return _warmup_refused(exc)
+    return Response({'changed': True, **out})
+
+
+@platform_api('GET')
+def running_companies(request):
+    """The companies an account can join, by name (the console's role picker)."""
+    return Response([{'id': w.pk, 'name': w.name}
+                     for w in Workspace.all_tenants.filter(is_active=True).order_by('name')])
 
 
 # ------------------------------------------------------------------ tenants

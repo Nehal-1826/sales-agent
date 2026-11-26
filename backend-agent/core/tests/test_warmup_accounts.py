@@ -142,3 +142,39 @@ class RemovingTests(Base):
         with mock.patch.object(warmup_accounts.requests, 'request', return_value=copies()) as http:
             self.assertEqual(warmup_accounts.remove('ada@acme.test', self.admin), 0)
         self.assertEqual(http.call_count, 1)
+
+
+class RoleTests(Base):
+    """Telling the warmup service a copy's role changed (core.roles)."""
+
+    def test_every_copy_is_told(self):
+        with mock.patch.object(warmup_accounts.requests, 'request',
+                               side_effect=[copies('a', 'b'), answer(204), answer(204)]) as http:
+            self.assertEqual(warmup_accounts.set_role('ada@acme.test', self.admin, 'super_admin'), 2)
+        args, kwargs = http.call_args_list[1]
+        self.assertEqual(args, ('POST', f'{warmup_accounts.warmup_api_base()}/api/admin/users/a/role'))
+        self.assertEqual(kwargs['json'], {'role': 'super_admin'})
+        self.assertEqual(http.call_args_list[2].args[1],
+                         f'{warmup_accounts.warmup_api_base()}/api/admin/users/b/role')
+
+    def test_back_to_a_client(self):
+        with mock.patch.object(warmup_accounts.requests, 'request',
+                               side_effect=[copies('a'), answer(204)]) as http:
+            self.assertEqual(warmup_accounts.set_role('ada@acme.test', self.admin, 'client'), 1)
+        self.assertEqual(http.call_args.kwargs['json'], {'role': 'client'})
+
+    def test_no_copy_asks_nothing_further(self):
+        with mock.patch.object(warmup_accounts.requests, 'request', return_value=copies()) as http:
+            self.assertEqual(warmup_accounts.set_role('ada@acme.test', self.admin, 'client'), 0)
+        self.assertEqual(http.call_count, 1)          # the look-up only
+
+    def test_an_account_without_an_e_mail_address_asks_nothing(self):
+        with mock.patch.object(warmup_accounts.requests, 'request') as http:
+            self.assertEqual(warmup_accounts.set_role('', self.admin, 'client'), 0)
+        self.assertEqual(http.call_count, 0)
+
+    def test_a_refusal_is_an_error(self):
+        for status in (500, 403, 404, 400):
+            with mock.patch.object(warmup_accounts.requests, 'request', side_effect=[copies('a'), answer(status)]):
+                with self.assertRaises(warmup_accounts.WarmupAccountsError):
+                    warmup_accounts.set_role('ada@acme.test', self.admin, 'super_admin')

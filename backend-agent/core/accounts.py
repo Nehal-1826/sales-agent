@@ -40,7 +40,7 @@ def can_delete(admin, target):
     if target is None:
         return 'not_found', 'No such account.', 404
     if is_platform_admin(target):
-        return 'cannot_delete', 'Platform admin accounts cannot be deleted here.', 400
+        return 'cannot_delete', 'Super admin accounts cannot be deleted here.', 400
     if target.pk == admin.pk:
         return 'cannot_delete', 'You cannot delete your own account.', 400
     if target.workspace is None:

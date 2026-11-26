@@ -257,10 +257,16 @@ DELETE_USER = "e2e-delete-me"
 DELETE_EMAIL = "e2e-delete-me@example.invalid"
 DELETE_SLUG = "e2e-delete-ws"
 DELETE_PW = "e2e-delete-pw-2026"
+# a second account of the same throwaway company, a Member: the role walk needs
+# somebody who is not the owner (and the first account of a company is always
+# made its owner)
+MATE_USER = "e2e-mate-me"
+MATE_EMAIL = "e2e-mate-me@example.invalid"
+THROWAWAY_USERS = (DELETE_USER, MATE_USER)
 
 
 def delete_walk_account_code(action: str) -> str:
-    """Django shell code that makes / removes the throwaway account."""
+    """Django shell code that makes / removes the throwaway company and its two accounts."""
     if action == "create":
         return (
             "from django.contrib.auth import get_user_model\n"
@@ -270,34 +276,46 @@ def delete_walk_account_code(action: str) -> str:
             "from billing.services import ensure_manual_subscription\n"
             "U = get_user_model()\n"
             f"Workspace.all_tenants.filter(slug='{DELETE_SLUG}').delete()\n"
+            f"U.objects.filter(username__in={THROWAWAY_USERS!r}).delete()\n"
             f"ws = Workspace.all_tenants.create(slug='{DELETE_SLUG}', name='E2E Delete Co')\n"
             "provision_workspace(ws)\n"
             "ensure_manual_subscription(ws)\n"
             f"u = U.objects.create_user(username='{DELETE_USER}', password='{DELETE_PW}',\n"
             f"                           email='{DELETE_EMAIL}', workspace=ws, role='owner', first_name='Deleteme')\n"
-            "U.objects.filter(pk=u.pk).update(email_verified_at=timezone.now())\n"
-            "print('E2E_SHELL_OK created', u.pk)\n"
+            f"m = U.objects.create_user(username='{MATE_USER}', password='{DELETE_PW}',\n"
+            f"                           email='{MATE_EMAIL}', workspace=ws, role='member', first_name='Mateme')\n"
+            "U.objects.filter(pk__in=(u.pk, m.pk)).update(email_verified_at=timezone.now())\n"
+            "print('E2E_SHELL_OK created', u.pk, m.pk)\n"
         )
     return (
         "from django.contrib.auth import get_user_model\n"
         "from core.models import Workspace\n"
         "U = get_user_model()\n"
-        f"Workspace.all_tenants.filter(slug='{DELETE_SLUG}').delete()      # takes the account and its rows with it\n"
-        f"left = U.objects.filter(username='{DELETE_USER}').count() + Workspace.all_tenants.filter(slug='{DELETE_SLUG}').count()\n"
+        f"Workspace.all_tenants.filter(slug='{DELETE_SLUG}').delete()      # takes the company's rows and accounts with it\n"
+        f"U.objects.filter(username__in={THROWAWAY_USERS!r}).delete()     # and one that was taken OUT of the company\n"
+        f"left = U.objects.filter(username__in={THROWAWAY_USERS!r}).count() + Workspace.all_tenants.filter(slug='{DELETE_SLUG}').count()\n"
         "print('E2E_SHELL_OK left', left)\n"
     )
 
 
 def delete_walk_state() -> tuple[bool, str]:
-    """The throwaway account on the server: 'deleted <0|1> active <0|1> ws_active <0|1>'."""
+    """The throwaway accounts on the server:
+    'deleted <0|1> active <0|1> ws_active <0|1> | owner: <role or -> <in company 0|1> <staff 0|1> | mate: <role>'."""
     return django_shell(
         "from django.contrib.auth import get_user_model\n"
         "from core.models import Workspace\n"
         "U = get_user_model()\n"
         f"u = U.objects.filter(username='{DELETE_USER}').first()\n"
+        f"m = U.objects.filter(username='{MATE_USER}').first()\n"
         f"ws = Workspace.all_tenants.filter(slug='{DELETE_SLUG}').first()\n"
+        "def role_of(x):\n"
+        "    if x is None:\n"
+        "        return '-'\n"
+        "    return 'super_admin' if (x.workspace_id is None and x.is_staff) else x.role\n"
         "print('E2E_SHELL_OK deleted', int(bool(u and u.deleted_at)), 'active', int(bool(u and u.is_active)),\n"
-        "      'ws_active', int(bool(ws and ws.is_active)))\n"
+        "      'ws_active', int(bool(ws and ws.is_active)),\n"
+        "      '| owner:', role_of(u), int(bool(u and u.workspace_id == (ws.pk if ws else None))), int(bool(u and u.is_staff)),\n"
+        "      '| mate:', role_of(m))\n"
     )
 
 
@@ -957,6 +975,16 @@ with sync_playwright() as p:
             check("console: a real platform-admin sign-in reaches the console",
                   page.url.endswith(f"/{ADMIN_SLUG}/overview"), page.url)
 
+            # The foot of the rail says WHICH super admin is signed in (several
+            # people can be Super admins now, and nobody changes their own role).
+            try:
+                page.locator(".sidebar-user", has_text=CONSOLE_ADMIN).first.wait_for(state="visible", timeout=8_000)
+                foot = " ".join(page.locator(".sidebar-user").first.inner_text().split())
+            except Exception:  # noqa: BLE001
+                foot = safe_text(page.locator(".sidebar-user"))
+            check("console: the rail's foot says which Super admin is signed in",
+                  CONSOLE_ADMIN in foot and "super admin" in foot.lower() and "platform admin" not in foot.lower(), foot)
+
             # No top bar on a wide screen (it only repeated the brand and the
             # open page) — and the page carries its own title instead.
             topbar = page.locator("header.topbar")
@@ -1392,6 +1420,172 @@ with sync_playwright() as p:
                 skip("console delete: delete and restore",
                      "warmup service down — a deletion is refused on purpose then (nothing was clicked)")
 
+            # ── Change role (26 Nov), on the same throwaway company and its second
+            # account (a Member). Through the panel: Member → Admin → Owner; the
+            # first account is lowered to Member; a refusal shows the server's
+            # words (the only owner left cannot be lowered); the first account is
+            # made a Super admin (out of the company) and put back as a Member of
+            # it through the company picker. The refusals are also asked of the
+            # server directly, with the signed-in admin's own token. At the end
+            # the two accounts are as the delete walk below needs them.
+            ROLE_SELECT = page.locator(f'{PANEL} select[aria-label="Role"]')      # a locator, not its string: it is asked things
+            ROLE_DIALOG = '.modal-card[role="dialog"][aria-label="Change role?"]'
+            REASON_LABEL = "Why are you changing it? (recorded)"
+
+            def row_of(email):
+                return page.locator("table.leads-table tbody tr", has_text=email).first
+
+            def role_shown(email):
+                return one_line(row_of(email).locator("td").nth(3).inner_text())      # the Role column
+
+            def wait_role(email, wanted):
+                for _ in range(40):                  # the list behind reads itself again after a change
+                    if row_of(email).count() and role_shown(email) == wanted:
+                        return True
+                    page.wait_for_timeout(250)
+                return False
+
+            def shut_panel():
+                # whatever a look before left open: it would block every click below
+                for _ in range(4):
+                    if page.locator(".modal-card, .drawer").count() == 0:
+                        break
+                    page.keyboard.press("Escape")
+                    page.wait_for_timeout(250)
+
+            def open_panel(email):
+                shut_panel()
+                page.get_by_placeholder("Search email, name or company…").fill(email)
+                row_of(email).wait_for(state="visible", timeout=15_000)
+                row_of(email).locator("button.row-link").first.click()
+                ROLE_SELECT.wait_for(state="visible", timeout=8_000)
+                return ROLE_SELECT.input_value()
+
+            def change_role(email, pick, company=None, refuses=None):
+                """Pick `pick` for `email` and confirm. Returns (what the toast said, the dialog's sentence)."""
+                open_panel(email)
+                ROLE_SELECT.select_option(label=pick)
+                page.locator(f'{PANEL} .drawer-body button', has_text="Change role").first.click()
+                dialog = page.locator(ROLE_DIALOG)
+                dialog.wait_for(state="visible", timeout=8_000)
+                text = " ".join(dialog.inner_text().split())
+                if company:
+                    dialog.get_by_label("Company").select_option(label=company)
+                dialog.get_by_label(REASON_LABEL).fill("E2E gate: checking Change role")
+                dialog.get_by_role("button", name="Change role").click()
+                kind = ".toast-error .toast-text" if refuses else ".toast-text"
+                try:
+                    page.locator(kind, has_text=refuses or "Role changed").first.wait_for(state="visible", timeout=30_000)
+                    said = " ".join(page.locator(".toast-text").last.inner_text().split())
+                except Exception:  # noqa: BLE001
+                    said = "<no toast>"
+                page.wait_for_timeout(400)
+                shut_panel()
+                return said, text
+
+            def state():
+                return delete_walk_state()[1].split("E2E_SHELL_OK")[-1].strip()
+
+            def own_account_is_locked():
+                shut_panel()
+                page.get_by_placeholder("Search email, name or company…").fill("e2e-console-admin")
+                row_of("e2e-console-admin").wait_for(state="visible", timeout=15_000)
+                row_of("e2e-console-admin").locator("button.row-link").first.click()
+                ROLE_SELECT.wait_for(state="visible", timeout=8_000)
+                # "your own account" is known one profile round trip after the panel opens
+                try:
+                    page.locator(f"{PANEL} .field-hint", has_text="You cannot change your own role.") \
+                        .first.wait_for(state="visible", timeout=8_000)
+                except Exception:  # noqa: BLE001  — read below as a FAIL
+                    pass
+                locked = (ROLE_SELECT.is_disabled()
+                          and page.locator(f'{PANEL} .drawer-body button', has_text="Change role").first.is_disabled())
+                said = " ".join(page.locator(f"{PANEL} .field-hint").all_inner_texts())
+                shut_panel()
+                return locked and "You cannot change your own role." in said, f"locked={locked} hints={said[:120]}"
+            look("console role: nobody can change their own role", own_account_is_locked)
+
+            def mate_to_admin():
+                said, text = change_role(MATE_EMAIL, "Admin")
+                return ("Role changed to Admin." in said and "This makes Mateme an Admin of E2E Delete Co." in text
+                        and "| mate: admin" in state() and wait_role(MATE_EMAIL, "Admin")), \
+                    f"toast='{said}' | {text[:110]} |{state()}"
+            look("console role: a Member becomes an Admin through the panel", mate_to_admin)
+
+            def mate_to_owner():
+                said, text = change_role(MATE_EMAIL, "Owner")
+                return ("Role changed to Owner." in said and "an Owner of E2E Delete Co." in text
+                        and "| mate: owner" in state() and wait_role(MATE_EMAIL, "Owner")), f"toast='{said}' |{state()}"
+            look("console role: the Admin becomes an Owner", mate_to_owner)
+
+            def owner_lowered():
+                # two owners now, so the first account may be lowered — and stays IN its company
+                said, text = change_role(DELETE_EMAIL, "Member")
+                return ("Role changed to Member." in said and "| owner: member 1 0 | mate: owner" in state()
+                        and wait_role(DELETE_EMAIL, "Member")), f"toast='{said}' |{state()}"
+            look("console role: with another owner there, an owner is lowered to Member and stays in the company", owner_lowered)
+
+            def last_owner_refused():
+                said, text = change_role(MATE_EMAIL, "Member", refuses="only owner")
+                return ("is the only owner of E2E Delete Co. Make someone else owner first." in said
+                        and "| owner: member 1 0 | mate: owner" in state() and wait_role(MATE_EMAIL, "Owner")), \
+                    f"toast='{said}' |{state()}"
+            look("console role: the only owner left cannot be lowered — the server's words are shown", last_owner_refused)
+
+            def asked_directly():
+                # Only refused while the accounts are as the looks above left them. In any
+                # other state one of these "refusals" would be a real change — so then
+                # nothing is asked at all, and the look fails saying why.
+                if "| owner: member 1 0 | mate: owner" not in state():
+                    return False, f"not in the state this look needs, so nothing was asked |{state()}"
+                token = page.evaluate("() => localStorage.getItem('agentic-ai:token')")
+                headers = {"Authorization": f"Token {token}"}
+                listed = page.request.get(f"{BASE}/api/platform/users/?q=e2e-", headers=headers).json()["results"]
+                ids = {r["username"]: r["id"] for r in listed}
+                me = page.request.get(f"{BASE}/api/auth/me/", headers=headers).json()
+
+                def ask(user_id, role, **extra):
+                    r = page.request.post(f"{BASE}/api/platform/users/{user_id}/role/", headers=headers,
+                                          data={"role": role, "reason": "E2E gate", **extra})
+                    return r.status, r.json().get("error")
+                got = {
+                    "own": ask(me["id"], "owner"),
+                    "same": ask(ids[DELETE_USER], "member"),
+                    "unknown": ask(ids[DELETE_USER], "president"),
+                    "last_owner": ask(ids[MATE_USER], "member"),
+                    "last_owner_up": ask(ids[MATE_USER], "super_admin"),
+                    "anonymous": page.request.post(f"{BASE}/api/platform/users/{ids[DELETE_USER]}/role/",
+                                                    data={"role": "admin", "reason": "x"}).status,
+                }
+                wanted = {"own": (400, "cannot_change_role"), "same": (400, "already_has_role"),
+                          "unknown": (400, "bad_role"), "last_owner": (400, "last_owner"),
+                          "last_owner_up": (400, "last_owner"), "anonymous": 401}
+                return got == wanted and "| owner: member 1 0 | mate: owner" in state(), f"{got} |{state()}"
+            look("console role: the server refuses on its own — own role, same role, unknown role, the last owner, nobody signed in", asked_directly)
+
+            def made_super_admin():
+                said, text = change_role(DELETE_EMAIL, "Super admin")
+                return ("Role changed to Super admin." in said and "This takes Deleteme out of E2E Delete Co." in text
+                        and "| owner: super_admin 0 1 | mate: owner" in state()
+                        and wait_role(DELETE_EMAIL, "Super admin") and sign_in_attempt()[0] == 403), \
+                    f"toast='{said}' | {text[:110]} |{state()} | sign-in {sign_in_attempt()}"
+            look("console role: making a Super admin takes the account out of its company — and the workspace door closes for it", made_super_admin)
+            page.screenshot(path=str(SHOTS / "09i-console-super-admin.png"))
+
+            def back_into_the_company():
+                said, text = change_role(DELETE_EMAIL, "Member", company="E2E Delete Co")
+                return ("Role changed to Member." in said and "They sign in at the workspace from now on." in text
+                        and "| owner: member 1 0 | mate: owner" in state()
+                        and wait_role(DELETE_EMAIL, "Member") and sign_in_attempt()[0] == 200), \
+                    f"toast='{said}' | {text[:110]} |{state()} | sign-in {sign_in_attempt()}"
+            look("console role: a Super admin is put back into a company through the company picker — and signs in at the workspace again", back_into_the_company)
+
+            def as_the_delete_walk_needs_them():
+                change_role(DELETE_EMAIL, "Owner")
+                said, _ = change_role(MATE_EMAIL, "Member")
+                return "| owner: owner 1 0 | mate: member" in state(), f"toast='{said}' |{state()}"
+            look("console role: the two accounts are back as the delete walk needs them (owner + member)", as_the_delete_walk_needs_them)
+
             def delete_offered():
                 page.get_by_placeholder("Search email, name or company…").fill(DELETE_EMAIL)
                 found = wait_rows(1)
@@ -1553,9 +1747,9 @@ with sync_playwright() as p:
             check("console: the entering is recorded under the admin's name (ticket ended; issue, start, end)",
                   recorded and "tickets 1 ended 1" in detail
                   and all(f"'platform.impersonate.{a}'" in detail for a in ("issue", "start", "end")), detail)
-        # the delete walk's throwaway account and its workspace go, whatever happened above
+        # the walks' throwaway company and its two accounts go, whatever happened above
         swept, detail = django_shell(delete_walk_account_code("delete"))
-        check("console: the throwaway account to delete is removed again, with its workspace",
+        check("console: the throwaway accounts (delete and role walks) are removed again, with their company",
               swept and "left 0" in detail, detail)
         removed, detail = django_shell(console_admin_code("delete"))
     check("console: throwaway platform admins removed again",

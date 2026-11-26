@@ -36,6 +36,9 @@ import { AdminSettingsPage } from './AdminSettingsPage';
 import { MarketingPage } from './MarketingPage';
 import { PAYMENT_TABS, resolvePlatformPage } from './shared';
 import { navigateAdmin, parseAdminRoute } from '../../lib/router';
+import { useAsync } from '../../lib/hooks';
+import { getMe } from '../../lib/platform';
+import { initials } from './accountUi';
 import type { PaymentTab, PlatformPage } from './shared';
 
 const LABELS: Record<PlatformPage, string> = {
@@ -130,6 +133,10 @@ export function PlatformShell({ demo, onSignOut, slug }: { demo: boolean; onSign
   });
   const [menuOpen, setMenuOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(railStartsCollapsed);
+  // who is signed in: several people can be Super admins, and nobody can
+  // change their own role — so the foot of the rail says which account this is
+  const me = useAsync(() => getMe(), []);
+  const signedInAs = me.data?.username?.trim() || '';
 
   useEffect(() => {
     // One place decides what an address shows — on arrival and on every
@@ -235,13 +242,13 @@ export function PlatformShell({ demo, onSignOut, slug }: { demo: boolean; onSign
         </nav>
 
         <div className="sidebar-foot">
-          <div className="sidebar-user" title={collapsed ? 'Platform Admin · Super admin' : undefined}>
+          <div className="sidebar-user" title={collapsed ? `${signedInAs || 'Super admin'} · Super admin` : undefined}>
             <span className="avatar" aria-hidden>
-              PA
+              {initials(signedInAs || 'Super admin')}
             </span>
             <div>
-              <strong>Platform Admin</strong>
-              <small>Super admin</small>
+              <strong>{signedInAs || 'Super admin'}</strong>
+              <small>{signedInAs ? 'Super admin' : 'Console'}</small>
             </div>
           </div>
           <button className="nav-item side-logout" onClick={onSignOut} aria-label="Sign out" title="Sign out">

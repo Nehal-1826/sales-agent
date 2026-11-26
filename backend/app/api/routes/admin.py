@@ -15,6 +15,7 @@ real endpoint ships.
 """
 from __future__ import annotations
 
+import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -37,7 +38,8 @@ from app.api.routes.admin_settings import router as admin_settings_router
 from app.api.routes.platform_mail import router as platform_mail_router
 from app.db.models.mailboxes import Mailbox
 from app.db.models.plans import Plan
-from app.db.models.users import User
+from app.db.models.users import User, UserRole
+from app.schemas.admin_users import AdminRoleBody
 from app.schemas.mailboxes import BulkMailboxPauseRequest, MailboxTransferRequest
 from app.services.security import create_access_token
 
@@ -235,6 +237,37 @@ async def unsuspend_user(
     _actor: Annotated[User, Depends(require_super_admin)],
 ) -> None:
     await _set_suspended(session, user_id, suspended=False)
+
+
+def _as_uuid(value: str) -> uuid.UUID:
+    try:
+        return uuid.UUID(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid user id") from exc
+
+
+@router.post("/users/{user_id}/role", status_code=204)
+async def set_user_role(
+    user_id: str,
+    payload: AdminRoleBody,
+    session: Annotated[AsyncSession, Depends(get_db)],
+    actor: Annotated[User, Depends(require_super_admin)],
+) -> None:
+    """Change the role of an existing account (super_admin only).
+
+    Signing in through the bridge never flips the role of an existing row
+    (app.api.deps._provision_bridge_user) — this is the one door that does,
+    and only the main system uses it (core.roles: a super admin changed the
+    account's role in the console)."""
+    target = (
+        await session.execute(select(User).where(User.id == _as_uuid(user_id)))
+    ).scalar_one_or_none()
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.id == actor.id:
+        raise HTTPException(status_code=400, detail="You cannot change your own role")
+    target.role = UserRole(payload.role)
+    await session.commit()
 
 
 @router.post("/users/bulk-pause-mailboxes", status_code=200)

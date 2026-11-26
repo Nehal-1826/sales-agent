@@ -436,3 +436,46 @@ export const restorePlatformUser = async (userId: number, reason: string): Promi
   (await inDemo())
     ? demoFail<RestoredAccount>()
     : attempt(() => request<RestoredAccount>(`/platform/users/${userId}/restore/`, post({ reason }), 30_000));
+
+/* ---------------- change a role ---------------- */
+
+/** A role as the server names it. "Super admin" is `super_admin` on the wire;
+ *  the account rows call the same state `platform_admin` (`AccountRow.role`). */
+export type WireRole = 'member' | 'admin' | 'owner' | 'super_admin';
+
+/**
+ * What `POST /platform/users/<id>/role/` answers: the role the account had
+ * and the one it has now, and the company it left or joined (null when it
+ * did not).
+ */
+export interface RoleChanged {
+  changed: boolean;
+  from: WireRole;
+  to: WireRole;
+  workspace_left: { id: number; name: string; slug: string } | null;
+  workspace_joined: { id: number; name: string; slug: string } | null;
+}
+
+/**
+ * Change an account's role. `workspace` is the company joined: it is sent
+ * exactly when the account has no company and a company role is picked. The
+ * reason is recorded under the admin's name.
+ *
+ * 30 s, not the usual 10: the server asks the warmup service before it touches
+ * the account, and while it may still be changing something the call must not
+ * be given up from here.
+ */
+export const changePlatformUser = async (
+  userId: number,
+  body: { role: WireRole; reason: string; workspace?: number },
+): Promise<Result<RoleChanged>> =>
+  (await inDemo())
+    ? demoFail<RoleChanged>()
+    : attempt(() => request<RoleChanged>(`/platform/users/${userId}/role/`, post(body), 30_000));
+
+/** The companies an account without one can be given a role in: the running
+ *  ones, by name. */
+export async function listRunningCompanies(): Promise<Result<{ id: number; name: string }[]>> {
+  if (await inDemo()) return { ok: true, data: [] };
+  return attempt(() => request<{ id: number; name: string }[]>('/platform/workspaces/'));
+}

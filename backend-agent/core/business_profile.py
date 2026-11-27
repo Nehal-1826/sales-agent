@@ -25,6 +25,7 @@ from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 
+from . import identity
 from .ai import llm_json
 from .company_scrape import (BadUrl, company_details, fetch_public, normalize_url,
                              visible_text)
@@ -315,8 +316,15 @@ def apply_profile(settings, profile):
     only written when the profile actually inferred leads — a business whose
     customers are individuals keeps whatever 'Who to find' it already has.
     Returns short human-readable lines for the chat reply."""
+    wanted = ' '.join((profile.get('name') or '').split())
+    kept = None
+    if wanted and identity.company_name_is_taken(wanted, excluding=settings.workspace_id):
+        # one company, one name (core.identity): another company already has
+        # it — the current name stays, and the reply says so
+        kept = (f'company name: kept "{settings.company_name}" — "{wanted}" is already '
+                'the name of another company')
     fields = {
-        'company_name': profile.get('name') or settings.company_name,
+        'company_name': settings.company_name if kept else (wanted or settings.company_name),
         'company_website': profile.get('domain') or settings.company_website,
         'company_description': profile.get('description') or settings.company_description,
         'company_address': (profile.get('address') or settings.company_address or '')[:300],
@@ -331,8 +339,10 @@ def apply_profile(settings, profile):
     for field, value in fields.items():
         setattr(settings, field, value)
     settings.save(update_fields=[*fields, 'updated_at'])
+    if not kept:
+        identity.sync_company_name(settings)      # the workspace row takes the typed name
 
-    lines = [f'company name: {settings.company_name}',
+    lines = [kept or f'company name: {settings.company_name}',
              f'website: {settings.company_website}']
     if settings.services:
         lines.append('what you sell: ' + ', '.join(settings.services))

@@ -14,14 +14,28 @@ from django.contrib.auth.models import AbstractUser
 import os
 
 from django.db import models
+from django.db.models.functions import Lower, Trim
 
+from . import identity
 from .tenancy import TenantOwned, current_workspace
+
+
+class WorkspaceQuerySet(models.QuerySet):
+    def update(self, **fields):
+        # a company's key must never disagree with its name: a name changed
+        # this way (not through save()) brings its key along
+        if 'name' in fields and 'name_key' not in fields:
+            fields['name_key'] = identity.company_key(fields['name'])
+        return super().update(**fields)
 
 
 class Workspace(models.Model):
     """One company (tenant). Every tenant-owned row belongs to exactly one."""
 
     name = models.CharField(max_length=200)
+    # the name as it is compared (core.identity.company_key): trimmed, inner
+    # spaces collapsed, case-folded — one company per name, stopped ones included
+    name_key = models.CharField(max_length=200, blank=True, editable=False)
     slug = models.SlugField(max_length=60, unique=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -36,10 +50,23 @@ class Workspace(models.Model):
     # good once none of its accounts can be brought back
     deleted_at = models.DateTimeField(null=True, blank=True)
 
-    objects = models.Manager()
     # same name as the tenant models' unscoped manager, so callers can grep
     # one idiom for "deliberately not tenant-scoped"
-    all_tenants = models.Manager()
+    objects = WorkspaceQuerySet.as_manager()
+    all_tenants = WorkspaceQuerySet.as_manager()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['name_key'], condition=~models.Q(name_key=''),
+                                    name='uniq_workspace_name_key'),
+        ]
+
+    def save(self, *args, **kwargs):
+        self.name_key = identity.company_key(self.name)
+        fields = kwargs.get('update_fields')
+        if fields is not None and 'name' in fields and 'name_key' not in fields:
+            kwargs['update_fields'] = [*fields, 'name_key']
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name
@@ -62,6 +89,17 @@ class User(AbstractUser):
     class Clocks(models.TextChoices):
         H12 = '12h', '12-hour'
         H24 = '24h', '24-hour'
+
+    class Meta(AbstractUser.Meta):
+        constraints = [
+            # one account per e-mail address, whatever its case or the spaces
+            # around it; no address is no clash (core.identity, migration 0051)
+            models.UniqueConstraint(Lower(Trim('email')), condition=~models.Q(email=''),
+                                    name='uniq_user_email_ci'),
+            # 'Admin' and 'admin' are one username (the field's own rule only
+            # tells exact copies apart)
+            models.UniqueConstraint(Lower('username'), name='uniq_user_username_ci'),
+        ]
 
     role = models.CharField(max_length=10, choices=Roles.choices, default=Roles.MEMBER)
     email_verified_at = models.DateTimeField(null=True, blank=True)
@@ -100,6 +138,9 @@ class User(AbstractUser):
                                   on_delete=models.CASCADE, related_name='users')
 
     def save(self, *args, **kwargs):
+        # the one form an e-mail address is stored in (core.identity): every
+        # maker of an account comes through here, the Django admin included
+        self.email = identity.normalize_email(self.email)
         # A new tenant user inherits the active workspace (tests, create_workspace).
         if self.workspace_id is None and not self.is_superuser:
             ws = current_workspace()

@@ -31,15 +31,18 @@ Brand: **WarmPulse**, accent theme **orange** (`#f97316` family — restored
 - `whatsapp-sidecar/` — WhatsApp runtime service (node). `warmpulse-mobile/` — RN app.
 - `ops/` — gateway nginx (`/api/`→django:8000, `/wp-api/`→fastapi:8001 rewritten
   to its internal `/api/`), db init. Root `docker-compose.yml` = full stack.
-- `scripts/e2e/flow.py` — the Playwright gate (185 checks; run before every push).
+- `scripts/e2e/flow.py` — the Playwright gate (186 checks; run before every push).
 - `docs/superpowers/` — specs + plans (foundation, shell-ux batch, warmup dashboards).
 
 ## Commands (local dev, Windows Git Bash — quote paths, space in "Devesh B")
 
 ```bash
 # 1) Django  (.venv inside backend-agent)
+#    SIGNUP_THROTTLE_RATE is LOCAL only: the sign-up door allows 5 an hour per
+#    address in production (the default), and the browser gate signs up twice a run.
 cd backend-agent && export DATABASE_URL=sqlite:///db-agent-e2e.sqlite3 \
   && export WARMUP_JWT_SECRET=$(cat ../.superpowers/sdd/dev-secret.txt) \
+  && export SIGNUP_THROTTLE_RATE=1000/hour \
   && .venv/Scripts/python manage.py migrate && .venv/Scripts/python manage.py seed_demo \
   && .venv/Scripts/python manage.py runserver 127.0.0.1:8000
 #    login: operator / operator-demo-2026
@@ -146,11 +149,7 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   `warmup_unavailable`) — a deleted account must never keep warming, and
   "could not look" is never read as "no copy". When it fails on a LATER
   account, what was already paused runs again (`warmup_accounts.undo`), or
-  the admin is told whose mailboxes stayed paused. An account whose e-mail
-  address another switched-on account has too is not deleted at all
-  (`shared_email`): its copy on the warmup side is that other account's
-  copy too, and those mailboxes would stop with it (see Changing roles).
-  The workspace stops with its
+  the admin is told whose mailboxes stayed paused. The workspace stops with its
   last owner/admin and the other accounts in it go with it; only the
   deletion's own stop is stamped (`Workspace.deleted_at`), so a workspace an
   admin stopped by hand from Tenants is never restarted by a restore. A
@@ -181,14 +180,9 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   limit applies). `roles.can_change` is the ONE rule: never your own account,
   never a deleted one, never the role it has, a company always keeps an
   owner (the only owner can be neither lowered nor made a Super admin), the
-  console always keeps a Super admin — and never an account whose e-mail
-  address another switched-on account has too (`shared_email`), when the
-  change crosses the Super admin line: the warmup service tells people apart
-  by e-mail, so two accounts with one address are ONE person there (one
-  copy), and the role would change for both. A change inside a company never
-  asks that service, so it is allowed. (Live, 26 Nov 2026: `admin` and
-  `superadmin` both carry `superadmin@warmpulse.tech`; the warmup side's plain
-  "You cannot change your own role" reached the owner as a 502.)
+  console always keeps a Super admin. (Two accounts with one e-mail address
+  — the live bug of 26 Nov 2026 — cannot exist any more: see Account
+  uniqueness.)
   Warmup FIRST, then the account: a
   promotion pauses the person's warmup mailboxes while their copy is still a
   client and then sets the copy's role (`POST /api/admin/users/{id}/role` —
@@ -208,6 +202,53 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   (the first version detached it; the tests caught it). Audit
   `platform.user.role`. The console says "Super admin", never "Platform
   admin", and the rail's foot names the account that is signed in.
+- **Account uniqueness** (27 Nov 2026; owner's order; `core/identity.py`,
+  migration 0051): one person, one e-mail address; one company, one name —
+  enforced at every door AND by the database itself. `core_user.email` had
+  no uniqueness rule at all (only the sign-up form checked it), and on live
+  two platform admins came to share `superadmin@warmpulse.tech`: `admin`
+  (id 1) was the development database's superuser, brought over by the 18
+  Nov full import, and `superadmin` (id 7) was made by a script on 19 Nov
+  with the same address. The database now holds: `uniq_user_email_ci`
+  (unique on `LOWER(TRIM(email))` where the address is not empty — Django
+  writes it as a unique index on PostgreSQL AND SQLite), `uniq_user_username_ci`
+  (`LOWER(username)`), and `Workspace.name_key` (`uniq_workspace_name_key`:
+  trimmed, inner spaces collapsed, case-folded — computed in `save()` and
+  by `WorkspaceQuerySet.update(name=…)`, so a raw update keeps it in step).
+  Migration 0051 REPORTS FIRST: with two rows sharing a company name or an
+  e-mail address it stops and lists their ids — a clash is resolved by a
+  person, never by a migration. (A typed name in Settings that equals
+  another company's name does not stop it: the settings door looks at a
+  name only when it changes, so the demo seed's typed "Shailog Technologies"
+  on the company "Demo" blocks nothing.) `core.identity` is the one way to
+  write and compare
+  (`normalize_email`, `email_is_taken`, `username_is_taken`, `company_key`,
+  `company_name_is_taken`, `sync_company_name`, `signup_address_in_use`,
+  `signup_lost_race`); `User.save()` stores the e-mail in one form. Every
+  door asks it first and says the same three sentences: "Email already
+  registered. Sign in instead." · "Company already exists. Sign in
+  instead." · "That username is already taken." — sign-up (`company` and
+  `email` field errors; a lost race is caught and answered from what the
+  database holds now), `PUT /api/settings/` (400 `detail`), the wizard's
+  company step (asked again), the profile fetch (`apply_profile` keeps the
+  current name and says so), `create_platform_admin`, `create_workspace`,
+  the Django admin's user and workspace forms, `change-username` (a lost
+  race is a 409, it was an uncaught error), and Google sign-in (refuses more
+  than one match; it still never makes an account). `bootstrap_admin` never
+  makes a second account: a username or address taken elsewhere → "already
+  exists elsewhere — nothing to do" (it used to crash — `set -e` took the
+  container down — and printed an API token into the log; the token line is
+  gone, the GENERATED password line is still there by design). There is no
+  phone field on accounts (the owner chose to skip phone), no invites, no
+  user import, no "is this e-mail free" door (it would let people probe
+  addresses); sign-up stays at 5/hour per IP. Soft-deleted accounts and
+  stopped companies keep their address / name. ONE COMPANY NAME: the name
+  typed in Settings → Your business is also the workspace's name
+  (`sync_company_name`: what the console, the sidebar and reports show) —
+  the migration renames nothing; tooling that assigns `company_name`
+  directly (the demo seed, `eval_assistant`) renames nothing, and the eval's
+  throwaway workspace carries the run's stamp because a company name is
+  never taken twice. Pinned by `core.tests.test_identity`.
 - **Formats** (2026-11-26; owner's order: Indian by default, changeable at any
   time, for every role in both apps): `User.format` (`IN` · `US` · `GB` ·
   `device`) and `User.clock` (`12h` · `24h`), migration 0050, every account
@@ -674,12 +715,7 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   workspace `e2e-delete-ws`, made and removed by `django_shell`) and, on the
   same company with a second account (`e2e-mate-me`, a Member), changes roles
   end to end (Member → Admin → Owner, a lowered owner, a refusal in the
-  server's words, a Super admin made and put back into the company, and two
-  accounts with one e-mail address refused — a twin `e2e-twin-me` is made
-  for that one look and removed at once; while it exists two rows carry the
-  address, so that look finds the first account by its NAME, and it empties
-  the search afterwards, because the list on screen still holds the twin's
-  row after it is gone); a deletion
+  server's words, a Super admin made and put back into the company); a deletion
   is refused while the warmup service is down, so those checks are skipped
   then. Two rules for that walk: the first account of a company is always made
   its owner (create the owner BEFORE the member a look is about), and a check
@@ -701,8 +737,23 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   first paint, the other marketing pages must not carry that guard. A check
   that waits for a server answer waits for the THING it checks (up to 20 s),
   never a fixed pause — 1.8 s was not enough for the mailbox list on a
-  loaded machine and read as "0 toggles".
-- Test facts worth knowing (`backend-agent`): the formats are pinned by
+  loaded machine and read as "0 toggles". After that snapshot the gate
+  submits the sign-up form twice with a taken company name ("Demo") and a
+  registered address, and reads the two sentences under their fields — the
+  expected 400s are made after the hygiene snapshot on purpose. The sign-up
+  door allows 5 an hour per address, so the LOCAL Django server must be
+  started with `SIGNUP_THROTTLE_RATE=1000/hour` (Commands): a third gate run
+  within the hour meets a 429 otherwise (it did), and the gate then SKIPs
+  those three looks with that reason. The rate lives in the process (locmem):
+  clearing the cache from a shell does nothing to a running server.
+- Test facts worth knowing (`backend-agent`): account uniqueness is pinned
+  by `core.tests.test_identity` (helpers, the database's own rules on
+  SQLite, the migration's report through `MigrationCase`, every door) — the
+  sign-up door is limited to 5 an hour per IP in tests too, so a test posts
+  at most four times; the test database always holds the default workspace
+  `shailog` / "Shailog Technologies" (migration 0022), so a test that counts
+  companies counts it, and a `name_key` query is the honest count. The
+  formats are pinned by
   `core.tests.test_preferences` (the two fields, the profile, the endpoint,
   the refusal inside "Enter as user"), `core.tests.test_formatting` (the
   document helpers) and `backend/tests/test_formatting.py` (the warmup
@@ -761,6 +812,17 @@ The shared bridge secret must be **32+ chars** and identical on both backends
   card 429px wide in a 340px column and 60px of it slid under the preview.
   `.pf-filters > select` sits on the filter row like its search box (the
   form default `width: 100%` used to put every dropdown on its own line).
+- **Never restore another environment's dump over live.** On 18 Nov 2026 a
+  `pg_restore --clean` of the development database replaced the live
+  `core_user` and `core_mailbox` tables: the platform admin lost its flags
+  and its password, a development superuser (`admin`, id 1) arrived carrying
+  `superadmin@warmpulse.tech`, and the next day a repair script made
+  `superadmin` with the same address — the duplicate of 26 Nov. Restore per
+  table, never `core_user`, `core_workspace`, `authtoken_token`,
+  `core_platformsession` or `core_mailbox`; since migration 0051 the
+  database refuses two rows with one address, but a whole-table restore
+  still replaces every live login. To move data, write the script first and
+  read its first log line (the ssh trap below).
 - Python env note on Windows: `backend-agent/.venv` and `backend/.venv` are currently
   absent/incomplete — the working venvs live in the sibling checkout
   `../Email-Warmup/` (`backend-agent/.venv` for Django incl. PyJWT;

@@ -153,7 +153,12 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_THROTTLE_RATES': {
         'anon': '60/min', 'user': '600/min',
-        'login': '10/min', 'signup': '5/hour', 'resend': '3/hour', 'otp': '10/min',
+        'login': '10/min',
+        # the sign-up door: 5 an hour per address. SIGNUP_THROTTLE_RATE is for
+        # a LOCAL server only (the browser gate submits the form twice a run)
+        # — production never sets it.
+        'signup': os.environ.get('SIGNUP_THROTTLE_RATE', '5/hour'),
+        'resend': '3/hour', 'otp': '10/min',
         'billing': '30/min', 'webhook': '600/min',
         **_TEST_RATES,
     },

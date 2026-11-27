@@ -136,29 +136,9 @@ class RefusedTests(Base):
         self.assertEqual(self.paused.call_count, 0)
         self.assertEqual(self.actions(), [])
 
-    # ── two accounts with one e-mail address have ONE copy on the warmup side
-    #    (it tells people apart by e-mail): deleting one of them would stop the
-    #    other one's mailboxes too, so it is refused before anything is asked
-    def test_an_account_that_shares_its_e_mail_cannot_be_deleted(self):
-        ws = self.company()
-        ada = self.person(ws, 'ada', EMAIL, role='owner')
-        self.person(ws, 'bo', 'bo@acme.test', role='owner')
-        User.objects.create_user(username='twin', password=PW, email=EMAIL)
-        r = self.delete(ada)
-        self.assertEqual((r.status_code, r.json()['error']), (400, 'shared_email'), r.content)
-        self.assertIn('ada has the same e-mail address as another account (twin) (ada@acme.test)', r.json()['detail'])
-        self.assertIn("deleting this account would stop the other one's warmup mailboxes too", r.json()['detail'])
-        self.assertEqual(self.paused.mock_calls, [])
-        self.assertIsNone(self.user('ada').deleted_at)
-        self.assertEqual(self.actions(), [])
-
-    def test_a_twin_that_is_deleted_does_not_count(self):
-        ws = self.company()
-        ada = self.person(ws, 'ada', EMAIL, role='owner')
-        self.person(ws, 'bo', 'bo@acme.test', role='owner')
-        gone = User.objects.create_user(username='twin', password=PW, email=EMAIL)
-        User.objects.filter(pk=gone.pk).update(deleted_at=timezone.now(), is_active=False)
-        self.assertEqual(self.delete(ada).status_code, 200)
+    # (Two accounts with one e-mail address cannot exist any more — the
+    #  database refuses them: core.tests.test_identity — so no deletion can
+    #  stop another account's warmup copy.)
 
     def test_only_a_platform_admin_can_delete(self):
         ws = self.company()

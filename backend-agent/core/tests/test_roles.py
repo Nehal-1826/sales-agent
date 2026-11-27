@@ -76,12 +76,6 @@ class Base(TestCase):
     def fresh(self, target):
         return User.objects.get(pk=target.pk)
 
-    def twin(self, email, username='twin'):
-        """Another switched-on account with this e-mail address (no company, not a super admin)."""
-        u = User.objects.create_user(username=username, password=PW, email=email)
-        User.objects.filter(pk=u.pk).update(workspace=None)
-        return User.objects.get(pk=u.pk)
-
     def sign_in(self, door, username, password):
         return APIClient().post(f'/api/auth/{door}/', {'username': username, 'password': password}, format='json')
 
@@ -171,63 +165,23 @@ class RefusedTests(Base):
         r = self.change(ada, 'super_admin')
         self.assertEqual((r.status_code, r.json()['error']), (400, 'no_email'))
 
-    # ── two accounts with one e-mail address. The warmup service tells people
-    #    apart by e-mail, so it keeps ONE copy of them: a role that would
-    #    change that copy cannot be changed for one of them alone. (Live,
-    #    26 Nov 2026: two super admins shared an address, and the warmup
-    #    service's "your own role" came back as a 502 "could not do it".)
-    def test_an_account_that_shares_its_e_mail_cannot_become_a_super_admin(self):
-        ws = self.company_with_owner()
-        max_ = self.person(ws, 'max', 'max@acme.test')
-        self.twin('MAX@acme.test')                       # the same address, written differently
-        r = self.change(max_, 'super_admin')
-        self.assertEqual((r.status_code, r.json()['error']), (400, 'shared_email'), r.content)
-        self.assertIn('max has the same e-mail address as another account (twin) (max@acme.test)', r.json()['detail'])
-        self.assertIn('Give one of the two accounts a different e-mail address first.', r.json()['detail'])
-        self.assertEqual((self.fresh(max_).workspace_id, self.fresh(max_).is_staff), (ws.pk, False))
-        self.assertEqual(self.calls.mock_calls, [])
-
-    def test_a_super_admin_whose_e_mail_is_shared_cannot_join_a_company(self):
-        ws = self.company()
-        _, leaver, _ = make_admin('leaver')
-        self.twin(leaver.email)
-        r = self.change(leaver, 'member', workspace=ws)
-        self.assertEqual((r.status_code, r.json()['error']), (400, 'shared_email'), r.content)
-        self.assertIn('another account (twin)', r.json()['detail'])
-        self.assertIsNone(self.fresh(leaver).workspace_id)
-        self.assertEqual(self.calls.mock_calls, [])
-
-    def test_it_says_so_when_the_shared_address_is_the_signed_in_admin_s(self):
-        ws = self.company_with_owner()
-        max_ = self.person(ws, 'max', self.admin_u.email)       # the acting admin's own address
-        r = self.change(max_, 'super_admin')
-        self.assertEqual(r.json()['error'], 'shared_email')
-        self.assertIn(f'max has the same e-mail address as your account ({self.admin_u.email})', r.json()['detail'])
+    # (Two accounts with one e-mail address cannot exist any more: the
+    #  database refuses them — core.tests.test_identity.)
 
     def test_a_change_inside_a_company_asks_the_warmup_service_nothing(self):
         ws = self.company_with_owner()
         max_ = self.person(ws, 'max', 'max@acme.test')
-        self.twin('max@acme.test')
         r = self.change(max_, 'admin')
         self.assertEqual(r.status_code, 200, r.content)
         self.assertEqual((self.fresh(max_).role, self.fresh(max_).workspace_id), ('admin', ws.pk))
         self.assertEqual(self.calls.mock_calls, [])
 
-    def test_a_twin_that_is_deleted_does_not_count(self):
-        ws = self.company_with_owner()
-        max_ = self.person(ws, 'max', 'max@acme.test')
-        gone = self.twin('max@acme.test', username='gone')
-        User.objects.filter(pk=gone.pk).update(deleted_at=timezone.now(), is_active=False)
-        r = self.change(max_, 'super_admin')
-        self.assertEqual(r.status_code, 200, r.content)
-        self.assertTrue(self.fresh(max_).is_staff)
-
-    def test_two_accounts_with_no_address_at_all_are_not_twins(self):
+    def test_two_accounts_with_no_address_at_all_are_allowed(self):
         ws = self.company()
         self.person(ws, 'ada', '', role='owner')
         bea = self.person(ws, 'bea', '')
         r = self.change(bea, 'super_admin')
-        self.assertEqual(r.json()['error'], 'no_email')          # the rule for no address, not for a shared one
+        self.assertEqual(r.json()['error'], 'no_email')          # the rule for no address
 
     def test_nothing_changes_on_a_refusal(self):
         ws = self.company('keep', 'Keep Co')

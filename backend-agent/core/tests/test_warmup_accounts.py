@@ -8,8 +8,6 @@ deleted (core.accounts)."""
 import os
 from unittest import mock
 
-from django.utils import timezone
-
 import requests
 from django.core.cache import cache
 from django.test import TestCase
@@ -17,7 +15,6 @@ from django.test import TestCase
 from billing.tests.helpers import no_template_capture, quiet_logs
 from billing.tests.test_platform_base import make_admin
 from core import warmup_accounts
-from core.models import User
 
 SECRET = 'unit-test-bridge-secret-0123456789abcdef'      # 32+ characters, like the real one
 
@@ -224,44 +221,4 @@ class UndoTests(Base):
         self.assertEqual((caught.exception.detail, caught.exception.status_code, caught.exception.unchanged),
                          ('the mailboxes are paused', 502, False))          # never "Nothing was changed" then
         self.assertTrue(logged.called)
-
-
-class TwinTests(Base):
-    """Two accounts with one e-mail address are ONE person on the warmup side."""
-
-    def account(self, username, email):
-        u = User.objects.create_user(username=username, password='pw12345678', email=email)
-        User.objects.filter(pk=u.pk).update(workspace=None)
-        return User.objects.get(pk=u.pk)
-
-    def test_another_account_with_the_same_address(self):
-        ada = self.account('ada', 'ada@acme.test')
-        self.assertIsNone(warmup_accounts.twin_of(ada))
-        self.account('twin', 'ADA@acme.test')               # the same address, written differently
-        self.assertEqual(warmup_accounts.twin_of(ada).username, 'twin')
-
-    def test_no_address_no_twin(self):
-        ada = self.account('ada', '')
-        self.account('twin', '')
-        self.assertIsNone(warmup_accounts.twin_of(ada))
-
-    def test_a_deleted_twin_does_not_count(self):
-        ada = self.account('ada', 'ada@acme.test')
-        gone = self.account('gone', 'ada@acme.test')
-        User.objects.filter(pk=gone.pk).update(deleted_at=timezone.now(), is_active=False)
-        self.assertIsNone(warmup_accounts.twin_of(ada))
-
-    def test_the_words_name_the_other_account(self):
-        ada = self.account('ada', 'ada@acme.test')
-        twin = self.account('twin', 'ada@acme.test')
-        self.assertEqual(
-            warmup_accounts.shared_email(ada, twin, self.admin, 'this cannot be done.'),
-            'ada has the same e-mail address as another account (twin) (ada@acme.test). The warmup service tells '
-            'people apart by e-mail address, so it counts them as one person and this cannot be done. '
-            'Give one of the two accounts a different e-mail address first.')
-
-    def test_and_your_own_account_when_it_is_yours(self):
-        me = self.account('me', self.admin.email)          # its twin IS the signed-in admin
-        said = warmup_accounts.shared_email(me, warmup_accounts.twin_of(me), self.admin, 'no.')
-        self.assertIn(f'me has the same e-mail address as your account ({self.admin.email})', said)
 

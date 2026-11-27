@@ -28,7 +28,7 @@ Spec: `docs/superpowers/specs/2026-11-27-account-uniqueness-design.md`.
 
 **Produces:** `normalize_email(value)`, `email_is_taken(email, excluding=None)`, `username_is_taken(username, excluding=None)`, `company_key(name)`, `company_name_is_taken(name, excluding=None)`, `sync_company_name(settings_row)`, `signup_lost_race(email, company)`, `TAKEN_EMAIL`, `TAKEN_COMPANY`, `TAKEN_USERNAME`.
 
-- [ ] Write `HelpersTests` (pure functions), run red, write the module, run green.
+- [x] Write `HelpersTests` (pure functions), run red, write the module, run green.
 
 ```python
 def normalize_email(value): return value.strip().lower() if isinstance(value, str) else ''
@@ -49,33 +49,50 @@ The taken-checks import `User`/`Workspace` lazily (models import this module at 
 
 **Files:** Modify `backend-agent/core/signup.py`, `backend-agent/core/tests/test_signup.py`.
 
-- [ ] `_email_in_use(email)` helper; `identity.TAKEN_EMAIL`; company-name check → `_fail('company', identity.TAKEN_COMPANY)`; a lost race → `_fail(*identity.signup_lost_race(email, company))` (re-raised when neither is taken).
-- [ ] Tests: taken address in another case / with spaces; taken company name; two sign-ups at once (address, company name); the three existing tests that relied on two companies named alike.
+- [x] `_email_in_use(email)` helper; `identity.TAKEN_EMAIL`; company-name check → `_fail('company', identity.TAKEN_COMPANY)`; a lost race → `_fail(*identity.signup_lost_race(email, company))` (re-raised when neither is taken).
+- [x] Tests: taken address in another case / with spaces; taken company name; two sign-ups at once (address, company name); the three existing tests that relied on two companies named alike.
 
 ### Task 4: the other doors
 
 **Files:** Modify `core/management/commands/create_platform_admin.py`, `create_workspace.py`, `bootstrap_admin.py`, `eval_assistant.py`, `core/admin.py`, `core/views.py` (change-username), `core/google_auth.py`.
 
-- [ ] Commands refuse a taken value (`CommandError`); `bootstrap_admin` prints "already exists elsewhere — nothing to do" and returns, and no longer prints the API token; `eval_assistant` names its workspace with the run's stamp.
-- [ ] `UserAdminForm.clean_email/clean_username`, `WorkspaceAdminForm.clean_name`; `change_username` catches `IntegrityError` → 409; Google sign-in refuses more than one match.
-- [ ] Tests: `DoorsTests`.
+- [x] Commands refuse a taken value (`CommandError`); `bootstrap_admin` prints "already exists elsewhere — nothing to do" and returns, and no longer prints the API token; `eval_assistant` names its workspace with the run's stamp.
+- [x] `UserAdminForm.clean_email/clean_username`, `WorkspaceAdminForm.clean_name`; `change_username` catches `IntegrityError` → 409; Google sign-in refuses more than one match.
+- [x] Tests: `DoorsTests`.
 
 ### Task 5: one company name
 
 **Files:** Modify `core/views.py` (settings_view), `core/onboarding.py` (company step), `core/business_profile.py` (apply_profile).
 
-- [ ] Settings: a taken name → 400 `{'detail': TAKEN_COMPANY}` (also on a lost race); after a save `identity.sync_company_name(obj)`.
-- [ ] Wizard: a taken name → the Assistant's words, step asked again. `apply_profile`: a taken name is not written, the reply says it was kept; otherwise `sync_company_name`.
-- [ ] Tests: `CompanyNameTests`.
+- [x] Settings: a taken name → 400 `{'detail': TAKEN_COMPANY}` (also on a lost race); after a save `identity.sync_company_name(obj)`.
+- [x] Wizard: a taken name → the Assistant's words, step asked again. `apply_profile`: a taken name is not written, the reply says it was kept; otherwise `sync_company_name`.
+- [x] Tests: `CompanyNameTests`.
 
 ### Task 6: the gate, the notes, the gates
 
-- [ ] `scripts/e2e/flow.py`: at the sign-up page, a taken address and a taken company name are refused in the server's words (nothing is created).
-- [ ] `AGENTS.md`: the rule, the migration's report, "never pg_restore another environment's dump over live", the functional unique index on both databases.
-- [ ] `manage.py test`, the browser gate, `makemigrations --check`, secret scan; ONE local commit.
+- [x] `scripts/e2e/flow.py`: at the sign-up page, a taken address and a taken company name are refused in the server's words (nothing is created).
+- [x] `AGENTS.md`: the rule, the migration's report, "never pg_restore another environment's dump over live", the functional unique index on both databases.
+- [x] `manage.py test`, the browser gate, `makemigrations --check`, secret scan; ONE local commit.
 
 ### Task 7: live — each step on the owner's word
 
 - [ ] **Backup** both databases (`pg_dump -Fc`) + plain-SQL copies of the seven tables to `/root/backups/warmpulse-pre-uniqueness-20261127/`; `pg_restore --list` on each.
 - [ ] **Delete ID 1** with `.superpowers/sdd/remove-duplicate-admin.py` (the audited steps, asserted, one transaction); verify `superadmin` signs in by e-mail (read-only checks only).
 - [ ] **Deploy** (Django images only); the migration runs at start; verify read-only.
+
+## As built (27 Nov 2026)
+
+Tasks 1–6 are in and green; Task 7 waits for the owner's word, each live step on its own.
+
+What differs from the plan above, and why:
+
+- **Yesterday's shared-e-mail rule is gone** (`warmup_accounts.twin_of` / `shared_email`, the `shared_email` refusals in `roles.can_change` and `accounts.can_delete`, their 13 tests and the gate's twin look). Two accounts with one address cannot exist any more — the database refuses them — so the rule guarded nothing. Migration 0051 is its replacement.
+- **Usernames are unique ignoring case** (the owner's default): `uniq_user_username_ci`. The field's own case-sensitive rule stays.
+- **The migration does not stop on a typed name** (Settings → Your business) that equals another company's name. The demo seed types "Shailog Technologies" on the company "Demo", so every development database carries one; stopping there would have blocked every local bring-up. Instead the settings door looks at a name only when it CHANGES, so an old value blocks no other setting and renames nothing.
+- **`WorkspaceQuerySet.update(name=…)` keeps the key in step**: the purge renames a workspace with `QuerySet.update`, and so do four test fixtures. A custom queryset (both managers) computes `name_key` there too.
+- **The sign-up race is answered from what the database holds**: `identity.signup_lost_race(email, company)` returns the field and the words, or `None` — and `None` re-raises: an error that is not ours is never answered with a guess.
+- **`bootstrap_admin` also refuses to make the default workspace onto another company's name** (it would have crashed on the unique name and taken the container down).
+- **Google sign-in** refuses when more than one account matches; it still never makes an account.
+- **Gates:** Django 1408, `makemigrations --check` clean, browser gate 186/186 (the twin look removed; three sign-up looks added after the hygiene snapshot).
+- **A local-only knob for the gate:** `SIGNUP_THROTTLE_RATE` (default `5/hour`, never set in production). The gate submits the sign-up form twice a run and the rate lives in the server process, so a third run within the hour met a 429 — it did, on 27 Nov. The local Django command in AGENTS.md sets `1000/hour`; without it the gate SKIPs the three looks and says why.
+- **The live deletion script is rehearsed**: `.superpowers/sdd/remove-duplicate-admin.py` (gitignored) ran against a database shaped like the audit — it removes exactly the audited account and moves the 12 messages; with any surprise it changes nothing; when the two no longer share the address it refuses. (Making that shape needed the new index dropped first: the database now refuses the duplicate that live carries.)

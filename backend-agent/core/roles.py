@@ -74,13 +74,6 @@ def can_change(admin, target, role, workspace=None):
     was, company = role_of(target), target.workspace
     if role == was:
         return 'already_has_role', f'This account is already {label(role).lower()}.', 400
-    if SUPER_ADMIN in (role, was):
-        # the role of its copy changes on the warmup side too — and two accounts
-        # with one e-mail address are ONE person there, so it would change both
-        twin = warmup_accounts.twin_of(target)
-        if twin is not None:
-            return 'shared_email', warmup_accounts.shared_email(
-                target, twin, admin, 'this role cannot be changed for one of them alone.'), 400
 
     if role == SUPER_ADMIN:
         if not (target.email or '').strip():

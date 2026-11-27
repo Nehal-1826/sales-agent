@@ -89,8 +89,11 @@ def sync_company_name(settings_row) -> bool   # the workspace row takes the type
 | `core_user` | `uniq_user_username_ci`: unique on `LOWER(username)` (the old case-sensitive one stays) |
 | `core_workspace` | new column `name_key` (200, blank allowed); `uniq_workspace_name_key`: unique where `name_key <> ''` |
 
-- The migration **reports first**: with two rows sharing a name or an address it stops and lists
-  them (ids and values); it never changes a row to get past a clash. Live has none.
+- The migration **reports first**: with two rows sharing a company name or an e-mail
+  address it stops and lists them (ids and values); it never changes a row to get
+  past a clash. Live has none. (A typed name in Settings that equals another
+  company's name does not stop it: the settings door looks at a name only when it
+  changes, so such an old value blocks nothing.)
 - `name_key` is computed by `Workspace.save()` and by `Workspace`'s queryset `update(name=…)`, so
   the key can never disagree with the name through any app write.
 - `User.save()` normalises the e-mail. `Lower(Trim(...))` is a functional index on both PostgreSQL

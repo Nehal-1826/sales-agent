@@ -72,6 +72,15 @@ class FirebaseVerifyTests(TestCase):
         self.assertTrue(Token.objects.filter(user=self.user).exists())
         self.assertEqual(r.json()['user']['username'], 'goog-owner')
 
+    def test_google_never_makes_a_second_account_for_a_password_account(self):
+        """The same address written another way signs the one account in —
+        it never makes a second one (one person, one address)."""
+        before = User.objects.count()
+        r = self.post_token(email='OWNER@example.com')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(User.objects.count(), before)
+        self.assertEqual(Token.objects.get(user=self.user).key, r.json()['token'])
+
     def test_unknown_email_rejected(self):
         r = self.post_token(email='nobody@example.com')
         self.assertEqual(r.status_code, 400)

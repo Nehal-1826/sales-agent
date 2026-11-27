@@ -4,7 +4,7 @@ import logging
 from datetime import timedelta
 
 from django.contrib.auth import authenticate
-from django.db import connection
+from django.db import IntegrityError, connection, transaction
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -14,7 +14,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework.decorators import action, api_view, permission_classes, throttle_classes
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 
-from . import impersonation, lockout
+from . import identity, impersonation, lockout
 from .authz import (
     DELETED_DETAIL,
     auth_extras,
@@ -345,11 +345,14 @@ def change_username(request):
     new = (request.data.get('username') or '').strip()
     if not re.fullmatch(r'[A-Za-z0-9_]{3,30}', new):
         return Response({'detail': USERNAME_RULE}, status=400)
-    if (new.lower() != request.user.username.lower()
-            and User.objects.filter(username__iexact=new).exists()):
-        return Response({'detail': 'That username is already taken.'}, status=409)
+    if new.lower() != request.user.username.lower() and identity.username_is_taken(new):
+        return Response({'detail': identity.TAKEN_USERNAME}, status=409)
     request.user.username = new
-    request.user.save(update_fields=['username'])
+    try:
+        with transaction.atomic():       # a lost race is rolled back to here, never left half-open
+            request.user.save(update_fields=['username'])
+    except IntegrityError:  # lost a race: another rename or a sign-up took the name between the check and the save
+        return Response({'detail': identity.TAKEN_USERNAME}, status=409)
     return Response({'username': new, 'detail': 'username updated'})
 
 
@@ -574,9 +577,28 @@ def agent_config(request, agent_key):
 def settings_view(request):
     obj = AppSettings.load()
     if request.method == 'PUT':
-        serializer = SettingsSerializer(obj, data=request.data, partial=True)
+        data_in = request.data
+        company = data_in.get('company') if hasattr(data_in, 'get') else None
+        wanted = company.get('name') if isinstance(company, dict) else None
+        if isinstance(wanted, str) and wanted.strip():
+            # "  Acme   Rockets " → "Acme Rockets": the name as it is kept and shown
+            wanted = ' '.join(wanted.split())
+            # one company, one name: another company's name is never taken twice —
+            # looked at only when the name CHANGES (a name typed long ago that
+            # equals another company's must not block every other setting)
+            if identity.company_key(wanted) != identity.company_key(obj.company_name) \
+                    and identity.company_name_is_taken(wanted, excluding=obj.workspace_id):
+                return Response({'detail': identity.TAKEN_COMPANY}, status=400)
+            data_in = {**data_in, 'company': {**company, 'name': wanted}}
+        serializer = SettingsSerializer(obj, data=data_in, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        try:
+            with transaction.atomic():       # a lost race is rolled back to here, never left half-open
+                serializer.save()
+                # the workspace row takes the typed name: one company, one name everywhere
+                identity.sync_company_name(obj)
+        except IntegrityError:  # lost a race: another company took the name between the check and the save
+            return Response({'detail': identity.TAKEN_COMPANY}, status=400)
         data = serializer.data
         # the save took the proper data away while autopilot was on: it went
         # off with the save, and the person is told (core.lead_gate)

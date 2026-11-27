@@ -143,28 +143,3 @@ def set_role(email, admin, role):
         if resp.status_code != 204:
             raise _refused(resp, 'The warmup service did not change the account role.')
     return len(copies)
-
-
-def twin_of(user):
-    """Another account that is switched on, not deleted, and has this account's
-    e-mail address — else None. The warmup service tells people apart by e-mail
-    address, so two such accounts have ONE copy there: what is done to one of
-    them on that side is done to both. (Live, 26 Nov 2026: two super admins
-    shared one address.)"""
-    email = (user.email or '').strip()
-    if not email:
-        return None
-    from django.contrib.auth import get_user_model
-    return get_user_model().objects.filter(email__iexact=email, is_active=True, deleted_at__isnull=True) \
-        .exclude(pk=user.pk).order_by('pk').first()
-
-
-def shared_email(user, twin, admin, what):
-    """The refusal, in plain words, for an account whose e-mail address another
-    account has too. `what` says what could not be done on the warmup side."""
-    other = 'your account' if twin.pk == admin.pk else f'another account ({twin.username})'
-    name = user.get_full_name() or user.username
-    return (f'{name} has the same e-mail address as {other} ({(user.email or "").strip()}). '
-            f'The warmup service tells people apart by e-mail address, so it counts them as '
-            f'one person and {what} '
-            f'Give one of the two accounts a different e-mail address first.')

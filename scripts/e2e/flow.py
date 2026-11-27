@@ -262,30 +262,7 @@ DELETE_PW = "e2e-delete-pw-2026"
 # made its owner)
 MATE_USER = "e2e-mate-me"
 MATE_EMAIL = "e2e-mate-me@example.invalid"
-# a third account, made only for one look: it has the FIRST account's e-mail
-# address, because two accounts with one address are one person on the warmup side
-TWIN_USER = "e2e-twin-me"
-THROWAWAY_USERS = (DELETE_USER, MATE_USER, TWIN_USER)
-
-
-def twin_code(action: str) -> str:
-    """Django shell code that makes / removes the throwaway twin (the first account's e-mail address)."""
-    if action == "create":
-        return (
-            "from django.contrib.auth import get_user_model\n"
-            "U = get_user_model()\n"
-            f"U.objects.filter(username='{TWIN_USER}').delete()\n"
-            f"u = U.objects.create_user(username='{TWIN_USER}', password='x-not-used', email='{DELETE_EMAIL}')\n"
-            "U.objects.filter(pk=u.pk).update(workspace=None)\n"
-            "print('E2E_SHELL_OK twin made', u.pk)\n"
-        )
-    return (
-        "from django.contrib.auth import get_user_model\n"
-        "U = get_user_model()\n"
-        f"U.objects.filter(username='{TWIN_USER}').delete()\n"
-        f"left = U.objects.filter(username='{TWIN_USER}').count()\n"
-        "print('E2E_SHELL_OK twin left', left)\n"
-    )
+THROWAWAY_USERS = (DELETE_USER, MATE_USER)
 
 
 def delete_walk_account_code(action: str) -> str:
@@ -1010,6 +987,63 @@ with sync_playwright() as p:
     check("hygiene: zero console errors", not hygiene_errors, "; ".join(hygiene_errors[:3]))
     check("hygiene: no 404/5xx network responses", not nonwp_bad, str(nonwp_bad[:3]))
 
+    # ── 8e. Sign-up: a taken company name or e-mail address is refused in
+    #       plain words (27 Nov, core.identity + migration 0051). Both are
+    #       refusals, so nothing is made: the operator's own company ("Demo")
+    #       and address stand in for "already taken". Deliberately AFTER the
+    #       hygiene snapshot — the two expected 400s (and their console lines)
+    #       must not count as session noise. The sign-up door allows 5 an hour
+    #       per address, so this needs the LOCAL Django started with
+    #       SIGNUP_THROTTLE_RATE=1000/hour (AGENTS.md, Commands); a 429 says so.
+    page.goto(BASE + "/?signup=1")
+    page.wait_for_selector("ul.pw-rules", timeout=10000)
+
+    def field_error(label):
+        return " ".join(page.locator("label.login-field", has_text=label).locator("small.login-error").all_inner_texts())
+
+    def refused_submit():
+        """Press Create account and return the server's answer to the sign-up."""
+        with page.expect_response(lambda r: r.url.endswith("/api/auth/signup/"), timeout=30_000) as answered:
+            page.locator("form.login-card button[type='submit']").click()
+        return answered.value
+
+    page.locator("input[autocomplete='organization']").fill("  demo  ")
+    page.locator("input[autocomplete='name']").fill("E2E Gate")
+    page.locator("input[autocomplete='email']").fill("e2e-gate-taken@example.invalid")
+    page.locator("input[autocomplete='new-password']").fill("StrongPass123")
+    first = refused_submit()
+    if first.status == 429:
+        skip("signup: a company name another company has is refused in plain words",
+             "the sign-up door throttled this address (5 an hour) — start the local Django with SIGNUP_THROTTLE_RATE=1000/hour")
+        skip("signup: an e-mail address that is registered is refused in plain words", "the sign-up door is throttled this hour")
+    else:
+        page.locator("label.login-field", has_text="Company").locator("small.login-error") \
+            .first.wait_for(state="visible", timeout=15_000)
+        check("signup: a company name another company has is refused in plain words",
+              field_error("Company") == "Company already exists. Sign in instead.", field_error("Company"))
+        page.locator("input[autocomplete='organization']").fill("E2E Gate Co")
+        page.locator("input[autocomplete='email']").fill(" OPERATOR@agentic.local ")
+        second = refused_submit()
+        try:
+            page.locator("label.login-field", has_text="Work email").locator("small.login-error") \
+                .first.wait_for(state="visible", timeout=15_000)
+        except Exception:  # noqa: BLE001  — read below as a FAIL
+            pass
+        check("signup: an e-mail address that is registered is refused in plain words",
+              second.status == 400 and field_error("Work email") == "Email already registered. Sign in instead."
+              and field_error("Company") == "",
+              f"status={second.status} email='{field_error('Work email')}' company='{field_error('Company')}'")
+        page.screenshot(path=str(SHOTS / "08b-signup-taken.png"))
+        made, detail = django_shell(
+            "from django.contrib.auth import get_user_model\n"
+            "from core.models import Workspace\n"
+            "U = get_user_model()\n"
+            "n = U.objects.filter(email__iexact='e2e-gate-taken@example.invalid').count()\n"
+            "w = Workspace.all_tenants.filter(name_key='e2e gate co').count()\n"
+            "print('E2E_SHELL_OK refused-signup accounts', n, 'companies', w)\n")
+        check("signup: the two refusals made no account and no company",
+              made and "accounts 0 companies 0" in detail, detail[-160:])
+
     # ── 8b. Admin door, signed out (login split): /<slug> lands on the admin
     # login card and WORKSPACE credentials are turned away with the admin-only
     # 403. Deliberately AFTER the hygiene snapshot — the expected 403 (and its
@@ -1706,57 +1740,6 @@ with sync_playwright() as p:
                 said, _ = change_role(MATE_EMAIL, "Member")
                 return "| owner: owner 1 0 | mate: member" in state(), f"toast='{said}' |{state()}"
             look("console role: the two accounts are back as the delete walk needs them (owner + member)", as_the_delete_walk_needs_them)
-
-            # ── two accounts with one e-mail address (26 Nov, found live: two
-            # super admins shared one). The warmup service tells people apart
-            # by e-mail, so a role that changes the copy's role is refused up
-            # front, in plain words — nothing is asked of that service. A twin
-            # of the first account is made for this one look and removed at once.
-            # Two rows carry the address while it exists: the first account is
-            # found by its NAME (the twin shows only its username), and the
-            # list on screen still holds the twin's row after it is gone, so
-            # the search is emptied for the look that follows.
-            def shared_e_mail_refused():
-                search = page.get_by_placeholder("Search email, name or company…")
-                made, detail = django_shell(twin_code("create"))
-                if not made:
-                    return False, f"the twin could not be made: {detail[-120:]}"
-                said = "<no toast>"
-                try:
-                    shut_panel()
-                    search.fill("")
-                    page.wait_for_timeout(500)
-                    search.fill(DELETE_EMAIL)
-                    first = page.locator("table.leads-table tbody tr", has_text="Deleteme").first
-                    first.wait_for(state="visible", timeout=15_000)
-                    first.locator("button.row-link").first.click()
-                    ROLE_SELECT.wait_for(state="visible", timeout=8_000)
-                    ROLE_SELECT.select_option(label="Super admin")
-                    page.locator(f'{PANEL} .drawer-body button', has_text="Change role").first.click()
-                    dialog = page.locator(ROLE_DIALOG)
-                    dialog.wait_for(state="visible", timeout=8_000)
-                    dialog.get_by_label(REASON_LABEL).fill("E2E gate: two accounts, one e-mail address")
-                    dialog.get_by_role("button", name="Change role").click()
-                    try:
-                        page.locator(".toast-error .toast-text", has_text="same e-mail address") \
-                            .first.wait_for(state="visible", timeout=30_000)
-                        said = " ".join(page.locator(".toast-text").last.inner_text().split())
-                    except Exception:  # noqa: BLE001
-                        pass
-                    page.wait_for_timeout(400)
-                    shut_panel()
-                    return (f"Deleteme has the same e-mail address as another account ({TWIN_USER})" in said
-                            and DELETE_EMAIL in said
-                            and "this role cannot be changed for one of them alone." in said
-                            and "Give one of the two accounts a different e-mail address first." in said
-                            and "| owner: owner 1 0 | mate: member" in state()), f"toast='{said}' |{state()}"
-                finally:
-                    gone, detail = django_shell(twin_code("delete"))
-                    check("console role: the throwaway twin is removed again", gone and "twin left 0" in detail, detail)
-                    shut_panel()
-                    search.fill("")
-                    page.wait_for_timeout(700)
-            look("console role: two accounts with one e-mail address — the role is refused in plain words, and nothing changes", shared_e_mail_refused)
 
             def delete_offered():
                 page.get_by_placeholder("Search email, name or company…").fill(DELETE_EMAIL)

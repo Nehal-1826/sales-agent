@@ -19,6 +19,7 @@ import json
 import logging
 import re
 
+from . import identity
 from .ai import llm_available
 from .business_profile import CATALOGUE, BadUrl, apply_profile, plan_targeting, profile_from_domain
 from .icp import agency_mode, buyer_industries
@@ -643,8 +644,13 @@ def onboarding_reply(text, user, settings=None):
         name = _clean_name(text)
         if len(name) < 2:
             return 'Hmm, I didn\'t catch a name — what should I call your company?'
+        if identity.company_name_is_taken(name, excluding=settings.workspace_id):
+            # one company, one name (core.identity): the step is asked again
+            return (f'"{name}" is already the name of another company on WarmPulse. '
+                    'Tell me a different name for yours — just the name is perfect.')
         settings.company_name = name
         settings.save(update_fields=['company_name', 'updated_at'])
+        identity.sync_company_name(settings)      # the workspace row takes the typed name
         answers['company'] = name
         _save_state(user, step=1, answers=answers)
         return _question_message(1, prefix=f'Nice to meet you, {name}! 👋 ')

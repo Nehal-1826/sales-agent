@@ -68,10 +68,10 @@ class SignupTests(TestCase):
         self.assertEqual(s.company_website, 'https://acme.test')
 
     def test_settings_profile_filled_even_without_website(self):
-        self.post(email='nowebsite@x.test')
+        self.post(email='nowebsite@x.test', company='Nowebsite Co')
         u = User.objects.get(username='nowebsite@x.test')
         s = AppSettings.all_tenants.get(workspace=u.workspace)
-        self.assertEqual(s.company_name, 'Acme Rockets')
+        self.assertEqual(s.company_name, 'Nowebsite Co')
         self.assertEqual(s.company_website, '')
 
     def test_duplicate_email_any_case(self):
@@ -79,7 +79,7 @@ class SignupTests(TestCase):
         n = Workspace.all_tenants.count()
         r = self.post(email='ANN@acme.test', company='Other')
         self.assertEqual(r.status_code, 400)
-        self.assertEqual(r.json(), {'email': ['Could not use this email.']})
+        self.assertEqual(r.json(), {'email': ['Email already registered. Sign in instead.']})
         self.assertEqual(Workspace.all_tenants.count(), n)
 
     def test_weak_passwords(self):
@@ -101,9 +101,12 @@ class SignupTests(TestCase):
         self.assertEqual(self.post(plan_code='nope').status_code, 400)
 
     def test_unique_slug(self):
+        """Two names that read alike to slugify still get two slugs (a company
+        name itself is never taken twice: core.tests.test_identity)."""
         self.post()
-        self.post(email='z@x.test')
-        slugs = list(Workspace.all_tenants.filter(name='Acme Rockets').values_list('slug', flat=True))
+        self.post(email='z@x.test', company='Acme Rockets!')
+        slugs = list(Workspace.all_tenants.filter(name_key__in=['acme rockets', 'acme rockets!'])
+                     .values_list('slug', flat=True))
         self.assertEqual(len(set(slugs)), 2)
 
     def test_old_register_closed(self):

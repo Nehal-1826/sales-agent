@@ -6,6 +6,7 @@ owner password is never echoed back."""
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
+from core import identity
 from core.models import User, Workspace
 from core.tenancy import workspace_context
 from core.workspaces import provision_workspace
@@ -23,16 +24,24 @@ class Command(BaseCommand):
 
     def handle(self, *args, **opts):
         slug = opts['slug'].strip().lower()
+        name = opts['name'].strip()
+        owner = opts['owner_username'].strip()
+        email = identity.normalize_email(opts['owner_email'])
         if Workspace.all_tenants.filter(slug=slug).exists():
             raise CommandError(f'Workspace with slug "{slug}" already exists.')
-        if User.objects.filter(username=opts['owner_username']).exists():
-            raise CommandError(f'User "{opts["owner_username"]}" already exists.')
+        # one company, one name; one person, one address (core.identity)
+        if identity.company_name_is_taken(name):
+            raise CommandError(f'a company named "{name}" already exists. {identity.TAKEN_COMPANY}')
+        if identity.username_is_taken(owner):
+            raise CommandError(f'User "{owner}" already exists.')
+        if email and identity.email_is_taken(email):
+            raise CommandError(f'that email address already belongs to an account. {identity.TAKEN_EMAIL}')
         with transaction.atomic():
-            ws = Workspace.all_tenants.create(name=opts['name'].strip(), slug=slug)
+            ws = Workspace.all_tenants.create(name=name, slug=slug)
             with workspace_context(ws):
                 User.objects.create_user(
-                    username=opts['owner_username'],
-                    email=opts['owner_email'],
+                    username=owner,
+                    email=email,
                     password=opts['owner_password'],
                     role=User.Roles.OWNER,
                 )
@@ -41,4 +50,4 @@ class Command(BaseCommand):
             from billing.services import ensure_manual_subscription
             ensure_manual_subscription(ws)  # operator-created: manual Enterprise, never paywalled
         self.stdout.write(self.style.SUCCESS(
-            f'Created workspace "{ws.name}" ({ws.slug}) with owner "{opts["owner_username"]}".'))
+            f'Created workspace "{ws.name}" ({ws.slug}) with owner "{owner}".'))

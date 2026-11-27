@@ -26,6 +26,7 @@ from rest_framework.throttling import AnonRateThrottle
 
 from billing.models import Plan, Subscription
 
+from . import identity
 from .authz import auth_extras, note_sign_in
 from .models import AppSettings, User, Workspace
 from .permissions import IsOtpSatisfied
@@ -37,9 +38,10 @@ log = logging.getLogger(__name__)
 
 VERIFY_SALT = 'shailog.verify-email'
 VERIFY_MAX_AGE = 48 * 3600
-# Accepted risk: self-serve signup returns a token at once, so a taken email is distinguishable;
-# mitigated only by the 5/hour signup throttle.
-EMAIL_TAKEN = 'Could not use this email.'
+# A taken email is distinguishable (signup returns a token at once); the
+# 5/hour throttle is the mitigation, and no "is this email free" door exists
+# on purpose. The words are core.identity's: every door says the same.
+EMAIL_TAKEN = identity.TAKEN_EMAIL
 BAD_LINK = 'This verification link is invalid or has expired.'
 _CTRL = re.compile('[\x00-\x1f\x7f-\x9f  ]')
 
@@ -126,18 +128,22 @@ def signup(request):
 
     company, name = text('company'), text('name', 150)
     website = text('website', 300)
-    email = text('email', 254).lower()
+    email = identity.normalize_email(text('email', 254))
     password = d.get('password') if isinstance(d.get('password'), str) else ''
     if not company:
         return _fail('company', 'This field is required.')
+    # one company, one name: another company's name — a stopped one's too — is not taken twice
+    if identity.company_name_is_taken(company):
+        return _fail('company', identity.TAKEN_COMPANY)
     if not name:
         return _fail('name', 'This field is required.')
     try:
         validate_email(email)
     except ValidationError:
         return _fail('email', 'Enter a valid email address.')
-    # usernames are global: check across ALL workspaces, case-insensitive
-    if User.objects.filter(username__iexact=email).exists() or User.objects.filter(email__iexact=email).exists():
+    # one person, one address: usernames are global and a sign-up's username
+    # IS its address (core.identity: across ALL workspaces, deleted accounts too)
+    if identity.signup_address_in_use(email):
         return _fail('email', EMAIL_TAKEN)
     try:
         validate_password(password, User(username=email, email=email, first_name=name))
@@ -177,8 +183,11 @@ def signup(request):
                     gateway=Subscription.Gateways.MANUAL, status=Subscription.Statuses.PENDING,
                     billing_email=email)
             token = Token.objects.create(user=user)
-    except IntegrityError:  # lost a race on the global username
-        return _fail('email', EMAIL_TAKEN)
+    except IntegrityError:  # lost a race: another sign-up (or a rename) won the address or the name between the checks and the write
+        lost = identity.signup_lost_race(email, company)
+        if lost is None:
+            raise                                     # not ours: never answered with a guess
+        return _fail(*lost)
 
     note_sign_in(user)
     send_verification(user)

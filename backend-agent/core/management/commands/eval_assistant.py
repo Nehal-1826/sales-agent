@@ -142,7 +142,9 @@ class Command(BaseCommand):
         swept = sweep_leftovers()
         if swept:
             self.stdout.write(f'swept {swept} throwaway workspace(s) left by killed runs')
-        workspace = Workspace.all_tenants.create(slug=slug, name='Eval Journals')
+        # the run's stamp is in the workspace's name: a company name is never
+        # taken twice (migration 0051), and a run killed hard can leave one behind
+        workspace = Workspace.all_tenants.create(slug=slug, name=f'Eval Journals {stamp}')
         rows, calls, guard_events = [], [], []
         try:
             with workspace_context(workspace):

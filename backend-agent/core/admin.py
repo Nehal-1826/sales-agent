@@ -1,6 +1,7 @@
 from django import forms
 from django.contrib import admin, messages
 
+from . import identity
 from .mailer import NO_RECIPIENT_ERROR, valid_recipient
 from .outbox import enqueue_draft
 from .tenancy import TenantOwned, workspace_context
@@ -51,8 +52,43 @@ class TenantAdmin(admin.ModelAdmin):
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
 
+class UserAdminForm(forms.ModelForm):
+    """The Django admin is a door too (a superuser can add an account here): a
+    taken address or username is refused in the form, in the same words as
+    everywhere else (core.identity)."""
+
+    class Meta:
+        model = User
+        fields = '__all__'
+
+    def clean_email(self):
+        email = identity.normalize_email(self.cleaned_data.get('email'))
+        if identity.email_is_taken(email, excluding=self.instance.pk):
+            raise forms.ValidationError(identity.TAKEN_EMAIL)
+        return email
+
+    def clean_username(self):
+        username = (self.cleaned_data.get('username') or '').strip()
+        if identity.username_is_taken(username, excluding=self.instance.pk):
+            raise forms.ValidationError(identity.TAKEN_USERNAME)
+        return username
+
+
+class WorkspaceAdminForm(forms.ModelForm):
+    class Meta:
+        model = Workspace
+        fields = '__all__'
+
+    def clean_name(self):
+        name = (self.cleaned_data.get('name') or '').strip()
+        if identity.company_name_is_taken(name, excluding=self.instance.pk):
+            raise forms.ValidationError(identity.TAKEN_COMPANY)
+        return name
+
+
 @admin.register(Workspace)
 class WorkspaceAdmin(admin.ModelAdmin):
+    form = WorkspaceAdminForm
     list_display = ('name', 'slug', 'is_active', 'created_at')
     list_filter = ('is_active',)
     search_fields = ('name', 'slug')
@@ -60,6 +96,7 @@ class WorkspaceAdmin(admin.ModelAdmin):
 
 @admin.register(User)
 class UserAdmin(admin.ModelAdmin):
+    form = UserAdminForm
     list_display = ('username', 'email', 'workspace', 'role', 'is_active')
     list_filter = ('workspace', 'role')
 

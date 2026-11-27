@@ -92,6 +92,20 @@ class OnboardingFlowTests(TenantTestCase):
     def answer(self, text):
         return onboarding_reply(text, self.u, self.s)
 
+    def test_a_name_another_company_has_is_refused_and_asked_again(self):
+        """One company, one name (core.identity): the step is asked again, and
+        the name that is saved is also the workspace's."""
+        from billing.tests.test_entitlements import make_ws
+        from core.models import Workspace
+        make_ws('taken')                                     # another company, named "taken"
+        r = self.answer('Taken')
+        self.assertIn('already the name of another company', r)
+        self.assertEqual(self.s.company_name, '')
+        self.assertEqual(onboarding_status(self.u, self.s)['stepKey'], 'company')
+        r = self.answer('My company is Brew & Byte Studios')
+        self.assertEqual(self.s.company_name, 'Brew & Byte Studios')
+        self.assertEqual(Workspace.all_tenants.get(pk=self.s.workspace_id).name, 'Brew & Byte Studios')
+
     def test_full_happy_path_buyer(self):
         r = self.answer('My company is Brew & Byte Studios')
         self.assertIn('what do you sell', r.lower())

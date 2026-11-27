@@ -47,14 +47,6 @@ def can_delete(admin, target):
         return 'cannot_delete', 'This account has no workspace.', 400
     if target.deleted_at is not None:
         return 'already_deleted', 'This account is already deleted.', 400
-    # what stops its warmup mailboxes is its COPY on the warmup side, and two
-    # accounts with one e-mail address have the same copy: the other one's
-    # mailboxes would stop too
-    twin = warmup_accounts.twin_of(target)
-    if twin is not None:
-        return 'shared_email', warmup_accounts.shared_email(
-            target, twin, admin,
-            "deleting this account would stop the other one's warmup mailboxes too."), 400
     return None
 
 

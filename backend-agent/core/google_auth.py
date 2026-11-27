@@ -99,9 +99,15 @@ def google_verify(request):
         return Response({'detail': 'That Google email is not verified.'},
                         status=status.HTTP_400_BAD_REQUEST)
 
-    user = User.objects.filter(email__iexact=email).first()
-    if user is None:
+    # one person, one address (migration 0051); this door never makes an
+    # account — and should the database ever hold two with one address, nobody is picked
+    matches = list(User.objects.filter(email__iexact=email)[:2])
+    if not matches:
         return Response({'detail': NOT_FOUND_DETAIL}, status=status.HTTP_400_BAD_REQUEST)
+    if len(matches) > 1:
+        return Response({'detail': 'More than one account has that e-mail. Sign in with your username.'},
+                        status=status.HTTP_400_BAD_REQUEST)
+    user = matches[0]
     if user.is_staff and user.workspace_id is None:
         # two-door rule: platform admins never get a token on this door
         return Response({'detail': ADMIN_ONLY_DETAIL}, status=status.HTTP_403_FORBIDDEN)

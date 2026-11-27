@@ -8,6 +8,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 
+from core import identity
 from core.models import User
 
 
@@ -21,11 +22,15 @@ class Command(BaseCommand):
 
     def handle(self, *a, **o):
         username = (o['username'] or input('Username: ')).strip()
-        email = (o['email'] or input('Email: ')).strip().lower()
+        email = identity.normalize_email(o['email'] or input('Email: '))
         if not username or not email:
             raise CommandError('username and email are required')
-        if User.objects.filter(username__iexact=username).exists():
+        # one person, one address: this command could once make a second
+        # account with one (live, 19 Nov 2026)
+        if identity.username_is_taken(username):
             raise CommandError('that username already exists')
+        if identity.email_is_taken(email):
+            raise CommandError(f'that email address already belongs to an account. {identity.TAKEN_EMAIL}')
         if o['password_env']:
             pw = os.environ.get(o['password_env'], '')
             if not pw:
